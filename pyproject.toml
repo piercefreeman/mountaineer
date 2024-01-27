@@ -12,6 +12,9 @@ jupytext = "^1.16.1"
 pydantic = "^2.5.3"
 
 
+[tool.poetry.group.dev.dependencies]
+mypy = "^1.8.0"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
