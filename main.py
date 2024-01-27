@@ -29,49 +29,6 @@ class MyResponse(ReturnModel):
     obj: OtherObject
 
 
-def generate_typescript_files():
-    # We need to generate one for the return of the render() function
-    # -> will model the server payload returned by useServer()
-    # This will be a type for the base model. This will be the interface that is used
-    # as the context provider for this particular controller.
-    # The global context provider will need to have a slot for every controller state, even if only
-    # one is used at a time.
-    # {
-    #   CONTROLLER_1_STATE?: Controller1State,
-    #   CONTROLLER_2_STATE?: Controller2State,
-    # }
-    # The useState provider will then only set the value for the current controller that's in scope
-    # on the page load.
-
-    # We also need for each action endpoint
-    # -> will model the fetch() payload returned by the different oneoff actions
-    # We might also need to generate subtypes for the @sideeffect in case the user
-    # only updates a subset of the fields
-    # The final payloads in general should look like:
-    # {
-    #    passthroughData,
-    #    sideEffectData: Either full state, or partial state. If partial state define inline.
-    # }
-
-    # There should be a common
-    # _request() class that will be used for all of these internally
-    # The implementations themselves will look more like:
-    # public static createUserPost({
-    #     requestBody,
-    # }: {
-    #     requestBody: RegisterSchema;
-    # }): CancelablePromise<User> {
-    #     return __request(OpenAPI, {
-    #         method: 'POST',
-    #         url: '/user/',
-    #         body: requestBody,
-    #         mediaType: 'application/json',
-    #         errors: {
-    #             422: `Validation Error`,
-    #         },
-    #     });
-    # }
-
 
 
 class MyInputPayload(BaseModel):
