@@ -13,6 +13,7 @@ class MyModel(BaseModel):
     c: SubModel1
     d: list[SubModel1]
     both_sub: list[SubModel1 | SubModel2 | None]
+    sub_map: dict[int, SubModel1 | None]
 
 def test_basic_interface():
 
@@ -28,8 +29,9 @@ def test_model_gathering():
     converter = OpenAPIToTypeScriptConverter()
     all_models = converter.gather_all_models(schema)
 
-    assert len(all_models) == 3
-    assert {m.title for m in all_models} == {"SubModel1", "SubModel2", "MyModel"}
+    # OpenAPI makes an object for the dictionary as well
+    assert len(all_models) == 4
+    assert {m.title for m in all_models} == {"SubModel1", "SubModel2", "MyModel", "Sub Map"}
 
 
 def test_exhaustive_python_types():

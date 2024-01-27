@@ -2,10 +2,11 @@
 Generator for TypeScript interfaces from OpenAPI specifications.
 """
 import json
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Iterator
 from pydantic import BaseModel, Field, model_validator
 from enum import StrEnum
 from filzl.annotation_helpers import get_value_by_alias
+
 
 class OpenAPISchemaType(StrEnum):
     OBJECT = "object"
@@ -20,6 +21,7 @@ class OpenAPISchemaType(StrEnum):
 class OpenAPIProperty(BaseModel):
     title: str | None = None
     properties: dict[str, "OpenAPIProperty"] = {}
+    additionalProperties: Optional["OpenAPIProperty"] = None
     required: list[str] = []
 
     # Self-contained type: object, int, etc
@@ -27,7 +29,7 @@ class OpenAPIProperty(BaseModel):
     # Reference to another type
     ref: str | None = Field(alias="$ref", default=None)
     # Array of another type
-    items: Union["OpenAPIProperty", None] = None
+    items: Optional["OpenAPIProperty"] = None
     # Pointer to multiple possible subtypes
     anyOf: list["OpenAPIProperty"] = []
 
@@ -67,12 +69,12 @@ class OpenAPIToTypeScriptConverter:
 
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
-        print("ALL MODELS", len(all_models))
 
-        ts_interfaces = []
-        #for schema_name, schema in schemas.items():
-        #    ts_interface = self.convert_schema_to_interface(schema_name, schema)
-        #    ts_interfaces.append(ts_interface)
+        # We put in one big models.ts file to enable potentially cyclical dependencies
+        ts_interfaces = [
+            self.convert_schema_to_interface(model, base=parsed_spec)
+            for model in all_models
+        ]
 
         return "\n\n".join(ts_interfaces)
 
@@ -83,7 +85,7 @@ class OpenAPIToTypeScriptConverter:
 
         :param base: The core OpenAPI Schema
         """
-        def walk_models(property: OpenAPIProperty):
+        def walk_models(property: OpenAPIProperty) -> Iterator[OpenAPIProperty]:
             if property.variable_type == OpenAPISchemaType.OBJECT:
                 yield property
             if property.ref is not None:
@@ -95,6 +97,8 @@ class OpenAPIToTypeScriptConverter:
                     yield from walk_models(prop)
             for prop in property.properties.values():
                 yield from walk_models(prop)
+            if property.additionalProperties:
+                yield from walk_models(property.additionalProperties)
         return list(set(walk_models(base)))
 
     def resolve_ref(self, ref: str, base: OpenAPISchema) -> OpenAPIProperty:
@@ -109,18 +113,37 @@ class OpenAPIToTypeScriptConverter:
                     raise AttributeError(f"Invalid $ref, couldn't resolve path: {ref}") from e
         return current_obj
 
-    def convert_schema_to_interface(self, schema_name, schema):
-        properties = schema.get('properties', {})
-        required = set(schema.get('required', []))
-
+    def convert_schema_to_interface(self, model: OpenAPIProperty, base: OpenAPISchema):
         fields = []
-        for prop_name, prop_details in properties.items():
-            ts_type = self.map_openapi_type_to_ts(prop_details.get('type', 'any'))
-            is_required = prop_name in required
+
+        # We have to support arrays with one and multiple values
+        def walk_array_types(prop: OpenAPIProperty) -> Iterator[str]:
+            print("WALKING TYPE", prop)
+            if prop.ref:
+                yield self.get_typescript_interface_name(self.resolve_ref(prop.ref, base=base))
+            elif prop.items:
+                yield from walk_array_types(prop.items)
+            elif prop.anyOf:
+                for sub_prop in prop.anyOf:
+                    yield from walk_array_types(sub_prop)
+            elif prop.additionalProperties:
+                # OpenAPI doesn't specify the type of the keys, so we just use any
+                sub_types = " | ".join(walk_array_types(prop.additionalProperties))
+                yield f"{{ [key: any]: {sub_types} }}"
+            elif prop.variable_type:
+                yield self.map_openapi_type_to_ts(prop.variable_type)
+
+        for prop_name, prop_details in model.properties.items():
+            is_required = prop_name in model.required
+            ts_type = self.map_openapi_type_to_ts(prop_details.variable_type) if prop_details.variable_type else None
+
+            annotation_str = " | ".join(set(walk_array_types(prop_details)))
+            ts_type = ts_type.format(types=annotation_str) if ts_type else annotation_str
+
             fields.append(f"  {prop_name}{'?' if not is_required else ''}: {ts_type};")
 
         interface_body = "\n".join(fields)
-        return f"interface {schema_name} {{\n{interface_body}\n}}"
+        return f"interface {self.get_typescript_interface_name(model)} {{\n{interface_body}\n}}"
 
     def map_openapi_type_to_ts(self, openapi_type: OpenAPISchemaType):
         mapping = {
@@ -128,7 +151,13 @@ class OpenAPIToTypeScriptConverter:
             'integer': 'number',
             'number': 'number',
             'boolean': 'boolean',
-            'array': 'Array<any>',
-            'object': 'any',
+            'null': 'null',
+            'array': 'Array<{types}>',
+            'object': '{types}',
         }
-        return mapping.get(openapi_type, 'any')
+        return mapping[openapi_type]
+
+    def get_typescript_interface_name(self, model: OpenAPIProperty):
+        if not model.title:
+            raise ValueError(f"Model must have a title to retrieve its typescript name: {model}")
+        return model.title.replace(" ", "")
