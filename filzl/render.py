@@ -29,5 +29,5 @@ class ReturnModelMetaclass(ModelMetaclass):
                 raise
 
 
-class ReturnModel(BaseModel, metaclass=ReturnModelMetaclass):
+class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):
     pass

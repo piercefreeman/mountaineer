@@ -47,37 +47,12 @@ class MyInputPayload(BaseModel):
 
 # OR:
 
-class RouteController:
-    pass
-
-
-def sideeffect(*args, **kwargs):
-    """
-    :param: If provided, will ONLY reload these fields. By default will reload all fields. Otherwise, why
-        specify a sideeffect at all?
-    """
-    def decorator_with_args(reload: Tuple[FieldClassDefinition, ...]):
-        print("SPECIFIC RELOAD", reload)
-        def wrapper(func: Callable):
-            @wraps(func)
-            def inner(*func_args, **func_kwargs):
-                return func(*func_args, **func_kwargs)
-            return inner
-        return wrapper
-
-    if args and callable(args[0]):
-        # It's used as @sideeffect without arguments
-        func = args[0]
-        return decorator_with_args(())(func)
-    else:
-        # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(*args, **kwargs)
 
 class MyRouteController(RouteController):
     # Unlike in next.js the post won't actually do anything, it's just to align conventions
     # OR maybe this should actually determine URL paths? Easier to layout templates in terms
     # of arbitrary paths than for them to be embedded in python itself.
-    template_path = "/testing/[post_id]/mytemplate.tsx"
+
 
     def render(
         self

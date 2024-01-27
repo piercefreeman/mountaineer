@@ -31,7 +31,7 @@ For easier development and static error checking for the frontend components, we
     ```typescript
     {
       passthroughData,
-      // Either full state, or partial state. If partial state define inline
+      // Either full state, or partial state. If partial state, we can define inline.
       sideEffectData
     }
     ```
@@ -160,6 +160,11 @@ const useServer = () => {
 - How to use a preprocessor like tailwind for the bundling?
 - Values will passthrough EITHER if @passthrough is specified, or if an explicit fastapi.Response is provided. In this case the user is likely setting a cookie or other advanced metadata that we should include as-is.
 - For V1, we probably want to specify the routes in the controller using FastAPI's syntax. In the future we could also automatically derive the mapping from the view's hierarchy on disk. We just have to make sure that the controller->view mapping is unique. We should probably validate this anywhere when we do the initial build.
+- We should clearly support both async and sync rendering functions / actions.
+- We can't assume that any functions located in a controller could be called by the client, since there might be helper functions, auth functions, or the like. Instead we can either:
+    - Assume the user only wants to expose @sideeffect and @passthrough functions, leveraging @passthrough even for cases where no data gets returned.
+    - Explicitly analyze the template at runtime to determine which functions are actually used, and only expose those. For IDE support we'd have to initially build all of the metafiles for all of the functions so they'd get typehinting support.
+    -> We go with the first option since it's more explicit and avoids having to generate meaningfully different type definition files for IDE completion during development vs. production.
 
 NOTE:
 - We can also validate that all pages will be reachable by just loading the render function at runtime. This might have some unintended data mutation-side effects however so we should be careful / not do automatically.
