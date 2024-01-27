@@ -2,7 +2,7 @@
 Generator for TypeScript interfaces from OpenAPI specifications.
 """
 import json
-from typing import Any, Optional, Union, Iterator, Type, get_args, get_origin, Dict
+from typing import Optional, Iterator, Type, get_args, get_origin, Dict
 from pydantic import BaseModel, Field, model_validator
 from enum import StrEnum
 from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
@@ -17,6 +17,7 @@ class OpenAPISchemaType(StrEnum):
     ARRAY = "array"
     # Typically used to indicate an optional type within an anyOf statement
     NULL = "null"
+
 
 class OpenAPIProperty(BaseModel):
     title: str | None = None
@@ -52,10 +53,13 @@ class OpenAPIProperty(BaseModel):
                 return sorted((k, sort_json(v)) for k, v in obj.items())
             else:
                 return obj
+
         return hash(json.dumps(sort_json(self.model_dump())))
 
+
 class OpenAPISchema(OpenAPIProperty):
-    defs : dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
+    defs: dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
+
 
 class OpenAPIToTypeScriptConverter:
     def convert(self, model: Type[BaseModel]):
@@ -68,8 +72,8 @@ class OpenAPIToTypeScriptConverter:
         return self.convert_to_typescript(schema)
 
     def convert_to_typescript(self, parsed_spec: OpenAPISchema):
-        #components = parsed_spec.get('components', {})
-        #schemas = components.get('schemas', {})
+        # components = parsed_spec.get('components', {})
+        # schemas = components.get('schemas', {})
 
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
@@ -89,6 +93,7 @@ class OpenAPIToTypeScriptConverter:
 
         :param base: The core OpenAPI Schema
         """
+
         def walk_models(property: OpenAPIProperty) -> Iterator[OpenAPIProperty]:
             if property.variable_type == OpenAPISchemaType.OBJECT:
                 yield property
@@ -103,10 +108,11 @@ class OpenAPIToTypeScriptConverter:
                 yield from walk_models(prop)
             if property.additionalProperties:
                 yield from walk_models(property.additionalProperties)
+
         return list(set(walk_models(base)))
 
     def resolve_ref(self, ref: str, base: OpenAPISchema) -> OpenAPIProperty:
-        current_obj : OpenAPIProperty = base
+        current_obj: OpenAPIProperty = base
         for part in ref.split("/"):
             if part == "#":
                 current_obj = base
@@ -114,7 +120,9 @@ class OpenAPIToTypeScriptConverter:
                 try:
                     current_obj = get_value_by_alias(current_obj, part)
                 except AttributeError as e:
-                    raise AttributeError(f"Invalid $ref, couldn't resolve path: {ref}") from e
+                    raise AttributeError(
+                        f"Invalid $ref, couldn't resolve path: {ref}"
+                    ) from e
         return current_obj
 
     def convert_schema_to_interface(self, model: OpenAPIProperty, base: OpenAPISchema):
@@ -124,7 +132,9 @@ class OpenAPIToTypeScriptConverter:
         def walk_array_types(prop: OpenAPIProperty) -> Iterator[str]:
             print("WALKING TYPE", prop)
             if prop.ref:
-                yield self.get_typescript_interface_name(self.resolve_ref(prop.ref, base=base))
+                yield self.get_typescript_interface_name(
+                    self.resolve_ref(prop.ref, base=base)
+                )
             elif prop.items:
                 yield from walk_array_types(prop.items)
             elif prop.anyOf:
@@ -140,15 +150,21 @@ class OpenAPIToTypeScriptConverter:
 
         for prop_name, prop_details in model.properties.items():
             is_required = prop_name in model.required
-            ts_type = self.map_openapi_type_to_ts(prop_details.variable_type) if prop_details.variable_type else None
+            ts_type = (
+                self.map_openapi_type_to_ts(prop_details.variable_type)
+                if prop_details.variable_type
+                else None
+            )
 
             annotation_str = " | ".join(set(walk_array_types(prop_details)))
-            ts_type = ts_type.format(types=annotation_str) if ts_type else annotation_str
+            ts_type = (
+                ts_type.format(types=annotation_str) if ts_type else annotation_str
+            )
 
             if prop_details.description:
-                fields.append(f"  /**")
+                fields.append("  /**")
                 fields.append(f"   * {prop_details.description}")
-                fields.append(f"   */")
+                fields.append("   */")
 
             fields.append(f"  {prop_name}{'?' if not is_required else ''}: {ts_type};")
 
@@ -157,19 +173,21 @@ class OpenAPIToTypeScriptConverter:
 
     def map_openapi_type_to_ts(self, openapi_type: OpenAPISchemaType):
         mapping = {
-            'string': 'string',
-            'integer': 'number',
-            'number': 'number',
-            'boolean': 'boolean',
-            'null': 'null',
-            'array': 'Array<{types}>',
-            'object': '{types}',
+            "string": "string",
+            "integer": "number",
+            "number": "number",
+            "boolean": "boolean",
+            "null": "null",
+            "array": "Array<{types}>",
+            "object": "{types}",
         }
         return mapping[openapi_type]
 
     def get_typescript_interface_name(self, model: OpenAPIProperty):
         if not model.title:
-            raise ValueError(f"Model must have a title to retrieve its typescript name: {model}")
+            raise ValueError(
+                f"Model must have a title to retrieve its typescript name: {model}"
+            )
         return model.title.replace(" ", "")
 
     def validate_typescript_candidate(self, model: Type[BaseModel]):
@@ -184,4 +202,6 @@ class OpenAPIToTypeScriptConverter:
             if origin and origin in {dict, Dict}:
                 # We only support keys that are strings
                 if args and not issubclass(args[0], str):
-                    raise ValueError(f"Key must be a string for JSON dictionary serialization. Received `{typehint}`.")
+                    raise ValueError(
+                        f"Key must be a string for JSON dictionary serialization. Received `{typehint}`."
+                    )

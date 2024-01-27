@@ -2,11 +2,14 @@ from filzl.interface_gen import OpenAPIToTypeScriptConverter, OpenAPISchema
 from pydantic import BaseModel, Field, create_model
 import pytest
 
+
 class SubModel1(BaseModel):
     sub_a: str
 
+
 class SubModel2(BaseModel):
     sub_b: int
+
 
 class MyModel(BaseModel):
     a: str = Field(description="The a field")
@@ -16,10 +19,12 @@ class MyModel(BaseModel):
     both_sub: list[SubModel1 | SubModel2 | None]
     sub_map: dict[str, SubModel1 | None]
 
+
 def test_basic_interface():
     converter = OpenAPIToTypeScriptConverter()
     result = converter.convert(MyModel)
     assert "interface MyModel {" in result
+
 
 def test_model_gathering():
     schema = OpenAPISchema(**MyModel.model_json_schema())
@@ -29,7 +34,12 @@ def test_model_gathering():
 
     # OpenAPI makes an object for the dictionary as well
     assert len(all_models) == 4
-    assert {m.title for m in all_models} == {"SubModel1", "SubModel2", "MyModel", "Sub Map"}
+    assert {m.title for m in all_models} == {
+        "SubModel1",
+        "SubModel2",
+        "MyModel",
+        "Sub Map",
+    }
 
 
 @pytest.mark.parametrize(
@@ -41,10 +51,12 @@ def test_model_gathering():
         (list[SubModel1], ["value: Array<SubModel1>"]),
         (dict[str, SubModel1], ["value: Record<string, SubModel1>"]),
         (dict[str, int], ["value: Record<string, number>"]),
-        ("SubModel1", ["value: SubModel1"])
-    ]
+        ("SubModel1", ["value: SubModel1"]),
+    ],
 )
-def test_python_to_typescript_types(python_type: type, expected_typescript_types: list[str]):
+def test_python_to_typescript_types(
+    python_type: type, expected_typescript_types: list[str]
+):
     # Create a model schema automatically with the passed in typing
     fake_model = create_model(
         "FakeModel",
@@ -59,11 +71,13 @@ def test_python_to_typescript_types(python_type: type, expected_typescript_types
     for expected_str in expected_typescript_types:
         assert expected_str in interface_definition
 
+
 def test_require_json_dictionaries():
     """
     JSON dictionaries can only serialize with string keys, so we need to make sure
     that the TypeScript interface enforces this.
     """
+
     class InvalidDictModel(BaseModel):
         value: dict[int, str]
 

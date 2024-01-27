@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "filzl"
+name = "my-website"
 version = "0.1.0"
 description = ""
 authors = ["Pierce Freeman <piercefreeman@gmail.com>"]
@@ -7,21 +7,15 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-jupyterlab = "^4.0.11"
-jupytext = "^1.16.1"
-pydantic = "^2.5.3"
 
+# While in development, link to the local path
+filzl = { path = "/Users/piercefreeman/projects/filzl", develop = true }
 
 [tool.poetry.group.dev.dependencies]
+types-setuptools = "^69.0.0.20240125"
 mypy = "^1.8.0"
-pytest = "^7.4.4"
 ruff = "^0.1.14"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
-
-[tool.mypy]
-warn_return_any = true
-warn_unused_configs = true
-check_untyped_defs = true

@@ -1,9 +1,16 @@
 from dataclasses import is_dataclass, fields
 from inspect import isclass
 from pydantic import BaseModel
-from typing import Any, ForwardRef, Type, get_args, get_origin, Union, TypeVar, Optional, Type, cast, get_type_hints, _eval_type
+from typing import (
+    Any,
+    Type,
+    get_args,
+    get_origin,
+    Union,
+)
 from pydantic._internal._typing_extra import eval_type_lenient
 from types import UnionType
+
 
 def get_value_by_alias(model: BaseModel | dict[str, Any], alias: str):
     """
@@ -25,9 +32,17 @@ def get_value_by_alias(model: BaseModel | dict[str, Any], alias: str):
         for field_name, field in model.model_fields.items():
             if field.alias == alias:
                 return getattr(model, field_name)
-    raise AttributeError(f"No key `{alias}` found in model, either alias or cast value.")
+    raise AttributeError(
+        f"No key `{alias}` found in model, either alias or cast value."
+    )
 
-def resolve_forwardrefs(current_type: type, *, _globals: dict[str, Any] | None = None, _locals: dict[str, Any] | None = None):
+
+def resolve_forwardrefs(
+    current_type: type,
+    *,
+    _globals: dict[str, Any] | None = None,
+    _locals: dict[str, Any] | None = None,
+):
     """
     Resolves forwardrefs to their true value. Unlike the standard eval_type_lenient logic this also
     supports nested forwardrefs like those found in origin/arg pairs.
@@ -38,17 +53,27 @@ def resolve_forwardrefs(current_type: type, *, _globals: dict[str, Any] | None =
 
     if origin:
         origin = resolve_forwardrefs(origin, _globals=_globals, _locals=_locals)
-        args = [resolve_forwardrefs(arg, _globals=_globals, _locals=_locals) for arg in args]
+        args = tuple(
+            [
+                resolve_forwardrefs(arg, _globals=_globals, _locals=_locals)
+                for arg in args
+            ]
+        )
 
         # Workaround for UnionType not allowing programatic construction
         if origin == UnionType:
-            return Union[*args] # type: ignore
+            return Union[*args]  # type: ignore
 
         return origin[*args]
 
     return eval_type_lenient(current_type, _globals or globals(), _locals or locals())
 
-def yield_all_subtypes(model: Type[BaseModel], _globals: dict[str, Any] | None = None, _locals: dict[str, Any] | None = None):
+
+def yield_all_subtypes(
+    model: Type[BaseModel],
+    _globals: dict[str, Any] | None = None,
+    _locals: dict[str, Any] | None = None,
+):
     """
     Given a model declaration, yield all of its subtypes. This is useful to determine whether
     a nested model might include a given subtype.
@@ -60,7 +85,7 @@ def yield_all_subtypes(model: Type[BaseModel], _globals: dict[str, Any] | None =
     """
 
     # Track the models we've already validated to avoid circular dependencies
-    already_validated : set[Type[BaseModel]] = set()
+    already_validated: set[Type[BaseModel]] = set()
 
     def validate_types(current_type: type):
         nonlocal already_validated
@@ -92,7 +117,7 @@ def yield_all_subtypes(model: Type[BaseModel], _globals: dict[str, Any] | None =
                         yield from validate_types(arg)
 
         elif is_dataclass(current_type):
-            for field in fields(current_type):
-                yield from validate_types(field.type)
+            for dataclass_definition in fields(current_type):
+                yield from validate_types(dataclass_definition.type)
 
     yield from validate_types(model)

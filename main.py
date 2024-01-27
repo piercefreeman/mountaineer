@@ -21,41 +21,6 @@ class APIRouter:
 
 router = APIRouter()
 
-# TODO: Fix unsafe_hash / remove it
-@dataclass(unsafe_hash=True)
-class FieldClassDefinition:
-    key: str
-    field_definition: FieldInfo
-
-
-@dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
-class ReturnModelMetaclass(ModelMetaclass):
-    # def __new__(
-    #     mcs,
-    #     cls_name: str,
-    #     bases: tuple[type[Any], ...],
-    #     namespace: dict[str, Any],
-    #     __pydantic_generic_metadata__: PydanticGenericMetadata | None = None,
-    #     __pydantic_reset_parent_namespace__: bool = True,
-    #     _create_model_module: str | None = None,
-    #     **kwargs: Any,
-    # ) -> type:
-    if not TYPE_CHECKING:  # pragma: no branch
-        # Following the lead of the pydantic superclass, we wrap with a non-TYPE_CHECKING
-        # block: "otherwise mypy allows arbitrary attribute access""
-        def __getattr__(self, key: str) -> Any:
-            try:
-                return super().__getattr__(key)
-            except AttributeError:
-                # Determine if this field is defined within the spec
-                # If so, return it
-                if key in self.model_fields:
-                    return FieldClassDefinition(key, self.model_fields[key])
-                raise
-
-class ReturnModel(BaseModel, metaclass=ReturnModelMetaclass):
-    pass
-
 class OtherObject(BaseModel):
     object_variable: str
 

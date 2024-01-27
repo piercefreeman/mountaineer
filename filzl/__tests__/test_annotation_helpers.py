@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel
 from filzl.annotation_helpers import yield_all_subtypes
 
+
 def test_yield_all_subtypes():
     class SubModel(BaseModel):
         sub_a: int
