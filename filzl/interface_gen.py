@@ -53,27 +53,14 @@ class OpenAPIProperty(BaseModel):
                 return obj
         return hash(json.dumps(sort_json(self.model_dump())))
 
-def validate_typescript_candidate(
-    model: Type[BaseModel]
-):
-    """
-    JSON only supports some types, so we need to validate that the given model not only
-    is valid in Python but will also be valid when serialized over the wire.
-
-    """
-    for typehint in yield_all_subtypes(model):
-        origin = get_origin(typehint)
-        args = get_args(typehint)
-        if origin and origin in {dict, Dict}:
-            # We only support keys that are strings
-            if args and not issubclass(args[0], str):
-                raise ValueError(f"Key must be a string for JSON dictionary serialization. Received `{typehint}`.")
-
 class OpenAPISchema(OpenAPIProperty):
     defs : dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
 
 class OpenAPIToTypeScriptConverter:
-    def convert(self, openapi_spec: dict[str, Any]):
+    def convert(self, model: Type[BaseModel]):
+        self.validate_typescript_candidate(model)
+
+        openapi_spec = model.model_json_schema()
         print("RAW SPEC", openapi_spec)
         schema = OpenAPISchema(**openapi_spec)
         print("PARSED SPEC", schema)
@@ -143,9 +130,10 @@ class OpenAPIToTypeScriptConverter:
                 for sub_prop in prop.anyOf:
                     yield from walk_array_types(sub_prop)
             elif prop.additionalProperties:
-                # OpenAPI doesn't specify the type of the keys, so we just use any
+                # OpenAPI doesn't specify the type of the keys since JSON forces them to be strings
+                # By the time we get to this function we should have called validate_typescript_candidate
                 sub_types = " | ".join(walk_array_types(prop.additionalProperties))
-                yield f"Record<any, {sub_types}>"
+                yield f"Record<str, {sub_types}>"
             elif prop.variable_type:
                 yield self.map_openapi_type_to_ts(prop.variable_type)
 
@@ -177,3 +165,17 @@ class OpenAPIToTypeScriptConverter:
         if not model.title:
             raise ValueError(f"Model must have a title to retrieve its typescript name: {model}")
         return model.title.replace(" ", "")
+
+    def validate_typescript_candidate(self, model: Type[BaseModel]):
+        """
+        JSON only supports some types, so we need to validate that the given model not only
+        is valid in Python but will also be valid when serialized over the wire.
+
+        """
+        for typehint in yield_all_subtypes(model):
+            origin = get_origin(typehint)
+            args = get_args(typehint)
+            if origin and origin in {dict, Dict}:
+                # We only support keys that are strings
+                if args and not issubclass(args[0], str):
+                    raise ValueError(f"Key must be a string for JSON dictionary serialization. Received `{typehint}`.")

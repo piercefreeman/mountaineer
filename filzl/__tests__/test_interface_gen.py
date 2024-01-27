@@ -1,4 +1,4 @@
-from filzl.interface_gen import OpenAPIToTypeScriptConverter, OpenAPISchema, validate_typescript_candidate
+from filzl.interface_gen import OpenAPIToTypeScriptConverter, OpenAPISchema
 from pydantic import BaseModel, Field, create_model
 import pytest
 
@@ -18,7 +18,7 @@ class MyModel(BaseModel):
 
 def test_basic_interface():
     converter = OpenAPIToTypeScriptConverter()
-    result = converter.convert(MyModel.model_json_schema())
+    result = converter.convert(MyModel)
     print(result)
 
     raise ValueError
@@ -72,7 +72,8 @@ def test_require_json_dictionaries():
     class ValidDictModel(BaseModel):
         value: dict[str, str]
 
-    validate_typescript_candidate(ValidDictModel)
+    converter = OpenAPIToTypeScriptConverter()
+    converter.validate_typescript_candidate(ValidDictModel)
 
     with pytest.raises(ValueError):
-        validate_typescript_candidate(InvalidDictModel)
+        converter.validate_typescript_candidate(InvalidDictModel)
