@@ -2,3 +2,4 @@ target
 *.ipynb
 *.ipynb_checkpoints
 *.pyc
+pyrightconfig.json
