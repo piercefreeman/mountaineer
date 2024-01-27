@@ -2,10 +2,10 @@
 Generator for TypeScript interfaces from OpenAPI specifications.
 """
 import json
-from typing import Any, Optional, Union, Iterator
+from typing import Any, Optional, Union, Iterator, Type, get_args, get_origin, Dict
 from pydantic import BaseModel, Field, model_validator
 from enum import StrEnum
-from filzl.annotation_helpers import get_value_by_alias
+from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
 
 
 class OpenAPISchemaType(StrEnum):
@@ -52,6 +52,22 @@ class OpenAPIProperty(BaseModel):
             else:
                 return obj
         return hash(json.dumps(sort_json(self.model_dump())))
+
+def validate_typescript_candidate(
+    model: Type[BaseModel]
+):
+    """
+    JSON only supports some types, so we need to validate that the given model not only
+    is valid in Python but will also be valid when serialized over the wire.
+
+    """
+    for typehint in yield_all_subtypes(model):
+        origin = get_origin(typehint)
+        args = get_args(typehint)
+        if origin and origin in {dict, Dict}:
+            # We only support keys that are strings
+            if args and not issubclass(args[0], str):
+                raise ValueError(f"Key must be a string for JSON dictionary serialization. Received `{typehint}`.")
 
 class OpenAPISchema(OpenAPIProperty):
     defs : dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
@@ -129,7 +145,7 @@ class OpenAPIToTypeScriptConverter:
             elif prop.additionalProperties:
                 # OpenAPI doesn't specify the type of the keys, so we just use any
                 sub_types = " | ".join(walk_array_types(prop.additionalProperties))
-                yield f"{{ [key: any]: {sub_types} }}"
+                yield f"Record<any, {sub_types}>"
             elif prop.variable_type:
                 yield self.map_openapi_type_to_ts(prop.variable_type)
 
