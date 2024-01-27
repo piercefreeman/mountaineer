@@ -19,9 +19,7 @@ class MyModel(BaseModel):
 def test_basic_interface():
     converter = OpenAPIToTypeScriptConverter()
     result = converter.convert(MyModel)
-    print(result)
-
-    raise ValueError
+    assert "interface MyModel {" in result
 
 def test_model_gathering():
     schema = OpenAPISchema(**MyModel.model_json_schema())
@@ -42,7 +40,7 @@ def test_model_gathering():
         (SubModel1, ["value: SubModel1"]),
         (list[SubModel1], ["value: Array<SubModel1>"]),
         (dict[str, SubModel1], ["value: Record<string, SubModel1>"]),
-        (dict[str, int], ["value: Record<string, int>"]),
+        (dict[str, int], ["value: Record<string, number>"]),
         ("SubModel1", ["value: SubModel1"])
     ]
 )

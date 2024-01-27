@@ -20,6 +20,7 @@ class OpenAPISchemaType(StrEnum):
 
 class OpenAPIProperty(BaseModel):
     title: str | None = None
+    description: str | None = None
     properties: dict[str, "OpenAPIProperty"] = {}
     additionalProperties: Optional["OpenAPIProperty"] = None
     required: list[str] = []
@@ -133,7 +134,7 @@ class OpenAPIToTypeScriptConverter:
                 # OpenAPI doesn't specify the type of the keys since JSON forces them to be strings
                 # By the time we get to this function we should have called validate_typescript_candidate
                 sub_types = " | ".join(walk_array_types(prop.additionalProperties))
-                yield f"Record<str, {sub_types}>"
+                yield f"Record<{self.map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
             elif prop.variable_type:
                 yield self.map_openapi_type_to_ts(prop.variable_type)
 
@@ -143,6 +144,11 @@ class OpenAPIToTypeScriptConverter:
 
             annotation_str = " | ".join(set(walk_array_types(prop_details)))
             ts_type = ts_type.format(types=annotation_str) if ts_type else annotation_str
+
+            if prop_details.description:
+                fields.append(f"  /**")
+                fields.append(f"   * {prop_details.description}")
+                fields.append(f"   */")
 
             fields.append(f"  {prop_name}{'?' if not is_required else ''}: {ts_type};")
 

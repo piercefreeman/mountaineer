@@ -3,6 +3,7 @@ from inspect import isclass
 from pydantic import BaseModel
 from typing import Any, ForwardRef, Type, get_args, get_origin, Union, TypeVar, Optional, Type, cast, get_type_hints, _eval_type
 from pydantic._internal._typing_extra import eval_type_lenient
+from types import UnionType
 
 def get_value_by_alias(model: BaseModel | dict[str, Any], alias: str):
     """
@@ -38,6 +39,11 @@ def resolve_forwardrefs(current_type: type, *, _globals: dict[str, Any] | None =
     if origin:
         origin = resolve_forwardrefs(origin, _globals=_globals, _locals=_locals)
         args = [resolve_forwardrefs(arg, _globals=_globals, _locals=_locals) for arg in args]
+
+        # Workaround for UnionType not allowing programatic construction
+        if origin == UnionType:
+            return Union[*args] # type: ignore
+
         return origin[*args]
 
     return eval_type_lenient(current_type, _globals or globals(), _locals or locals())
