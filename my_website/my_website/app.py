@@ -13,5 +13,5 @@ app = controller.app
 # without the server having to run / all the associated warmup logic
 # This is just a convenient place to put it because it's called once every time uvicorn detects that
 # there is a client side change.
-client_builder = ClientBuilder()
-client_builder.build(controller, get_view_path(""))
+client_builder = ClientBuilder(controller, get_view_path(""))
+client_builder.build()

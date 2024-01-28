@@ -3,6 +3,7 @@ Generator for TypeScript interfaces from OpenAPI specifications.
 """
 import json
 from typing import Optional, Iterator, Type, get_args, get_origin, Dict
+from inflection import camelize
 from pydantic import BaseModel, Field, model_validator
 from enum import StrEnum
 from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
@@ -188,7 +189,7 @@ class OpenAPIToTypeScriptConverter:
             raise ValueError(
                 f"Model must have a title to retrieve its typescript name: {model}"
             )
-        return model.title.replace(" ", "")
+        return camelize(model.title)
 
     def validate_typescript_candidate(self, model: Type[BaseModel]):
         """

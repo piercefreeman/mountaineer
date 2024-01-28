@@ -20,14 +20,20 @@ class FunctionMetadata(BaseModel):
     function_name: str
     action_type: FunctionActionType
 
-    # Sideeffect type
+    # Specified for sideeffects, where all data shouldn't be update. Limits the
+    # update to fields defined in this tuple.
     reload_states: tuple[FieldClassDefinition, ...] | None = None
 
-    # Passthrough type
+    # Defines the data schema returned from the function that will be included in the
+    # response payload sent to the client. This might be used for either passthrough
+    # or sideeffect
     passthrough_model: Type[BaseModel] | None = None
 
-    # Render type
+    # Render type, defines the data model that is returned by the render typehint
     render_model: Type[RenderBase] | None = None
+
+    # Inserted by the render decorator
+    url: str | None = None
 
 
 METADATA_ATTRIBUTE = "_filzl_metadata"
@@ -96,12 +102,36 @@ def fuse_metadata_to_response_typehint(
 
     print("RETURN FIELDS", passthrough_fields, sideeffect_fields)
 
+    base_response_name = camelize(metadata.function_name) + "Response"
+    base_response_params = {}
+
+    if passthrough_fields:
+        base_response_params["passthrough"] = (
+            create_model(
+                base_response_name + "Passthrough",
+                **{
+                    field_name: (field_definition.annotation, field_definition) # type: ignore
+                    for field_name, field_definition in passthrough_fields.items()
+                },
+            ),
+            FieldInfo(alias="passthrough"),
+        )
+
+    if sideeffect_fields:
+        base_response_params["sideeffect"] = (
+            create_model(
+                base_response_name + "SideEffect",
+                **{
+                    field_name: (field_definition.annotation, field_definition) # type: ignore
+                    for field_name, field_definition in sideeffect_fields.items()
+                },
+            ),
+            FieldInfo(alias="sideeffect"),
+        )
+
     return create_model(
-        camelize(metadata.function_name) + "Response",
-        **{
-            field_name: (field_definition.annotation, field_definition) # type: ignore
-            for field_name, field_definition in chain(passthrough_fields.items(), sideeffect_fields.items())
-        },
+        base_response_name,
+        **base_response_params,
     )
 
 def sideeffect(*args, **kwargs):
@@ -118,7 +148,7 @@ def sideeffect(*args, **kwargs):
         reload: tuple[FieldClassDefinition, ...] | None = None,
         response_model: Type[BaseModel] | None = None,
     ):
-        def wrapper(func: MethodType):
+        def wrapper(func: Callable):
             @wraps(func)
             def inner(self, *func_args, **func_kwargs):
                 return func(self, *func_args, **func_kwargs)
@@ -150,7 +180,7 @@ def passthrough(*args, **kwargs):
     """
 
     def decorator_with_args(response_model: Type[BaseModel] | None):
-        def wrapper(func: MethodType):
+        def wrapper(func: Callable):
             @wraps(func)
             def inner(self, *func_args, **func_kwargs):
                 return func(self, *func_args, **func_kwargs)

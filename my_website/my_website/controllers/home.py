@@ -13,6 +13,8 @@ class HomeRender(RenderBase):
 class IncrementCountRequest(BaseModel):
     count: int
 
+class GetExternalDataResponse(BaseModel):
+    first_name: str
 
 class HomeController(BaseController):
     # view_path = "/testing/[post_id]/mytemplate.tsx"
@@ -26,7 +28,7 @@ class HomeController(BaseController):
     def increment_count(self, payload: IncrementCountRequest):
         self.global_count += payload.count
 
-    @passthrough
+    @passthrough(response_model=GetExternalDataResponse)
     def get_external_data(self):
         # Execute a server action without automatically reloading the server state
         # Typically side-effects are the recommended way to get static data to the client

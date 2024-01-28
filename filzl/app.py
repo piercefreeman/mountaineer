@@ -24,8 +24,7 @@ class AppController:
         self.app = FastAPI()
         self.controllers: list[ControllerDefinition] = []
 
-        self.internal_api_router = APIRouter()
-        self.app.include_router(self.internal_api_router, prefix="/internal/api")
+        self.internal_api_prefix = "/internal/api"
 
     def register(self, controller: BaseController):
         """
@@ -68,21 +67,28 @@ class AppController:
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
+        controller_url_prefix = f"{self.internal_api_prefix}/{underscore(controller.__class__.__name__)}"
         for _, fn, metadata in controller._get_client_functions():
             # We need to delay adding the typehint for each function until we are here, adding the view. Since
             # decorators run before the class is actually mounted, they're isolated from the larger class/controller
             # context that the action function is being defined within. Here since we have a global view
             # of the controller (render function + actions) this becomes trivial
             fn.__annotations__["return"] = fuse_metadata_to_response_typehint(metadata, return_model)
+
+            metadata.url = f"{controller_url_prefix}/{metadata.function_name.strip('/')}"
+            print(f"Registering: {metadata.url}")
+
             controller_api.post(f"/{metadata.function_name}")(fn)
+
+        # Originally we tried implementing a sub-router for the internal API that was registered in the __init__
+        # But the application greedily copies all contents from the router when it's added via `include_router`, so this
+        # resulted in our endpoints not being seen even after calls to `.register(). We therefore attach the new
+        # controller router directly to the application, since this will trigger a new copy of the routes.
         self.app.include_router(
             controller_api,
-            prefix=f"/{underscore(self.get_controller_name(controller))}",
+            prefix=controller_url_prefix,
         )
 
         self.controllers.append(
             ControllerDefinition(controller=controller, router=controller_api)
         )
-
-    def get_controller_name(self, controller: BaseController):
-        return controller.__class__.__name__
