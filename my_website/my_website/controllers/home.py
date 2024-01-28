@@ -22,12 +22,6 @@ class HomeController(BaseController):
     def __init__(self):
         self.global_count = 0
 
-    def render(self) -> HomeRender:
-        return HomeRender(
-            first_name="John",
-            current_count=self.global_count,
-        )
-
     @sideeffect
     def increment_count(self, payload: IncrementCountRequest):
         self.global_count += payload.count
@@ -39,4 +33,10 @@ class HomeController(BaseController):
         # but sometimes you need to get data from a third-party API or gated resource
         return dict(
             first_name="John",
+        )
+
+    def render(self) -> HomeRender:
+        return HomeRender(
+            first_name="John",
+            current_count=self.global_count,
         )

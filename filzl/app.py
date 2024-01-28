@@ -2,9 +2,17 @@ from fastapi import APIRouter, FastAPI
 from filzl.controller import BaseController
 from inflection import underscore
 from functools import wraps
-from filzl.sideeffects import init_function_metadata, FunctionActionType
+from filzl.sideeffects import init_function_metadata, fuse_metadata_to_response_typehint, FunctionActionType
 from filzl.render import RenderBase
+from pydantic import BaseModel
 
+class ControllerDefinition(BaseModel):
+    controller: BaseController
+    router: APIRouter
+
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }
 
 class AppController:
     """
@@ -14,7 +22,7 @@ class AppController:
 
     def __init__(self):
         self.app = FastAPI()
-        self.controllers: list[BaseController] = []
+        self.controllers: list[ControllerDefinition] = []
 
         self.internal_api_router = APIRouter()
         self.app.include_router(self.internal_api_router, prefix="/internal/api")
@@ -23,8 +31,6 @@ class AppController:
         """
         Register controller
         """
-        self.controllers.append(controller)
-
         # We need to passthrough the API of the render function to the FastAPI router so it's called properly
         # with the dependency injection kwargs
         @wraps(controller.render)
@@ -63,10 +69,19 @@ class AppController:
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
         for _, fn, metadata in controller._get_client_functions():
+            # We need to delay adding the typehint for each function until we are here, adding the view. Since
+            # decorators run before the class is actually mounted, they're isolated from the larger class/controller
+            # context that the action function is being defined within. Here since we have a global view
+            # of the controller (render function + actions) this becomes trivial
+            fn.__annotations__["return"] = fuse_metadata_to_response_typehint(metadata, return_model)
             controller_api.post(f"/{metadata.function_name}")(fn)
         self.app.include_router(
             controller_api,
             prefix=f"/{underscore(self.get_controller_name(controller))}",
+        )
+
+        self.controllers.append(
+            ControllerDefinition(controller=controller, router=controller_api)
         )
 
     def get_controller_name(self, controller: BaseController):

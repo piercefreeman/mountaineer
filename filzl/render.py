@@ -1,11 +1,12 @@
 from pydantic import BaseModel
 from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import FieldInfo, Field
-from typing import Any, TYPE_CHECKING
+from typing import Any, TYPE_CHECKING, Type
 from typing_extensions import dataclass_transform
 
 
 class FieldClassDefinition(BaseModel):
+    root_model: Type[BaseModel]
     key: str
     field_definition: FieldInfo
 
@@ -26,7 +27,7 @@ class ReturnModelMetaclass(ModelMetaclass):
                 # Determine if this field is defined within the spec
                 # If so, return it
                 if key in self.model_fields:
-                    return FieldClassDefinition(key, self.model_fields[key])
+                    return FieldClassDefinition(self, key, self.model_fields[key])
                 raise
 
 
