@@ -115,23 +115,23 @@ class OpenAPIToTypescriptActionConverter:
     based on the defined endpoint OpenAPI specs.
 
     """
-
-    def __init__(self):
-        pass
-
-    def convert(self, openapi: dict[str, Any]) -> dict[str, str]:
+    def convert(self, openapi: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
         """
         :return {function_name: function_body}
 
         """
         schema = OpenAPIDefinition(**openapi)
+        output_strings : dict[str, str] = {}
+        all_required_types : set[str] = set()
         for url, endpoint_definition in schema.paths.items():
             for action, method_name in zip(
                 endpoint_definition.actions,
                 self.get_method_names(url, endpoint_definition.actions),
             ):
-                print("PAYLOAD", self.build_action(url, action, method_name))
-        raise ValueError
+                rendered_str, required_types = self.build_action(url, action, method_name)
+                output_strings[method_name] = rendered_str
+                all_required_types.update(required_types)
+        return output_strings, list(all_required_types)
 
     def build_action(self, url: str, action: ActionDefinition, method_name: str):
         """
@@ -160,22 +160,23 @@ class OpenAPIToTypescriptActionConverter:
         }
         """
         arguments, response_types = self.build_action_payload(url, action)
-        parameters = self.build_action_parameters(action)
+        parameters, request_types = self.build_action_parameters(action)
 
         lines : list[str] = []
 
         lines.append(
-            f"public static {method_name}({parameters}): Promise<{' | '.join(response_types)}> {{\n"
+            f"export const {method_name} = ({parameters}): Promise<{' | '.join(response_types)}> => {{\n"
             + "return __request(\n"
             + arguments
             + "\n);\n"
             + "}"
         )
-        return "\n".join(lines)
+        return "\n".join(lines), list(set(request_types + response_types))
 
     def build_action_parameters(self, action: ActionDefinition):
         parameters_dict : dict[Any, Any] = {}
         typehint_dict : dict[Any, Any] = {}
+        request_types : list[str] = []
 
         for parameter in action.parameters:
             parameters_dict[parameter.name] = TSLiteral(parameter.name)
@@ -187,15 +188,16 @@ class OpenAPIToTypescriptActionConverter:
             model_name = action.requestBody.content_schema.schema_ref.ref.split("/")[-1]
             parameters_dict["requestBody"] = TSLiteral("requestBody")
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
+            request_types.append(model_name)
 
         if not parameters_dict:
             # Empty query parameter
-            return ""
+            return "", request_types
 
         parameters_str = python_payload_to_typescript(parameters_dict)
         typehint_str = python_payload_to_typescript(typehint_dict)
 
-        return f"{parameters_str}: {typehint_str}"
+        return f"{parameters_str}: {typehint_str}", request_types
 
     def build_action_payload(self, url: str, action: ActionDefinition):
         # Since our typescript common functions have variable inputs here, it's cleaner
@@ -233,6 +235,11 @@ class OpenAPIToTypescriptActionConverter:
                 ] = self.get_typescript_name_from_content_definition(
                     response_definition.content_schema
                 )
+
+        # Remove the optional keys that don't have any values
+        for optional_parameter in ["errors", "path"]:
+            if not common_params[optional_parameter]:
+                del common_params[optional_parameter]
 
         return python_payload_to_typescript(common_params), response_types
 

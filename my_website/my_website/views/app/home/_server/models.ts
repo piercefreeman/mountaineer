@@ -6,9 +6,8 @@ export interface GetExternalDataResponsePassthrough {
   first_name: string;
 }
 
-export interface HomeRender {
-  first_name: string;
-  current_count: number;
+export interface HTTPValidationError {
+  detail?: Array<ValidationError>;
 }
 
 export interface IncrementCountOnlyResponse {
@@ -19,6 +18,10 @@ export interface IncrementCountOnlyResponseSideEffect {
   current_count: number;
 }
 
+export interface IncrementCountRequest {
+  count: number;
+}
+
 export interface IncrementCountResponse {
   sideeffect: IncrementCountResponseSideEffect;
 }
@@ -26,4 +29,10 @@ export interface IncrementCountResponse {
 export interface IncrementCountResponseSideEffect {
   first_name: string;
   current_count: number;
+}
+
+export interface ValidationError {
+  loc: Array<string | number>;
+  msg: string;
+  type: string;
 }

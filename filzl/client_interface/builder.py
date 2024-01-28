@@ -1,9 +1,9 @@
 from fastapi import APIRouter
-from filzl.app import AppController
+from filzl.app import AppController, ControllerDefinition
 from pathlib import Path
 from filzl.actions import get_function_metadata
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
-from filzl.client_interface.build_action import OpenAPIToTypescriptActionConverter
+from filzl.client_interface.build_action import OpenAPIToTypescriptActionConverter, OpenAPIDefinition
 from collections import defaultdict
 from inflection import camelize, underscore
 from inspect import isclass
@@ -56,38 +56,18 @@ class ClientBuilder:
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
 
-            metadata = get_function_metadata(controller.render)
-            print("SHOULD BUILD", controller, controller.view_path, metadata)
+            openapi_spec = self.openapi_from_controller(controller_definition)
+            base = OpenAPIDefinition(**openapi_spec)
 
-            # Create the managed code directory if it doesn't exist
-            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
-
-            # Build the server state models, enforce unique schema names so we avoid interface duplicates
-            # if they're defined in multiple places
-            schemas: dict[str, str] = {}
-
-            # We have to separately handle the model rendering because we intentionally
-            # strip it from the OpenAPI payload. It's an internal detail, not one that's exposed
-            # explicitly as part of the API.
-            if metadata.render_model:
-                schemas = {
-                    **schemas,
-                    **self.openapi_schema_converter.convert(metadata.render_model),
-                }
-
-            for _, fn, _ in controller._get_client_functions():
-                return_model = fn.__annotations__.get("return")
-                if (
-                    return_model
-                    and isclass(return_model)
-                    and issubclass(return_model, BaseModel)
-                ):
-                    schemas = {
-                        **schemas,
-                        **self.openapi_schema_converter.convert(return_model),
-                    }
+            schemas : dict[str, str] = {}
+            for schema_name, component in base.components.schemas.items():
+                schemas[schema_name] = self.openapi_schema_converter.convert_schema_to_interface(
+                    component,
+                    base=base,
+                )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
+            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
             (managed_code_dir / "models.ts").write_text(
                 "\n\n".join(
                     [
@@ -107,27 +87,20 @@ class ClientBuilder:
             controller = controller_definition.controller
             managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
 
-            # Small hack to get the full path to the root of the server. By default the controller just
-            # has the path relative to the controller API
-            root_router = APIRouter()
-            root_router.include_router(
-                controller_definition.router, prefix=controller_definition.url_prefix
+            openapi_raw = self.openapi_from_controller(controller_definition)
+            output_schemas, required_types = self.openapi_action_converter.convert(openapi_raw)
+
+            chunks : list[str] = []
+
+            # Step 1: Requirements
+            chunks.append(
+                "import { __request } from '../server_context'\n"
+                + f"import type {{ {', '.join(required_types)} }} from './models'"
             )
-            openapi_raw = get_openapi(title="", version="", routes=root_router.routes)
-            self.openapi_action_converter.convert(openapi_raw)
-            raise ValueError
 
-            components: list[str] = []
+            chunks += output_schemas.values()
 
-            # Step 1: Imports
-            components.append("import type * as ControllerTypes from './models';\n")
-
-            # Step 2: Definitions for the actions
-            for _, fn, metadata in controller._get_client_functions():
-                pass
-
-            # We put in one big models.ts file to enable potentially cyclical dependencies
-            (managed_code_dir / "actions.ts").write_text("\n\n".join(components))
+            (managed_code_dir / "actions.ts").write_text("\n\n".join(chunks))
 
     def generate_global_model_imports(self):
         """
@@ -383,3 +356,15 @@ class ClientBuilder:
         """
         render_metadata = get_function_metadata(controller.render)
         return camelize(render_metadata.render_model.__name__)
+
+    def openapi_from_controller(self, controller_definition: ControllerDefinition):
+        """
+        Small hack to get the full path to the root of the server. By default the controller just
+        has the path relative to the controller API.
+
+        """
+        root_router = APIRouter()
+        root_router.include_router(
+            controller_definition.router, prefix=controller_definition.url_prefix
+        )
+        return get_openapi(title="", version="", routes=root_router.routes)

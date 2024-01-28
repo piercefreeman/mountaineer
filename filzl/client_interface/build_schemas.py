@@ -54,6 +54,12 @@ class OpenAPISchema(OpenAPIProperty):
 
 
 class OpenAPIToTypescriptSchemaConverter:
+    """
+    Transform a pydantic.BaseModel into a TypeScript interface, by using
+    OpenAPI as an intermediate layer. This also allows client callers to support
+    generating interfaces from other OpenAPI-compliant schemas.
+
+    """
     def __init__(self, export_interface: bool = False):
         self.export_interface = export_interface
 
@@ -118,7 +124,7 @@ class OpenAPIToTypescriptSchemaConverter:
                     ) from e
         return current_obj
 
-    def convert_schema_to_interface(self, model: OpenAPIProperty, base: OpenAPISchema):
+    def convert_schema_to_interface(self, model: OpenAPIProperty, base: BaseModel):
         fields = []
 
         # We have to support arrays with one and multiple values
