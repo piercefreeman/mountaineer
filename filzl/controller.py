@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from fastapi.responses import HTMLResponse
 from filzl.render import RenderBase
 from inspect import ismethod, getmembers
-from filzl.sideeffects import (
+from filzl.actions import (
     get_function_metadata,
     FunctionMetadata,
     FunctionActionType,

@@ -1,29 +1,29 @@
-interface GetExternalDataResponse {
+export interface GetExternalDataResponse {
   passthrough: GetExternalDataResponsePassthrough;
 }
 
-interface GetExternalDataResponsePassthrough {
+export interface GetExternalDataResponsePassthrough {
   first_name: string;
 }
 
-interface HomeRender {
+export interface HomeRender {
   first_name: string;
   current_count: number;
 }
 
-interface IncrementCountOnlyResponse {
+export interface IncrementCountOnlyResponse {
   sideeffect: IncrementCountOnlyResponseSideEffect;
 }
 
-interface IncrementCountOnlyResponseSideEffect {
+export interface IncrementCountOnlyResponseSideEffect {
   current_count: number;
 }
 
-interface IncrementCountResponse {
+export interface IncrementCountResponse {
   sideeffect: IncrementCountResponseSideEffect;
 }
 
-interface IncrementCountResponseSideEffect {
+export interface IncrementCountResponseSideEffect {
   first_name: string;
   current_count: number;
 }

@@ -1,12 +1,10 @@
 from inspect import ismethod
 from filzl.render import FieldClassDefinition, RenderBase
-from typing import Callable, Type, Any
-from functools import wraps
+from typing import Callable, Type
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 from enum import Enum
 from inflection import camelize
-from typing import overload
 
 
 class FunctionActionType(Enum):
@@ -33,6 +31,7 @@ class FunctionMetadata(BaseModel):
 
     # Inserted by the render decorator
     url: str | None = None
+    return_model: Type[BaseModel] | None = None
 
 
 METADATA_ATTRIBUTE = "_filzl_metadata"
@@ -134,96 +133,3 @@ def fuse_metadata_to_response_typehint(
         **base_response_params,  # type: ignore
     )
     return model
-
-
-@overload
-def sideeffect(
-    # We need to typehint reload to be Any, because during typechecking our Model.attribute will just
-    # yield whatever the typehint of that field is. Only at runtime does it become a FieldClassDefinition
-    reload: tuple[Any, ...] | None = None,
-    response_model: Type[BaseModel] | None = None,
-) -> Callable[[Callable], Callable]:
-    ...
-
-
-@overload
-def sideeffect(func: Callable) -> Callable:
-    ...
-
-
-def sideeffect(*args, **kwargs):
-    """
-    Mark a function as causing a sideeffect to the data. This will force a reload of the full (or partial) server state
-    and sync these changes down to the client page.
-
-    :reload: If provided, will ONLY reload these fields. By default will reload all fields. Otherwise, why
-        specify a sideeffect at all?
-
-    """
-
-    def decorator_with_args(
-        reload: tuple[FieldClassDefinition, ...] | None = None,
-        response_model: Type[BaseModel] | None = None,
-    ):
-        def wrapper(func: Callable):
-            @wraps(func)
-            def inner(self, *func_args, **func_kwargs):
-                return func(self, *func_args, **func_kwargs)
-
-            metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
-            metadata.reload_states = reload
-            metadata.passthrough_model = response_model
-            return inner
-
-        return wrapper
-
-    if args and callable(args[0]):
-        # It's used as @sideeffect without arguments
-        func = args[0]
-        return decorator_with_args()(func)
-    else:
-        # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(*args, **kwargs)
-
-
-@overload
-def passthrough(
-    response_model: Type[BaseModel] | None = None,
-) -> Callable[[Callable], Callable]:
-    ...
-
-
-@overload
-def passthrough(func: Callable) -> Callable:
-    ...
-
-
-def passthrough(*args, **kwargs):
-    """
-    By default, we mask out function return values to avoid leaking any unintended data to client applications. This
-    decorator marks a function .
-
-    :response_model: Like in FastAPI, the response model to use for this endpoint. If not provided, will
-        try to convert the response object into the proper JSON response as-is.
-
-    """
-
-    def decorator_with_args(response_model: Type[BaseModel] | None):
-        def wrapper(func: Callable):
-            @wraps(func)
-            def inner(self, *func_args, **func_kwargs):
-                return func(self, *func_args, **func_kwargs)
-
-            metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
-            metadata.passthrough_model = response_model
-            return inner
-
-        return wrapper
-
-    if args and callable(args[0]):
-        # It's used as @sideeffect without arguments
-        func = args[0]
-        return decorator_with_args(None)(func)
-    else:
-        # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(*args, **kwargs)

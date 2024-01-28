@@ -1,6 +1,6 @@
 from filzl.app import AppController
 from pathlib import Path
-from filzl.sideeffects import get_function_metadata
+from filzl.actions import get_function_metadata, parse_fastapi_function
 from filzl.client_interface.build_schemas import OpenAPIToTypeScriptConverter
 from collections import defaultdict
 from inflection import camelize, underscore
@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
 from filzl.annotation_helpers import make_optional_model
-
+from fastapi.openapi.utils import get_openapi
 
 class ClientBuilder:
     """
@@ -18,7 +18,9 @@ class ClientBuilder:
     """
 
     def __init__(self, app: AppController, view_root: Path):
-        self.openapi_schema_converter = OpenAPIToTypeScriptConverter()
+        self.openapi_schema_converter = OpenAPIToTypeScriptConverter(
+            export_interface=True
+        )
         self.app = app
         self.view_root = view_root
 
@@ -29,10 +31,13 @@ class ClientBuilder:
         # to build the client code
         self.validate_unique_paths()
 
+        # TODO: Copy over the static files that don't depend on client code
+
         # The order of these generators don't particularly matter since most TSX linters
         # won't refresh until they're all complete. However, this ordering better aligns
         # with semantic dependencies so we keep the linearity where possible.
         self.generate_model_definitions()
+        self.generate_action_definitions()
         self.generate_global_model_imports()
         self.generate_server_provider()
         self.generate_view_servers()
@@ -87,6 +92,42 @@ class ClientBuilder:
                     ]
                 )
             )
+
+    def generate_action_definitions(self):
+        """
+        Generate the actions for each controller. This should correspond the actions that are accessible
+        via the OpenAPI schema and the internal router.
+
+        """
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+
+            print("OPENAPI", get_openapi(title="", version="", routes=controller_definition.router.routes))
+            raise ValueError
+
+            components: list[str] = []
+
+            # Step 1: Imports
+            components.append("import type * as ControllerTypes from './models';\n")
+
+            # Step 2: Definitions for the actions
+            for _, fn, metadata in controller._get_client_functions():
+                if not metadata.return_model:
+                    continue
+
+                # We need to determine the request parameters that clients will need to input
+                # for this endpoint
+                parsed_spec = parse_fastapi_function(fn, metadata.url)
+
+                # Implement
+                components.append(
+                    f"export const {metadata.function_name} = async (payload) : Promise<ControllerTypes.{metadata.return_model.__name__}> => {{\n"
+                    + "}"
+                )
+
+            # We put in one big models.ts file to enable potentially cyclical dependencies
+            (managed_code_dir / "actions.ts").write_text("\n\n".join(components))
 
     def generate_global_model_imports(self):
         """
@@ -245,7 +286,7 @@ class ClientBuilder:
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update
-                + "const setControllerState = (payload: OptionalInterface) => {\n"
+                + f"const setControllerState = (payload: {optional_model.__name__}) => {{\n"
                 + "setServerState((state) => ({\n"
                 + "...state,\n"
                 + f"{self.get_controller_global_state(controller)}: {{\n"

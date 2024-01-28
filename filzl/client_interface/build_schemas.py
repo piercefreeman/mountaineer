@@ -63,6 +63,9 @@ class OpenAPISchema(OpenAPIProperty):
 
 
 class OpenAPIToTypeScriptConverter:
+    def __init__(self, export_interface: bool = False):
+        self.export_interface = export_interface
+
     def convert(self, model: Type[BaseModel]):
         self.validate_typescript_candidate(model)
 
@@ -168,7 +171,12 @@ class OpenAPIToTypeScriptConverter:
             fields.append(f"  {prop_name}{'?' if not is_required else ''}: {ts_type};")
 
         interface_body = "\n".join(fields)
-        return f"interface {self.get_typescript_interface_name(model)} {{\n{interface_body}\n}}"
+        interface_full = f"interface {self.get_typescript_interface_name(model)} {{\n{interface_body}\n}}"
+
+        if self.export_interface:
+            interface_full = f"export {interface_full}"
+
+        return interface_full
 
     def map_openapi_type_to_ts(self, openapi_type: OpenAPISchemaType):
         mapping = {

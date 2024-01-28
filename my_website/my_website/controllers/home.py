@@ -1,5 +1,5 @@
 from filzl.render import RenderBase
-from filzl.sideeffects import sideeffect, passthrough
+from filzl.actions import sideeffect, passthrough
 from filzl.controller import ControllerBase
 from my_website.views import get_view_path
 from pydantic import BaseModel

@@ -2,14 +2,14 @@ import React, { useContext } from 'react';
 import { ServerContext } from '../../../_server/server';
 
 
-interface HomeRenderOptional {
+export interface HomeRenderOptional {
   first_name?: string;
   current_count?: number;
 }
 
 export const useServer = () => {
 const { serverState, setServerState } = useContext(ServerContext);
-const setControllerState = (payload: OptionalInterface) => {
+const setControllerState = (payload: HomeRenderOptional) => {
 setServerState((state) => ({
 ...state,
 HOME_CONTROLLER: {

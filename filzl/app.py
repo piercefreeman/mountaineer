@@ -2,7 +2,7 @@ from fastapi import APIRouter, FastAPI
 from filzl.controller import ControllerBase
 from inflection import underscore
 from functools import wraps
-from filzl.sideeffects import (
+from filzl.actions import (
     init_function_metadata,
     fuse_metadata_to_response_typehint,
     FunctionActionType,
@@ -85,9 +85,10 @@ class AppController:
             # decorators run before the class is actually mounted, they're isolated from the larger class/controller
             # context that the action function is being defined within. Here since we have a global view
             # of the controller (render function + actions) this becomes trivial
-            fn.__annotations__["return"] = fuse_metadata_to_response_typehint(
+            metadata.return_model = fuse_metadata_to_response_typehint(
                 metadata, return_model
             )
+            fn.__annotations__["return"] = metadata.return_model
 
             metadata.url = (
                 f"{controller_url_prefix}/{metadata.function_name.strip('/')}"

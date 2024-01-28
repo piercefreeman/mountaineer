@@ -72,7 +72,7 @@ def resolve_forwardrefs(
 
 
 def yield_all_subtypes(
-    model: Type[BaseModel],
+    model: type,
     _globals: dict[str, Any] | None = None,
     _locals: dict[str, Any] | None = None,
 ):
@@ -89,7 +89,7 @@ def yield_all_subtypes(
     # Track the models we've already validated to avoid circular dependencies
     already_validated: set[Type[BaseModel]] = set()
 
-    def validate_types(current_type: type):
+    def resolve_types(current_type: type):
         nonlocal already_validated
 
         # Always echo back the current type to make sure that everything that we've processed
@@ -108,21 +108,21 @@ def yield_all_subtypes(
             for field_name, field in current_type.model_fields.items():
                 # Always field the full annotation, including ones with origins/args
                 if field.annotation:
-                    yield from validate_types(field.annotation)
+                    yield from resolve_types(field.annotation)
 
                 # In the case of generics, we also want to iterate over the subvalues
                 origin = get_origin(field.annotation)
                 args = get_args(field.annotation)
                 if origin:
-                    yield from validate_types(origin)
+                    yield from resolve_types(origin)
                     for arg in args:
-                        yield from validate_types(arg)
+                        yield from resolve_types(arg)
 
         elif is_dataclass(current_type):
             for dataclass_definition in fields(current_type):
-                yield from validate_types(dataclass_definition.type)
+                yield from resolve_types(dataclass_definition.type)
 
-    yield from validate_types(model)
+    yield from resolve_types(model)
 
 
 def make_optional_model(model: Type[BaseModel]):
