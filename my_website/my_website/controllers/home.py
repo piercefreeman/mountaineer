@@ -1,6 +1,6 @@
 from filzl.render import RenderBase
 from filzl.sideeffects import sideeffect, passthrough
-from filzl.controller import BaseController
+from filzl.controller import ControllerBase
 from my_website.views import get_view_path
 from pydantic import BaseModel
 
@@ -18,7 +18,7 @@ class GetExternalDataResponse(BaseModel):
     first_name: str
 
 
-class HomeController(BaseController):
+class HomeController(ControllerBase):
     # view_path = "/testing/[post_id]/mytemplate.tsx"
     url = "/"
     view_path = get_view_path("/app/home/page.tsx")

@@ -55,7 +55,6 @@ For easier development and static error checking for the frontend components, we
     }
     ```
 
-
 ## Design TODOs:
 
 - Global methods for getting the link to another page (should validate these links are actually valid at build-time)

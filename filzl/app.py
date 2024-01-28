@@ -1,5 +1,5 @@
 from fastapi import APIRouter, FastAPI
-from filzl.controller import BaseController
+from filzl.controller import ControllerBase
 from inflection import underscore
 from functools import wraps
 from filzl.sideeffects import (
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 
 class ControllerDefinition(BaseModel):
-    controller: BaseController
+    controller: ControllerBase
     router: APIRouter
 
     model_config = {
@@ -32,7 +32,7 @@ class AppController:
 
         self.internal_api_prefix = "/internal/api"
 
-    def register(self, controller: BaseController):
+    def register(self, controller: ControllerBase):
         """
         Register a new controller. This will:
             - Mount the html of the controller to the main application service

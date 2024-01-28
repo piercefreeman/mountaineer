@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pydantic import BaseModel
-from filzl.annotation_helpers import yield_all_subtypes
+from pydantic_core import PydanticUndefined
+from filzl.annotation_helpers import yield_all_subtypes, make_optional_model
 
 
 def test_yield_all_subtypes():
@@ -45,3 +46,20 @@ def test_yield_all_subtypes():
         # Origins
         list,
     }
+
+
+def test_make_optional_model():
+    class RequiredModel(BaseModel):
+        required_item: str
+
+    optional_model = make_optional_model(RequiredModel)
+
+    # Ensure our original model is unchanged
+    assert RequiredModel.model_fields["required_item"].default == PydanticUndefined
+
+    # Our new model should have the same fields as the original
+    # but with the required fields made optional
+    assert list(optional_model.model_fields.keys()) == list(
+        RequiredModel.model_fields.keys()
+    )
+    assert optional_model.model_fields["required_item"].default is None

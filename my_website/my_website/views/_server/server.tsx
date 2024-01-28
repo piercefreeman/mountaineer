@@ -2,7 +2,7 @@ import React, { useContext, useState, ReactNode } from 'react';
 import type * as ControllerTypes from './models';
 
 interface ServerState {
-  HOME_CONTROLLER?: ControllerTypes.HomeControllerHomeRender
+  HOME_CONTROLLER?: ControllerTypes.HOME_CONTROLLERHomeRender
 }
 
 export const ServerContext = useContext<{

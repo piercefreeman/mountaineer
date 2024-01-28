@@ -27,7 +27,11 @@ class ReturnModelMetaclass(ModelMetaclass):
                 # Determine if this field is defined within the spec
                 # If so, return it
                 if key in self.model_fields:
-                    return FieldClassDefinition(root_model=self, key=key, field_definition=self.model_fields[key])
+                    return FieldClassDefinition(
+                        root_model=self,
+                        key=key,
+                        field_definition=self.model_fields[key],
+                    )
                 raise
 
 

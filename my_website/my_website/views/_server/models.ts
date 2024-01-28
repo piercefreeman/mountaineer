@@ -1,1 +1,1 @@
-export type { HomeRender as HomeControllerHomeRender } from '../app/home/_server/models.ts'
+export type { HomeRender as HOME_CONTROLLERHomeRender } from '.././app/home/_server/models'

@@ -12,7 +12,7 @@ from typing import Iterable, Callable
 from pathlib import Path
 
 
-class BaseController(ABC):
+class ControllerBase(ABC):
     url: str
     view_path: str | Path
 
