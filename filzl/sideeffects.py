@@ -1,6 +1,6 @@
 from inspect import ismethod
 from filzl.render import FieldClassDefinition, RenderBase
-from typing import Callable, Type
+from typing import Callable, Type, Any
 from functools import wraps
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
@@ -138,7 +138,9 @@ def fuse_metadata_to_response_typehint(
 
 @overload
 def sideeffect(
-    reload: tuple[FieldClassDefinition, ...] | None = None,
+    # We need to typehint reload to be Any, because during typechecking our Model.attribute will just
+    # yield whatever the typehint of that field is. Only at runtime does it become a FieldClassDefinition
+    reload: tuple[Any, ...] | None = None,
     response_model: Type[BaseModel] | None = None,
 ) -> Callable[[Callable], Callable]:
     ...

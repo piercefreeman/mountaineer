@@ -30,7 +30,7 @@ class HomeController(BaseController):
     def increment_count(self, payload: IncrementCountRequest):
         self.global_count += payload.count
 
-    @sideeffect(reload=(HomeRender.current_count))
+    @sideeffect(reload=(HomeRender.current_count,))
     def increment_count_only(self, payload: IncrementCountRequest):
         self.global_count += payload.count
 
