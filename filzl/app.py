@@ -23,7 +23,7 @@ class AppController:
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
         for _, fn, metadata in controller._get_client_functions():
-            controller_api.post(f"/{metadata.function_name}")
+            controller_api.post(f"/{metadata.function_name}")(fn)
         self.app.include_router(controller_api, prefix=f"/{underscore(self.get_controller_name(controller))}")
 
     def get_controller_name(self, controller: BaseController):

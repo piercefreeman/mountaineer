@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
+
+from fastapi.responses import HTMLResponse
 from filzl.render import RenderBase
-from inspect import isfunction, getmembers
+from inspect import isfunction, ismethod, getmembers
 from filzl.sideeffects import METADATA_ATTRIBUTE, FunctionMetadata
 from typing import Iterable, Callable
 from pathlib import Path
@@ -15,7 +17,7 @@ class BaseController(ABC):
 
     def _generate_html(self):
         # TODO: Implement SSR
-        return Path(self.template_path).read_text()
+        return HTMLResponse(Path(self.template_path).read_text())
 
     def _get_client_functions(self) -> Iterable[tuple[str, Callable, FunctionMetadata]]:
         """
@@ -24,7 +26,7 @@ class BaseController(ABC):
 
         """
         # Iterate over all the functions in this class and see which ones have a _metadata attribute
-        for name, func in getmembers(self, predicate=isfunction):
-            metadata = getattr(func, METADATA_ATTRIBUTE)
+        for name, func in getmembers(self, predicate=ismethod):
+            metadata = getattr(func, METADATA_ATTRIBUTE, None)
             if metadata is not None:
                 yield name, func, metadata
