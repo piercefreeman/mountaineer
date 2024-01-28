@@ -22,11 +22,28 @@ class FunctionMetadata(BaseModel):
 METADATA_ATTRIBUTE = "_filzl_metadata"
 
 
-def init_function_metadata(raw_fn: Callable, action_type: FunctionActionType):
-    fn = raw_fn.__func__ if ismethod(raw_fn) else raw_fn
+def init_function_metadata(fn: Callable, action_type: FunctionActionType):
+    if ismethod(fn):
+        fn = fn.__func__  # type: ignore
+
     function_name = fn.__name__
     metadata = FunctionMetadata(function_name=function_name, action_type=action_type)
     setattr(fn, METADATA_ATTRIBUTE, metadata)
+    return metadata
+
+
+def get_function_metadata(fn: Callable) -> FunctionMetadata:
+    if ismethod(fn):
+        fn = fn.__func__  # type: ignore
+
+    if not hasattr(fn, METADATA_ATTRIBUTE):
+        raise AttributeError(f"Function {fn.__name__} does not have metadata")
+
+    metadata = getattr(fn, METADATA_ATTRIBUTE)
+
+    if not isinstance(metadata, FunctionMetadata):
+        raise AttributeError(f"Function {fn.__name__} has invalid metadata")
+
     return metadata
 
 

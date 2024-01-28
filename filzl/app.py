@@ -14,7 +14,7 @@ class AppController:
 
     def __init__(self):
         self.app = FastAPI()
-        self.controllers : list[BaseController] = []
+        self.controllers: list[BaseController] = []
 
         self.internal_api_router = APIRouter()
         self.app.include_router(self.internal_api_router, prefix="/internal/api")
@@ -33,13 +33,24 @@ class AppController:
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
-        return_model = generate_controller_html.__wrapped__.__annotations__.pop("return", None)
+        if not hasattr(generate_controller_html, "__wrapped__"):
+            raise ValueError(
+                "Unable to clear wrapped typehint, no wrapped function found."
+            )
+
+        return_model = generate_controller_html.__wrapped__.__annotations__.pop(
+            "return", None
+        )
         if not return_model:
-            raise ValueError(f"Controller render() function must have a return type annotation")
+            raise ValueError(
+                "Controller render() function must have a return type annotation"
+            )
 
         # Validate the return model is actually a RenderBase
         if not issubclass(return_model, RenderBase):
-            raise ValueError(f"Controller render() return type annotation is not a RenderBase")
+            raise ValueError(
+                "Controller render() return type annotation is not a RenderBase"
+            )
 
         # Attach a new metadata wrapper to the original function so we can easily
         # recover it when attached to the class

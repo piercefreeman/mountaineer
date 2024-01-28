@@ -4,17 +4,20 @@ from filzl.controller import BaseController
 from my_website.views import get_view_path
 from pydantic import BaseModel
 
+
 class HomeRender(RenderBase):
     first_name: str
     current_count: int
 
+
 class IncrementCountRequest(BaseModel):
     count: int
+
 
 class HomeController(BaseController):
     # view_path = "/testing/[post_id]/mytemplate.tsx"
     url = "/"
-    view_path = get_view_path("/app/home.tsx")
+    view_path = get_view_path("/app/home/page.tsx")
 
     def __init__(self):
         self.global_count = 0
