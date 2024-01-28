@@ -87,7 +87,7 @@ interface ServerState {
     CONTROLLER_2_STATE?: Controller2State,
 }
 
-export const ServerContext = React.useContext(
+export const ServerContext = useContext(
   {
     serverState: ServerState,
     setServerState: (state: ServerState) => void,

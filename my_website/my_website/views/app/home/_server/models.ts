@@ -11,6 +11,14 @@ interface HomeRender {
   current_count: number;
 }
 
+interface IncrementCountOnlyResponse {
+  sideeffect: IncrementCountOnlyResponseSideEffect;
+}
+
+interface IncrementCountOnlyResponseSideEffect {
+  current_count: number;
+}
+
 interface IncrementCountResponse {
   sideeffect: IncrementCountResponseSideEffect;
 }
