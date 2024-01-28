@@ -5,7 +5,8 @@ from filzl.client_interface.build_schemas import OpenAPIToTypeScriptConverter
 from collections import defaultdict
 from fastapi.openapi.utils import get_openapi
 from inflection import camelize
-
+from inspect import isclass
+from pydantic import BaseModel
 
 class ClientBuilder:
     """
@@ -40,22 +41,27 @@ class ClientBuilder:
             managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
             managed_code_dir.mkdir(exist_ok=True)
 
-            # Build the server state models
-            schemas = ""
+            # Build the server state models, enforce unique schema names so we avoid interface duplicates
+            # if they're defined in multiple places
+            schemas : dict[str, str] = {}
 
             # We have to separately handle the model rendering because we intentionally
             # strip it from the OpenAPI payload. It's an internal detail, not one that's exposed
             # explicitly as part of the API.
             if metadata.render_model:
-                schemas += self.openapi_schema_converter.convert(metadata.render_model)
-                print("SCHEMAS", schemas)
+                schemas = {**schemas, **self.openapi_schema_converter.convert(metadata.render_model)}
 
-            # temp_app = FastAPI()
-            # temp_app.include_router(router)
-            # print(get_openapi(title="", version="", routes=[router]))
-            # schemas += self.openapi_schema_converter.convert(router)
+            for _, fn, _ in controller._get_client_functions():
+                return_model = fn.__annotations__.get("return")
+                if return_model and isclass(return_model) and issubclass(return_model, BaseModel):
+                    schemas = {**schemas, **self.openapi_schema_converter.convert(return_model)}
 
-            (managed_code_dir / "models.ts").write_text(schemas)
+            # We put in one big models.ts file to enable potentially cyclical dependencies
+            (managed_code_dir / "models.ts").write_text(
+                "\n\n".join(
+                    [schema for _, schema in sorted(schemas.items(), key=lambda x: x[0])]
+                )
+            )
 
     def generate_global_model_imports(self):
         """

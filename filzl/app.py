@@ -28,7 +28,10 @@ class AppController:
 
     def register(self, controller: BaseController):
         """
-        Register controller
+        Register a new controller. This will:
+            - Mount the html of the controller to the main application service
+            - Mount all actions (ie. @sideeffect and @passthrough decorated functions) to their public API
+
         """
         # We need to passthrough the API of the render function to the FastAPI router so it's called properly
         # with the dependency injection kwargs

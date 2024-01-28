@@ -79,13 +79,11 @@ class OpenAPIToTypeScriptConverter:
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
 
-        # We put in one big models.ts file to enable potentially cyclical dependencies
-        ts_interfaces = [
-            self.convert_schema_to_interface(model, base=parsed_spec)
+        return {
+            model.title: self.convert_schema_to_interface(model, base=parsed_spec)
             for model in all_models
-        ]
-
-        return "\n\n".join(ts_interfaces)
+            if model.title and model.title.strip()
+        }
 
     def gather_all_models(self, base: OpenAPISchema):
         """
