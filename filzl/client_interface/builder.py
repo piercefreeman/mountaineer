@@ -13,6 +13,8 @@ from filzl.controller import ControllerBase
 from filzl.annotation_helpers import make_optional_model
 from fastapi.openapi.utils import get_openapi
 
+from filzl.static import get_static_path
+
 
 class ClientBuilder:
     """
@@ -35,7 +37,8 @@ class ClientBuilder:
         # to build the client code
         self.validate_unique_paths()
 
-        # TODO: Copy over the static files that don't depend on client code
+        # Static files that don't depend on client code
+        self.generate_static_files()
 
         # The order of these generators don't particularly matter since most TSX linters
         # won't refresh until they're all complete. However, this ordering better aligns
@@ -45,6 +48,15 @@ class ClientBuilder:
         self.generate_global_model_imports()
         self.generate_server_provider()
         self.generate_view_servers()
+
+    def generate_static_files(self):
+        """
+        Copy over the static files that are required for the client.
+
+        """
+        managed_code_dir = self.get_managed_code_dir(self.view_root)
+        api_content = get_static_path("api.ts").read_text()
+        (managed_code_dir / "api.ts").write_text(api_content)
 
     def generate_model_definitions(self):
         """
