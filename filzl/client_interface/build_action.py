@@ -3,7 +3,7 @@ from typing import Any
 from filzl.client_interface.build_schemas import OpenAPISchemaType, OpenAPIProperty
 from enum import StrEnum
 from inflection import underscore
-from filzl.client_interface.typescript import python_payload_to_typescript, TSLiteral
+from filzl.client_interface.typescript import python_payload_to_typescript, TSLiteral, map_openapi_type_to_ts
 
 
 class ParameterLocationType(StrEnum):
@@ -130,10 +130,74 @@ class OpenAPIToTypescriptActionConverter:
                 endpoint_definition.actions,
                 self.get_method_names(url, endpoint_definition.actions),
             ):
-                self.build_action(url, action, method_name)
+                print("PAYLOAD", self.build_action(url, action, method_name))
         raise ValueError
 
     def build_action(self, url: str, action: ActionDefinition, method_name: str):
+        """
+        Builds the action function. This should be more-or-less compatible with the common
+        server fetch provided by `openapi-typescript-codegen`. Example return value:
+
+        public static my_action({
+            param_id,
+            requestBody,
+        }: {
+            param_id: string;
+            requestBody: MyActionRequest;
+        }): CancelablePromise<any> {
+            return __request(OpenAPI, {
+                method: 'POST',
+                url: '/{param_id}/my_action',
+                path: {
+                    param_id,
+                },
+                body: requestBody,
+                mediaType: 'application/json',
+                errors: {
+                    422: `Validation Error`,
+                },
+            });
+        }
+        """
+        arguments, response_types = self.build_action_payload(url, action)
+        parameters = self.build_action_parameters(action)
+
+        lines : list[str] = []
+
+        lines.append(
+            f"public static {method_name}({parameters}): Promise<{' | '.join(response_types)}> {{\n"
+            + "return __request(\n"
+            + arguments
+            + "\n);\n"
+            + "}"
+        )
+        return "\n".join(lines)
+
+    def build_action_parameters(self, action: ActionDefinition):
+        parameters_dict : dict[Any, Any] = {}
+        typehint_dict : dict[Any, Any] = {}
+
+        for parameter in action.parameters:
+            parameters_dict[parameter.name] = TSLiteral(parameter.name)
+            typehint_dict[TSLiteral(parameter.name)] = TSLiteral(map_openapi_type_to_ts(parameter.schema_ref.type))
+
+        if action.requestBody is not None:
+            # We expect that the interface defined within the /models.ts will have the same name as
+            # the model in the current OpenAPI spec
+            model_name = action.requestBody.content_schema.schema_ref.ref.split("/")[-1]
+            parameters_dict["requestBody"] = TSLiteral("requestBody")
+            typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
+
+        if not parameters_dict:
+            # Empty query parameter
+            return ""
+
+        parameters_str = python_payload_to_typescript(parameters_dict)
+        typehint_str = python_payload_to_typescript(typehint_dict)
+
+        return f"{parameters_str}: {typehint_str}"
+
+    def build_action_payload(self, url: str, action: ActionDefinition):
         # Since our typescript common functions have variable inputs here, it's cleaner
         # to put them into a dictionary and format whatever made it in as a flat
         # input list.
@@ -170,8 +234,7 @@ class OpenAPIToTypescriptActionConverter:
                     response_definition.content_schema
                 )
 
-        formatted_config = python_payload_to_typescript(common_params)
-        print(formatted_config)
+        return python_payload_to_typescript(common_params), response_types
 
     def get_method_names(self, url: str, actions: list[ActionDefinition]):
         # By convention, the last part of the URL is the method name

@@ -7,17 +7,8 @@ from inflection import camelize
 from pydantic import BaseModel, Field, model_validator
 from enum import StrEnum
 from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
-
-
-class OpenAPISchemaType(StrEnum):
-    OBJECT = "object"
-    STRING = "string"
-    INTEGER = "integer"
-    FLOAT = "float"
-    BOOLEAN = "boolean"
-    ARRAY = "array"
-    # Typically used to indicate an optional type within an anyOf statement
-    NULL = "null"
+from filzl.client_interface.typescript import map_openapi_type_to_ts
+from filzl.client_interface.openapi_common import OpenAPISchemaType
 
 
 class OpenAPIProperty(BaseModel):
@@ -146,14 +137,14 @@ class OpenAPIToTypescriptSchemaConverter:
                 # OpenAPI doesn't specify the type of the keys since JSON forces them to be strings
                 # By the time we get to this function we should have called validate_typescript_candidate
                 sub_types = " | ".join(walk_array_types(prop.additionalProperties))
-                yield f"Record<{self.map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
+                yield f"Record<{map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
             elif prop.variable_type:
-                yield self.map_openapi_type_to_ts(prop.variable_type)
+                yield map_openapi_type_to_ts(prop.variable_type)
 
         for prop_name, prop_details in model.properties.items():
             is_required = prop_name in model.required
             ts_type = (
-                self.map_openapi_type_to_ts(prop_details.variable_type)
+                map_openapi_type_to_ts(prop_details.variable_type)
                 if prop_details.variable_type
                 else None
             )
@@ -177,18 +168,6 @@ class OpenAPIToTypescriptSchemaConverter:
             interface_full = f"export {interface_full}"
 
         return interface_full
-
-    def map_openapi_type_to_ts(self, openapi_type: OpenAPISchemaType):
-        mapping = {
-            "string": "string",
-            "integer": "number",
-            "number": "number",
-            "boolean": "boolean",
-            "null": "null",
-            "array": "Array<{types}>",
-            "object": "{types}",
-        }
-        return mapping[openapi_type]
 
     def get_typescript_interface_name(self, model: OpenAPIProperty):
         if not model.title:
