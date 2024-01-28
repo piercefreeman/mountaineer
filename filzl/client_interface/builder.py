@@ -30,10 +30,15 @@ class ClientBuilder:
             page_root = Path(controller.view_path).parent
             print(page_root)
 
+            # Create the managed code directory if it doesn't exist
+            managed_code_dir = page_root / "_server"
+            managed_code_dir.mkdir(exist_ok=True)
+
             # Build the server state models
             if metadata.render_model:
                 schemas = self.openapi_schema_converter.convert(metadata.render_model)
                 print("SCHEMAS", schemas)
+                (managed_code_dir / "models.ts").write_text(schemas)
 
     def validate_unique_paths(self, app: AppController):
         """
