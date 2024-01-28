@@ -5,6 +5,5 @@ from .fields import (
     get_function_metadata,  # noqa
     fuse_metadata_to_response_typehint,  # noqa
 )
-from .parsers import parse_fastapi_function  # noqa
 from .passthrough import passthrough  # noqa
 from .sideeffect import sideeffect  # noqa

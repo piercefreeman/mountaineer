@@ -62,7 +62,7 @@ class OpenAPISchema(OpenAPIProperty):
     defs: dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
 
 
-class OpenAPIToTypeScriptConverter:
+class OpenAPIToTypescriptSchemaConverter:
     def __init__(self, export_interface: bool = False):
         self.export_interface = export_interface
 

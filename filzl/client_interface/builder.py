@@ -1,7 +1,8 @@
 from filzl.app import AppController
 from pathlib import Path
-from filzl.actions import get_function_metadata, parse_fastapi_function
-from filzl.client_interface.build_schemas import OpenAPIToTypeScriptConverter
+from filzl.actions import get_function_metadata
+from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
+from filzl.client_interface.build_action import OpenAPIToTypescriptActionConverter
 from collections import defaultdict
 from inflection import camelize, underscore
 from inspect import isclass
@@ -18,9 +19,10 @@ class ClientBuilder:
     """
 
     def __init__(self, app: AppController, view_root: Path):
-        self.openapi_schema_converter = OpenAPIToTypeScriptConverter(
+        self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
+        self.openapi_action_converter = OpenAPIToTypescriptActionConverter()
         self.app = app
         self.view_root = view_root
 
@@ -103,7 +105,8 @@ class ClientBuilder:
             controller = controller_definition.controller
             managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
 
-            print("OPENAPI", get_openapi(title="", version="", routes=controller_definition.router.routes))
+            openapi_raw = get_openapi(title="", version="", routes=controller_definition.router.routes)
+            self.openapi_action_converter.convert(openapi_raw)
             raise ValueError
 
             components: list[str] = []

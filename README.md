@@ -7,8 +7,8 @@ filzl is a batteries-included MVC web framework. It uses Python for the backend 
 - Firstclass typehints for both the frontend and backend
 - Trivially simple client<->server communication, data binding, and function calling
 - Optimize for server rendering of components for better accessibility and SEO
-- Avoid the need for a separate frontend gateway, server
-- Static analysis of templates for strong validation of link validity
+- Avoid the need for a separate gateway API or Node.js server just to serve frontend clients
+- Static analysis of templates for strong validation: link validity, data access, etc.
 
 ## Future Directions
 
