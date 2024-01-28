@@ -3,10 +3,10 @@ from pathlib import Path
 from filzl.sideeffects import get_function_metadata
 from filzl.client_interface.build_schemas import OpenAPIToTypeScriptConverter
 from collections import defaultdict
-from fastapi.openapi.utils import get_openapi
 from inflection import camelize
 from inspect import isclass
 from pydantic import BaseModel
+
 
 class ClientBuilder:
     """
@@ -32,7 +32,6 @@ class ClientBuilder:
     def generate_model_definitions(self):
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            router = controller_definition.router
 
             metadata = get_function_metadata(controller.render)
             print("SHOULD BUILD", controller, controller.view_path, metadata)
@@ -43,23 +42,36 @@ class ClientBuilder:
 
             # Build the server state models, enforce unique schema names so we avoid interface duplicates
             # if they're defined in multiple places
-            schemas : dict[str, str] = {}
+            schemas: dict[str, str] = {}
 
             # We have to separately handle the model rendering because we intentionally
             # strip it from the OpenAPI payload. It's an internal detail, not one that's exposed
             # explicitly as part of the API.
             if metadata.render_model:
-                schemas = {**schemas, **self.openapi_schema_converter.convert(metadata.render_model)}
+                schemas = {
+                    **schemas,
+                    **self.openapi_schema_converter.convert(metadata.render_model),
+                }
 
             for _, fn, _ in controller._get_client_functions():
                 return_model = fn.__annotations__.get("return")
-                if return_model and isclass(return_model) and issubclass(return_model, BaseModel):
-                    schemas = {**schemas, **self.openapi_schema_converter.convert(return_model)}
+                if (
+                    return_model
+                    and isclass(return_model)
+                    and issubclass(return_model, BaseModel)
+                ):
+                    schemas = {
+                        **schemas,
+                        **self.openapi_schema_converter.convert(return_model),
+                    }
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
             (managed_code_dir / "models.ts").write_text(
                 "\n\n".join(
-                    [schema for _, schema in sorted(schemas.items(), key=lambda x: x[0])]
+                    [
+                        schema
+                        for _, schema in sorted(schemas.items(), key=lambda x: x[0])
+                    ]
                 )
             )
 
@@ -69,14 +81,16 @@ class ClientBuilder:
         that are defined in the various pages. We create those imports here.
 
         """
-        global_model_imports : list[str] = []
+        global_model_imports: list[str] = []
 
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
 
             # Get the relative path that will be required to import from this
             # sub-model
-            controller_model_path = self.get_managed_code_dir(Path(controller.view_path)) / "models.ts"
+            controller_model_path = (
+                self.get_managed_code_dir(Path(controller.view_path)) / "models.ts"
+            )
             relative_import_path = controller_model_path.relative_to(self.view_root)
 
             metadata = get_function_metadata(controller.render)

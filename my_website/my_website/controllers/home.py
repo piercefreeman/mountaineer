@@ -13,8 +13,10 @@ class HomeRender(RenderBase):
 class IncrementCountRequest(BaseModel):
     count: int
 
+
 class GetExternalDataResponse(BaseModel):
     first_name: str
+
 
 class HomeController(BaseController):
     # view_path = "/testing/[post_id]/mytemplate.tsx"
@@ -26,6 +28,10 @@ class HomeController(BaseController):
 
     @sideeffect
     def increment_count(self, payload: IncrementCountRequest):
+        self.global_count += payload.count
+
+    @sideeffect(reload=(HomeRender.current_count))
+    def increment_count_only(self, payload: IncrementCountRequest):
         self.global_count += payload.count
 
     @passthrough(response_model=GetExternalDataResponse)

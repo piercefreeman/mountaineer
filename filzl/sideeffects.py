@@ -1,13 +1,12 @@
 from inspect import ismethod
 from filzl.render import FieldClassDefinition, RenderBase
 from typing import Callable, Type
-from types import MethodType
 from functools import wraps
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 from enum import Enum
 from inflection import camelize
-from itertools import chain
+from typing import overload
 
 
 class FunctionActionType(Enum):
@@ -63,6 +62,7 @@ def get_function_metadata(fn: Callable) -> FunctionMetadata:
 
     return metadata
 
+
 def fuse_metadata_to_response_typehint(
     metadata: FunctionMetadata,
     render_model: Type[RenderBase],
@@ -96,7 +96,7 @@ def fuse_metadata_to_response_typehint(
                 )
             sideeffect_fields = {
                 field_name: field_definition
-                for field_name, field_definition in render_model.model_fields
+                for field_name, field_definition in render_model.model_fields.items()
                 if field_name in reload_keys
             }
 
@@ -110,7 +110,7 @@ def fuse_metadata_to_response_typehint(
             create_model(
                 base_response_name + "Passthrough",
                 **{
-                    field_name: (field_definition.annotation, field_definition) # type: ignore
+                    field_name: (field_definition.annotation, field_definition)  # type: ignore
                     for field_name, field_definition in passthrough_fields.items()
                 },
             ),
@@ -122,17 +122,32 @@ def fuse_metadata_to_response_typehint(
             create_model(
                 base_response_name + "SideEffect",
                 **{
-                    field_name: (field_definition.annotation, field_definition) # type: ignore
+                    field_name: (field_definition.annotation, field_definition)  # type: ignore
                     for field_name, field_definition in sideeffect_fields.items()
                 },
             ),
             FieldInfo(alias="sideeffect"),
         )
 
-    return create_model(
+    model: Type[BaseModel] = create_model(
         base_response_name,
-        **base_response_params,
+        **base_response_params,  # type: ignore
     )
+    return model
+
+
+@overload
+def sideeffect(
+    reload: tuple[FieldClassDefinition, ...] | None = None,
+    response_model: Type[BaseModel] | None = None,
+) -> Callable[[Callable], Callable]:
+    ...
+
+
+@overload
+def sideeffect(func: Callable) -> Callable:
+    ...
+
 
 def sideeffect(*args, **kwargs):
     """
@@ -167,6 +182,18 @@ def sideeffect(*args, **kwargs):
     else:
         # It's used as @sideeffect(xyz=2) with arguments
         return decorator_with_args(*args, **kwargs)
+
+
+@overload
+def passthrough(
+    response_model: Type[BaseModel] | None = None,
+) -> Callable[[Callable], Callable]:
+    ...
+
+
+@overload
+def passthrough(func: Callable) -> Callable:
+    ...
 
 
 def passthrough(*args, **kwargs):

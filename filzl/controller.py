@@ -3,7 +3,11 @@ from abc import ABC, abstractmethod
 from fastapi.responses import HTMLResponse
 from filzl.render import RenderBase
 from inspect import ismethod, getmembers
-from filzl.sideeffects import get_function_metadata, FunctionMetadata, FunctionActionType
+from filzl.sideeffects import (
+    get_function_metadata,
+    FunctionMetadata,
+    FunctionActionType,
+)
 from typing import Iterable, Callable
 from pathlib import Path
 
@@ -31,7 +35,10 @@ class BaseController(ABC):
         for name, func in getmembers(self, predicate=ismethod):
             try:
                 metadata = get_function_metadata(func)
-                if metadata.action_type in {FunctionActionType.PASSTHROUGH, FunctionActionType.SIDEEFFECT}:
+                if metadata.action_type in {
+                    FunctionActionType.PASSTHROUGH,
+                    FunctionActionType.SIDEEFFECT,
+                }:
                     yield name, func, metadata
             except AttributeError:
                 continue
