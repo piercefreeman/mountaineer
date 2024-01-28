@@ -10,7 +10,7 @@ class BaseController(ABC):
     template_path: str | Path
 
     @abstractmethod
-    def render(self, request) -> RenderBase:
+    def render(self, *args, **kwargs) -> RenderBase:
         pass
 
     def _generate_html(self):

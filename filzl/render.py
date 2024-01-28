@@ -6,12 +6,13 @@ from typing_extensions import dataclass_transform
 from dataclasses import dataclass
 
 
-# TODO: Fix unsafe_hash / remove it
-@dataclass(unsafe_hash=True)
-class FieldClassDefinition:
+class FieldClassDefinition(BaseModel):
     key: str
     field_definition: FieldInfo
 
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ReturnModelMetaclass(ModelMetaclass):

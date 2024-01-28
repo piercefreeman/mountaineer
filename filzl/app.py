@@ -24,7 +24,7 @@ class AppController:
         controller_api = APIRouter()
         for _, fn, metadata in controller._get_client_functions():
             controller_api.post(f"/{metadata.function_name}")
-        self.app.include_router(controller_api, prefix=f"/{underscore(self.get_controller_name(controller))})
+        self.app.include_router(controller_api, prefix=f"/{underscore(self.get_controller_name(controller))}")
 
     def get_controller_name(self, controller: BaseController):
-        return controller.__name__
+        return controller.__class__.__name__

@@ -11,13 +11,15 @@ class FunctionActionType(Enum):
 class FunctionMetadata(BaseModel):
     function_name: str
     action_type: FunctionActionType
+    reload_states: tuple[FieldClassDefinition, ...] | None = None
 
 METADATA_ATTRIBUTE = "_filzl_metadata"
 
-def set_function_metadata(fn: Callable, action_type: FunctionActionType):
+def init_function_metadata(fn: Callable, action_type: FunctionActionType):
     function_name = fn.__name__
     metadata = FunctionMetadata(function_name=function_name, action_type=action_type)
     setattr(fn, METADATA_ATTRIBUTE, metadata)
+    return metadata
 
 def sideeffect(*args, **kwargs):
     """
@@ -29,12 +31,12 @@ def sideeffect(*args, **kwargs):
 
     """
     def decorator_with_args(reload: tuple[FieldClassDefinition, ...]):
-        print("SPECIFIC RELOAD", reload)
         def wrapper(func: Callable):
             @wraps(func)
             def inner(self, *func_args, **func_kwargs):
                 return func(self, *func_args, **func_kwargs)
-            set_function_metadata(inner, FunctionActionType.SIDEEFFECT)
+            metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
+            metadata.reload_states = reload
             return inner
         return wrapper
 
@@ -61,7 +63,7 @@ def passthrough(*args, **kwargs):
             @wraps(func)
             def inner(self, *func_args, **func_kwargs):
                 return func(self, *func_args, **func_kwargs)
-            set_function_metadata(inner, FunctionActionType.PASSTHROUGH)
+            init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             return inner
         return wrapper
 
