@@ -1,6 +1,6 @@
 # filzl
 
-filzl is a batteries-included MVC web framework. It uses Python for the backend and React for the interactive frontend. If you've used either of these languages before for web development, we hope you'll be right at home.
+filzl is a batteries-included MVC web framework. It uses Python for the backend and React for the interactive frontend. If you've used either of these languages before for web development, we think you'll be right at home.
 
 ## Design Goals
 
@@ -14,7 +14,7 @@ filzl is a batteries-included MVC web framework. It uses Python for the backend 
 
 - Offload more of the server logic to Rust
 - AST parsing of the tsx files to determine which parts of the serverState they're actually using and mask accordingly
-- Plugins for simple authentication, billing, etc.
+- Plugins for simple authentication, daemons, billing, etc.
 
 ## Typescript Generation
 

@@ -2,22 +2,24 @@ from abc import ABC, abstractmethod
 
 from fastapi.responses import HTMLResponse
 from filzl.render import RenderBase
-from inspect import isfunction, ismethod, getmembers
+from inspect import ismethod, getmembers
 from filzl.sideeffects import METADATA_ATTRIBUTE, FunctionMetadata
 from typing import Iterable, Callable
 from pathlib import Path
 
+
 class BaseController(ABC):
     url: str
-    template_path: str | Path
+    view_path: str | Path
 
     @abstractmethod
     def render(self, *args, **kwargs) -> RenderBase:
         pass
 
-    def _generate_html(self):
+    def _generate_html(self, *args, **kwargs):
         # TODO: Implement SSR
-        return HTMLResponse(Path(self.template_path).read_text())
+        render_obj = self.render(*args, **kwargs)
+        return HTMLResponse(Path(self.view_path).read_text())
 
     def _get_client_functions(self) -> Iterable[tuple[str, Callable, FunctionMetadata]]:
         """

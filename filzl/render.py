@@ -3,7 +3,6 @@ from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import FieldInfo, Field
 from typing import Any, TYPE_CHECKING
 from typing_extensions import dataclass_transform
-from dataclasses import dataclass
 
 
 class FieldClassDefinition(BaseModel):
@@ -13,6 +12,7 @@ class FieldClassDefinition(BaseModel):
     model_config = {
         "arbitrary_types_allowed": True,
     }
+
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ReturnModelMetaclass(ModelMetaclass):

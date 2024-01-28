@@ -1,4 +1,7 @@
-from filzl.interface_gen import OpenAPIToTypeScriptConverter, OpenAPISchema
+from filzl.client_interface.build_schemas import (
+    OpenAPIToTypeScriptConverter,
+    OpenAPISchema,
+)
 from pydantic import BaseModel, Field, create_model
 import pytest
 
