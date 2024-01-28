@@ -1,3 +1,4 @@
+from fastapi import APIRouter
 from filzl.app import AppController
 from pathlib import Path
 from filzl.actions import get_function_metadata
@@ -11,6 +12,7 @@ from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
 from filzl.annotation_helpers import make_optional_model
 from fastapi.openapi.utils import get_openapi
+
 
 class ClientBuilder:
     """
@@ -105,7 +107,13 @@ class ClientBuilder:
             controller = controller_definition.controller
             managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
 
-            openapi_raw = get_openapi(title="", version="", routes=controller_definition.router.routes)
+            # Small hack to get the full path to the root of the server. By default the controller just
+            # has the path relative to the controller API
+            root_router = APIRouter()
+            root_router.include_router(
+                controller_definition.router, prefix=controller_definition.url_prefix
+            )
+            openapi_raw = get_openapi(title="", version="", routes=root_router.routes)
             self.openapi_action_converter.convert(openapi_raw)
             raise ValueError
 
@@ -116,18 +124,7 @@ class ClientBuilder:
 
             # Step 2: Definitions for the actions
             for _, fn, metadata in controller._get_client_functions():
-                if not metadata.return_model:
-                    continue
-
-                # We need to determine the request parameters that clients will need to input
-                # for this endpoint
-                parsed_spec = parse_fastapi_function(fn, metadata.url)
-
-                # Implement
-                components.append(
-                    f"export const {metadata.function_name} = async (payload) : Promise<ControllerTypes.{metadata.return_model.__name__}> => {{\n"
-                    + "}"
-                )
+                pass
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
             (managed_code_dir / "actions.ts").write_text("\n\n".join(components))

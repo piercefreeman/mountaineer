@@ -14,6 +14,8 @@ from pydantic import BaseModel
 class ControllerDefinition(BaseModel):
     controller: ControllerBase
     router: APIRouter
+    # URL prefix to the root of the server
+    url_prefix: str
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -107,5 +109,9 @@ class AppController:
         )
 
         self.controllers.append(
-            ControllerDefinition(controller=controller, router=controller_api)
+            ControllerDefinition(
+                controller=controller,
+                router=controller_api,
+                url_prefix=controller_url_prefix,
+            )
         )
