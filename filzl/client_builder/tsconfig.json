@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    /* Basic Options */
+    "target": "es2022",
+    "module": "esnext",
+    "lib": ["es2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    /* Typehinting Checks */
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "types": ["node"],
+    /* Module Resolution Options */
+    "moduleResolution": "node",
+    "baseUrl": "./",
+    "paths": {
+      "*": ["node_modules/*"]
+    },
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
