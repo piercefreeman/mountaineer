@@ -158,3 +158,4 @@ target
 
 pyrightconfig.json
 .ruff_cache
+node_modules

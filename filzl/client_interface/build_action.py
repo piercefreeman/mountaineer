@@ -48,7 +48,6 @@ class ContentBodyDefinition(BaseModel):
             )
 
         data["content_type"], data["content_schema"] = list(data["content"].items())[0]
-
         return data
 
 

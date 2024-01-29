@@ -85,29 +85,3 @@ export const __request = async (params: FetchParams) => {
     throw error;
   }
 };
-
-/*
-interface SubclassError {
-  context: string;
-}
-class TestSubclassError extends FetchErrorBase<SubclassError> {}
-
-console.log("RAN THIS");
-try {
-  const pageContents = await __request({
-    method: "GET",
-    //url: "https://freeman.vc/wheeee",
-    url: "https://freeman.vc",
-    outputFormat: "text",
-    errors: {
-      404: TestSubclassError,
-    },
-  });
-  console.log("CONTENTS", pageContents);
-} catch (e) {
-  if (e instanceof TestSubclassError) {
-    console.log("WAS A 404");
-    e.statusCode;
-    e.body;
-  }
-  }*/

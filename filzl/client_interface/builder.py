@@ -121,7 +121,7 @@ class ClientBuilder:
 
             # Step 1: Requirements
             chunks.append(
-                f"import {{ __request }} from '{root_api_import_path}';\n"
+                f"import {{ __request, FetchErrorBase }} from '{root_api_import_path}';\n"
                 + f"import type {{ {', '.join(required_types)} }} from './models';"
             )
 
@@ -171,7 +171,7 @@ class ClientBuilder:
 
         # Step 1: Global imports that will be required
         chunks.append(
-            "import React, { useContext, useState, ReactNode } from 'react';\n"
+            "import React, { createContext, useState, ReactNode } from 'react';\n"
             + "import type * as ControllerTypes from './models';"
         )
 
@@ -194,9 +194,9 @@ class ClientBuilder:
 
         # Step 3: Define the server context provider
         chunks.append(
-            "export const ServerContext = useContext<{\n"
+            "export const ServerContext = createContext<{\n"
             + "  serverState: ServerState\n"
-            + "  setServerState: (state: ServerState) => void\n"
+            + "  setServerState: (state: ServerState | ((prevState: ServerState) => ServerState)) => void\n"
             + "}>(undefined as any)"
         )
 
@@ -242,19 +242,15 @@ class ClientBuilder:
             # We want to have an inline reference to a model which is compatible with the base render model alongside
             # all sideeffect sub-models. Since we're re-declaring this in the server file, we also
             # have to bring with us all of the other sub-model imports.
-            optional_model = make_optional_model(render_metadata.render_model)
-            optional_schema_definitions = self.openapi_schema_converter.convert(
-                optional_model
-            )
-            optional_schema = optional_schema_definitions[optional_model.__name__]
-            other_submodels = [
-                schema_name
-                for schema_name in optional_schema_definitions.keys()
-                if schema_name != optional_model.__name__
+            render_model_name = render_metadata.render_model.__name__
+
+            # Step 2: Find the actions that are relevant
+            controller_action_names = [
+                fn_name
+                for fn_name, _, _ in controller._get_client_functions()
             ]
 
             # Step 2: Setup imports from the single global provider
-            # TODO: Add actions in here as well
             controller_model_path = self.get_managed_code_dir(
                 Path(controller.view_path)
             )
@@ -269,35 +265,44 @@ class ClientBuilder:
             chunks.append(
                 "import React, { useContext } from 'react';\n"
                 + f"import {{ ServerContext }} from '{relative_import_path}';\n"
+                + f"import {{ {render_model_name} }} from './models';"
                 + (
-                    f"import {{ {', '.join(other_submodels)} }} from './models';"
-                    if other_submodels
+                    f"import {{ {', '.join(controller_action_names)} }} from './actions';"
+                    if controller_action_names
                     else ""
                 )
             )
 
-            # Step 3: Now that we have the imports we can add the optional model definition
-            chunks.append(optional_schema)
+            # Step 3: Add the optional model definition - this allows any controller that returns a partial
+            # side-effect to update the full model with the same typehint
+            optional_model_name = f"{render_model_name}Optional"
+            chunks.append(
+                f"export type {optional_model_name} = Partial<{render_model_name}>;"
+            )
 
-            # Step 3
+            # Step 4: Final implementation of the useServer() hook, which returns a subview of the overall
+            # server state that's only relevant to this controller
             chunks.append(
                 "export const useServer = () => {\n"
                 + "const { serverState, setServerState } = useContext(ServerContext);\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update
-                + f"const setControllerState = (payload: {optional_model.__name__}) => {{\n"
+                + f"const setControllerState = (payload: {optional_model_name}) => {{\n"
                 + "setServerState((state) => ({\n"
                 + "...state,\n"
-                + f"{self.get_controller_global_state(controller)}: {{\n"
+                # The controller is allowed to be undefined by the global typehint, in order to account for the non-active
+                # controllers not being set. We therefore need to check if the controller is defined before we try to update
+                # it with the partial.
+                + f"{self.get_controller_global_state(controller)}: state.{self.get_controller_global_state(controller)} ? {{\n"
                 + f"...state.{self.get_controller_global_state(controller)},\n"
                 + "...payload,\n"
-                + "}\n"
+                + "} : undefined\n"
                 + "}))\n"
                 + "};\n"
                 + "return {\n"
                 + f"...serverState['{self.get_controller_global_state(controller)}'],\n"
-                # TODO: Add actions here
+                + ",\n".join(controller_action_names)
                 + "}\n"
                 + "};"
             )
