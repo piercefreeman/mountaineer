@@ -72,6 +72,14 @@ class ClientBuilder:
             base = OpenAPIDefinition(**openapi_spec)
 
             schemas : dict[str, str] = {}
+
+            # Conver the render model
+            render_metadata = get_function_metadata(controller.render)
+            if render_metadata.render_model:
+                for schema_name, component in self.openapi_schema_converter.convert(render_metadata.render_model).items():
+                    schemas[schema_name] = component
+
+            # Convert the sideeffect routes
             for schema_name, component in base.components.schemas.items():
                 schemas[schema_name] = self.openapi_schema_converter.convert_schema_to_interface(
                     component,
@@ -97,7 +105,14 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            root_code_dir = self.get_managed_code_dir(self.view_root)
+
+            controller_action_path = controller_code_dir / "actions.ts"
+            root_common_handler = root_code_dir / "api.ts"
+            root_api_import_path = generate_relative_import(
+                controller_action_path, root_common_handler
+            )
 
             openapi_raw = self.openapi_from_controller(controller_definition)
             output_schemas, required_types = self.openapi_action_converter.convert(openapi_raw)
@@ -106,13 +121,13 @@ class ClientBuilder:
 
             # Step 1: Requirements
             chunks.append(
-                "import { __request } from '../server_context'\n"
-                + f"import type {{ {', '.join(required_types)} }} from './models'"
+                f"import {{ __request }} from '{root_api_import_path}';\n"
+                + f"import type {{ {', '.join(required_types)} }} from './models';"
             )
 
             chunks += output_schemas.values()
 
-            (managed_code_dir / "actions.ts").write_text("\n\n".join(chunks))
+            controller_action_path.write_text("\n\n".join(chunks))
 
     def generate_global_model_imports(self):
         """

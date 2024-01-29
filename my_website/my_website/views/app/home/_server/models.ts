@@ -10,6 +10,11 @@ export interface HTTPValidationError {
   detail?: Array<ValidationError>;
 }
 
+export interface HomeRender {
+  first_name: string;
+  current_count: number;
+}
+
 export interface IncrementCountOnlyResponse {
   sideeffect: IncrementCountOnlyResponseSideEffect;
 }
@@ -32,7 +37,7 @@ export interface IncrementCountResponseSideEffect {
 }
 
 export interface ValidationError {
-  loc: Array<string | number>;
+  loc: Array<number | string>;
   msg: string;
   type: string;
 }

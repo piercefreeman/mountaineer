@@ -1,5 +1,5 @@
-import { __request } from '../server_context'
-import type { GetExternalDataResponse, IncrementCountResponse, IncrementCountOnlyResponse, IncrementCountRequest } from './models'
+import { __request } from '../../../_server/api';
+import type { IncrementCountResponse, GetExternalDataResponse, IncrementCountOnlyResponse, IncrementCountRequest, HTTPValidationError } from './models';
 
 export const get_external_data = (): Promise<GetExternalDataResponse> => {
 return __request(
@@ -20,7 +20,7 @@ return __request(
 'method': 'POST',
 'url': '/internal/api/home_controller/increment_count',
 'errors': {
-422: 'HTTPValidationError'
+422: HTTPValidationErrorException
 },
 'body': requestBody,
 'mediaType': 'application/json'
@@ -43,10 +43,12 @@ return __request(
 url_param
 },
 'errors': {
-422: 'HTTPValidationError'
+422: HTTPValidationErrorException
 },
 'body': requestBody,
 'mediaType': 'application/json'
 }
 );
 }
+
+class HTTPValidationErrorException extends FetchErrorBase<HTTPValidationError> {}

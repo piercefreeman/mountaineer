@@ -9,6 +9,7 @@ from filzl.actions import (
 )
 from filzl.render import RenderBase
 from pydantic import BaseModel
+from typing import Callable
 
 
 class ControllerDefinition(BaseModel):
@@ -16,6 +17,9 @@ class ControllerDefinition(BaseModel):
     router: APIRouter
     # URL prefix to the root of the server
     url_prefix: str
+    # Dynamically generated function that actually renders the html content
+    # This is a hybrid between render() and _generate_html()
+    view_route: Callable
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -112,6 +116,7 @@ class AppController:
             ControllerDefinition(
                 controller=controller,
                 router=controller_api,
+                view_route=generate_controller_html,
                 url_prefix=controller_url_prefix,
             )
         )

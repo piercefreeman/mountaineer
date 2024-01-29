@@ -26,7 +26,7 @@ class ContentDefinition(BaseModel):
     schema_ref: Reference = Field(alias="schema")
 
 
-class RequestBodyDefinition(BaseModel):
+class ContentBodyDefinition(BaseModel):
     # original key is a `content: { content_type: {schema: SchemaDefinition }}`
     content_type: str
     content_schema: ContentDefinition
@@ -75,8 +75,8 @@ class ActionDefinition(BaseModel):
     parameters: list[URLParameterDefinition] = []
 
     # { status_code: ResponseDefinition }
-    responses: dict[str, RequestBodyDefinition]
-    requestBody: RequestBodyDefinition | None = None
+    responses: dict[str, ContentBodyDefinition]
+    requestBody: ContentBodyDefinition | None = None
 
 
 class EndpointDefinition(BaseModel):
@@ -115,13 +115,14 @@ class OpenAPIToTypescriptActionConverter:
     based on the defined endpoint OpenAPI specs.
 
     """
-    def convert(self, openapi: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
+    def convert(self, openapi: dict[str, Any]):
         """
         :return {function_name: function_body}
 
         """
         schema = OpenAPIDefinition(**openapi)
-        output_strings : dict[str, str] = {}
+        output_actions : dict[str, str] = {}
+        output_errors : dict[str, str] = {}
         all_required_types : set[str] = set()
         for url, endpoint_definition in schema.paths.items():
             for action, method_name in zip(
@@ -129,9 +130,14 @@ class OpenAPIToTypescriptActionConverter:
                 self.get_method_names(url, endpoint_definition.actions),
             ):
                 rendered_str, required_types = self.build_action(url, action, method_name)
-                output_strings[method_name] = rendered_str
+                error_strs, error_types = self.build_error(action)
+
+                output_actions[method_name] = rendered_str
+                output_errors.update(error_strs)
                 all_required_types.update(required_types)
-        return output_strings, list(all_required_types)
+                all_required_types.update(error_types)
+
+        return {**output_actions, **output_errors}, list(all_required_types)
 
     def build_action(self, url: str, action: ActionDefinition, method_name: str):
         """
@@ -154,7 +160,7 @@ class OpenAPIToTypescriptActionConverter:
                 body: requestBody,
                 mediaType: 'application/json',
                 errors: {
-                    422: `Validation Error`,
+                    422: ValidationErrorError,
                 },
             });
         }
@@ -172,6 +178,23 @@ class OpenAPIToTypescriptActionConverter:
             + "}"
         )
         return "\n".join(lines), list(set(request_types + response_types))
+
+    def build_error(self, action: ActionDefinition):
+        """
+        Build an error class that wraps the typehinted error contents payload.
+        """
+        error_classes : dict[str, str] = {}
+        required_types: list[str] = []
+        for error_code, response in action.responses.items():
+            status_int = int(error_code)
+            if self.status_code_is_valid(status_int):
+                continue
+
+            model_name = response.content_schema.schema_ref.ref.split("/")[-1]
+            error_classes[model_name] = f"class {self.get_exception_class_name(model_name)} extends FetchErrorBase<{model_name}> {{}}"
+            required_types.append(model_name)
+
+        return error_classes, required_types
 
     def build_action_parameters(self, action: ActionDefinition):
         parameters_dict : dict[Any, Any] = {}
@@ -221,7 +244,7 @@ class OpenAPIToTypescriptActionConverter:
 
         for status_code, response_definition in action.responses.items():
             status_int = int(status_code)
-            if status_int >= 200 and status_int < 300:
+            if self.status_code_is_valid(status_int):
                 # OK response, we can specify the expected response type
                 # Multiple OK responses for a single action is unusual, but again we support it
                 response_types.append(
@@ -230,10 +253,14 @@ class OpenAPIToTypescriptActionConverter:
                     )
                 )
             else:
+                error_typehint = self.get_typescript_name_from_content_definition(
+                    response_definition.content_schema
+                )
                 common_params["errors"][
                     status_int
-                ] = self.get_typescript_name_from_content_definition(
-                    response_definition.content_schema
+                ] = TSLiteral(
+                    # Provide a mapping to the error class
+                    self.get_exception_class_name(error_typehint)
                 )
 
         # Remove the optional keys that don't have any values
@@ -268,3 +295,14 @@ class OpenAPIToTypescriptActionConverter:
         self, definition: ContentDefinition
     ):
         return definition.schema_ref.ref.split("/")[-1]
+
+    def status_code_is_valid(self, status_code: int):
+        return status_code >= 200 and status_code < 300
+
+    def get_exception_class_name(self, exception_typehint: str):
+        """
+        Given an error like "HTTPValidationError", responds with a class name of
+        "HTTPValidationErrorException"
+
+        """
+        return f"{exception_typehint}Exception"
