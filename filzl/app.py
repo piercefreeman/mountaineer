@@ -1,9 +1,11 @@
 from functools import wraps
 from typing import Callable
+from fastapi.staticfiles import StaticFiles
 
 from fastapi import APIRouter, FastAPI
 from inflection import underscore
 from pydantic import BaseModel
+from pathlib import Path
 
 from filzl.actions import (
     FunctionActionType,
@@ -34,11 +36,23 @@ class AppController:
 
     """
 
-    def __init__(self):
+    def __init__(self, view_root: Path):
         self.app = FastAPI()
         self.controllers: list[ControllerDefinition] = []
+        self.view_root = view_root
 
         self.internal_api_prefix = "/internal/api"
+
+        (self.view_root / "_static").mkdir(exist_ok=True)
+
+        # Mount the view_root / _static directory, since we'll need
+        # this for the client mounted view files
+        self.app.mount(
+            "/static_js",
+            StaticFiles(directory=self.view_root / "_static"),
+            name="static",
+        )
+        print("Will mount", self.view_root / "_static")
 
     def register(self, controller: ControllerBase):
         """
@@ -47,6 +61,13 @@ class AppController:
             - Mount all actions (ie. @sideeffect and @passthrough decorated functions) to their public API
 
         """
+
+        # The controller superclass needs to be initialized before it's
+        # registered into the application
+        if not hasattr(controller, "initialized"):
+            raise ValueError(
+                f"You must call super().__init__() on {controller} before it can be registered."
+            )
 
         # We need to passthrough the API of the render function to the FastAPI router so it's called properly
         # with the dependency injection kwargs

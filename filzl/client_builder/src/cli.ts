@@ -1,11 +1,19 @@
 import { resolve } from "path";
 import { existsSync } from "fs";
 import { buildPage } from "./build";
+import { stdout } from "process";
 
 interface CLIArgs {
   pagePath: string;
   viewRootPath: string;
 }
+
+const FINAL_OUTPUT_MARKER = {
+  // Decorator used so client callers are able to detect the final
+  // output from this script, in case other stdlog commands return JSON
+  // as well.
+  _output: true,
+};
 
 export const parseCLIArgs = (): CLIArgs => {
   const args = process.argv.slice(2);
@@ -52,10 +60,12 @@ const main = async () => {
   const builtContents = await buildPage(cliArgs.pagePath, cliArgs.viewRootPath);
 
   const payload = {
+    ...FINAL_OUTPUT_MARKER,
     builtContents,
   };
 
-  console.log(JSON.stringify(payload));
+  // Write the payload to stdout
+  stdout.write(JSON.stringify(payload));
 };
 
 await main();

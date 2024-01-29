@@ -29,6 +29,7 @@ const createSyntheticPage = (
   );
 
   let content = "";
+  content += "import { createRoot } from 'react-dom/client';\n";
   layoutImportPaths.forEach((layoutPath, index) => {
     content += `import Layout${index} from '../${layoutPath}';\n`;
   });
@@ -48,7 +49,9 @@ const createSyntheticPage = (
   content += "\n);\n";
   content += "};\n\n";
 
-  content += `ReactDOM.render(<Entrypoint />, document.getElementById('${rootElement}'));`;
+  content += `const container = document.getElementById('${rootElement}');`;
+  content += "const root = createRoot(container!);";
+  content += `root.render(<Entrypoint />);`;
 
   const syntheticFilePath = join(outputDir, "synthetic.tsx");
   writeFileSync(syntheticFilePath, content);

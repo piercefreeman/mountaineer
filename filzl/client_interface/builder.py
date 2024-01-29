@@ -1,5 +1,7 @@
 from collections import defaultdict
 from pathlib import Path
+from hashlib import md5
+from threading import Thread
 
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
@@ -12,10 +14,12 @@ from filzl.client_interface.build_action import (
     OpenAPIDefinition,
     OpenAPIToTypescriptActionConverter,
 )
+from filzl.client_interface.js_bundler import bundle_javascript, get_cleaned_js_contents
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
 from filzl.static import get_static_path
+from shutil import rmtree
 
 
 class ClientBuilder:
@@ -24,13 +28,13 @@ class ClientBuilder:
 
     """
 
-    def __init__(self, app: AppController, view_root: Path):
+    def __init__(self, app: AppController):
         self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
         self.openapi_action_converter = OpenAPIToTypescriptActionConverter()
         self.app = app
-        self.view_root = view_root
+        self.view_root = app.view_root
 
     def build(self):
         print("Will build", self.app.controllers)
@@ -50,6 +54,8 @@ class ClientBuilder:
         self.generate_global_model_imports()
         self.generate_server_provider()
         self.generate_view_servers()
+
+        self.build_javascript_chunks()
 
     def generate_static_files(self):
         """
@@ -318,14 +324,58 @@ class ClientBuilder:
 
             (controller_model_path / "useServer.ts").write_text("\n\n".join(chunks))
 
+    def build_javascript_chunks(self):
+        """
+        Build the final javascript chunks that will render the react documents. Each page will get
+        one chunk associated with it. We suffix these files with the current md5 hash of the contents to
+        allow clients to aggressively cache these contents but invalidate the cache whenever the script
+        contents have rebuilt in the background.
+
+        """
+        # Clear the static directory since we only want the latest files in there
+        static_dir = self.get_managed_static_dir(self.view_root)
+        if static_dir.exists():
+            rmtree(static_dir)
+        static_dir.mkdir(parents=True)
+        print("STATIC DIR", static_dir)
+
+        def spawn_builder(controller: ControllerBase):
+            contents = bundle_javascript(controller.view_path, self.view_root)
+
+            controller_base = underscore(controller.__class__.__name__)
+            content_hash = md5(get_cleaned_js_contents(contents).encode()).hexdigest()
+            script_name = f"{controller_base}-{content_hash}.js"
+
+            (static_dir / script_name).write_text(contents)
+            controller.bundled_scripts.append(script_name)
+
+        # Each build command is completely independent and there's some overhead with spawning
+        # each process. Make use of multi-core machines and spawn each process in its own
+        # management thread so we complete the build process in parallel.
+        threads : list[Thread] = []
+        for controller_definitions in self.app.controllers:
+            controller = controller_definitions.controller
+            thread = Thread(target=spawn_builder, args=(controller,))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
     def get_managed_code_dir(self, path: Path):
+        return self.get_managed_dir_common(path, "_server")
+
+    def get_managed_static_dir(self, path: Path):
+        return self.get_managed_dir_common(path, "_static")
+
+    def get_managed_dir_common(self, path: Path, managed_dir: str):
         # If the path is to a file, we want to get the parent directory
         # so that we can create the managed code directory
         # We also create the managed code directory if it doesn't exist so all subsequent
         # calls can immediately start writing to it
         if path.is_file():
             path = path.parent
-        managed_code_dir = path / "_server"
+        managed_code_dir = path / managed_dir
         managed_code_dir.mkdir(exist_ok=True)
         return managed_code_dir
 

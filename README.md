@@ -10,6 +10,18 @@ filzl is a batteries-included MVC web framework. It uses Python for the backend 
 - Avoid the need for a separate gateway API or Node.js server just to serve frontend clients
 - Static analysis of templates for strong validation: link validity, data access, etc.
 
+## Getting Started
+
+### Installation
+
+We currently require an external install of bun to handle JS compilation and server-side rendering.
+
+```bash
+$ curl -fsSL https://bun.sh/install | bash
+
+$ poetry install
+```
+
 ## Future Directions
 
 - Offload more of the server logic to Rust
