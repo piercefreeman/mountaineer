@@ -1,5 +1,5 @@
 import pytest
-from filzl.client_interface.js_bundler import get_cleaned_js_contents
+from filzl.client_interface.js_bundler import get_cleaned_js_contents, update_source_map_path
 
 @pytest.mark.parametrize(
     "input_str, expected_output",
@@ -26,3 +26,23 @@ from filzl.client_interface.js_bundler import get_cleaned_js_contents
 )
 def test_get_cleaned_js_contents(input_str: str, expected_output: str):
     assert get_cleaned_js_contents(input_str) == expected_output
+
+@pytest.mark.parametrize(
+    "input_str, replace_path, expected_output",
+    [
+        # Standard replacement
+        (
+            "var testing; //# sourceMappingURL=myfile.js.map",
+            "final_path.js.map",
+            "var testing; //# sourceMappingURL=final_path.js.map",
+        ),
+        # Replacement of independent map paths
+        (
+            "var testing; //# sourceMappingURL=first.js.map //# sourceMappingURL=second.js.map",
+            "final_path.js.map",
+            "var testing; //# sourceMappingURL=final_path.js.map //# sourceMappingURL=final_path.js.map",
+        )
+    ]
+)
+def test_update_source_map_path(input_str: str, replace_path: str, expected_output: str):
+    assert update_source_map_path(input_str, replace_path) == expected_output

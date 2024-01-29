@@ -14,7 +14,7 @@ from filzl.client_interface.build_action import (
     OpenAPIDefinition,
     OpenAPIToTypescriptActionConverter,
 )
-from filzl.client_interface.js_bundler import bundle_javascript, get_cleaned_js_contents
+from filzl.client_interface.js_bundler import bundle_javascript, get_cleaned_js_contents, update_source_map_path
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
@@ -340,13 +340,19 @@ class ClientBuilder:
         print("STATIC DIR", static_dir)
 
         def spawn_builder(controller: ControllerBase):
-            contents = bundle_javascript(controller.view_path, self.view_root)
+            contents, map_contents = bundle_javascript(controller.view_path, self.view_root)
 
             controller_base = underscore(controller.__class__.__name__)
             content_hash = md5(get_cleaned_js_contents(contents).encode()).hexdigest()
             script_name = f"{controller_base}-{content_hash}.js"
+            map_name = f"{script_name}.map"
+
+            # Map to the new script name
+            contents = update_source_map_path(contents, map_name)
 
             (static_dir / script_name).write_text(contents)
+            (static_dir / map_name).write_text(map_contents)
+
             controller.bundled_scripts.append(script_name)
 
         # Each build command is completely independent and there's some overhead with spawning

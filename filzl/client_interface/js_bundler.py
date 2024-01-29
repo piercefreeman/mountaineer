@@ -18,7 +18,8 @@ class BundleOutput(BaseModel):
 
     """
     output: Annotated[bool, assert_output_true] = Field(alias="_output")
-    built_contents: str = Field(alias="builtContents")
+    compiled_contents: str = Field(alias="compiledContents")
+    source_map_contents: str = Field(alias="sourceMapContents")
 
 
 def bundle_javascript(page_path: str | Path, view_path: str | Path):
@@ -46,7 +47,7 @@ def bundle_javascript(page_path: str | Path, view_path: str | Path):
             # This line is probably another kind of logging
             continue
 
-        return output.built_contents
+        return output.compiled_contents, output.source_map_contents
 
     raise Exception("Bundler failed: no output found in stdout")
 
@@ -63,3 +64,9 @@ def get_cleaned_js_contents(contents: str):
 
     # Using re.sub to replace the matched comments with an empty string
     return sub(pattern, '', contents).strip()
+
+def update_source_map_path(contents: str, new_path: str):
+    """
+    Updates the source map path to the new path, since the path is dynamic.
+    """
+    return sub(r'sourceMappingURL=(.*?).map', f'sourceMappingURL={new_path}', contents)

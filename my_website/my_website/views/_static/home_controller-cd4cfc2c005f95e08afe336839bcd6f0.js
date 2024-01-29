@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildYH8Tej/synthetic.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildXPlJts/synthetic.tsx
 var import_client = __toESM(require_client());
 
 // ../../my_website/my_website/views/app/home/page.tsx
@@ -23655,7 +23655,7 @@ var Home = () => {
 };
 var page_default = Home;
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildYH8Tej/synthetic.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildXPlJts/synthetic.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React.createElement(page_default, null);
 };
@@ -23710,3 +23710,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
+//# sourceMappingURL=home_controller-cd4cfc2c005f95e08afe336839bcd6f0.js.map

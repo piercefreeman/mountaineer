@@ -108,6 +108,7 @@ export const buildPage = async (pagePath: string, rootPath: string) => {
     outfile: compiledPath,
     format: "esm",
     loader: { ".tsx": "tsx" },
+    sourcemap: true,
   });
 
   if (buildResult.errors.length > 0) {
@@ -117,7 +118,11 @@ export const buildPage = async (pagePath: string, rootPath: string) => {
 
   // Read the output file and return it
   const compiledContents = readFileSync(compiledPath, "utf-8");
+  const sourceMapContents = readFileSync(`${compiledPath}.map`, "utf-8");
   rmdirSync(outputTempPath, { recursive: true });
 
-  return compiledContents;
+  return {
+    compiledContents,
+    sourceMapContents,
+  };
 };
