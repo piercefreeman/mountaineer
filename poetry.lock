@@ -2275,6 +2275,17 @@ files = [
 ]
 
 [[package]]
+name = "types-setuptools"
+version = "69.0.0.20240125"
+description = "Typing stubs for setuptools"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "types-setuptools-69.0.0.20240125.tar.gz", hash = "sha256:22ad498cb585b22ce8c97ada1fccdf294a2e0dd7dc984a28535a84ea82f45b3f"},
+    {file = "types_setuptools-69.0.0.20240125-py3-none-any.whl", hash = "sha256:00835f959ff24ebc32c55da8df9d46e8df25e3c4bfacb43e98b61fde51a4bc41"},
+]
+
+[[package]]
 name = "typing-extensions"
 version = "4.9.0"
 description = "Backported and Experimental Type Hints for Python 3.8+"
@@ -2389,4 +2400,4 @@ test = ["websockets"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "bc882f9cf35db88b5acc2709fffd6e4427ef563aa3a0256fdbecc5c8137ca6f2"
+content-hash = "9e5e7048197b185b7c3fa8b7b77e4be381a9c8a9daf03ae7a996f4907ec2274c"

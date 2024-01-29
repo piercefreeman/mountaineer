@@ -1,13 +1,13 @@
-import React, { useContext, useState, ReactNode } from 'react';
+import React, { createContext, useState, ReactNode } from 'react';
 import type * as ControllerTypes from './models';
 
 interface ServerState {
   HOME_CONTROLLER?: ControllerTypes.HOME_CONTROLLERHomeRender
 }
 
-export const ServerContext = useContext<{
+export const ServerContext = createContext<{
   serverState: ServerState
-  setServerState: (state: ServerState) => void
+  setServerState: (state: ServerState | ((prevState: ServerState) => ServerState)) => void
 }>(undefined as any)
 
 export const ServerProvider = ({ children }: { children: ReactNode }) => {

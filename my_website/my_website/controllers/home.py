@@ -1,8 +1,11 @@
-from filzl.render import RenderBase
-from filzl.actions import sideeffect, passthrough
-from filzl.controller import ControllerBase
-from my_website.views import get_view_path
+from uuid import UUID
+
 from pydantic import BaseModel
+
+from filzl.actions import passthrough, sideeffect
+from filzl.controller import ControllerBase
+from filzl.render import RenderBase
+from my_website.views import get_view_path
 
 
 class HomeRender(RenderBase):
@@ -20,7 +23,7 @@ class GetExternalDataResponse(BaseModel):
 
 class HomeController(ControllerBase):
     # view_path = "/testing/[post_id]/mytemplate.tsx"
-    url = "/"
+    url = "/{home_id}/"
     view_path = get_view_path("/app/home/page.tsx")
 
     def __init__(self):
@@ -31,7 +34,7 @@ class HomeController(ControllerBase):
         self.global_count += payload.count
 
     @sideeffect(reload=(HomeRender.current_count,))
-    def increment_count_only(self, payload: IncrementCountRequest):
+    def increment_count_only(self, payload: IncrementCountRequest, url_param: int):
         self.global_count += payload.count
 
     @passthrough(response_model=GetExternalDataResponse)
@@ -43,7 +46,7 @@ class HomeController(ControllerBase):
             first_name="John",
         )
 
-    def render(self) -> HomeRender:
+    def render(self, home_id: UUID) -> HomeRender:
         return HomeRender(
             first_name="John",
             current_count=self.global_count,

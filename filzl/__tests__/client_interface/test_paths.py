@@ -1,7 +1,9 @@
-import pytest
 from pathlib import Path
-from filzl.client_interface.paths import generate_relative_import
 from unittest.mock import patch
+
+import pytest
+
+from filzl.client_interface.paths import generate_relative_import
 
 
 @pytest.mark.parametrize(

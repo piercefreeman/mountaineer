@@ -1,10 +1,12 @@
+from enum import Enum
 from inspect import ismethod
-from filzl.render import FieldClassDefinition, RenderBase
 from typing import Callable, Type
+
+from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
-from enum import Enum
-from inflection import camelize
+
+from filzl.render import FieldClassDefinition, RenderBase
 
 
 class FunctionActionType(Enum):
@@ -32,6 +34,37 @@ class FunctionMetadata(BaseModel):
     # Inserted by the render decorator
     url: str | None = None
     return_model: Type[BaseModel] | None = None
+
+    #
+    # Accessors for polymorphic variables
+    # These convenience methods are used to ensure client callers that this function metadata
+    # does have the expected values. They should only be used in cases that you know based on runtime
+    # guarantees that certain functions will have certain attributes.
+    #
+    def get_reload_states(self) -> tuple[FieldClassDefinition, ...]:
+        if not self.reload_states:
+            raise ValueError("Reload states not set")
+        return self.reload_states
+
+    def get_render_model(self) -> Type[RenderBase]:
+        if not self.render_model:
+            raise ValueError("Render model not set")
+        return self.render_model
+
+    def get_passthrough_model(self) -> Type[BaseModel]:
+        if not self.passthrough_model:
+            raise ValueError("Passthrough model not set")
+        return self.passthrough_model
+
+    def get_url(self) -> str:
+        if not self.url:
+            raise ValueError("URL not set")
+        return self.url
+
+    def get_return_model(self) -> Type[BaseModel]:
+        if not self.return_model:
+            raise ValueError("Return model not set")
+        return self.return_model
 
 
 METADATA_ATTRIBUTE = "_filzl_metadata"

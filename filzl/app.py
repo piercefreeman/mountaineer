@@ -1,19 +1,27 @@
-from fastapi import APIRouter, FastAPI
-from filzl.controller import ControllerBase
-from inflection import underscore
 from functools import wraps
-from filzl.actions import (
-    init_function_metadata,
-    fuse_metadata_to_response_typehint,
-    FunctionActionType,
-)
-from filzl.render import RenderBase
+from typing import Callable
+
+from fastapi import APIRouter, FastAPI
+from inflection import underscore
 from pydantic import BaseModel
+
+from filzl.actions import (
+    FunctionActionType,
+    fuse_metadata_to_response_typehint,
+    init_function_metadata,
+)
+from filzl.controller import ControllerBase
+from filzl.render import RenderBase
 
 
 class ControllerDefinition(BaseModel):
     controller: ControllerBase
     router: APIRouter
+    # URL prefix to the root of the server
+    url_prefix: str
+    # Dynamically generated function that actually renders the html content
+    # This is a hybrid between render() and _generate_html()
+    view_route: Callable
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -107,5 +115,10 @@ class AppController:
         )
 
         self.controllers.append(
-            ControllerDefinition(controller=controller, router=controller_api)
+            ControllerDefinition(
+                controller=controller,
+                router=controller_api,
+                view_route=generate_controller_html,
+                url_prefix=controller_url_prefix,
+            )
         )

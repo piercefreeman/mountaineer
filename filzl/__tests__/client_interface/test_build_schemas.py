@@ -1,9 +1,10 @@
-from filzl.client_interface.build_schemas import (
-    OpenAPIToTypeScriptConverter,
-    OpenAPISchema,
-)
-from pydantic import BaseModel, Field, create_model
 import pytest
+from pydantic import BaseModel, Field, create_model
+
+from filzl.client_interface.build_schemas import (
+    OpenAPISchema,
+    OpenAPIToTypescriptSchemaConverter,
+)
 
 
 class SubModel1(BaseModel):
@@ -24,7 +25,7 @@ class MyModel(BaseModel):
 
 
 def test_basic_interface():
-    converter = OpenAPIToTypeScriptConverter()
+    converter = OpenAPIToTypescriptSchemaConverter()
     result = converter.convert(MyModel)
     assert "interface MyModel {" in result
 
@@ -32,7 +33,7 @@ def test_basic_interface():
 def test_model_gathering():
     schema = OpenAPISchema(**MyModel.model_json_schema())
 
-    converter = OpenAPIToTypeScriptConverter()
+    converter = OpenAPIToTypescriptSchemaConverter()
     all_models = converter.gather_all_models(schema)
 
     # OpenAPI makes an object for the dictionary as well
@@ -68,7 +69,7 @@ def test_python_to_typescript_types(
 
     schema = OpenAPISchema(**fake_model.model_json_schema())
 
-    converter = OpenAPIToTypeScriptConverter()
+    converter = OpenAPIToTypescriptSchemaConverter()
     interface_definition = converter.convert_schema_to_interface(schema, base=schema)
 
     for expected_str in expected_typescript_types:
@@ -87,7 +88,7 @@ def test_require_json_dictionaries():
     class ValidDictModel(BaseModel):
         value: dict[str, str]
 
-    converter = OpenAPIToTypeScriptConverter()
+    converter = OpenAPIToTypescriptSchemaConverter()
     converter.validate_typescript_candidate(ValidDictModel)
 
     with pytest.raises(ValueError):

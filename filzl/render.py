@@ -1,7 +1,8 @@
+from typing import TYPE_CHECKING, Any, Type
+
 from pydantic import BaseModel
 from pydantic._internal._model_construction import ModelMetaclass
-from pydantic.fields import FieldInfo, Field
-from typing import Any, TYPE_CHECKING, Type
+from pydantic.fields import Field, FieldInfo
 from typing_extensions import dataclass_transform
 
 

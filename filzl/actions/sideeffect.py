@@ -1,9 +1,10 @@
-from filzl.render import FieldClassDefinition
-from typing import Callable, Type, Any
 from functools import wraps
+from typing import Any, Callable, Type, overload
+
 from pydantic import BaseModel
-from typing import overload
-from filzl.actions.fields import init_function_metadata, FunctionActionType
+
+from filzl.actions.fields import FunctionActionType, init_function_metadata
+from filzl.render import FieldClassDefinition
 
 
 @overload

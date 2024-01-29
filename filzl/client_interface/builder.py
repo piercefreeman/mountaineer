@@ -1,15 +1,22 @@
-from filzl.app import AppController
-from pathlib import Path
-from filzl.actions import get_function_metadata, parse_fastapi_function
-from filzl.client_interface.build_schemas import OpenAPIToTypeScriptConverter
 from collections import defaultdict
+from pathlib import Path
+
+from fastapi import APIRouter
+from fastapi.openapi.utils import get_openapi
 from inflection import camelize, underscore
-from inspect import isclass
-from pydantic import BaseModel
+
+from filzl.actions import get_function_metadata
+from filzl.actions.fields import FunctionActionType
+from filzl.app import AppController, ControllerDefinition
+from filzl.client_interface.build_action import (
+    OpenAPIDefinition,
+    OpenAPIToTypescriptActionConverter,
+)
+from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
-from filzl.annotation_helpers import make_optional_model
-from fastapi.openapi.utils import get_openapi
+from filzl.static import get_static_path
+
 
 class ClientBuilder:
     """
@@ -18,9 +25,10 @@ class ClientBuilder:
     """
 
     def __init__(self, app: AppController, view_root: Path):
-        self.openapi_schema_converter = OpenAPIToTypeScriptConverter(
+        self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
+        self.openapi_action_converter = OpenAPIToTypescriptActionConverter()
         self.app = app
         self.view_root = view_root
 
@@ -31,7 +39,8 @@ class ClientBuilder:
         # to build the client code
         self.validate_unique_paths()
 
-        # TODO: Copy over the static files that don't depend on client code
+        # Static files that don't depend on client code
+        self.generate_static_files()
 
         # The order of these generators don't particularly matter since most TSX linters
         # won't refresh until they're all complete. However, this ordering better aligns
@@ -41,6 +50,15 @@ class ClientBuilder:
         self.generate_global_model_imports()
         self.generate_server_provider()
         self.generate_view_servers()
+
+    def generate_static_files(self):
+        """
+        Copy over the static files that are required for the client.
+
+        """
+        managed_code_dir = self.get_managed_code_dir(self.view_root)
+        api_content = get_static_path("api.ts").read_text()
+        (managed_code_dir / "api.ts").write_text(api_content)
 
     def generate_model_definitions(self):
         """
@@ -52,38 +70,29 @@ class ClientBuilder:
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
 
-            metadata = get_function_metadata(controller.render)
-            print("SHOULD BUILD", controller, controller.view_path, metadata)
+            openapi_spec = self.openapi_from_controller(controller_definition)
+            base = OpenAPIDefinition(**openapi_spec)
 
-            # Create the managed code directory if it doesn't exist
-            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
-
-            # Build the server state models, enforce unique schema names so we avoid interface duplicates
-            # if they're defined in multiple places
             schemas: dict[str, str] = {}
 
-            # We have to separately handle the model rendering because we intentionally
-            # strip it from the OpenAPI payload. It's an internal detail, not one that's exposed
-            # explicitly as part of the API.
-            if metadata.render_model:
-                schemas = {
-                    **schemas,
-                    **self.openapi_schema_converter.convert(metadata.render_model),
-                }
+            # Convert the render model
+            render_metadata = get_function_metadata(controller.render)
+            for schema_name, component in self.openapi_schema_converter.convert(
+                render_metadata.get_render_model(),
+            ).items():
+                schemas[schema_name] = component
 
-            for _, fn, _ in controller._get_client_functions():
-                return_model = fn.__annotations__.get("return")
-                if (
-                    return_model
-                    and isclass(return_model)
-                    and issubclass(return_model, BaseModel)
-                ):
-                    schemas = {
-                        **schemas,
-                        **self.openapi_schema_converter.convert(return_model),
-                    }
+            # Convert the sideeffect routes
+            for schema_name, component in base.components.schemas.items():
+                schemas[
+                    schema_name
+                ] = self.openapi_schema_converter.convert_schema_to_interface(
+                    component,
+                    base=base,
+                )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
+            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
             (managed_code_dir / "models.ts").write_text(
                 "\n\n".join(
                     [
@@ -101,33 +110,31 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            root_code_dir = self.get_managed_code_dir(self.view_root)
 
-            print("OPENAPI", get_openapi(title="", version="", routes=controller_definition.router.routes))
-            raise ValueError
+            controller_action_path = controller_code_dir / "actions.ts"
+            root_common_handler = root_code_dir / "api.ts"
+            root_api_import_path = generate_relative_import(
+                controller_action_path, root_common_handler
+            )
 
-            components: list[str] = []
+            openapi_raw = self.openapi_from_controller(controller_definition)
+            output_schemas, required_types = self.openapi_action_converter.convert(
+                openapi_raw
+            )
 
-            # Step 1: Imports
-            components.append("import type * as ControllerTypes from './models';\n")
+            chunks: list[str] = []
 
-            # Step 2: Definitions for the actions
-            for _, fn, metadata in controller._get_client_functions():
-                if not metadata.return_model:
-                    continue
+            # Step 1: Requirements
+            chunks.append(
+                f"import {{ __request, FetchErrorBase }} from '{root_api_import_path}';\n"
+                + f"import type {{ {', '.join(required_types)} }} from './models';"
+            )
 
-                # We need to determine the request parameters that clients will need to input
-                # for this endpoint
-                parsed_spec = parse_fastapi_function(fn, metadata.url)
+            chunks += output_schemas.values()
 
-                # Implement
-                components.append(
-                    f"export const {metadata.function_name} = async (payload) : Promise<ControllerTypes.{metadata.return_model.__name__}> => {{\n"
-                    + "}"
-                )
-
-            # We put in one big models.ts file to enable potentially cyclical dependencies
-            (managed_code_dir / "actions.ts").write_text("\n\n".join(components))
+            controller_action_path.write_text("\n\n".join(chunks))
 
     def generate_global_model_imports(self):
         """
@@ -171,7 +178,7 @@ class ClientBuilder:
 
         # Step 1: Global imports that will be required
         chunks.append(
-            "import React, { useContext, useState, ReactNode } from 'react';\n"
+            "import React, { createContext, useState, ReactNode } from 'react';\n"
             + "import type * as ControllerTypes from './models';"
         )
 
@@ -194,9 +201,9 @@ class ClientBuilder:
 
         # Step 3: Define the server context provider
         chunks.append(
-            "export const ServerContext = useContext<{\n"
+            "export const ServerContext = createContext<{\n"
             + "  serverState: ServerState\n"
-            + "  setServerState: (state: ServerState) => void\n"
+            + "  setServerState: (state: ServerState | ((prevState: ServerState) => ServerState)) => void\n"
             + "}>(undefined as any)"
         )
 
@@ -229,12 +236,7 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            render_metadata = get_function_metadata(controller.render)
-            # TODO: We need a better way to do this for each specific metadata type
-            if not render_metadata.render_model:
-                raise ValueError(
-                    f"Controller {controller} does not have a render model defined"
-                )
+            render_model = get_function_metadata(controller.render).get_render_model()
 
             chunks: list[str] = []
 
@@ -242,62 +244,74 @@ class ClientBuilder:
             # We want to have an inline reference to a model which is compatible with the base render model alongside
             # all sideeffect sub-models. Since we're re-declaring this in the server file, we also
             # have to bring with us all of the other sub-model imports.
-            optional_model = make_optional_model(render_metadata.render_model)
-            optional_schema_definitions = self.openapi_schema_converter.convert(
-                optional_model
-            )
-            optional_schema = optional_schema_definitions[optional_model.__name__]
-            other_submodels = [
-                schema_name
-                for schema_name in optional_schema_definitions.keys()
-                if schema_name != optional_model.__name__
+            render_model_name = render_model.__name__
+
+            # Step 2: Find the actions that are relevant
+            controller_action_metadata = [
+                metadata for _, _, metadata in controller._get_client_functions()
             ]
 
             # Step 2: Setup imports from the single global provider
-            # TODO: Add actions in here as well
             controller_model_path = self.get_managed_code_dir(
                 Path(controller.view_path)
             )
-            global_server_path = (
-                self.get_managed_code_dir(self.view_root) / "server.tsx"
-            )
+            global_server_path = self.get_managed_code_dir(self.view_root)
             print("CONTROLLER", controller_model_path, global_server_path)
-            relative_import_path = generate_relative_import(
+            relative_server_path = generate_relative_import(
                 controller_model_path, global_server_path
             )
 
             chunks.append(
                 "import React, { useContext } from 'react';\n"
-                + f"import {{ ServerContext }} from '{relative_import_path}';\n"
+                + f"import {{ ServerContext }} from '{relative_server_path}/server';\n"
+                + f"import {{ applySideEffect }} from '{relative_server_path}/api';\n"
+                + f"import {{ {render_model_name} }} from './models';"
                 + (
-                    f"import {{ {', '.join(other_submodels)} }} from './models';"
-                    if other_submodels
+                    f"import {{ {', '.join([metadata.function_name for metadata in controller_action_metadata])} }} from './actions';"
+                    if controller_action_metadata
                     else ""
                 )
             )
 
-            # Step 3: Now that we have the imports we can add the optional model definition
-            chunks.append(optional_schema)
+            # Step 3: Add the optional model definition - this allows any controller that returns a partial
+            # side-effect to update the full model with the same typehint
+            optional_model_name = f"{render_model_name}Optional"
+            chunks.append(
+                f"export type {optional_model_name} = Partial<{render_model_name}>;"
+            )
 
-            # Step 3
+            # Step 4: Final implementation of the useServer() hook, which returns a subview of the overall
+            # server state that's only relevant to this controller
             chunks.append(
                 "export const useServer = () => {\n"
                 + "const { serverState, setServerState } = useContext(ServerContext);\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update
-                + f"const setControllerState = (payload: {optional_model.__name__}) => {{\n"
+                + f"const setControllerState = (payload: {optional_model_name}) => {{\n"
                 + "setServerState((state) => ({\n"
                 + "...state,\n"
-                + f"{self.get_controller_global_state(controller)}: {{\n"
+                # The controller is allowed to be undefined by the global typehint, in order to account for the non-active
+                # controllers not being set. We therefore need to check if the controller is defined before we try to update
+                # it with the partial.
+                + f"{self.get_controller_global_state(controller)}: state.{self.get_controller_global_state(controller)} ? {{\n"
                 + f"...state.{self.get_controller_global_state(controller)},\n"
                 + "...payload,\n"
-                + "}\n"
+                + "} : undefined\n"
                 + "}))\n"
                 + "};\n"
                 + "return {\n"
                 + f"...serverState['{self.get_controller_global_state(controller)}'],\n"
-                # TODO: Add actions here
+                + ",\n".join(
+                    [
+                        (
+                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
+                            if metadata.action_type == FunctionActionType.SIDEEFFECT
+                            else f"{metadata.function_name}: {metadata.function_name}"
+                        )
+                        for metadata in controller_action_metadata
+                    ]
+                )
                 + "}\n"
                 + "};"
             )
@@ -370,7 +384,7 @@ class ClientBuilder:
         controller_name = self.get_controller_global_state(controller)
 
         render_metadata = get_function_metadata(controller.render)
-        render_model_name = camelize(render_metadata.render_model.__name__)
+        render_model_name = camelize(render_metadata.get_render_model().__name__)
 
         return f"{controller_name}{render_model_name}"
 
@@ -382,4 +396,16 @@ class ClientBuilder:
         :returns ReturnModel
         """
         render_metadata = get_function_metadata(controller.render)
-        return camelize(render_metadata.render_model.__name__)
+        return camelize(render_metadata.get_render_model().__name__)
+
+    def openapi_from_controller(self, controller_definition: ControllerDefinition):
+        """
+        Small hack to get the full path to the root of the server. By default the controller just
+        has the path relative to the controller API.
+
+        """
+        root_router = APIRouter()
+        root_router.include_router(
+            controller_definition.router, prefix=controller_definition.url_prefix
+        )
+        return get_openapi(title="", version="", routes=root_router.routes)
