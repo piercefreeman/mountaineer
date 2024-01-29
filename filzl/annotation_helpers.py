@@ -1,17 +1,16 @@
-from dataclasses import is_dataclass, fields
+from dataclasses import fields, is_dataclass
 from inspect import isclass
-from pydantic import BaseModel, create_model
-from pydantic.fields import FieldInfo
+from types import UnionType
 from typing import (
     Any,
     Type,
+    Union,
     get_args,
     get_origin,
-    Union,
 )
-from copy import deepcopy
+
+from pydantic import BaseModel
 from pydantic._internal._typing_extra import eval_type_lenient
-from types import UnionType
 
 
 def get_value_by_alias(model: BaseModel | dict[str, Any], alias: str):

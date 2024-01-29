@@ -1,18 +1,20 @@
+from collections import defaultdict
+from pathlib import Path
+
 from fastapi import APIRouter
+from fastapi.openapi.utils import get_openapi
+from inflection import camelize, underscore
+
+from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
-from pathlib import Path
-from filzl.actions import get_function_metadata
+from filzl.client_interface.build_action import (
+    OpenAPIDefinition,
+    OpenAPIToTypescriptActionConverter,
+)
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
-from filzl.client_interface.build_action import OpenAPIToTypescriptActionConverter, OpenAPIDefinition
-from collections import defaultdict
-from inflection import camelize, underscore
-from inspect import isclass
-from pydantic import BaseModel
 from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
-from fastapi.openapi.utils import get_openapi
-
 from filzl.static import get_static_path
 
 
@@ -71,17 +73,20 @@ class ClientBuilder:
             openapi_spec = self.openapi_from_controller(controller_definition)
             base = OpenAPIDefinition(**openapi_spec)
 
-            schemas : dict[str, str] = {}
+            schemas: dict[str, str] = {}
 
-            # Conver the render model
+            # Convert the render model
             render_metadata = get_function_metadata(controller.render)
-            if render_metadata.render_model:
-                for schema_name, component in self.openapi_schema_converter.convert(render_metadata.render_model).items():
-                    schemas[schema_name] = component
+            for schema_name, component in self.openapi_schema_converter.convert(
+                render_metadata.get_render_model(),
+            ).items():
+                schemas[schema_name] = component
 
             # Convert the sideeffect routes
             for schema_name, component in base.components.schemas.items():
-                schemas[schema_name] = self.openapi_schema_converter.convert_schema_to_interface(
+                schemas[
+                    schema_name
+                ] = self.openapi_schema_converter.convert_schema_to_interface(
                     component,
                     base=base,
                 )
@@ -115,9 +120,11 @@ class ClientBuilder:
             )
 
             openapi_raw = self.openapi_from_controller(controller_definition)
-            output_schemas, required_types = self.openapi_action_converter.convert(openapi_raw)
+            output_schemas, required_types = self.openapi_action_converter.convert(
+                openapi_raw
+            )
 
-            chunks : list[str] = []
+            chunks: list[str] = []
 
             # Step 1: Requirements
             chunks.append(
@@ -229,12 +236,7 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            render_metadata = get_function_metadata(controller.render)
-            # TODO: We need a better way to do this for each specific metadata type
-            if not render_metadata.render_model:
-                raise ValueError(
-                    f"Controller {controller} does not have a render model defined"
-                )
+            render_model = get_function_metadata(controller.render).get_render_model()
 
             chunks: list[str] = []
 
@@ -242,21 +244,18 @@ class ClientBuilder:
             # We want to have an inline reference to a model which is compatible with the base render model alongside
             # all sideeffect sub-models. Since we're re-declaring this in the server file, we also
             # have to bring with us all of the other sub-model imports.
-            render_model_name = render_metadata.render_model.__name__
+            render_model_name = render_model.__name__
 
             # Step 2: Find the actions that are relevant
             controller_action_metadata = [
-                metadata
-                for _, _, metadata in controller._get_client_functions()
+                metadata for _, _, metadata in controller._get_client_functions()
             ]
 
             # Step 2: Setup imports from the single global provider
             controller_model_path = self.get_managed_code_dir(
                 Path(controller.view_path)
             )
-            global_server_path = (
-                self.get_managed_code_dir(self.view_root)
-            )
+            global_server_path = self.get_managed_code_dir(self.view_root)
             print("CONTROLLER", controller_model_path, global_server_path)
             relative_server_path = generate_relative_import(
                 controller_model_path, global_server_path
@@ -303,14 +302,16 @@ class ClientBuilder:
                 + "};\n"
                 + "return {\n"
                 + f"...serverState['{self.get_controller_global_state(controller)}'],\n"
-                + ",\n".join([
-                    (
-                        f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
-                        if metadata.action_type == FunctionActionType.SIDEEFFECT
-                        else f"{metadata.function_name}: {metadata.function_name}"
-                    )
-                    for metadata in controller_action_metadata
-                ])
+                + ",\n".join(
+                    [
+                        (
+                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
+                            if metadata.action_type == FunctionActionType.SIDEEFFECT
+                            else f"{metadata.function_name}: {metadata.function_name}"
+                        )
+                        for metadata in controller_action_metadata
+                    ]
+                )
                 + "}\n"
                 + "};"
             )
@@ -383,7 +384,7 @@ class ClientBuilder:
         controller_name = self.get_controller_global_state(controller)
 
         render_metadata = get_function_metadata(controller.render)
-        render_model_name = camelize(render_metadata.render_model.__name__)
+        render_model_name = camelize(render_metadata.get_render_model().__name__)
 
         return f"{controller_name}{render_model_name}"
 
@@ -395,7 +396,7 @@ class ClientBuilder:
         :returns ReturnModel
         """
         render_metadata = get_function_metadata(controller.render)
-        return camelize(render_metadata.render_model.__name__)
+        return camelize(render_metadata.get_render_model().__name__)
 
     def openapi_from_controller(self, controller_definition: ControllerDefinition):
         """

@@ -1,15 +1,17 @@
-from fastapi import APIRouter, FastAPI
-from filzl.controller import ControllerBase
-from inflection import underscore
 from functools import wraps
-from filzl.actions import (
-    init_function_metadata,
-    fuse_metadata_to_response_typehint,
-    FunctionActionType,
-)
-from filzl.render import RenderBase
-from pydantic import BaseModel
 from typing import Callable
+
+from fastapi import APIRouter, FastAPI
+from inflection import underscore
+from pydantic import BaseModel
+
+from filzl.actions import (
+    FunctionActionType,
+    fuse_metadata_to_response_typehint,
+    init_function_metadata,
+)
+from filzl.controller import ControllerBase
+from filzl.render import RenderBase
 
 
 class ControllerDefinition(BaseModel):

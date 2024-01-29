@@ -1,6 +1,7 @@
 from dataclasses import dataclass
+
 from pydantic import BaseModel
-from pydantic_core import PydanticUndefined
+
 from filzl.annotation_helpers import yield_all_subtypes
 
 

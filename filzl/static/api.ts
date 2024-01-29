@@ -86,21 +86,27 @@ export const __request = async (params: FetchParams) => {
   }
 };
 
-type ApiFunctionReturnType<T> = {
-  passthrough?: any;
-  sideeffect: T;
+type ApiFunctionReturnType<S, P> = {
+  sideeffect: S;
+  passthrough?: P;
 };
 
-export function applySideEffect<T extends any[], Y>(
-  apiFunction: (...args: T) => Promise<ApiFunctionReturnType<Y>>,
-  setControllerState: (payload: Y) => void,
-): (...args: T) => Promise<void> {
+export function applySideEffect<
+  ARG extends any[],
+  S,
+  P,
+  RE extends ApiFunctionReturnType<S, P>,
+>(
+  apiFunction: (...args: ARG) => Promise<RE>,
+  setControllerState: (payload: S) => void,
+): (...args: ARG) => Promise<RE> {
   /*
    * Executes an API server function, triggering any appropriate exceptions.
    * If the fetch succeeds, the sideeffect is applied to the controller state.
    */
-  return async (...args: any[]) => {
+  return async (...args: ARG) => {
     const result = await apiFunction(...args);
     setControllerState(result.sideeffect);
+    return result;
   };
 }

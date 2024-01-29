@@ -1,5 +1,5 @@
-from pathlib import Path
 from os.path import relpath
+from pathlib import Path
 
 
 def generate_relative_import(current_import: Path, desired_import: Path):

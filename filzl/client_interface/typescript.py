@@ -4,7 +4,8 @@ Python definitions.
 
 """
 from typing import Any
-from filzl.client_interface.openapi_common import OpenAPISchemaType
+
+from filzl.client_interface.openapi import OpenAPISchemaType
 
 
 class TSLiteral(str):
@@ -54,6 +55,7 @@ def python_payload_to_typescript(payload: Any) -> str:
         raise ValueError(
             f"Unknown payload type {type(payload) } for Typescript conversion."
         )
+
 
 def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType):
     mapping = {

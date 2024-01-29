@@ -1,56 +1,18 @@
 """
 Generator for TypeScript interfaces from OpenAPI specifications.
 """
-import json
-from typing import Optional, Iterator, Type, get_args, get_origin, Dict
+from typing import Dict, Iterator, Type, get_args, get_origin
+
 from inflection import camelize
-from pydantic import BaseModel, Field, model_validator
-from enum import StrEnum
+from pydantic import BaseModel
+
 from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
+from filzl.client_interface.openapi import (
+    OpenAPIProperty,
+    OpenAPISchema,
+    OpenAPISchemaType,
+)
 from filzl.client_interface.typescript import map_openapi_type_to_ts
-from filzl.client_interface.openapi_common import OpenAPISchemaType
-
-
-class OpenAPIProperty(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    properties: dict[str, "OpenAPIProperty"] = {}
-    additionalProperties: Optional["OpenAPIProperty"] = None
-    required: list[str] = []
-
-    # Self-contained type: object, int, etc
-    variable_type: OpenAPISchemaType | None = Field(alias="type", default=None)
-    # Reference to another type
-    ref: str | None = Field(alias="$ref", default=None)
-    # Array of another type
-    items: Optional["OpenAPIProperty"] = None
-    # Pointer to multiple possible subtypes
-    anyOf: list["OpenAPIProperty"] = []
-
-    # Validator to ensure that one of the optional values is set
-    @model_validator(mode="after")
-    def check_provided_value(self) -> "OpenAPIProperty":
-        if not any([self.variable_type, self.ref, self.items, self.anyOf]):
-            raise ValueError("One of variable_type, $ref, or items must be set")
-        return self
-
-    def __hash__(self):
-        # Normally we would make use of a frozen BaseClass to enable hashing, but since
-        # dictionaries are included in the payload here an easier way is just to convert
-        # to a JSON string and hash that.
-        # We make sure to order the strings since otherwise the hash risks being different
-        # despite having the same values
-        def sort_json(obj):
-            if isinstance(obj, dict):
-                return sorted((k, sort_json(v)) for k, v in obj.items())
-            else:
-                return obj
-
-        return hash(json.dumps(sort_json(self.model_dump())))
-
-
-class OpenAPISchema(OpenAPIProperty):
-    defs: dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
 
 
 class OpenAPIToTypescriptSchemaConverter:
@@ -60,6 +22,7 @@ class OpenAPIToTypescriptSchemaConverter:
     generating interfaces from other OpenAPI-compliant schemas.
 
     """
+
     def __init__(self, export_interface: bool = False):
         self.export_interface = export_interface
 
@@ -110,8 +73,14 @@ class OpenAPIToTypescriptSchemaConverter:
 
         return list(set(walk_models(base)))
 
-    def resolve_ref(self, ref: str, base: OpenAPISchema) -> OpenAPIProperty:
-        current_obj: OpenAPIProperty = base
+    def resolve_ref(self, ref: str, base: BaseModel) -> OpenAPIProperty:
+        """
+        Resolve a $ref that points to a propery-compliant schema in the same document. If this
+        ref points somewhere else in the document (that is valid but not a data model) than we
+        raise a ValueError.
+
+        """
+        current_obj = base
         for part in ref.split("/"):
             if part == "#":
                 current_obj = base
@@ -122,6 +91,8 @@ class OpenAPIToTypescriptSchemaConverter:
                     raise AttributeError(
                         f"Invalid $ref, couldn't resolve path: {ref}"
                     ) from e
+        if not isinstance(current_obj, OpenAPIProperty):
+            raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")
         return current_obj
 
     def convert_schema_to_interface(self, model: OpenAPIProperty, base: BaseModel):

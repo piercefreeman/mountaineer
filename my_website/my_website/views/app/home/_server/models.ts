@@ -37,7 +37,7 @@ export interface IncrementCountResponseSideEffect {
 }
 
 export interface ValidationError {
-  loc: Array<string | number>;
+  loc: Array<number | string>;
   msg: string;
   type: string;
 }

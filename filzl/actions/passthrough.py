@@ -1,8 +1,9 @@
-from typing import Callable, Type
 from functools import wraps
+from typing import Callable, Type, overload
+
 from pydantic import BaseModel
-from typing import overload
-from filzl.actions.fields import init_function_metadata, FunctionActionType
+
+from filzl.actions.fields import FunctionActionType, init_function_metadata
 
 
 @overload
