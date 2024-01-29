@@ -85,3 +85,22 @@ export const __request = async (params: FetchParams) => {
     throw error;
   }
 };
+
+type ApiFunctionReturnType<T> = {
+  passthrough?: any;
+  sideeffect: T;
+};
+
+export function applySideEffect<Y>(
+  apiFunction: (...args: any[]) => Promise<ApiFunctionReturnType<Y>>,
+  setControllerState: (payload: Y) => void,
+): (...args: any[]) => Promise<void> {
+  /*
+   * Executes an API server function, triggering any appropriate exceptions.
+   * If the fetch succeeds, the sideeffect is applied to the controller state.
+   */
+  return async (...args: any[]) => {
+    const result = await apiFunction(...args);
+    setControllerState(result.sideeffect);
+  };
+}

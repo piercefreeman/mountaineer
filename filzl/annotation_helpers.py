@@ -123,32 +123,3 @@ def yield_all_subtypes(
                 yield from resolve_types(dataclass_definition.type)
 
     yield from resolve_types(model)
-
-
-def make_optional_model(model: Type[BaseModel]):
-    """
-    Given a standard Pydantic model, make all fields optional. Names the new model `{Model}Optional`.
-
-    """
-    optional_fields: dict[str, tuple[type, FieldInfo]] = {}
-
-    for field_name, field_definition in model.model_fields.items():
-        # We are making modifications to the field definition and don't want a shared memory
-        # copy to affect other locations where the original model is used. It _probably_ wouldn't
-        # do this anyway since the model has already been instantiated, but this is a good
-        # practice to follow.
-        new_field_definition = deepcopy(field_definition)
-
-        # The default value is what actaully sets the field to optional within OpenAPI
-        # Actually modifying the type to be Optional[T] will just inject a `null` type into
-        # an anyOf spec.
-        new_field_definition.default = None
-        optional_fields[field_name] = (
-            field_definition.annotation,
-            new_field_definition,
-        )
-
-    return create_model(
-        f"{model.__name__}Optional",
-        **optional_fields,  # type: ignore
-    )

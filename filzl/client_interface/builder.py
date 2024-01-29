@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
 from pathlib import Path
 from filzl.actions import get_function_metadata
@@ -10,7 +11,6 @@ from inspect import isclass
 from pydantic import BaseModel
 from filzl.client_interface.paths import generate_relative_import
 from filzl.controller import ControllerBase
-from filzl.annotation_helpers import make_optional_model
 from fastapi.openapi.utils import get_openapi
 
 from filzl.static import get_static_path
@@ -245,9 +245,9 @@ class ClientBuilder:
             render_model_name = render_metadata.render_model.__name__
 
             # Step 2: Find the actions that are relevant
-            controller_action_names = [
-                fn_name
-                for fn_name, _, _ in controller._get_client_functions()
+            controller_action_metadata = [
+                metadata
+                for _, _, metadata in controller._get_client_functions()
             ]
 
             # Step 2: Setup imports from the single global provider
@@ -255,20 +255,21 @@ class ClientBuilder:
                 Path(controller.view_path)
             )
             global_server_path = (
-                self.get_managed_code_dir(self.view_root) / "server.tsx"
+                self.get_managed_code_dir(self.view_root)
             )
             print("CONTROLLER", controller_model_path, global_server_path)
-            relative_import_path = generate_relative_import(
+            relative_server_path = generate_relative_import(
                 controller_model_path, global_server_path
             )
 
             chunks.append(
                 "import React, { useContext } from 'react';\n"
-                + f"import {{ ServerContext }} from '{relative_import_path}';\n"
+                + f"import {{ ServerContext }} from '{relative_server_path}/server';\n"
+                + f"import {{ applySideEffect }} from '{relative_server_path}/api';\n"
                 + f"import {{ {render_model_name} }} from './models';"
                 + (
-                    f"import {{ {', '.join(controller_action_names)} }} from './actions';"
-                    if controller_action_names
+                    f"import {{ {', '.join([metadata.function_name for metadata in controller_action_metadata])} }} from './actions';"
+                    if controller_action_metadata
                     else ""
                 )
             )
@@ -302,7 +303,14 @@ class ClientBuilder:
                 + "};\n"
                 + "return {\n"
                 + f"...serverState['{self.get_controller_global_state(controller)}'],\n"
-                + ",\n".join(controller_action_names)
+                + ",\n".join([
+                    (
+                        f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
+                        if metadata.action_type == FunctionActionType.SIDEEFFECT
+                        else f"{metadata.function_name}: {metadata.function_name}"
+                    )
+                    for metadata in controller_action_metadata
+                ])
                 + "}\n"
                 + "};"
             )
