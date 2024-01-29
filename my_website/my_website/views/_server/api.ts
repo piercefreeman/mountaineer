@@ -91,10 +91,10 @@ type ApiFunctionReturnType<T> = {
   sideeffect: T;
 };
 
-export function applySideEffect<Y>(
-  apiFunction: (...args: any[]) => Promise<ApiFunctionReturnType<Y>>,
+export function applySideEffect<T extends any[], Y>(
+  apiFunction: (...args: T) => Promise<ApiFunctionReturnType<Y>>,
   setControllerState: (payload: Y) => void,
-): (...args: any[]) => Promise<void> {
+): (...args: T) => Promise<void> {
   /*
    * Executes an API server function, triggering any appropriate exceptions.
    * If the fetch succeeds, the sideeffect is applied to the controller state.
