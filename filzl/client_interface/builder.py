@@ -242,30 +242,43 @@ class ClientBuilder:
         contents have rebuilt in the background.
 
         """
-        # Clear the static directory since we only want the latest files in there
+        # Clear the static directories since we only want the latest files in there
         static_dir = self.get_managed_static_dir(self.view_root)
-        if static_dir.exists():
-            rmtree(static_dir)
-        static_dir.mkdir(parents=True)
-        print("STATIC DIR", static_dir)
+        ssr_dir = self.get_managed_ssr_dir(self.view_root)
+        for clear_dir in [static_dir, ssr_dir]:
+            if clear_dir.exists():
+                rmtree(clear_dir)
+            clear_dir.mkdir(parents=True)
 
         def spawn_builder(controller: ControllerBase):
-            contents, map_contents = bundle_javascript(
-                controller.view_path, self.view_root
-            )
+            bundle_definition = bundle_javascript(controller.view_path, self.view_root)
 
+            # Client-side scripts have to be provided a cache-invalidation suffix alongside
+            # mapping the source map to the new script name
             controller_base = underscore(controller.__class__.__name__)
-            content_hash = md5(get_cleaned_js_contents(contents).encode()).hexdigest()
+            content_hash = md5(
+                get_cleaned_js_contents(
+                    bundle_definition.client_compiled_contents
+                ).encode()
+            ).hexdigest()
             script_name = f"{controller_base}-{content_hash}.js"
             map_name = f"{script_name}.map"
 
             # Map to the new script name
-            contents = update_source_map_path(contents, map_name)
+            contents = update_source_map_path(
+                bundle_definition.client_compiled_contents, map_name
+            )
 
             (static_dir / script_name).write_text(contents)
-            (static_dir / map_name).write_text(map_contents)
+            (static_dir / map_name).write_text(
+                bundle_definition.client_source_map_contents
+            )
+
+            ssr_path = ssr_dir / f"{controller_base}.js"
+            ssr_path.write_text(bundle_definition.server_compiled_contents)
 
             controller.bundled_scripts.append(script_name)
+            controller.ssr_path = ssr_path
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
@@ -285,6 +298,9 @@ class ClientBuilder:
 
     def get_managed_static_dir(self, path: Path):
         return self.get_managed_dir_common(path, "_static")
+
+    def get_managed_ssr_dir(self, path: Path):
+        return self.get_managed_dir_common(path, "_ssr")
 
     def get_managed_dir_common(self, path: Path, managed_dir: str):
         # If the path is to a file, we want to get the parent directory

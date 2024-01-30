@@ -20,8 +20,10 @@ class BundleOutput(BaseModel):
     """
 
     output: Annotated[bool, assert_output_true] = Field(alias="_output")
-    compiled_contents: str = Field(alias="compiledContents")
-    source_map_contents: str = Field(alias="sourceMapContents")
+    client_compiled_contents: str = Field(alias="clientCompiledContents")
+    client_source_map_contents: str = Field(alias="clientSourceMapContents")
+    server_compiled_contents: str = Field(alias="serverCompiledContents")
+    server_source_map_contents: str = Field(alias="serverSourceMapContents")
 
 
 def bundle_javascript(page_path: str | Path, view_path: str | Path):
@@ -58,7 +60,7 @@ def bundle_javascript(page_path: str | Path, view_path: str | Path):
             # This line is probably another kind of logging
             continue
 
-        return output.compiled_contents, output.source_map_contents
+        return output
 
     raise Exception("Bundler failed: no output found in stdout")
 

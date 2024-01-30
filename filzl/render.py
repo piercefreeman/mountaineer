@@ -37,4 +37,13 @@ class ReturnModelMetaclass(ModelMetaclass):
 
 
 class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):
-    pass
+    """
+    Base class for all renderable data models. Subclass this model when defining
+    your own component data schema.
+    """
+
+    model_config = {
+        # Frozen parameters are required so we can hash the render values to check
+        # for changes in our SSR renderer
+        "frozen": True,
+    }

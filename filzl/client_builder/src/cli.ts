@@ -57,15 +57,11 @@ export const parseCLIArgs = (): CLIArgs => {
 
 const main = async () => {
   const cliArgs = parseCLIArgs();
-  const { compiledContents, sourceMapContents } = await buildPage(
-    cliArgs.pagePath,
-    cliArgs.viewRootPath,
-  );
+  const buildPayloads = await buildPage(cliArgs.pagePath, cliArgs.viewRootPath);
 
   const payload = {
     ...FINAL_OUTPUT_MARKER,
-    compiledContents,
-    sourceMapContents,
+    ...buildPayloads,
   };
 
   // Write the payload to stdout

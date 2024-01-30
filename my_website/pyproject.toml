@@ -2,14 +2,17 @@
 name = "my-website"
 version = "0.1.0"
 description = ""
-authors = ["Pierce Freeman <piercefreeman@gmail.com>"]
+authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
 
 # While in development, link to the local path
-filzl = { path = "/Users/piercefreeman/projects/filzl", develop = true }
+filzl = { path = "../", develop = true }
+
+[tool.poetry.scripts]
+runserver = "my_website.cli:runserver"
 
 [tool.poetry.group.dev.dependencies]
 types-setuptools = "^69.0.0.20240125"
@@ -19,3 +22,7 @@ ruff = "^0.1.14"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+select = ["E4", "E7", "E9", "F", "I001"]
