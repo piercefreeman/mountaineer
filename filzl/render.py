@@ -37,4 +37,9 @@ class ReturnModelMetaclass(ModelMetaclass):
 
 
 class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):
+    """
+    Base class for all renderable data models. Subclass this model when defining
+    your own component data schema.
+    """
+
     pass

@@ -25,6 +25,7 @@ class BundleOutput(BaseModel):
     server_compiled_contents: str = Field(alias="serverCompiledContents")
     server_source_map_contents: str = Field(alias="serverSourceMapContents")
 
+
 def bundle_javascript(page_path: str | Path, view_path: str | Path):
     # Make these strings absolute, since we're working in a different pwd
     # in the command

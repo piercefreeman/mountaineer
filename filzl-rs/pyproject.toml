@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "my-website"
+name = "filzl-rs"
 version = "0.1.0"
 description = ""
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
@@ -8,13 +8,9 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 
-# While in development, link to the local path
-filzl = { path = "/Users/piercefreeman/projects/filzl", develop = true }
 
 [tool.poetry.group.dev.dependencies]
-types-setuptools = "^69.0.0.20240125"
-mypy = "^1.8.0"
-ruff = "^0.1.14"
+maturin = "^1.4.0"
 
 [build-system]
 requires = ["poetry-core"]

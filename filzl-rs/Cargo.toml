@@ -1,5 +1,5 @@
 [package]
-name = "filzl-rs"
+name = "filzl_rs"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,3 +7,15 @@ edition = "2021"
 
 [dependencies]
 ssr_rs = "0.2.3"
+pyo3 = { version = "0.15", features = ["extension-module"] }
+log = "0.4"
+env_logger = "0.9"
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
+incremental = false
+
+[package.metadata.maturin]
+name = "filzl_rs"

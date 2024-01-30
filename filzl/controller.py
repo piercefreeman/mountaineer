@@ -11,6 +11,7 @@ from filzl.actions import (
     get_function_metadata,
 )
 from filzl.render import RenderBase
+from filzl.ssr import render_ssr
 
 
 class ControllerBase(ABC):
@@ -29,11 +30,19 @@ class ControllerBase(ABC):
         pass
 
     def _generate_html(self, *args, **kwargs):
-        # TODO: Implement SSR
-
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
+
+        # TODO: Provide a function to automatically sniff for the client view folder
+        ssr_html = render_ssr(
+            Path(
+                "/Users/piercefreeman/projects/filzl/my_website/my_website/views/_ssr/home_controller.js"
+            ).read_text(),
+            server_data,
+        )
+
+        # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = server_data.model_dump_json()
         optional_scripts = "\n".join(
             [
@@ -45,11 +54,9 @@ class ControllerBase(ABC):
         page_contents = f"""
         <html>
         <head>
-        <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-        <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
         </head>
         <body>
-        <div id="root"></div>
+        <div id="root">{ssr_html}</div>
         <script type="text/javascript">
         const SERVER_DATA = {server_data_json};
         </script>

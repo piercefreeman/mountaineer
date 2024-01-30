@@ -77,15 +77,14 @@ const createSyntheticClientPage = ({
   });
 
   let content = "";
-  content += "import React from 'react';\n";
-  content += "import { createRoot } from 'react-dom/client';\n";
+  content += "import * as React from 'react';\n";
+  content += "import { hydrateRoot } from 'react-dom/client';\n";
   content += [...imports].join("\n") + "\n";
 
   content += entrypoint + "\n";
 
   content += `const container = document.getElementById('${rootElement}');`;
-  content += "const root = createRoot(container!);";
-  content += `root.render(<Entrypoint />);`;
+  content += `hydrateRoot(container, <Entrypoint />);`;
 
   const syntheticFilePath = join(outputDir, "synthetic_client.tsx");
   writeFileSync(syntheticFilePath, content);

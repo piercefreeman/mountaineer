@@ -251,24 +251,32 @@ class ClientBuilder:
             clear_dir.mkdir(parents=True)
 
         def spawn_builder(controller: ControllerBase):
-            bundle_definition = bundle_javascript(
-                controller.view_path, self.view_root
-            )
+            bundle_definition = bundle_javascript(controller.view_path, self.view_root)
 
             # Client-side scripts have to be provided a cache-invalidation suffix alongside
             # mapping the source map to the new script name
             controller_base = underscore(controller.__class__.__name__)
-            content_hash = md5(get_cleaned_js_contents(bundle_definition.client_compiled_contents).encode()).hexdigest()
+            content_hash = md5(
+                get_cleaned_js_contents(
+                    bundle_definition.client_compiled_contents
+                ).encode()
+            ).hexdigest()
             script_name = f"{controller_base}-{content_hash}.js"
             map_name = f"{script_name}.map"
 
             # Map to the new script name
-            contents = update_source_map_path(bundle_definition.client_compiled_contents, map_name)
+            contents = update_source_map_path(
+                bundle_definition.client_compiled_contents, map_name
+            )
 
             (static_dir / script_name).write_text(contents)
-            (static_dir / map_name).write_text(bundle_definition.client_source_map_contents)
+            (static_dir / map_name).write_text(
+                bundle_definition.client_source_map_contents
+            )
 
-            (ssr_dir / f"{controller_base}.js").write_text(bundle_definition.server_compiled_contents)
+            (ssr_dir / f"{controller_base}.js").write_text(
+                bundle_definition.server_compiled_contents
+            )
 
             controller.bundled_scripts.append(script_name)
 

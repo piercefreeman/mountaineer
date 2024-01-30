@@ -2,7 +2,7 @@
 name = "filzl"
 version = "0.1.0"
 description = ""
-authors = ["Pierce Freeman <piercefreeman@gmail.com>"]
+authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
@@ -32,6 +32,10 @@ build-backend = "poetry.core.masonry.api"
 warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "filzl_rs.*"
+ignore_missing_imports = true
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

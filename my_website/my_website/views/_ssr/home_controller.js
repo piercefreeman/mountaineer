@@ -1,20 +1,3 @@
-const SERVER_DATA = {
-  first_name: "John",
-}
-
-class TextEncoder {
-  /*
-   * We provide a stub polyfill of TextEncoder because it's not bundled
-   * with the V8 runtime. New versions of ReactDOM Server require this for the
-   * require_react_dom_server_browser_development plugin.
-  */
-  constructor() {
-  }
-  encode(str) {
-    return str;
-  }
-}
-
 var SSR = (() => {
   var __create = Object.create;
   var __defProp = Object.defineProperty;
@@ -1045,10 +1028,10 @@ var SSR = (() => {
             }
             if (typeof type === "object" && type !== null) {
               if (type.$$typeof === REACT_LAZY_TYPE || type.$$typeof === REACT_MEMO_TYPE || type.$$typeof === REACT_PROVIDER_TYPE || type.$$typeof === REACT_CONTEXT_TYPE || type.$$typeof === REACT_FORWARD_REF_TYPE || // This needs to include all possible module reference object
-                // types supported by any Flight configuration anywhere since
-                // we don't know which Flight build this will end up being used
-                // with.
-                type.$$typeof === REACT_MODULE_REFERENCE || type.getModuleId !== void 0) {
+              // types supported by any Flight configuration anywhere since
+              // we don't know which Flight build this will end up being used
+              // with.
+              type.$$typeof === REACT_MODULE_REFERENCE || type.getModuleId !== void 0) {
                 return true;
               }
             }
@@ -1565,8 +1548,8 @@ var SSR = (() => {
               if (typeof type === "function") {
                 propTypes = type.propTypes;
               } else if (typeof type === "object" && (type.$$typeof === REACT_FORWARD_REF_TYPE || // Note: Memo only checks outer props here.
-                // Inner props are checked in the reconciler.
-                type.$$typeof === REACT_MEMO_TYPE)) {
+              // Inner props are checked in the reconciler.
+              type.$$typeof === REACT_MEMO_TYPE)) {
                 propTypes = type.propTypes;
               } else {
                 return;
@@ -6619,7 +6602,7 @@ var SSR = (() => {
           function validateIterable(iterable, iteratorFn) {
             {
               if (typeof Symbol === "function" && // $FlowFixMe Flow doesn't know about toStringTag
-                iterable[Symbol.toStringTag] === "Generator") {
+              iterable[Symbol.toStringTag] === "Generator") {
                 if (!didWarnAboutGenerators) {
                   error("Using Generators as children is unsupported and will likely yield unexpected results because enumerating a generator mutates it. You may convert it to an array with `Array.from()` or the `[...spread]` operator before rendering. Keep in mind you might need to polyfill these features for older browsers.");
                 }
@@ -11955,7 +11938,7 @@ var SSR = (() => {
           function validateIterable(iterable, iteratorFn) {
             {
               if (typeof Symbol === "function" && // $FlowFixMe Flow doesn't know about toStringTag
-                iterable[Symbol.toStringTag] === "Generator") {
+              iterable[Symbol.toStringTag] === "Generator") {
                 if (!didWarnAboutGenerators) {
                   error("Using Generators as children is unsupported and will likely yield unexpected results because enumerating a generator mutates it. You may convert it to an array with `Array.from()` or the `[...spread]` operator before rendering. Keep in mind you might need to polyfill these features for older browsers.");
                 }
@@ -12641,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildg01Yao/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildI5qBJY/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12819,7 +12802,7 @@ var SSR = (() => {
   };
   var page_default = Home;
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildg01Yao/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildI5qBJY/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };
