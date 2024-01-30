@@ -2,6 +2,7 @@ from enum import Enum
 from inspect import ismethod
 from typing import Callable, Type
 
+from fastapi import APIRouter
 from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
@@ -34,6 +35,11 @@ class FunctionMetadata(BaseModel):
     # Inserted by the render decorator
     url: str | None = None
     return_model: Type[BaseModel] | None = None
+    render_router: APIRouter | None = None
+
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }
 
     #
     # Accessors for polymorphic variables
@@ -65,6 +71,11 @@ class FunctionMetadata(BaseModel):
         if not self.return_model:
             raise ValueError("Return model not set")
         return self.return_model
+
+    def get_render_router(self) -> APIRouter:
+        if not self.render_router:
+            raise ValueError("Render router not set")
+        return self.render_router
 
 
 METADATA_ATTRIBUTE = "_filzl_metadata"

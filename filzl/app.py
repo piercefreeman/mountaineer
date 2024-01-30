@@ -1,11 +1,12 @@
 from functools import wraps
+from inspect import signature
+from pathlib import Path
 from typing import Callable
-from fastapi.staticfiles import StaticFiles
 
 from fastapi import APIRouter, FastAPI
+from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
-from pathlib import Path
 
 from filzl.actions import (
     FunctionActionType,
@@ -101,8 +102,13 @@ class AppController:
         metadata = init_function_metadata(controller.render, FunctionActionType.RENDER)
         metadata.render_model = return_model
 
-        # Directly register the rendering view
-        self.app.get(controller.url)(generate_controller_html)
+        # Register the rendering view to an isolated APIRoute, so we can keep track of its
+        # the resulting router independently of the rest of the application
+        # This is useful in cases where we need to do a render()->FastAPI lookup
+        view_router = APIRouter()
+        view_router.get(controller.url)(generate_controller_html)
+        metadata.render_router = view_router
+        self.app.include_router(view_router)
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
@@ -117,7 +123,13 @@ class AppController:
             metadata.return_model = fuse_metadata_to_response_typehint(
                 metadata, return_model
             )
-            fn.__annotations__["return"] = metadata.return_model
+
+            # Update the signature of the internal function, which fastapi will sniff for the return declaration
+            # https://github.com/tiangolo/fastapi/blob/a235d93002b925b0d2d7aa650b7ab6d7bb4b24dd/fastapi/dependencies/utils.py#L207
+            current_sig = signature(fn.__func__)
+            fn.__func__.__signature__ = current_sig.replace(
+                return_annotation=metadata.return_model
+            )
 
             metadata.url = (
                 f"{controller_url_prefix}/{metadata.function_name.strip('/')}"

@@ -1,22 +1,24 @@
-from os import PathLike
-from pydantic import BaseModel, Field, ValidationError, field_validator
-from filzl.client_builder import get_client_builder_path
-from subprocess import Popen
 from pathlib import Path
-from subprocess import PIPE
-from typing import Annotated
 from re import sub
-from hashlib import md5
+from subprocess import PIPE, Popen
+from typing import Annotated
+
+from pydantic import BaseModel, Field, ValidationError
+
+from filzl.client_builder import get_client_builder_path
+
 
 def assert_output_true(v: bool) -> bool:
     assert v is True
     return v
+
 
 class BundleOutput(BaseModel):
     """
     Our expected output from the bundler
 
     """
+
     output: Annotated[bool, assert_output_true] = Field(alias="_output")
     compiled_contents: str = Field(alias="compiledContents")
     source_map_contents: str = Field(alias="sourceMapContents")
@@ -30,9 +32,18 @@ def bundle_javascript(page_path: str | Path, view_path: str | Path):
 
     # Run the bun command and get the full output
     process = Popen(
-        ["bun", "src/cli.ts", "--page-path", str(page_path_absolute), "--view-root-path", str(view_path_absolute)],
+        [
+            "bun",
+            "src/cli.ts",
+            "--page-path",
+            str(page_path_absolute),
+            "--view-root-path",
+            str(view_path_absolute),
+        ],
         cwd=get_client_builder_path(""),
-        stdout=PIPE, stderr=PIPE, text=True
+        stdout=PIPE,
+        stderr=PIPE,
+        text=True,
     )
     stdout, stderr = process.communicate()
 
@@ -43,13 +54,14 @@ def bundle_javascript(page_path: str | Path, view_path: str | Path):
     for line in stdout.splitlines():
         try:
             output = BundleOutput.parse_raw(line)
-        except ValidationError as e:
+        except ValidationError:
             # This line is probably another kind of logging
             continue
 
         return output.compiled_contents, output.source_map_contents
 
     raise Exception("Bundler failed: no output found in stdout")
+
 
 def get_cleaned_js_contents(contents: str):
     """
@@ -60,13 +72,14 @@ def get_cleaned_js_contents(contents: str):
     # This regex handles single-line comments (// ...), multi-line comments (/* ... */),
     # and avoids capturing URLs like http://...
     # It also considers edge cases where comment-like patterns are inside strings
-    pattern = r'(\/\*[\s\S]*?\*\/|([^:]|^)\/\/[^\r\n]*)'
+    pattern = r"(\/\*[\s\S]*?\*\/|([^:]|^)\/\/[^\r\n]*)"
 
     # Using re.sub to replace the matched comments with an empty string
-    return sub(pattern, '', contents).strip()
+    return sub(pattern, "", contents).strip()
+
 
 def update_source_map_path(contents: str, new_path: str):
     """
     Updates the source map path to the new path, since the path is dynamic.
     """
-    return sub(r'sourceMappingURL=(.*?).map', f'sourceMappingURL={new_path}', contents)
+    return sub(r"sourceMappingURL=(.*?).map", f"sourceMappingURL={new_path}", contents)

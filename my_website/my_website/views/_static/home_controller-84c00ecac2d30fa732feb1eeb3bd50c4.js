@@ -783,7 +783,7 @@ var require_react_development = __commonJS({
           }
           return children;
         }
-        function createContext2(defaultValue) {
+        function createContext(defaultValue) {
           var context = {
             $$typeof: REACT_CONTEXT_TYPE,
             // As a workaround to support multiple concurrent renderers, we categorize
@@ -1069,7 +1069,7 @@ var require_react_development = __commonJS({
           }
           return dispatcher;
         }
-        function useContext2(Context) {
+        function useContext(Context) {
           var dispatcher = resolveDispatcher();
           {
             if (Context._context !== void 0) {
@@ -1863,7 +1863,7 @@ var require_react_development = __commonJS({
         exports.Suspense = REACT_SUSPENSE_TYPE;
         exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactSharedInternals;
         exports.cloneElement = cloneElement$1;
-        exports.createContext = createContext2;
+        exports.createContext = createContext;
         exports.createElement = createElement$1;
         exports.createFactory = createFactory;
         exports.createRef = createRef;
@@ -1874,7 +1874,7 @@ var require_react_development = __commonJS({
         exports.startTransition = startTransition;
         exports.unstable_act = act;
         exports.useCallback = useCallback;
-        exports.useContext = useContext2;
+        exports.useContext = useContext;
         exports.useDebugValue = useDebugValue;
         exports.useDeferredValue = useDeferredValue;
         exports.useEffect = useEffect;
@@ -2381,9 +2381,9 @@ var require_react_dom_development = __commonJS({
         if (typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ !== "undefined" && typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart === "function") {
           __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(new Error());
         }
-        var React5 = require_react();
+        var React4 = require_react();
         var Scheduler = require_scheduler();
-        var ReactSharedInternals = React5.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+        var ReactSharedInternals = React4.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
         var suppressWarning = false;
         function setSuppressWarning(newSuppressWarning) {
           {
@@ -3988,7 +3988,7 @@ var require_react_dom_development = __commonJS({
           {
             if (props.value == null) {
               if (typeof props.children === "object" && props.children !== null) {
-                React5.Children.forEach(props.children, function(child) {
+                React4.Children.forEach(props.children, function(child) {
                   if (child == null) {
                     return;
                   }
@@ -12435,7 +12435,7 @@ var require_react_dom_development = __commonJS({
           }
         }
         var fakeInternalInstance = {};
-        var emptyRefsObject = new React5.Component().refs;
+        var emptyRefsObject = new React4.Component().refs;
         var didWarnAboutStateAssignmentForComponent;
         var didWarnAboutUninitializedState;
         var didWarnAboutGetSnapshotBeforeUpdateWithoutDidUpdate;
@@ -23506,18 +23506,14 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildXPlJts/synthetic.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildaiblFk/synthetic.tsx
 var import_client = __toESM(require_client());
 
 // ../../my_website/my_website/views/app/home/page.tsx
-var import_react3 = __toESM(require_react());
-
-// ../../my_website/my_website/views/app/home/_server/useServer.ts
 var import_react2 = __toESM(require_react());
 
-// ../../my_website/my_website/views/_server/server.tsx
+// ../../my_website/my_website/views/app/home/_server/useServer.ts
 var import_react = __toESM(require_react());
-var ServerContext = (0, import_react.createContext)(void 0);
 
 // ../../my_website/my_website/views/_server/api.ts
 var FetchErrorBase = class extends Error {
@@ -23542,6 +23538,9 @@ var __request = async (params) => {
   for (const [key, value] of Object.entries(params.path || {})) {
     filledUrl = filledUrl.replace(`{${key}}`, value.toString());
   }
+  Object.entries(params.query || {}).forEach(([key, value], i) => {
+    filledUrl = `${filledUrl}${i === 0 ? "?" : "&"}${key}=${value}`;
+  });
   try {
     const response = await fetch(filledUrl, {
       method: params.method,
@@ -23587,7 +23586,8 @@ var get_external_data = () => {
   return __request(
     {
       "method": "POST",
-      "url": "/internal/api/home_controller/get_external_data"
+      "url": "/internal/api/home_controller/get_external_data",
+      "query": {}
     }
   );
 };
@@ -23598,6 +23598,7 @@ var increment_count = ({
     {
       "method": "POST",
       "url": "/internal/api/home_controller/increment_count",
+      "query": {},
       "errors": {
         422: HTTPValidationErrorException
       },
@@ -23614,7 +23615,7 @@ var increment_count_only = ({
     {
       "method": "POST",
       "url": "/internal/api/home_controller/increment_count_only",
-      "path": {
+      "query": {
         url_param
       },
       "errors": {
@@ -23630,18 +23631,15 @@ var HTTPValidationErrorException = class extends FetchErrorBase {
 
 // ../../my_website/my_website/views/app/home/_server/useServer.ts
 var useServer = () => {
-  const { serverState, setServerState } = (0, import_react2.useContext)(ServerContext);
+  const [serverState, setServerState] = (0, import_react.useState)(SERVER_DATA);
   const setControllerState = (payload) => {
     setServerState((state) => ({
       ...state,
-      HOME_CONTROLLER: state.HOME_CONTROLLER ? {
-        ...state.HOME_CONTROLLER,
-        ...payload
-      } : void 0
+      ...payload
     }));
   };
   return {
-    ...serverState["HOME_CONTROLLER"],
+    ...serverState,
     get_external_data,
     increment_count: applySideEffect(increment_count, setControllerState),
     increment_count_only: applySideEffect(increment_count_only, setControllerState)
@@ -23651,11 +23649,37 @@ var useServer = () => {
 // ../../my_website/my_website/views/app/home/page.tsx
 var Home = () => {
   const serverState = useServer();
-  return /* @__PURE__ */ import_react3.default.createElement("div", null, /* @__PURE__ */ import_react3.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react3.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react3.default.createElement("p", null, "Hello ", serverState.first_name));
+  console.log("SERVER PAYLOAD", serverState);
+  return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.first_name, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
+    "button",
+    {
+      onClick: async () => {
+        await serverState.increment_count({
+          requestBody: {
+            count: 1
+          }
+        });
+      }
+    },
+    "Increment V1"
+  ), /* @__PURE__ */ import_react2.default.createElement(
+    "button",
+    {
+      onClick: async () => {
+        await serverState.increment_count_only({
+          url_param: 5,
+          requestBody: {
+            count: 1
+          }
+        });
+      }
+    },
+    "Increment V2"
+  ));
 };
 var page_default = Home;
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildXPlJts/synthetic.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildaiblFk/synthetic.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React.createElement(page_default, null);
 };
@@ -23710,4 +23734,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=home_controller-cd4cfc2c005f95e08afe336839bcd6f0.js.map
+//# sourceMappingURL=home_controller-84c00ecac2d30fa732feb1eeb3bd50c4.js.map

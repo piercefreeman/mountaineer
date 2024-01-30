@@ -4,6 +4,7 @@ from typing import Callable, Type, overload
 from pydantic import BaseModel
 
 from filzl.actions.fields import FunctionActionType, init_function_metadata
+from filzl.controller import ControllerBase
 
 
 @overload
@@ -31,7 +32,7 @@ def passthrough(*args, **kwargs):
     def decorator_with_args(response_model: Type[BaseModel] | None):
         def wrapper(func: Callable):
             @wraps(func)
-            def inner(self, *func_args, **func_kwargs):
+            def inner(self: ControllerBase, *func_args, **func_kwargs):
                 return func(self, *func_args, **func_kwargs)
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
