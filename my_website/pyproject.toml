@@ -9,7 +9,10 @@ readme = "README.md"
 python = "^3.11"
 
 # While in development, link to the local path
-filzl = { path = "/Users/piercefreeman/projects/filzl", develop = true }
+filzl = { path = "../", develop = true }
+
+[tool.poetry.scripts]
+runserver = "my_website.cli:runserver"
 
 [tool.poetry.group.dev.dependencies]
 types-setuptools = "^69.0.0.20240125"

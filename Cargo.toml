@@ -1,5 +1,5 @@
 [package]
-name = "filzl_rs"
+name = "filzl"
 version = "0.1.0"
 edition = "2021"
 
@@ -18,4 +18,4 @@ lto = true
 incremental = false
 
 [package.metadata.maturin]
-name = "filzl_rs"
+name = "filzl"

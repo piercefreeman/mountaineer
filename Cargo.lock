@@ -76,7 +76,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "filzl_rs"
+name = "filzl"
 version = "0.1.0"
 dependencies = [
  "env_logger",

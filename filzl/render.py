@@ -42,4 +42,8 @@ class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):
     your own component data schema.
     """
 
-    pass
+    model_config = {
+        # Frozen parameters are required so we can hash the render values to check
+        # for changes in our SSR renderer
+        "frozen": True,
+    }

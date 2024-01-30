@@ -14,12 +14,14 @@ filzl is a batteries-included MVC web framework. It uses Python for the backend 
 
 ### Installation
 
-We currently require an external install of bun to handle JS compilation and server-side rendering.
+We currently require an external install of bun to handle JS compilation.
 
 ```bash
 $ curl -fsSL https://bun.sh/install | bash
 
-$ poetry install
+$ poetry shell
+poetry install
+poetry run maturin develop
 ```
 
 ## Future Directions

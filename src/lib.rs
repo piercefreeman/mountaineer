@@ -5,7 +5,7 @@ use pyo3::prelude::*;
 use ssr_rs::Ssr;
 
 #[pymodule]
-fn filzl_rs(_py: Python, m: &PyModule) -> PyResult<()> {
+fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
     fn render_ssr(py: Python, html_str: String) -> PyResult<PyObject> {
