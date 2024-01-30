@@ -13,11 +13,13 @@ filzl = { path = "../", develop = true }
 
 [tool.poetry.scripts]
 runserver = "my_website.cli:runserver"
+watch = "my_website.cli:watch"
 
 [tool.poetry.group.dev.dependencies]
 types-setuptools = "^69.0.0.20240125"
 mypy = "^1.8.0"
 ruff = "^0.1.14"
+watchdog = "^3.0.0"
 
 [build-system]
 requires = ["poetry-core"]
