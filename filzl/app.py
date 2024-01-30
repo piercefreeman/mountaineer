@@ -44,6 +44,7 @@ class AppController:
 
         self.internal_api_prefix = "/internal/api"
 
+        # The static directory has to exist before we try to mount it
         (self.view_root / "_static").mkdir(exist_ok=True)
 
         # Mount the view_root / _static directory, since we'll need
@@ -126,8 +127,8 @@ class AppController:
 
             # Update the signature of the internal function, which fastapi will sniff for the return declaration
             # https://github.com/tiangolo/fastapi/blob/a235d93002b925b0d2d7aa650b7ab6d7bb4b24dd/fastapi/dependencies/utils.py#L207
-            current_sig = signature(fn.__func__)
-            fn.__func__.__signature__ = current_sig.replace(
+            method_function: Callable = fn.__func__  # type: ignore
+            method_function.__signature__ = signature(method_function).replace(  # type: ignore
                 return_annotation=metadata.return_model
             )
 

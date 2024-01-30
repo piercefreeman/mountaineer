@@ -38,8 +38,10 @@ def sideeffect(*args, **kwargs):
     Mark a function as causing a sideeffect to the data. This will force a reload of the full (or partial) server state
     and sync these changes down to the client page.
 
-    :reload: If provided, will ONLY reload these fields. By default will reload all fields. Otherwise, why
-        specify a sideeffect at all?
+    :reload: If provided, will ONLY reload these fields on the client side. By default will reload all fields. Otherwise, why
+        specify a sideeffect at all? Note that even if this is provided, we will still regenerate a fully full state on the server
+        as if render() is called again. This parameter only controls the data that is streamed back to the client in order to help
+        reduce bandwidth of data that won't be changed.
 
     """
 
@@ -83,15 +85,12 @@ def sideeffect(*args, **kwargs):
             sig = signature(inner)
             parameters = list(sig.parameters.values())
             if "request" not in sig.parameters:
-                print("PARAMS", parameters)
                 request_param = Parameter(
                     "request", Parameter.POSITIONAL_OR_KEYWORD, annotation=Request
                 )
                 parameters.insert(1, request_param)  # Insert after 'self'
             new_sig = sig.replace(parameters=parameters)
-            print("NEW SIGNATURE", new_sig.parameters)
-            inner.__wrapped__.__signature__ = new_sig
-            # inner.__annotations__["request"] = Request
+            inner.__wrapped__.__signature__ = new_sig  # type: ignore
 
             metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
             metadata.reload_states = reload
