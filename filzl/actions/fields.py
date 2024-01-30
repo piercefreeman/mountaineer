@@ -7,7 +7,7 @@ from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
-from filzl.render import FieldClassDefinition, RenderBase
+from filzl.render import FieldClassDefinition, Metadata, RenderBase
 
 
 class FunctionActionType(Enum):
@@ -123,6 +123,13 @@ def fuse_metadata_to_response_typehint(
     if metadata.action_type == FunctionActionType.SIDEEFFECT:
         # By default, reload all fields
         sideeffect_fields = {**render_model.model_fields}
+
+        # Ignore the metadata since this shouldn't be passed during sideeffects
+        sideeffect_fields = {
+            field_name: field_definition
+            for field_name, field_definition in sideeffect_fields.items()
+            if not isinstance(field_definition.annotation, Metadata)
+        }
 
         if metadata.reload_states:
             # Make sure this class actually aligns to the response model

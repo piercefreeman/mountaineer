@@ -10,7 +10,7 @@ from filzl.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
-from filzl.render import RenderBase
+from filzl.render import Metadata, RenderBase
 from filzl.ssr import render_ssr
 
 
@@ -37,6 +37,14 @@ class ControllerBase(ABC):
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
+        header_str = "\n".join(
+            self.build_header(server_data.metadata) if server_data.metadata else []
+        )
+
+        # Now that we've built the header, we can remove it from the server data
+        # This makes our cache more efficient, since metadata changes don't affect
+        # the actual page contents.
+        server_data = server_data.model_copy(update={"metadata": None})
 
         # TODO: Provide a function to automatically sniff for the client view folder
         ssr_html = render_ssr(
@@ -56,6 +64,7 @@ class ControllerBase(ABC):
         page_contents = f"""
         <html>
         <head>
+        {header_str}
         </head>
         <body>
         <div id="root">{ssr_html}</div>
@@ -67,8 +76,45 @@ class ControllerBase(ABC):
         </html>
         """
 
-        # return HTMLResponse(Path(self.view_path).read_text())
         return HTMLResponse(page_contents)
+
+    def build_header(self, metadata: Metadata) -> list[str]:
+        """
+        Builds the header for this controller. Returns the list of tags that will be injected into the
+        <head> tag of the rendered page.
+
+        """
+        tags: list[str] = []
+
+        def format_optional_keys(payload: dict[str, str | None]) -> str:
+            return " ".join(
+                [
+                    f'{key}="{value}"'
+                    for key, value in payload.items()
+                    if value is not None
+                ]
+            )
+
+        if metadata.title:
+            tags.append(f"<title>{metadata.title}</title>")
+
+        for meta_definition in metadata.metas:
+            all_attributes = {
+                "name": meta_definition.name,
+                "content": meta_definition.content,
+                **meta_definition.optional_attributes,
+            }
+            tags.append(f"<meta {format_optional_keys(all_attributes)} />")
+
+        for link_definition in metadata.links:
+            all_attributes = {
+                "rel": link_definition.rel,
+                "href": link_definition.href,
+                **link_definition.optional_attributes,
+            }
+            tags.append(f"<link {format_optional_keys(all_attributes)} />")
+
+        return tags
 
     def _get_client_functions(self) -> Iterable[tuple[str, Callable, FunctionMetadata]]:
         """

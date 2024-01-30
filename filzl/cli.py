@@ -61,8 +61,9 @@ def handle_runserver(
         client_builder.build()
         restart_uvicorn()
 
-    # Initial launch
-    restart_uvicorn()
+    # Initial launch - both build and run the server, since we may not have
+    # any built client-side files yet
+    update_build()
 
     watchdog = build_common_watchdog(package, update_build)
     watchdog.start_watching()
