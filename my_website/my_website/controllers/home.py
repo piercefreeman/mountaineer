@@ -1,15 +1,17 @@
 from uuid import UUID
 
-from pydantic import BaseModel
+from fastapi import Request
 
 from filzl.actions import passthrough, sideeffect
 from filzl.controller import ControllerBase
 from filzl.render import RenderBase
+from pydantic import BaseModel
+
 from my_website.views import get_view_path
 
 
 class HomeRender(RenderBase):
-    first_name: str
+    client_ip: str
     current_count: int
 
 
@@ -47,8 +49,8 @@ class HomeController(ControllerBase):
             first_name="John",
         )
 
-    def render(self, home_id: UUID) -> HomeRender:
+    def render(self, home_id: UUID, request: Request) -> HomeRender:
         return HomeRender(
-            first_name="John",
+            client_ip=request.client.host if request.client else "unknown",
             current_count=self.global_count,
         )

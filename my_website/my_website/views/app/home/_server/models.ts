@@ -11,7 +11,7 @@ export interface HTTPValidationError {
 }
 
 export interface HomeRender {
-  first_name: string;
+  client_ip: string;
   current_count: number;
 }
 
@@ -32,12 +32,12 @@ export interface IncrementCountResponse {
 }
 
 export interface IncrementCountResponseSideEffect {
-  first_name: string;
+  client_ip: string;
   current_count: number;
 }
 
 export interface ValidationError {
-  loc: Array<string | number>;
+  loc: Array<number | string>;
   msg: string;
   type: string;
 }

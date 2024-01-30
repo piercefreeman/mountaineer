@@ -275,9 +275,7 @@ class ClientBuilder:
             )
 
             ssr_path = ssr_dir / f"{controller_base}.js"
-            ssr_path.write_text(
-                bundle_definition.server_compiled_contents
-            )
+            ssr_path.write_text(bundle_definition.server_compiled_contents)
 
             controller.bundled_scripts.append(script_name)
             controller.ssr_path = ssr_path

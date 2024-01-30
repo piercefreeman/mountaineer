@@ -23,7 +23,7 @@ class ControllerBase(ABC):
     def __init__(self):
         # Injected by the build framework
         self.bundled_scripts = []
-        self.ssr_path : Path | None = None
+        self.ssr_path: Path | None = None
         self.initialized = True
 
     @abstractmethod

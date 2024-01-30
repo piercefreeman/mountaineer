@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildZCBQ6E/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildirS38A/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
@@ -23651,7 +23651,7 @@ var useServer = () => {
 var Home = () => {
   const serverState = useServer();
   console.log("SERVER PAYLOAD", serverState);
-  return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.first_name, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
+  return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.client_ip, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
     "button",
     {
       onClick: async () => {
@@ -23681,7 +23681,7 @@ var Home = () => {
 };
 var page_default = Home;
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildZCBQ6E/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildirS38A/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
@@ -23735,4 +23735,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=home_controller-c469a19c94bc80fa545075633c717cf0.js.map
+//# sourceMappingURL=home_controller-076212a2bb418d2f6a28bb2b42e0a907.js.map

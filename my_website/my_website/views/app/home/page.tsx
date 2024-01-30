@@ -10,7 +10,7 @@ const Home = () => {
       <h1>Home</h1>
       <p>Home page</p>
       <p>
-        Hello {serverState.first_name}, current count is{" "}
+        Hello {serverState.client_ip}, current count is{" "}
         {serverState.current_count}
       </p>
       <button

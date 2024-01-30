@@ -1,9 +1,9 @@
 from functools import lru_cache
 from typing import cast
 
-from filzl import filzl as filzl_rs
 from pydantic import BaseModel
 
+from filzl import filzl as filzl_rs  # type: ignore
 from filzl.static import get_static_path
 
 

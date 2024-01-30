@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildZCBQ6E/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildirS38A/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12773,7 +12773,7 @@ var SSR = (() => {
   var Home = () => {
     const serverState = useServer();
     console.log("SERVER PAYLOAD", serverState);
-    return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.first_name, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
+    return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.client_ip, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
       "button",
       {
         onClick: async () => {
@@ -12803,7 +12803,7 @@ var SSR = (() => {
   };
   var page_default = Home;
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildZCBQ6E/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildirS38A/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };
