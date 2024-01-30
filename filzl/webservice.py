@@ -11,21 +11,17 @@ class UvicornThread(Thread):
         self.entrypoint = entrypoint
         self.port = port
 
-    def run(self, port: int = 5006):
-        # Manually constructing the runloop is required, otherwise we'll see errors
-        # during thread shutdown about "asynio.CancelledError"
+    def run(self):
         loop = asyncio.new_event_loop()
         config = Config(
             self.entrypoint,
             port=self.port,
             reload=False,
             access_log=False,
-            # The typehint for loop is incorrect, this actually does accept a loop
-            loop=loop,  # type: ignore
+            loop="asyncio",
         )
         self.server = Server(config)
         loop.run_until_complete(self.server.serve())
 
     def stop(self):
         self.server.should_exit = True
-        self.server.force_exit = True

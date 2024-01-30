@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 from inspect import getmembers, ismethod
 from pathlib import Path
+from re import compile as re_compile
 from typing import Callable, Iterable
 
 from fastapi.responses import HTMLResponse
+from inflection import underscore
 
 from filzl.actions import (
     FunctionActionType,
@@ -22,7 +24,7 @@ class ControllerBase(ABC):
 
     def __init__(self):
         # Injected by the build framework
-        self.bundled_scripts = []
+        self.bundled_scripts: list[str] = []
         self.ssr_path: Path | None = None
         self.initialized = True
 
@@ -133,3 +135,24 @@ class ControllerBase(ABC):
                     yield name, func, metadata
             except AttributeError:
                 continue
+
+    def resolve_paths(self, view_base: Path):
+        """
+        Given the path to the root /view directory, resolve our various
+        on-disk paths.
+
+        """
+        script_name = underscore(self.__class__.__name__)
+
+        # The SSR path is going to be static
+        ssr_path = view_base / "_ssr" / f"{script_name}.js"
+        self.ssr_path = ssr_path if ssr_path.exists() else None
+
+        # Find the md5-converted cache path
+        md5_script_pattern = re_compile(script_name + "-" + "[a-f0-9]{32}" + ".js")
+
+        self.bundled_scripts = [
+            path.name
+            for path in (view_base / "_static").iterdir()
+            if md5_script_pattern.match(path.name)
+        ]

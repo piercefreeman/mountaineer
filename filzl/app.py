@@ -63,6 +63,8 @@ class AppController:
             - Mount all actions (ie. @sideeffect and @passthrough decorated functions) to their public API
 
         """
+        # Update the paths now that we have access to the runtime package path
+        controller.resolve_paths(self.view_root)
 
         # The controller superclass needs to be initialized before it's
         # registered into the application

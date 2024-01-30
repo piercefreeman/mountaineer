@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildrbNFfG/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildgOZh2A/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
@@ -23582,6 +23582,65 @@ function applySideEffect(apiFunction, setControllerState) {
   };
 }
 
+// ../../my_website/my_website/views/app/home/_server/links.ts
+var getLink = ({}) => {
+  let url = "/";
+  const queryParameters = {};
+  const pathParameters = {};
+  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
+    if (value !== void 0) {
+      acc.push(`${key}=${value}`);
+    }
+    return acc;
+  }, []);
+  const paramString = parsedParams.join("&");
+  for (const [key, value] of Object.entries(pathParameters)) {
+    if (value === void 0) {
+      throw new Error(`Missing required path parameter ${key}`);
+    }
+    url = url.replace(`{${key}}`, value);
+  }
+  if (paramString) {
+    url = `${url}?${paramString}`;
+  }
+  return url;
+};
+
+// ../../my_website/my_website/views/app/detail/_server/links.ts
+var getLink2 = ({
+  detail_id
+}) => {
+  let url = "/detail/{detail_id}/";
+  const queryParameters = {};
+  const pathParameters = {
+    detail_id
+  };
+  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
+    if (value !== void 0) {
+      acc.push(`${key}=${value}`);
+    }
+    return acc;
+  }, []);
+  const paramString = parsedParams.join("&");
+  for (const [key, value] of Object.entries(pathParameters)) {
+    if (value === void 0) {
+      throw new Error(`Missing required path parameter ${key}`);
+    }
+    url = url.replace(`{${key}}`, value);
+  }
+  if (paramString) {
+    url = `${url}?${paramString}`;
+  }
+  return url;
+};
+
+// ../../my_website/my_website/views/_server/links.ts
+var linkGenerator = {
+  homeController: getLink,
+  detailController: getLink2
+};
+var links_default = linkGenerator;
+
 // ../../my_website/my_website/views/app/home/_server/actions.ts
 var get_external_data = () => {
   return __request(
@@ -23641,6 +23700,7 @@ var useServer = () => {
   };
   return {
     ...serverState,
+    linkGenerator: links_default,
     get_external_data,
     increment_count: applySideEffect(increment_count, setControllerState),
     increment_count_only: applySideEffect(increment_count_only, setControllerState)
@@ -23652,6 +23712,14 @@ var Home = () => {
   const serverState = useServer();
   console.log("SERVER PAYLOAD", serverState);
   return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.client_ip, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
+    "a",
+    {
+      href: serverState.linkGenerator.detailController({
+        detail_id: "9280ca4d-e607-486a-a343-7bbaae6b5a86"
+      })
+    },
+    "Detail Link"
+  ), /* @__PURE__ */ import_react2.default.createElement(
     "button",
     {
       onClick: async () => {
@@ -23681,7 +23749,7 @@ var Home = () => {
 };
 var page_default = Home;
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildrbNFfG/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildgOZh2A/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
@@ -23735,4 +23803,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=home_controller-076212a2bb418d2f6a28bb2b42e0a907.js.map
+//# sourceMappingURL=home_controller-7005a669dca6d9a486b169db2b9b0005.js.map

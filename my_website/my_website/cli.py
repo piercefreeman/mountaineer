@@ -6,7 +6,7 @@ from filzl.cli import handle_runserver, handle_watch
 def runserver():
     handle_runserver(
         package="my_website",
-        webservice="my_website.app:app",
+        webservice="my_website.main:app",
         webcontroller="my_website.app:controller",
         port=5006,
     )

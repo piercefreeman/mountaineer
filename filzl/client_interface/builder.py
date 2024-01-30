@@ -11,17 +11,19 @@ from inflection import camelize, underscore
 from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
-from filzl.client_interface.build_action import (
-    OpenAPIDefinition,
+from filzl.client_interface.build_actions import (
     OpenAPIToTypescriptActionConverter,
 )
+from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.js_bundler import (
     bundle_javascript,
     get_cleaned_js_contents,
     update_source_map_path,
 )
+from filzl.client_interface.openapi import OpenAPIDefinition
 from filzl.client_interface.paths import generate_relative_import
+from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.static import get_static_path
 
@@ -37,6 +39,8 @@ class ClientBuilder:
             export_interface=True
         )
         self.openapi_action_converter = OpenAPIToTypescriptActionConverter()
+        self.openapi_link_converter = OpenAPIToTypescriptLinkConverter()
+
         self.app = app
         self.view_root = app.view_root
 
@@ -53,6 +57,8 @@ class ClientBuilder:
         # with semantic dependencies so we keep the linearity where possible.
         self.generate_model_definitions()
         self.generate_action_definitions()
+        self.generate_link_shortcuts()
+        self.generate_link_aggregator()
         self.generate_view_servers()
 
         self.build_javascript_chunks()
@@ -142,6 +148,67 @@ class ClientBuilder:
 
             controller_action_path.write_text("\n\n".join(chunks))
 
+    def generate_link_shortcuts(self):
+        """
+        Generate the local link formatters that are tied to each controller.
+
+        """
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+
+            render_route = get_function_metadata(controller.render).get_render_router()
+            render_openapi = get_openapi(
+                title="",
+                version="",
+                routes=render_route.routes,
+            )
+
+            link_payload = self.openapi_link_converter.convert(render_openapi)
+
+            (controller_code_dir / "links.ts").write_text(link_payload)
+
+    def generate_link_aggregator(self):
+        """
+        We need a global function that references each controller's link generator,
+        so we can do controller->global->controller.
+
+        """
+        global_code_dir = self.get_managed_code_dir(self.view_root)
+
+        import_paths: list[str] = []
+        global_setters: dict[str, str] = {}
+
+        # For each controller, import the links and export them
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+
+            relative_import = generate_relative_import(
+                global_code_dir / "links.ts",
+                controller_code_dir / "links.ts",
+            )
+
+            # Avoid global namespace collisions
+            local_link_function_name = (
+                f"{camelize(controller.__class__.__name__)}GetLinks"
+            )
+
+            import_paths.append(
+                f"import {{ getLink as {local_link_function_name} }} from '{relative_import}';"
+            )
+            global_setters[
+                TSLiteral(camelize(controller.__class__.__name__, False))
+            ] = TSLiteral(local_link_function_name)
+
+        lines = [
+            *import_paths,
+            f"const linkGenerator = {python_payload_to_typescript(global_setters)};\n",
+            "export default linkGenerator;",
+        ]
+
+        (global_code_dir / "links.ts").write_text("\n".join(lines))
+
     def generate_view_servers(self):
         """
         Generate the useServer() hooks within each local view. These will reference the main
@@ -177,6 +244,7 @@ class ClientBuilder:
             chunks.append(
                 "import React, { useState } from 'react';\n"
                 + f"import {{ applySideEffect }} from '{relative_server_path}/api';\n"
+                + f"import LinkGenerator from '{relative_server_path}/links';\n"
                 + f"import {{ {render_model_name} }} from './models';"
                 + (
                     f"import {{ {', '.join([metadata.function_name for metadata in controller_action_metadata])} }} from './actions';"
@@ -214,6 +282,7 @@ class ClientBuilder:
                 + "};\n"
                 + "return {\n"
                 + "...serverState,\n"
+                + "linkGenerator: LinkGenerator,\n"
                 + ",\n".join(
                     [
                         (
@@ -272,10 +341,6 @@ class ClientBuilder:
 
             ssr_path = ssr_dir / f"{controller_base}.js"
             ssr_path.write_text(bundle_definition.server_compiled_contents)
-
-            controller.bundled_scripts = []
-            controller.bundled_scripts.append(script_name)
-            controller.ssr_path = ssr_path
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
