@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import Request
 from filzl.actions import passthrough, sideeffect
 from filzl.controller import ControllerBase
-from filzl.render import RenderBase
+from filzl.render import Metadata, RenderBase
 from pydantic import BaseModel
 
 from my_website.views import get_view_path
@@ -52,4 +52,5 @@ class HomeController(ControllerBase):
         return HomeRender(
             client_ip=request.client.host if request.client else "unknown",
             current_count=self.global_count,
+            metadata=Metadata(title="Home"),
         )
