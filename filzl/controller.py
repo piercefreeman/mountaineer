@@ -23,6 +23,7 @@ class ControllerBase(ABC):
     def __init__(self):
         # Injected by the build framework
         self.bundled_scripts = []
+        self.ssr_path : Path | None = None
         self.initialized = True
 
     @abstractmethod
@@ -30,15 +31,16 @@ class ControllerBase(ABC):
         pass
 
     def _generate_html(self, *args, **kwargs):
+        if not self.ssr_path:
+            raise ValueError("No SSR path set for this controller")
+
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
 
         # TODO: Provide a function to automatically sniff for the client view folder
         ssr_html = render_ssr(
-            Path(
-                "/Users/piercefreeman/projects/filzl/my_website/my_website/views/_ssr/home_controller.js"
-            ).read_text(),
+            self.ssr_path.read_text(),
             server_data,
         )
 

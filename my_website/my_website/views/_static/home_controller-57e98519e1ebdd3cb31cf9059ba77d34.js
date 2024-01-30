@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildr7FqNV/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildIXTq2u/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
@@ -23680,7 +23680,7 @@ var Home = () => {
 };
 var page_default = Home;
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildr7FqNV/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildIXTq2u/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
