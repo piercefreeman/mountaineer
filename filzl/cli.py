@@ -3,7 +3,8 @@ from typing import Callable
 
 from filzl.client_interface.builder import ClientBuilder
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
-from filzl.webservice import UvicornThread
+from filzl.webservice import UvicornProcess
+from multiprocessing import Process
 
 
 def handle_watch(
@@ -29,6 +30,11 @@ def handle_watch(
     watchdog.start_watching()
 
 
+def restart_build_server(webcontroller: str):
+    client_builder = ClientBuilder(import_from_string(webcontroller))
+    client_builder.build()
+
+
 def handle_runserver(
     *,
     package: str,
@@ -42,7 +48,8 @@ def handle_runserver(
     :param client_controller: "my_website.app:controller"
 
     """
-    current_uvicorn_thread: UvicornThread | None = None
+    current_uvicorn_thread: UvicornProcess | None = None
+    build_process: Process | None = None
 
     def restart_uvicorn():
         nonlocal current_uvicorn_thread
@@ -50,15 +57,21 @@ def handle_runserver(
             current_uvicorn_thread.stop()
             current_uvicorn_thread.join()
 
-        current_uvicorn_thread = UvicornThread(
+        current_uvicorn_thread = UvicornProcess(
             webservice,
             port=port,
         )
         current_uvicorn_thread.start()
 
     def update_build():
-        client_builder = ClientBuilder(import_from_string(webcontroller))
-        client_builder.build()
+        # Stop the current build process if it's still running
+        nonlocal build_process
+        if build_process:
+            if build_process.is_alive():
+                build_process.terminate()
+                build_process.join()
+        build_process = Process(target=restart_build_server, args=(webcontroller,))
+        build_process.start()
         restart_uvicorn()
 
     # Initial launch - both build and run the server, since we may not have

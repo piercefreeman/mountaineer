@@ -3,6 +3,7 @@ from threading import Thread
 
 from uvicorn import Config
 from uvicorn.server import Server
+from multiprocessing import Process, Event
 
 
 class UvicornThread(Thread):
@@ -29,3 +30,25 @@ class UvicornThread(Thread):
     def stop(self):
         self.server.should_exit = True
         self.server.force_exit = True
+
+class UvicornProcess(Process):
+    """
+    We need a fully separate process for our runserver, so we're able to re-import
+    all of the dependent files when there are changes.
+
+    """
+    def __init__(self, entrypoint: str, port: int):
+        super().__init__()
+        self.close_signal = Event()
+        self.entrypoint = entrypoint
+        self.port = port
+
+    def run(self):
+        thread = UvicornThread(self.entrypoint, self.port)
+        thread.start()
+        self.close_signal.wait()
+        thread.stop()
+        thread.join()
+
+    def stop(self):
+        self.close_signal.set()
