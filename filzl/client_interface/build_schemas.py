@@ -4,7 +4,7 @@ Generator for TypeScript interfaces from OpenAPI specifications.
 from typing import Dict, Iterator, Type, get_args, get_origin
 
 from inflection import camelize
-from pydantic import BaseModel
+from pydantic import BaseModel, create_model
 
 from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
 from filzl.client_interface.openapi import (
@@ -29,9 +29,30 @@ class OpenAPIToTypescriptSchemaConverter:
     def convert(self, model: Type[BaseModel]):
         self.validate_typescript_candidate(model)
 
-        openapi_spec = model.model_json_schema()
+        openapi_spec = self.get_model_json_schema(model)
         schema = OpenAPISchema(**openapi_spec)
         return self.convert_to_typescript(schema)
+
+    def get_model_json_schema(self, model: Type[BaseModel]):
+        """
+        By default pydantic will still include exclude=True parameters in the
+        OpenAPI schema. This helper function creates a synthetic model
+        before conversion so we exclude these unnecessary parameters.
+
+        """
+        include_fields = {
+            field: (field_info.annotation, field_info)
+            for field, field_info in model.model_fields.items()
+            if not field_info.exclude
+        }
+
+        synthetic_model = create_model(
+            model.__name__,
+            __config__=model.model_config,
+            **include_fields,  # type: ignore
+        )
+
+        return synthetic_model.model_json_schema()
 
     def convert_to_typescript(self, parsed_spec: OpenAPISchema):
         # components = parsed_spec.get('components', {})

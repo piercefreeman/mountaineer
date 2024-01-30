@@ -102,7 +102,7 @@ class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):
     your own component data schema.
     """
 
-    metadata: Metadata | None = None
+    metadata: Metadata | None = Field(default=None, exclude=True)
 
     model_config = {
         # Frozen parameters are required so we can hash the render values to check

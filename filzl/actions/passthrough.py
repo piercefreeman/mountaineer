@@ -34,7 +34,7 @@ def passthrough(*args, **kwargs):
     def decorator_with_args(response_model: Type[BaseModel] | None):
         def wrapper(func: Callable):
             @wraps(func)
-            def inner(self: ControllerBase, *func_args, **func_kwargs):
+            def inner(self: "ControllerBase", *func_args, **func_kwargs):
                 return func(self, *func_args, **func_kwargs)
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)

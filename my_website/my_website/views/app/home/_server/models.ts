@@ -11,7 +11,6 @@ export interface HTTPValidationError {
 }
 
 export interface HomeRender {
-  metadata?: Metadata | null;
   client_ip: string;
   current_count: number;
 }
@@ -33,31 +32,8 @@ export interface IncrementCountResponse {
 }
 
 export interface IncrementCountResponseSideEffect {
-  metadata?: Metadata | null;
   client_ip: string;
   current_count: number;
-}
-
-export interface LinkAttribute {
-  rel: string;
-  href: string;
-  optional_attributes?: Record<string, string>;
-}
-
-export interface MetaAttribute {
-  name?: string | null;
-  content?: string | null;
-  optional_attributes?: Record<string, string>;
-}
-
-export interface Metadata {
-  title?: string | null;
-  meta?: Array<MetaAttribute>;
-  links?: Array<LinkAttribute>;
-}
-
-export interface Optional Attributes {
-
 }
 
 export interface ValidationError {
