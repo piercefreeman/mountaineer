@@ -509,7 +509,7 @@ var require_react_development = __commonJS({
           }
           return element;
         };
-        function createElement2(type, config, children) {
+        function createElement3(type, config, children) {
           var propName;
           var props = {};
           var key = null;
@@ -1608,7 +1608,7 @@ var require_react_development = __commonJS({
               error("React.createElement: type is invalid -- expected a string (for built-in components) or a class/function (for composite components) but got: %s.%s", typeString, info);
             }
           }
-          var element = createElement2.apply(this, arguments);
+          var element = createElement3.apply(this, arguments);
           if (element == null) {
             return element;
           }
@@ -9387,7 +9387,7 @@ var require_react_dom_development = __commonJS({
             }
           }
         }
-        function createElement2(type, props, rootContainerElement, parentNamespace) {
+        function createElement3(type, props, rootContainerElement, parentNamespace) {
           var isCustomComponentTag;
           var ownerDocument = getOwnerDocumentFromRootContainer(rootContainerElement);
           var domElement;
@@ -10248,7 +10248,7 @@ var require_react_dom_development = __commonJS({
             }
             parentNamespace = hostContextDev.namespace;
           }
-          var domElement = createElement2(type, props, rootContainerInstance, parentNamespace);
+          var domElement = createElement3(type, props, rootContainerInstance, parentNamespace);
           precacheFiberNode(internalInstanceHandle, domElement);
           updateFiberProps(domElement, props);
           return domElement;
@@ -23506,131 +23506,15 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildH5W9sg/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildneaZNX/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
-// ../../my_website/my_website/views/app/home/page.tsx
-var import_react2 = __toESM(require_react());
+// ../../my_website/my_website/views/app/detail/page.tsx
+var React2 = __toESM(require_react());
 
-// ../../my_website/my_website/views/app/home/_server/useServer.ts
+// ../../my_website/my_website/views/app/detail/_server/useServer.ts
 var import_react = __toESM(require_react());
-
-// ../../my_website/my_website/views/_server/api.ts
-var FetchErrorBase = class extends Error {
-  statusCode;
-  body;
-  constructor(statusCode, body) {
-    super(`Error ${statusCode}: ${body}`);
-    this.statusCode = statusCode;
-    this.body = body;
-  }
-};
-var handleOutputFormat = async (response, format) => {
-  if (format === "text") {
-    return await response.text();
-  } else {
-    return await response.json();
-  }
-};
-var __request = async (params) => {
-  const payloadBody = params.body ? JSON.stringify(params.body) : void 0;
-  let filledUrl = params.url;
-  for (const [key, value] of Object.entries(params.path || {})) {
-    filledUrl = filledUrl.replace(`{${key}}`, value.toString());
-  }
-  Object.entries(params.query || {}).forEach(([key, value], i) => {
-    filledUrl = `${filledUrl}${i === 0 ? "?" : "&"}${key}=${value}`;
-  });
-  try {
-    const response = await fetch(filledUrl, {
-      method: params.method,
-      headers: {
-        "Content-Type": params.mediaType || "application/json"
-      },
-      body: payloadBody
-    });
-    if (response.status >= 200 && response.status < 300) {
-      return await handleOutputFormat(response, params.outputFormat);
-    } else {
-      if (params.errors && params.errors[response.status]) {
-        const errorClass = params.errors[response.status];
-        throw new errorClass(
-          response.status,
-          await handleOutputFormat(response, params.outputFormat)
-        );
-      }
-      throw new FetchErrorBase(
-        response.status,
-        await handleOutputFormat(response, params.outputFormat)
-      );
-    }
-  } catch (e) {
-    if (e instanceof FetchErrorBase) {
-      throw e;
-    }
-    const error = new FetchErrorBase(-1, e.toString());
-    error.stack = e.stack;
-    throw error;
-  }
-};
-function applySideEffect(apiFunction, setControllerState) {
-  return async (...args) => {
-    const result = await apiFunction(...args);
-    setControllerState(result.sideeffect);
-    return result;
-  };
-}
-
-// ../../my_website/my_website/views/app/home/_server/actions.ts
-var get_external_data = () => {
-  return __request(
-    {
-      "method": "POST",
-      "url": "/internal/api/home_controller/get_external_data",
-      "query": {}
-    }
-  );
-};
-var increment_count = ({
-  requestBody
-}) => {
-  return __request(
-    {
-      "method": "POST",
-      "url": "/internal/api/home_controller/increment_count",
-      "query": {},
-      "errors": {
-        422: HTTPValidationErrorException
-      },
-      "body": requestBody,
-      "mediaType": "application/json"
-    }
-  );
-};
-var increment_count_only = ({
-  url_param,
-  requestBody
-}) => {
-  return __request(
-    {
-      "method": "POST",
-      "url": "/internal/api/home_controller/increment_count_only",
-      "query": {
-        url_param
-      },
-      "errors": {
-        422: HTTPValidationErrorException
-      },
-      "body": requestBody,
-      "mediaType": "application/json"
-    }
-  );
-};
-var HTTPValidationErrorException = class extends FetchErrorBase {
-};
-
-// ../../my_website/my_website/views/app/home/_server/useServer.ts
 var useServer = () => {
   const [serverState, setServerState] = (0, import_react.useState)(SERVER_DATA);
   const setControllerState = (payload) => {
@@ -23640,48 +23524,18 @@ var useServer = () => {
     }));
   };
   return {
-    ...serverState,
-    get_external_data,
-    increment_count: applySideEffect(increment_count, setControllerState),
-    increment_count_only: applySideEffect(increment_count_only, setControllerState)
+    ...serverState
   };
 };
 
-// ../../my_website/my_website/views/app/home/page.tsx
-var Home = () => {
+// ../../my_website/my_website/views/app/detail/page.tsx
+var Page = () => {
   const serverState = useServer();
-  console.log("SERVER PAYLOAD", serverState);
-  return /* @__PURE__ */ import_react2.default.createElement("div", null, /* @__PURE__ */ import_react2.default.createElement("h1", null, "Home"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Home page"), /* @__PURE__ */ import_react2.default.createElement("p", null, "Hello ", serverState.client_ip, ", current count is", " ", serverState.current_count), /* @__PURE__ */ import_react2.default.createElement(
-    "button",
-    {
-      onClick: async () => {
-        await serverState.increment_count({
-          requestBody: {
-            count: 1
-          }
-        });
-      }
-    },
-    "Increment"
-  ), /* @__PURE__ */ import_react2.default.createElement(
-    "button",
-    {
-      onClick: async () => {
-        await serverState.increment_count_only({
-          // Not used, but demonstrates that it's possible to pass a url param
-          url_param: 5,
-          requestBody: {
-            count: -1
-          }
-        });
-      }
-    },
-    "Decrement with sideeffect masking"
-  ));
+  return /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("h1", null, "Server"), /* @__PURE__ */ React2.createElement("pre", null, JSON.stringify(serverState, null, 2)));
 };
-var page_default = Home;
+var page_default = Page;
 
-// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildH5W9sg/synthetic_client.tsx
+// ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildneaZNX/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
@@ -23735,4 +23589,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=home_controller-076212a2bb418d2f6a28bb2b42e0a907.js.map
+//# sourceMappingURL=detail_controller-9f07caecd3c145ee0e861f0551e7c2e9.js.map

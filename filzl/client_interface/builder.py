@@ -273,10 +273,6 @@ class ClientBuilder:
             ssr_path = ssr_dir / f"{controller_base}.js"
             ssr_path.write_text(bundle_definition.server_compiled_contents)
 
-            controller.bundled_scripts = []
-            controller.bundled_scripts.append(script_name)
-            controller.ssr_path = ssr_path
-
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.

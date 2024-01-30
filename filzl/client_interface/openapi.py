@@ -190,4 +190,4 @@ class OpenAPIDefinition(BaseModel):
 
     # { path: { action: ActionDefinition }}
     paths: dict[str, EndpointDefinition]
-    components: Components
+    components: Components = Components(schemas={})
