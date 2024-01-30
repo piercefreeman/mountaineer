@@ -1,6 +1,6 @@
 # my-website
 
-An example webapp, built with filzl.
+An example webapp, built with filzl. This webapp is a simple counter that can be incremented and decremented. It is built with a single page and multiple layouts, to demonstrate how complex webapplications can be constructed in a modular way.
 
 ## Getting Started
 
@@ -8,6 +8,8 @@ We link to the local version of filzl in `pyproject.toml`. On the first install 
 
 ```bash
 poetry install
+(cd my_website/views && npm install)
+
 poetry run runserver
 ```
 

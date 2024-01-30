@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildIXTq2u/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildZCBQ6E/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12784,25 +12784,26 @@ var SSR = (() => {
           });
         }
       },
-      "Increment V1"
+      "Increment"
     ), /* @__PURE__ */ import_react2.default.createElement(
       "button",
       {
         onClick: async () => {
           await serverState.increment_count_only({
+            // Not used, but demonstrates that it's possible to pass a url param
             url_param: 5,
             requestBody: {
-              count: 1
+              count: -1
             }
           });
         }
       },
-      "Increment V2"
+      "Decrement with sideeffect masking"
     ));
   };
   var page_default = Home;
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildIXTq2u/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildZCBQ6E/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

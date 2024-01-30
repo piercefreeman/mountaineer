@@ -22,19 +22,20 @@ const Home = () => {
           });
         }}
       >
-        Increment V1
+        Increment
       </button>
       <button
         onClick={async () => {
           await serverState.increment_count_only({
+            // Not used, but demonstrates that it's possible to pass a url param
             url_param: 5,
             requestBody: {
-              count: 1,
+              count: -1,
             },
           });
         }}
       >
-        Increment V2
+        Decrement with sideeffect masking
       </button>
     </div>
   );
