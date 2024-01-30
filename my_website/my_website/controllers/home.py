@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from fastapi import Request
-
 from filzl.actions import passthrough, sideeffect
 from filzl.controller import ControllerBase
 from filzl.render import RenderBase

@@ -117,18 +117,14 @@ def fuse_metadata_to_response_typehint(
     passthrough_fields = {}
     sideeffect_fields = {}
 
-    print("METADATA", metadata.action_type)
-
     if metadata.passthrough_model:
         passthrough_fields = {**metadata.passthrough_model.model_fields}
 
     if metadata.action_type == FunctionActionType.SIDEEFFECT:
         # By default, reload all fields
         sideeffect_fields = {**render_model.model_fields}
-        print("SIDE EFFECT", sideeffect_fields)
 
         if metadata.reload_states:
-            print("WILL FILTER", metadata.reload_states)
             # Make sure this class actually aligns to the response model
             # If not the user mis-specified the reload states
             reload_classes = {field.root_model for field in metadata.reload_states}
@@ -142,8 +138,6 @@ def fuse_metadata_to_response_typehint(
                 for field_name, field_definition in render_model.model_fields.items()
                 if field_name in reload_keys
             }
-
-    print("RETURN FIELDS", passthrough_fields, sideeffect_fields)
 
     base_response_name = camelize(metadata.function_name) + "Response"
     base_response_params = {}
