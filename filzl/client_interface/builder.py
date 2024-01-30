@@ -41,8 +41,6 @@ class ClientBuilder:
         self.view_root = app.view_root
 
     def build(self):
-        print("Will build", self.app.controllers)
-
         # Make sure our application definitions are in a valid state before we start
         # to build the client code
         self.validate_unique_paths()
@@ -79,7 +77,6 @@ class ClientBuilder:
             controller = controller_definition.controller
 
             openapi_spec = self.openapi_from_controller(controller_definition)
-            print("OPENAPI", openapi_spec)
             base = OpenAPIDefinition(**openapi_spec)
 
             schemas: dict[str, str] = {}
@@ -173,7 +170,6 @@ class ClientBuilder:
                 Path(controller.view_path)
             )
             global_server_path = self.get_managed_code_dir(self.view_root)
-            print("CONTROLLER", controller_model_path, global_server_path)
             relative_server_path = generate_relative_import(
                 controller_model_path, global_server_path
             )

@@ -6,6 +6,7 @@ from enum import Flag, auto
 from pathlib import Path
 from typing import Callable
 
+from click import secho
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
@@ -40,8 +41,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         if self.should_ignore_path(event.src_path):
             return
         if not event.is_directory:
-            print(f"File modified: {event.src_path}")
-            print(f"Event: {event} {event.__dict__}")
+            secho(f"File modified: {event.src_path}", fg="yellow")
             self.handle_callbacks(CallbackType.MODIFIED)
 
     def on_created(self, event):
@@ -49,7 +49,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         if self.should_ignore_path(event.src_path):
             return
         if not event.is_directory:
-            print(f"File created: {event.src_path}")
+            secho(f"File created: {event.src_path}", fg="yellow")
             self.handle_callbacks(CallbackType.CREATED)
 
     def on_deleted(self, event):
@@ -57,7 +57,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         if self.should_ignore_path(event.src_path):
             return
         if not event.is_directory:
-            print(f"File deleted: {event.src_path}")
+            secho(f"File deleted: {event.src_path}", fg="yellow")
             self.handle_callbacks(CallbackType.DELETED)
 
     def handle_callbacks(self, action: CallbackType):
@@ -110,7 +110,7 @@ class PackageWatchdog:
             observer = Observer()
 
             for path in self.paths:
-                print(f"Watching {path}")
+                secho(f"Watching {path}", fg="green")
                 if os.path.isdir(path):
                     observer.schedule(event_handler, path, recursive=True)
                 else:
@@ -136,7 +136,7 @@ class PackageWatchdog:
                 )
 
     def get_package_paths(self):
-        paths : list[str] = []
+        paths: list[str] = []
         for package in self.packages:
             dist = importlib.metadata.distribution(package)
             package_path = self.resolve_package_path(dist)

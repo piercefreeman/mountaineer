@@ -30,9 +30,7 @@ class OpenAPIToTypescriptSchemaConverter:
         self.validate_typescript_candidate(model)
 
         openapi_spec = model.model_json_schema()
-        print("RAW SPEC", openapi_spec)
         schema = OpenAPISchema(**openapi_spec)
-        print("PARSED SPEC", schema)
         return self.convert_to_typescript(schema)
 
     def convert_to_typescript(self, parsed_spec: OpenAPISchema):
@@ -100,7 +98,6 @@ class OpenAPIToTypescriptSchemaConverter:
 
         # We have to support arrays with one and multiple values
         def walk_array_types(prop: OpenAPIProperty) -> Iterator[str]:
-            print("WALKING TYPE", prop)
             if prop.ref:
                 yield self.get_typescript_interface_name(
                     self.resolve_ref(prop.ref, base=base)

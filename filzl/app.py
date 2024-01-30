@@ -135,7 +135,6 @@ class AppController:
             metadata.url = (
                 f"{controller_url_prefix}/{metadata.function_name.strip('/')}"
             )
-            print(f"Registering: {metadata.url}")
 
             controller_api.post(f"/{metadata.function_name}")(fn)
 
