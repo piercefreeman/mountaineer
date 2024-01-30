@@ -1,4 +1,4 @@
-import { build } from "esbuild";
+import { BuildOptions, build } from "esbuild";
 import { join, relative } from "path";
 import {
   writeFileSync,
@@ -11,29 +11,27 @@ import {
 import { findLayouts } from "./sniff";
 import { tmpdir } from "os";
 
-const createSyntheticPage = (
-  pagePath: string,
-  layoutPaths: string[],
-  outputDir: string,
-  rootElement: string,
-): string => {
-  /*
-   * Following the Next.js syntax, layouts wrap individual pages in a top-down order. Here we
-   * create a synthetic page that wraps the actual page in the correct order.
-   * The output is a valid React file that acts as the page entrypoint
-   * for the `rootElement` ID in the DOM.
-   */
+const createSyntheticEntrypoint = ({
+  pagePath,
+  layoutPaths,
+  outputDir,
+}: {
+  pagePath: string;
+  layoutPaths: string[];
+  outputDir: string;
+}) => {
   const pageImportPath = relative(outputDir, pagePath).replace(/\\/g, "/");
   const layoutImportPaths = layoutPaths.map((path) =>
     relative(outputDir, path).replace(/\\/g, "/"),
   );
 
   let content = "";
-  content += "import { createRoot } from 'react-dom/client';\n";
+  const imports = new Array<string>();
+
   layoutImportPaths.forEach((layoutPath, index) => {
-    content += `import Layout${index} from '../${layoutPath}';\n`;
+    imports.push(`import Layout${index} from '../${layoutPath}';`);
   });
-  content += `import Page from '../${pageImportPath}';\n\n`;
+  imports.push(`import Page from '../${pageImportPath}';`);
 
   content += "const Entrypoint = () => {\n";
   content += "return (\n";
@@ -47,13 +45,84 @@ const createSyntheticPage = (
     content += `</Layout${layoutImportPaths.length - 1 - index}>`;
   });
   content += "\n);\n";
-  content += "};\n\n";
+  content += "};";
+
+  return {
+    entrypoint: content,
+    imports,
+  };
+};
+
+const createSyntheticClientPage = ({
+  pagePath,
+  layoutPaths,
+  outputDir,
+  rootElement,
+}: {
+  pagePath: string;
+  layoutPaths: string[];
+  outputDir: string;
+  rootElement: string;
+}): string => {
+  /*
+   * Following the Next.js syntax, layouts wrap individual pages in a top-down order. Here we
+   * create a synthetic page that wraps the actual page in the correct order.
+   * The output is a valid React file that acts as the page entrypoint
+   * for the `rootElement` ID in the DOM.
+   */
+  const { entrypoint, imports } = createSyntheticEntrypoint({
+    pagePath,
+    layoutPaths,
+    outputDir,
+  });
+
+  let content = "";
+  content += "import React from 'react';\n";
+  content += "import { createRoot } from 'react-dom/client';\n";
+  content += [...imports].join("\n") + "\n";
+
+  content += entrypoint + "\n";
 
   content += `const container = document.getElementById('${rootElement}');`;
   content += "const root = createRoot(container!);";
   content += `root.render(<Entrypoint />);`;
 
-  const syntheticFilePath = join(outputDir, "synthetic.tsx");
+  const syntheticFilePath = join(outputDir, "synthetic_client.tsx");
+  writeFileSync(syntheticFilePath, content);
+
+  return syntheticFilePath;
+};
+
+const createSyntheticSSRPage = ({
+  pagePath,
+  layoutPaths,
+  outputDir,
+}: {
+  pagePath: string;
+  layoutPaths: string[];
+  outputDir: string;
+}) => {
+  /*
+   * Create a synthetic page that generates the HTML for the synthetic page.
+   * This output is intended for execution in a Javascript/V8 runtime engine
+   * to evaluate the final output.
+   */
+  const { entrypoint, imports } = createSyntheticEntrypoint({
+    pagePath,
+    layoutPaths,
+    outputDir,
+  });
+
+  let content = "";
+  content += "import * as React from 'react';\n";
+  content += "import { renderToString } from 'react-dom/server';";
+  content += [...imports].join("\n") + "\n";
+
+  content += entrypoint + "\n";
+
+  content += "export const Index = () => renderToString(<Entrypoint />);";
+
+  const syntheticFilePath = join(outputDir, "synthetic_server.tsx");
   writeFileSync(syntheticFilePath, content);
 
   return syntheticFilePath;
@@ -94,35 +163,72 @@ export const buildPage = async (pagePath: string, rootPath: string) => {
   linkProjectFiles(rootPath, outputTempPath);
 
   const layoutPaths = findLayouts(pagePath, rootPath);
-  const syntheticPage = createSyntheticPage(
+  const clientSyntheticPath = createSyntheticClientPage({
     pagePath,
     layoutPaths,
-    outputTempPath,
-    "root",
-  );
-
-  const compiledPath = join(outputTempPath, "dist", "output.js");
-  const buildResult = await build({
-    entryPoints: [syntheticPage],
-    bundle: true,
-    outfile: compiledPath,
-    format: "esm",
-    loader: { ".tsx": "tsx" },
-    sourcemap: true,
+    outputDir: outputTempPath,
+    rootElement: "root",
+  });
+  const serverSyntheticPath = createSyntheticSSRPage({
+    pagePath,
+    layoutPaths,
+    outputDir: outputTempPath,
   });
 
-  if (buildResult.errors.length > 0) {
-    console.error(buildResult.errors);
-    throw new Error("Failed to compile page");
+  const clientCompiledPath = join(outputTempPath, "dist", "output.client.js");
+  const serverCompiledPath = join(outputTempPath, "dist", "output.server.js");
+
+  const commonBuildParams: BuildOptions = {
+    bundle: true,
+    loader: { ".tsx": "tsx" },
+    sourcemap: true,
+  };
+
+  const clientBuildResult = await build({
+    entryPoints: [clientSyntheticPath],
+    outfile: clientCompiledPath,
+    format: "esm",
+    ...commonBuildParams,
+  });
+  const serverBuildResult = await build({
+    entryPoints: [serverSyntheticPath],
+    outfile: serverCompiledPath,
+    format: "iife",
+    globalName: "SSR",
+    define: {
+      global: "window",
+    },
+    external: [],
+    ...commonBuildParams,
+  });
+
+  if (clientBuildResult.errors.length > 0) {
+    console.error(clientBuildResult.errors);
+    throw new Error("Failed to compile client page");
+  }
+  if (serverBuildResult.errors.length > 0) {
+    console.error(serverBuildResult.errors);
+    throw new Error("Failed to compile server page");
   }
 
   // Read the output file and return it
-  const compiledContents = readFileSync(compiledPath, "utf-8");
-  const sourceMapContents = readFileSync(`${compiledPath}.map`, "utf-8");
+  const clientCompiledContents = readFileSync(clientCompiledPath, "utf-8");
+  const clientSourceMapContents = readFileSync(
+    `${clientCompiledPath}.map`,
+    "utf-8",
+  );
+  const serverCompiledContents = readFileSync(serverCompiledPath, "utf-8");
+  const serverSourceMapContents = readFileSync(
+    `${serverCompiledPath}.map`,
+    "utf-8",
+  );
+
   rmdirSync(outputTempPath, { recursive: true });
 
   return {
-    compiledContents,
-    sourceMapContents,
+    clientCompiledContents,
+    clientSourceMapContents,
+    serverCompiledContents,
+    serverSourceMapContents,
   };
 };

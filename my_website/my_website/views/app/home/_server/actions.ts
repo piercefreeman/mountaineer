@@ -1,5 +1,5 @@
 import { __request, FetchErrorBase } from '../../../_server/api';
-import type { HTTPValidationError, IncrementCountRequest, IncrementCountResponse, IncrementCountOnlyResponse, GetExternalDataResponse } from './models';
+import type { GetExternalDataResponse, IncrementCountOnlyResponse, IncrementCountRequest, IncrementCountResponse, HTTPValidationError } from './models';
 
 export const get_external_data = (): Promise<GetExternalDataResponse> => {
 return __request(
