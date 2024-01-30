@@ -11,11 +11,11 @@ export const ServerContext = createContext<{
 }>(undefined as any)
 
 export const ServerProvider = ({ children }: { children: ReactNode }) => {
-const [serverState, setServerState] = useState<ServerState>({
-  HOME_CONTROLLER: GLOBAL_STATE[HOME_CONTROLLER]
-});
-return <ServerContext.Provider
-serverState={serverState}
-setServerState={setServerState}>
-{children}</ServerContext.Provider>
+  const [serverState, setServerState] = useState<ServerState>({
+    HOME_CONTROLLER: GLOBAL_STATE[HOME_CONTROLLER]
+  });
+  return <ServerContext.Provider
+    serverState={serverState}
+    setServerState={setServerState}>
+    {children}</ServerContext.Provider>
 };

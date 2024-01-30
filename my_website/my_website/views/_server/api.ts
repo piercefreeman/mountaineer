@@ -19,6 +19,7 @@ interface FetchParams {
   method: string;
   url: string;
   path?: Record<string, string | number>;
+  query?: Record<string, string | number>;
   errors?: Record<
     number,
     new (statusCode: number, body: any) => FetchErrorBase<any>
@@ -41,9 +42,15 @@ export const __request = async (params: FetchParams) => {
   const payloadBody = params.body ? JSON.stringify(params.body) : undefined;
   let filledUrl = params.url;
 
+  // Fill path parameters
   for (const [key, value] of Object.entries(params.path || {})) {
     filledUrl = filledUrl.replace(`{${key}}`, value.toString());
   }
+
+  // Fill query parameters
+  Object.entries(params.query || {}).forEach(([key, value], i) => {
+    filledUrl = `${filledUrl}${i === 0 ? "?" : "&"}${key}=${value}`;
+  });
 
   try {
     const response = await fetch(filledUrl, {

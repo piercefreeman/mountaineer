@@ -1,11 +1,14 @@
 import { __request, FetchErrorBase } from '../../../_server/api';
-import type { HTTPValidationError, IncrementCountResponse, GetExternalDataResponse, IncrementCountOnlyResponse, IncrementCountRequest } from './models';
+import type { HTTPValidationError, IncrementCountRequest, IncrementCountResponse, IncrementCountOnlyResponse, GetExternalDataResponse } from './models';
 
 export const get_external_data = (): Promise<GetExternalDataResponse> => {
 return __request(
 {
 'method': 'POST',
-'url': '/internal/api/home_controller/get_external_data'
+'url': '/internal/api/home_controller/get_external_data',
+'query': {
+
+}
 }
 );
 }
@@ -19,6 +22,9 @@ return __request(
 {
 'method': 'POST',
 'url': '/internal/api/home_controller/increment_count',
+'query': {
+
+},
 'errors': {
 422: HTTPValidationErrorException
 },
@@ -39,7 +45,7 @@ return __request(
 {
 'method': 'POST',
 'url': '/internal/api/home_controller/increment_count_only',
-'path': {
+'query': {
 url_param
 },
 'errors': {

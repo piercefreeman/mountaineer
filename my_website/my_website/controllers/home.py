@@ -23,10 +23,11 @@ class GetExternalDataResponse(BaseModel):
 
 class HomeController(ControllerBase):
     # view_path = "/testing/[post_id]/mytemplate.tsx"
-    url = "/{home_id}/"
+    url = "/home/{home_id}/"
     view_path = get_view_path("/app/home/page.tsx")
 
     def __init__(self):
+        super().__init__()
         self.global_count = 0
 
     @sideeffect

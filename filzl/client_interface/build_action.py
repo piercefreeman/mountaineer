@@ -6,6 +6,7 @@ from filzl.client_interface.openapi import (
     ActionDefinition,
     ContentDefinition,
     OpenAPIDefinition,
+    ParameterLocationType,
 )
 from filzl.client_interface.typescript import (
     TSLiteral,
@@ -143,6 +144,7 @@ class OpenAPIToTypescriptActionConverter:
             "method": action.action_type.upper(),
             "url": url,
             "path": {},
+            "query": {},
             "errors": {},
         }
 
@@ -152,7 +154,14 @@ class OpenAPIToTypescriptActionConverter:
 
         if action.parameters:
             for parameter in action.parameters:
-                common_params["path"][parameter.name] = TSLiteral(parameter.name)
+                if parameter.in_location == ParameterLocationType.PATH:
+                    common_params["path"][parameter.name] = TSLiteral(parameter.name)
+                elif parameter.in_location == ParameterLocationType.QUERY:
+                    common_params["query"][parameter.name] = TSLiteral(parameter.name)
+                else:
+                    raise NotImplementedError(
+                        f"Parameter location {parameter.in_location} not supported"
+                    )
 
         for status_code, response_definition in action.responses.items():
             status_int = int(status_code)
