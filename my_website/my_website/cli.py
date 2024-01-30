@@ -1,27 +1,20 @@
 from click import command
-from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
+from filzl.cli import handle_runserver, handle_watch
 
 
 @command()
 def runserver():
-    from uvicorn import run
-
-    run("my_website.app:app", port=5006, reload=True, access_log=False)
+    handle_runserver(
+        package="my_website",
+        webservice="my_website.app:app",
+        webcontroller="my_website.app:controller",
+        port=5006,
+    )
 
 
 @command()
 def watch():
-    def update_build():
-        print("SHOULD UPDATE!!")
-
-    package_names = ["filzl", "my_website"]
-    watchdog = PackageWatchdog(
-        package_names,
-        callbacks=[
-            CallbackDefinition(
-                CallbackType.CREATED | CallbackType.MODIFIED,
-                update_build,
-            )
-        ],
+    handle_watch(
+        package="my_website",
+        webcontroller="my_website.app:controller",
     )
-    watchdog.start_watching()
