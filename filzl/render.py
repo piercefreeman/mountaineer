@@ -60,14 +60,16 @@ class ThemeColorMeta(MetaAttribute):
 
 class ViewportMeta(MetaAttribute):
     width: str = "device-width"
-    initial_scale: int = 1
-    maximum_scale: int = 1
+    initial_scale: float = 1.0
+    maximum_scale: float = 1.0
     user_scalable: bool = False
 
     @model_validator(mode="after")
     def create_attribute(self):
+        user_scalable_str = "yes" if self.user_scalable else "no"
+
         self.name = "viewport"
-        self.content = f"width={self.width}, initial-scale={self.initial_scale}, maximum-scale={self.maximum_scale}, user-scalable={self.user_scalable}"
+        self.content = f"width={self.width}, initial-scale={self.initial_scale}, maximum-scale={self.maximum_scale}, user-scalable={user_scalable_str}"
         return self
 
 
@@ -86,8 +88,12 @@ class Metadata(BaseModel):
     """
 
     title: str | None = None
-    meta: list[MetaAttribute] = []
+    metas: list[MetaAttribute] = []
     links: list[LinkAttribute] = []
+
+    model_config = {
+        "extra": "forbid",
+    }
 
 
 class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):

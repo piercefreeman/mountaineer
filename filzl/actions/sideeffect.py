@@ -1,7 +1,7 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import wraps
 from inspect import Parameter, signature
-from typing import Any, Callable, Type, overload
+from typing import TYPE_CHECKING, Any, Callable, Type, overload
 from urllib.parse import urlparse
 
 from fastapi import Request
@@ -14,8 +14,10 @@ from filzl.actions.fields import (
     get_function_metadata,
     init_function_metadata,
 )
-from filzl.controller import ControllerBase
 from filzl.render import FieldClassDefinition
+
+if TYPE_CHECKING:
+    from filzl.controller import ControllerBase
 
 
 @overload
@@ -54,7 +56,7 @@ def sideeffect(*args, **kwargs):
             function_needs_request = "request" in original_sig.parameters
 
             @wraps(func)
-            async def inner(self: ControllerBase, *func_args, **func_kwargs):
+            async def inner(self: "ControllerBase", *func_args, **func_kwargs):
                 # Check if the original function expects a 'request' parameter
                 request = func_kwargs.pop("request")
                 if not request:
@@ -110,7 +112,7 @@ def sideeffect(*args, **kwargs):
 
 @asynccontextmanager
 async def get_render_parameters(
-    controller: ControllerBase,
+    controller: "ControllerBase",
     request: Request,
 ):
     """

@@ -37,7 +37,6 @@ class ControllerBase(ABC):
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
-        print("Server data:", server_data)
         header_str = "\n".join(
             self.build_header(server_data.metadata) if server_data.metadata else []
         )
@@ -99,7 +98,7 @@ class ControllerBase(ABC):
         if metadata.title:
             tags.append(f"<title>{metadata.title}</title>")
 
-        for meta_definition in metadata.meta:
+        for meta_definition in metadata.metas:
             all_attributes = {
                 "name": meta_definition.name,
                 "content": meta_definition.content,

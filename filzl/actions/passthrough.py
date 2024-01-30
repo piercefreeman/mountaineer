@@ -1,10 +1,12 @@
 from functools import wraps
-from typing import Callable, Type, overload
+from typing import TYPE_CHECKING, Callable, Type, overload
 
 from pydantic import BaseModel
 
 from filzl.actions.fields import FunctionActionType, init_function_metadata
-from filzl.controller import ControllerBase
+
+if TYPE_CHECKING:
+    from filzl.controller import ControllerBase
 
 
 @overload
