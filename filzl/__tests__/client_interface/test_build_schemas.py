@@ -1,3 +1,5 @@
+from json import dumps as json_dumps
+
 import pytest
 from pydantic import BaseModel, Field, create_model
 
@@ -93,3 +95,33 @@ def test_require_json_dictionaries():
 
     with pytest.raises(ValueError):
         converter.validate_typescript_candidate(InvalidDictModel)
+
+
+def test_get_model_json_schema():
+    """
+    Ensure we avoid serializing optional fields.
+    """
+
+    class ExcludedModel(BaseModel):
+        a: str
+
+    class IncludedModel(BaseModel):
+        b: str
+
+    class MainModel(BaseModel):
+        excluded_obj: ExcludedModel | None = Field(default=None, exclude=True)
+        included_obj: IncludedModel | None
+
+    builder = OpenAPIToTypescriptSchemaConverter()
+    raw_openapi_result = json_dumps(MainModel.model_json_schema())
+    fixed_openapi_result = json_dumps(builder.get_model_json_schema(MainModel))
+
+    # First we check that pydantic actually does serialize excluded fields
+    # If this starts failing, we should be able to remove our workaround
+    assert "excluded_obj" in raw_openapi_result
+    assert "ExcludedModel" in raw_openapi_result
+
+    assert "excluded_obj" not in fixed_openapi_result
+    assert "ExcludedModel" not in fixed_openapi_result
+    assert "included_obj" in fixed_openapi_result
+    assert "IncludedModel" in fixed_openapi_result
