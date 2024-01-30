@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildATTpaR/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildgOZh2A/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12705,14 +12705,10 @@ var SSR = (() => {
   }
 
   // ../../my_website/my_website/views/app/home/_server/links.ts
-  var getLink = ({
-    home_id
-  }) => {
-    let url = "/home/{home_id}/";
+  var getLink = ({}) => {
+    let url = "/";
     const queryParameters = {};
-    const pathParameters = {
-      home_id
-    };
+    const pathParameters = {};
     const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
       if (value !== void 0) {
         acc.push(`${key}=${value}`);
@@ -12875,7 +12871,7 @@ var SSR = (() => {
   };
   var page_default = Home;
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildATTpaR/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildgOZh2A/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

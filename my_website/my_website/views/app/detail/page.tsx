@@ -8,6 +8,7 @@ const Page = () => {
     <div>
       <h1>Server</h1>
       <pre>{JSON.stringify(serverState, null, 2)}</pre>
+      <a href={serverState.linkGenerator.homeController({})}>Go Home</a>
     </div>
   );
 };

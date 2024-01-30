@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildtAHrBV/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildm3ZPvd/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12639,14 +12639,10 @@ var SSR = (() => {
   var import_react = __toESM(require_react());
 
   // ../../my_website/my_website/views/app/home/_server/links.ts
-  var getLink = ({
-    home_id
-  }) => {
-    let url = "/home/{home_id}/";
+  var getLink = ({}) => {
+    let url = "/";
     const queryParameters = {};
-    const pathParameters = {
-      home_id
-    };
+    const pathParameters = {};
     const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
       if (value !== void 0) {
         acc.push(`${key}=${value}`);
@@ -12719,11 +12715,11 @@ var SSR = (() => {
   // ../../my_website/my_website/views/app/detail/page.tsx
   var Page = () => {
     const serverState = useServer();
-    return /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("h1", null, "Server"), /* @__PURE__ */ React2.createElement("pre", null, JSON.stringify(serverState, null, 2)));
+    return /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("h1", null, "Server"), /* @__PURE__ */ React2.createElement("pre", null, JSON.stringify(serverState, null, 2)), /* @__PURE__ */ React2.createElement("a", { href: serverState.linkGenerator.homeController({}) }, "Go Home"));
   };
   var page_default = Page;
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildtAHrBV/synthetic_server.tsx
+  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildm3ZPvd/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

@@ -1,4 +1,3 @@
-from uuid import UUID
 
 from fastapi import Request
 from filzl.actions import passthrough, sideeffect
@@ -23,8 +22,7 @@ class GetExternalDataResponse(BaseModel):
 
 
 class HomeController(ControllerBase):
-    # view_path = "/testing/[post_id]/mytemplate.tsx"
-    url = "/home/{home_id}/"
+    url = "/"
     view_path = get_view_path("/app/home/page.tsx")
 
     def __init__(self):
@@ -48,7 +46,7 @@ class HomeController(ControllerBase):
             first_name="John",
         )
 
-    def render(self, home_id: UUID, request: Request) -> HomeRender:
+    def render(self, request: Request) -> HomeRender:
         return HomeRender(
             client_ip=request.client.host if request.client else "unknown",
             current_count=self.global_count,

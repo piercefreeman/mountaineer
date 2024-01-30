@@ -1,15 +1,15 @@
 export const getLink = ({
-home_id
+
 } : {
-home_id: string
+
 }) => {
-let url = '/home/{home_id}/';
+let url = '/';
 
 const queryParameters : Record<string, string> = {
 
 };
 const pathParameters : Record<string, string> = {
-home_id
+
 };
 
 const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
