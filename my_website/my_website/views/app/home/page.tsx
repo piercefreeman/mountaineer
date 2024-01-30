@@ -13,6 +13,13 @@ const Home = () => {
         Hello {serverState.client_ip}, current count is{" "}
         {serverState.current_count}
       </p>
+      <a
+        href={serverState.linkGenerator.detailController({
+          detail_id: "9280ca4d-e607-486a-a343-7bbaae6b5a86",
+        })}
+      >
+        Detail Link
+      </a>
       <button
         onClick={async () => {
           await serverState.increment_count({

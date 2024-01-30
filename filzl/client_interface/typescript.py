@@ -13,7 +13,18 @@ class TSLiteral(str):
     This string should not be quoted when used in a Typescript insert.
     """
 
-    pass
+    def __add__(self, other):
+        # Concatenate self (TSLiteral) with other (any string)
+        # and return a new TSLiteral object
+        if isinstance(other, str):
+            return TSLiteral(super(TSLiteral, self).__add__(other))
+        return NotImplemented
+
+    def __radd__(self, other):
+        # Handle right-side addition, where a string is added to a TSLiteral
+        if isinstance(other, str):
+            return TSLiteral(other.__add__(self))
+        return NotImplemented
 
 
 def python_payload_to_typescript(payload: Any) -> str:

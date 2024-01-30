@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { applySideEffect } from '../../../_server/api';
+import LinkGenerator from '../../../_server/links';
 import { DetailRender } from './models';
 
 export type DetailRenderOptional = Partial<DetailRender>;
@@ -19,5 +20,6 @@ setServerState((state) => ({
 };
 return {
 ...serverState,
+linkGenerator: LinkGenerator,
 }
 };

@@ -98,6 +98,8 @@ class OpenAPIToTypescriptActionConverter:
             status_int = int(error_code)
             if self.status_code_is_valid(status_int):
                 continue
+            if not response.content_schema.schema_ref.ref:
+                continue
 
             model_name = response.content_schema.schema_ref.ref.split("/")[-1]
             error_classes[
@@ -118,7 +120,10 @@ class OpenAPIToTypescriptActionConverter:
                 map_openapi_type_to_ts(parameter.schema_ref.type)
             )
 
-        if action.requestBody is not None:
+        if (
+            action.requestBody is not None
+            and action.requestBody.content_schema.schema_ref.ref
+        ):
             # We expect that the interface defined within the /models.ts will have the same name as
             # the model in the current OpenAPI spec
             model_name = action.requestBody.content_schema.schema_ref.ref.split("/")[-1]
@@ -213,6 +218,10 @@ class OpenAPIToTypescriptActionConverter:
     def get_typescript_name_from_content_definition(
         self, definition: ContentDefinition
     ):
+        if not definition.schema_ref.ref:
+            raise ValueError(
+                f"Content definition {definition} does not have a schema reference"
+            )
         return definition.schema_ref.ref.split("/")[-1]
 
     def status_code_is_valid(self, status_code: int):

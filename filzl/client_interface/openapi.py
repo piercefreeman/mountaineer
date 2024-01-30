@@ -85,7 +85,7 @@ class OpenAPIProperty(BaseModel):
 
 class ContentDefinition(BaseModel):
     class Reference(BaseModel):
-        ref: str = Field(alias="$ref")
+        ref: str | None = Field(default=None, alias="$ref")
 
     schema_ref: Reference = Field(alias="schema")
 
