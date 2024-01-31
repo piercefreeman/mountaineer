@@ -160,3 +160,9 @@ pyrightconfig.json
 .ruff_cache
 node_modules
 .watchdog.lock
+
+# We don't commit our automatically managed files - you can in your project, but these
+# change so much we'd like to avoid them in code reviews.
+_server
+_ssr
+_static
