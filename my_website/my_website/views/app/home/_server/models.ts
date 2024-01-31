@@ -13,6 +13,7 @@ export interface HTTPValidationError {
 export interface HomeRender {
   client_ip: string;
   current_count: number;
+  random_uuid: string;
 }
 
 export interface IncrementCountOnlyResponse {
@@ -34,10 +35,11 @@ export interface IncrementCountResponse {
 export interface IncrementCountResponseSideEffect {
   client_ip: string;
   current_count: number;
+  random_uuid: string;
 }
 
 export interface ValidationError {
-  loc: Array<number | string>;
+  loc: Array<string | number>;
   msg: string;
   type: string;
 }

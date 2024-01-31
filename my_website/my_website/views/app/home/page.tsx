@@ -11,7 +11,7 @@ const Home = () => {
       <p>Home page</p>
       <p>
         Hello {serverState.client_ip}, current count is{" "}
-        {serverState.current_count}
+        {serverState.current_count} {serverState.random_uuid}
       </p>
       <a
         href={serverState.linkGenerator.detailController({

@@ -89,23 +89,43 @@ class ChangeEventHandler(FileSystemEventHandler):
         return False
 
 
+class WatchdogLockError(Exception):
+    def __init__(self, lock_path: Path):
+        super().__init__(
+            f"Watch lock file exists, another process may be running. If you're sure this is not the case, run:\n"
+            f"`$ rm {lock_path}`",
+        )
+        self.lock_path = lock_path
+
+
 class PackageWatchdog:
     def __init__(
         self,
         main_package: str,
         dependent_packages: list[str],
         callbacks: list[CallbackDefinition] | None = None,
+        run_on_bootup: bool = False,
     ):
+        """
+        :param run_on_bootup: Typically, we will only notify callback if there has been
+            a change to the filesystem. If this is set to True, we will run all callbacks
+            on bootup as well.
+        """
         self.main_package = main_package
         self.packages = [main_package] + dependent_packages
         self.paths: list[str] = []
         self.callbacks: list[CallbackDefinition] = callbacks or []
+        self.run_on_bootup = run_on_bootup
 
         self.check_packages_installed()
         self.get_package_paths()
 
     def start_watching(self):
         with self.acquire_watchdog_lock():
+            if self.run_on_bootup:
+                for callback_definition in self.callbacks:
+                    callback_definition.callback()
+
             event_handler = ChangeEventHandler(callbacks=self.callbacks)
             observer = Observer()
 
@@ -187,10 +207,7 @@ class PackageWatchdog:
 
         lock_path = (Path(package_path) / ".watchdog.lock").absolute()
         if lock_path.exists():
-            raise RuntimeError(
-                f"Watch lock file exists, another process may be running. If you're sure this is not the case, run:\n"
-                f"`$ rm {lock_path}`"
-            )
+            raise WatchdogLockError(lock_path=lock_path)
 
         try:
             # Create the lock - this caller should now have exclusive access to the watchdog

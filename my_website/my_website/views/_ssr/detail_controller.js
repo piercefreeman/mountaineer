@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmponwokivb/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpa5vpl1ms/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12690,10 +12690,39 @@ var SSR = (() => {
     return url;
   };
 
+  // my_website/views/app/complex/_server/links.ts
+  var getLink3 = ({
+    detail_id
+  }) => {
+    let url = "/complex/{detail_id}/";
+    const queryParameters = {};
+    const pathParameters = {
+      detail_id
+    };
+    const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
+      if (value !== void 0) {
+        acc.push(`${key}=${value}`);
+      }
+      return acc;
+    }, []);
+    const paramString = parsedParams.join("&");
+    for (const [key, value] of Object.entries(pathParameters)) {
+      if (value === void 0) {
+        throw new Error(`Missing required path parameter ${key}`);
+      }
+      url = url.replace(`{${key}}`, value);
+    }
+    if (paramString) {
+      url = `${url}?${paramString}`;
+    }
+    return url;
+  };
+
   // my_website/views/_server/links.ts
   var linkGenerator = {
     homeController: getLink,
-    detailController: getLink2
+    detailController: getLink2,
+    complexController: getLink3
   };
   var links_default = linkGenerator;
 
@@ -12719,7 +12748,7 @@ var SSR = (() => {
   };
   var page_default = Page;
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmponwokivb/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpa5vpl1ms/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

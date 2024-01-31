@@ -14,7 +14,7 @@ Each web framework has its own unique features and tradeoffs. Filzl focuses on d
 
 ## Getting Started
 
-By convention, filzl projects look like this:
+Filzl projects all follow a similar structure. For a project called `my_website`, this is how the directories expand:
 
 ```
 my_website
@@ -27,14 +27,25 @@ my_website
       /layout.tsx
     /package.json
     /tsconfig.json
-    /__init__.py
 pyproject.toml
 poetry.lock
 ```
 
-Every file goes within your Python project. Views are defined in a disk-based hierarchy, where nested routes are in nested folders. Controllers are setup in a flat folder, where each controller is an separate file.
+Every service file is nested under the `my_website` root package. Views are defined in a disk-based hierarchy (`views`) where nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`. Controllers are defined nearby in a flat folder (`controllers`) where each route is a separate file.
 
-Let's get started with your controller, since this will define which data you can push and pull to your frontend.
+While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
+
+```bash
+$ poetry run runserver
+```
+
+Or, if you just want to watch the source tree for changes without hosting the server:
+
+```bash
+$ poetry run watch
+```
+
+Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
 
 ```python title="my_website/controllers/home.py"
 from filzl.actions import sideeffect
@@ -67,7 +78,15 @@ class HomeController(ControllerBase):
         )
 ```
 
-This controller manages an internal state that we expect to persist across page views. We start with a very simple data model: sending the current count. The `render()` method is called when the page is loaded, and the data returned is sent to the frontend. This render() function accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
+The only three requirements of a controller are setting the:
+
+- URL
+- View path
+- Initial data payload
+
+This particular controller manages a counter that we want to persist across page loads. The client here doesn't need much data so we keep the `HomeRender` model simple, just sending the current count and client IP address.
+
+The data from `render()` is injected into the frontend as we'll see in a minute. This render() function accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
 
 Let's move over to the frontend.
 
@@ -92,9 +111,14 @@ const Home = () => {
 export default Home;
 ```
 
-We define a simple view to show the data coming from the backend. We use our automatically generated `useServer()` hook to do this. This hook response will provide all the `HomeRender` fields as properties of serverState.
+We define a simple view to show the data coming from the backend. To accomplish this conventionally, we'd need to wire up an API layer, a Node server, or otherwise format the page with Jinja templates.
+
+Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without an roundtrip fetches.
 
 If you access this in your browser at `localhost:5006/` we can see the counter, but we can't really _do_ anything with it yet. Let's add some interactivity to increase the current count.
+
+> [!TIP]
+> Try disabling Javascript in your browser. The page will still render as-is with all variables intact, thanks to our server-side rendering.
 
 ```python title="my_website/controllers/home.py"
 from pydantic import BaseModel
@@ -110,9 +134,9 @@ class HomeController(ControllerBase):
         self.global_count += payload.count
 ```
 
-We define a function that accepts a pydantic model, which defines one counter int. When clients provide this number we'll use this to update the global state.
+What good is a counter that doesn't count? We define a function that accepts a pydantic model, which defines an int increment. When clients provide this number we'll use this to update the global state.
 
-The important part is the `@sideeffect`. This decorator indicates that we want the frontend to refresh its data, since after we update the global count on the server the client state will be newly outdated.
+The important part here is the `@sideeffect`. This decorator indicates that we want the frontend to refresh its data, since after we update the global count on the server the client state will be newly outdated.
 
 Filzl detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
 
@@ -152,7 +176,9 @@ We run this async handler when the button is clicked and specify our desired inc
 
 Go ahead and load it in your browser. If you open up your web tools, you can increment the ticker and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by filzl.
 
-And that's it. We've just built a fully interactive web application. You specify the data model and actions on the server and the appropriate frontend hooks are generated and updated automatically. These few simple functions provide a powerful way to build web applications.
+You can use these serverState variables anywhere you'd use dynamic React state variables. But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
+
+And that's it. We've just built a fully interactive web application without having to worry about an explicit API. You specify the data model and actions on the server and the appropriate frontend hooks are generated and updated automatically. It gives you the power of server rendered html and the interactivity of a virtual DOM, without having to compromise on complicated data mutations to keep everything in sync.
 
 ### Installation
 

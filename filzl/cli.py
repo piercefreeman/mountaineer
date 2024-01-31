@@ -104,9 +104,6 @@ def handle_watch(
         )
         current_process.start()
 
-    # Initial build right on load
-    update_build()
-
     watchdog = build_common_watchdog(package, update_build)
     watchdog.start_watching()
 
@@ -142,10 +139,6 @@ def handle_runserver(
         )
         current_process.start()
 
-    # Initial launch - both build and run the server, since we may not have
-    # any built client-side files yet
-    update_build()
-
     watchdog = build_common_watchdog(package, update_build)
     watchdog.start_watching()
 
@@ -180,4 +173,6 @@ def build_common_watchdog(client_package: str, callback: Callable):
                 callback,
             )
         ],
+        # We want to generate a build on the first load
+        run_on_bootup=True,
     )

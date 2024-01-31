@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from inspect import getmembers, ismethod
 from pathlib import Path
 from re import compile as re_compile
+from time import time
 from typing import Callable, Iterable
 
 from fastapi.responses import HTMLResponse
@@ -12,6 +13,7 @@ from filzl.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
+from filzl.logging import LOGGER
 from filzl.render import Metadata, RenderBase
 from filzl.ssr import render_ssr
 
@@ -34,6 +36,7 @@ class ControllerBase(ABC):
 
     def _generate_html(self, *args, **kwargs):
         if not self.ssr_path:
+            # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
 
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
@@ -49,10 +52,12 @@ class ControllerBase(ABC):
         server_data = server_data.model_copy(update={"metadata": None})
 
         # TODO: Provide a function to automatically sniff for the client view folder
+        start = time()
         ssr_html = render_ssr(
             self.ssr_path.read_text(),
             server_data,
         )
+        LOGGER.debug(f"SSR render took {(time() - start):.2f}s")
 
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = server_data.model_dump_json()
