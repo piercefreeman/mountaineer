@@ -52,6 +52,10 @@ class OpenAPIProperty(BaseModel):
     additionalProperties: Optional["OpenAPIProperty"] = None
     required: list[str] = []
 
+    # Just specified on the leaf object
+    type: OpenAPISchemaType | None = None
+    format: str | None = None
+
     # Self-contained type: object, int, etc
     variable_type: OpenAPISchemaType | None = Field(alias="type", default=None)
     # Reference to another type
@@ -127,16 +131,9 @@ class ContentBodyDefinition(BaseModel):
 
 
 class URLParameterDefinition(BaseModel):
-    class Schema(BaseModel):
-        type: OpenAPISchemaType
-        title: str
-
-        # Specified in the case of a known format that can be validated on the client-side, like a UUID
-        format: str | None = None
-
     name: str
     in_location: ParameterLocationType = Field(alias="in")
-    schema_ref: Schema = Field(alias="schema")
+    schema_ref: OpenAPIProperty = Field(alias="schema")
     required: bool
 
 

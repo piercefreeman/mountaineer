@@ -139,7 +139,6 @@ class ClientBuilder:
 
             chunks: list[str] = []
 
-            # Step 1: Requirements
             chunks.append(
                 f"import {{ __request, FetchErrorBase }} from '{root_api_import_path}';\n"
                 + f"import type {{ {', '.join(required_types)} }} from './models';"
@@ -157,7 +156,14 @@ class ClientBuilder:
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
             controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            root_code_dir = self.get_managed_code_dir(self.view_root)
 
+            controller_links_path = controller_code_dir / "links.ts"
+
+            root_common_handler = root_code_dir / "api.ts"
+            root_api_import_path = generate_relative_import(
+                controller_links_path, root_common_handler
+            )
             render_route = get_function_metadata(controller.render).get_render_router()
             render_openapi = get_openapi(
                 title="",
@@ -165,9 +171,11 @@ class ClientBuilder:
                 routes=render_route.routes,
             )
 
+            content = ""
+            content += f"import {{ __getLink }} from '{root_api_import_path}';\n"
             link_payload = self.openapi_link_converter.convert(render_openapi)
 
-            (controller_code_dir / "links.ts").write_text(link_payload)
+            controller_links_path.write_text(link_payload)
 
     def generate_link_aggregator(self):
         """

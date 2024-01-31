@@ -14,6 +14,7 @@ from filzl.client_interface.openapi import (
     OpenAPISchemaType,
     ParameterLocationType,
     URLParameterDefinition,
+    OpenAPIProperty,
 )
 
 
@@ -140,7 +141,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                     # All path parameters are required
                     URLParameterDefinition(
                         name="item_id",
-                        schema=URLParameterDefinition.Schema(
+                        schema=OpenAPIProperty(
                             title="",
                             type=OpenAPISchemaType.STRING,
                         ),
@@ -152,7 +153,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                     # Required query parameter
                     URLParameterDefinition(
                         name="query_param_required_id",
-                        schema=URLParameterDefinition.Schema(
+                        schema=OpenAPIProperty(
                             title="",
                             type=OpenAPISchemaType.STRING,
                         ),
@@ -164,7 +165,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                     # Optional query parameter
                     URLParameterDefinition(
                         name="query_param_optional_id",
-                        schema=URLParameterDefinition.Schema(
+                        schema=OpenAPIProperty(
                             title="",
                             type=OpenAPISchemaType.STRING,
                         ),
