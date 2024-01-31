@@ -23,14 +23,13 @@
 
 name: CI
 
-#on:
-#  push:
-#    branches:
-#      - main
-#    tags:
-#      - "**"
-#  pull_request: {}
-on: push
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "**"
+  pull_request: {}
 
 jobs:
   test:
