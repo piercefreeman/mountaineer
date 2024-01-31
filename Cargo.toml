@@ -11,6 +11,10 @@ pyo3 = { version = "0.20", features = ["extension-module"] }
 log = "0.4"
 env_logger = "0.9"
 
+#[lib]
+#name = "_filzl"
+#crate-type = ["cdylib", "rlib"]
+
 [profile.release]
 opt-level = 3
 debug = false

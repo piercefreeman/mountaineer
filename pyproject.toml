@@ -32,10 +32,10 @@ build-backend = "maturin"
 #[tool.maturin]
 #python-source = "python"
 
-[tool.maturin]
-bindings = "pyo3"
+#[tool.maturin]
+#bindings = "pyo3"
 #module-name = "filzl._filzl"
-features = ["pyo3/extension-module", "pyo3/generate-import-lib"]
+#features = ["pyo3/extension-module", "pyo3/generate-import-lib"]
 
 [tool.mypy]
 warn_return_any = true

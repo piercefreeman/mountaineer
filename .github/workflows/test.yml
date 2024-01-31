@@ -69,6 +69,7 @@ jobs:
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           rm poetry.lock
           poetry install
+          poetry run maturin develop
 
       - run: poetry run pytest
 
@@ -98,6 +99,7 @@ jobs:
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           rm poetry.lock
           poetry install
+          poetry run maturin develop
 
       - name: Run typehinting
         run: |
