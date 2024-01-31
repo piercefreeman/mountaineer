@@ -30,9 +30,9 @@ var SSR = (() => {
   ));
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // ../../my_website/my_website/views/node_modules/react/cjs/react.development.js
+  // my_website/views/node_modules/react/cjs/react.development.js
   var require_react_development = __commonJS({
-    "../../my_website/my_website/views/node_modules/react/cjs/react.development.js"(exports, module) {
+    "my_website/views/node_modules/react/cjs/react.development.js"(exports, module) {
       "use strict";
       if (true) {
         (function() {
@@ -1903,9 +1903,9 @@ var SSR = (() => {
     }
   });
 
-  // ../../my_website/my_website/views/node_modules/react/index.js
+  // my_website/views/node_modules/react/index.js
   var require_react = __commonJS({
-    "../../my_website/my_website/views/node_modules/react/index.js"(exports, module) {
+    "my_website/views/node_modules/react/index.js"(exports, module) {
       "use strict";
       if (false) {
         module.exports = null;
@@ -1915,9 +1915,9 @@ var SSR = (() => {
     }
   });
 
-  // ../../my_website/my_website/views/node_modules/react-dom/cjs/react-dom-server-legacy.browser.development.js
+  // my_website/views/node_modules/react-dom/cjs/react-dom-server-legacy.browser.development.js
   var require_react_dom_server_legacy_browser_development = __commonJS({
-    "../../my_website/my_website/views/node_modules/react-dom/cjs/react-dom-server-legacy.browser.development.js"(exports) {
+    "my_website/views/node_modules/react-dom/cjs/react-dom-server-legacy.browser.development.js"(exports) {
       "use strict";
       if (true) {
         (function() {
@@ -7269,9 +7269,9 @@ var SSR = (() => {
     }
   });
 
-  // ../../my_website/my_website/views/node_modules/react-dom/cjs/react-dom-server.browser.development.js
+  // my_website/views/node_modules/react-dom/cjs/react-dom-server.browser.development.js
   var require_react_dom_server_browser_development = __commonJS({
-    "../../my_website/my_website/views/node_modules/react-dom/cjs/react-dom-server.browser.development.js"(exports) {
+    "my_website/views/node_modules/react-dom/cjs/react-dom-server.browser.development.js"(exports) {
       "use strict";
       if (true) {
         (function() {
@@ -12602,9 +12602,9 @@ var SSR = (() => {
     }
   });
 
-  // ../../my_website/my_website/views/node_modules/react-dom/server.browser.js
+  // my_website/views/node_modules/react-dom/server.browser.js
   var require_server_browser = __commonJS({
-    "../../my_website/my_website/views/node_modules/react-dom/server.browser.js"(exports) {
+    "my_website/views/node_modules/react-dom/server.browser.js"(exports) {
       "use strict";
       var l;
       var s;
@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildm3ZPvd/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpsnb72wyr/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12632,13 +12632,13 @@ var SSR = (() => {
   var React3 = __toESM(require_react());
   var import_server = __toESM(require_server_browser());
 
-  // ../../my_website/my_website/views/app/detail/page.tsx
+  // my_website/views/app/detail/page.tsx
   var React2 = __toESM(require_react());
 
-  // ../../my_website/my_website/views/app/detail/_server/useServer.ts
+  // my_website/views/app/detail/_server/useServer.ts
   var import_react = __toESM(require_react());
 
-  // ../../my_website/my_website/views/app/home/_server/links.ts
+  // my_website/views/app/home/_server/links.ts
   var getLink = ({}) => {
     let url = "/";
     const queryParameters = {};
@@ -12662,7 +12662,7 @@ var SSR = (() => {
     return url;
   };
 
-  // ../../my_website/my_website/views/app/detail/_server/links.ts
+  // my_website/views/app/detail/_server/links.ts
   var getLink2 = ({
     detail_id
   }) => {
@@ -12690,14 +12690,14 @@ var SSR = (() => {
     return url;
   };
 
-  // ../../my_website/my_website/views/_server/links.ts
+  // my_website/views/_server/links.ts
   var linkGenerator = {
     homeController: getLink,
     detailController: getLink2
   };
   var links_default = linkGenerator;
 
-  // ../../my_website/my_website/views/app/detail/_server/useServer.ts
+  // my_website/views/app/detail/_server/useServer.ts
   var useServer = () => {
     const [serverState, setServerState] = (0, import_react.useState)(SERVER_DATA);
     const setControllerState = (payload) => {
@@ -12712,14 +12712,14 @@ var SSR = (() => {
     };
   };
 
-  // ../../my_website/my_website/views/app/detail/page.tsx
+  // my_website/views/app/detail/page.tsx
   var Page = () => {
     const serverState = useServer();
     return /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("h1", null, "Server"), /* @__PURE__ */ React2.createElement("pre", null, JSON.stringify(serverState, null, 2)), /* @__PURE__ */ React2.createElement("a", { href: serverState.linkGenerator.homeController({}) }, "Go Home"));
   };
   var page_default = Page;
 
-  // ../../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/filzl-buildm3ZPvd/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpsnb72wyr/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };
@@ -12761,4 +12761,4 @@ react-dom/cjs/react-dom-server.browser.development.js:
    * LICENSE file in the root directory of this source tree.
    *)
 */
-//# sourceMappingURL=output.server.js.map
+//# sourceMappingURL=synthetic_server.js.map

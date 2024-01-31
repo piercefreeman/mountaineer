@@ -1,4 +1,3 @@
-
 from fastapi import Request
 from filzl.actions import passthrough, sideeffect
 from filzl.controller import ControllerBase
