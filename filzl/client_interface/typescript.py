@@ -62,6 +62,8 @@ def python_payload_to_typescript(payload: Any) -> str:
         return str(payload).lower()
     elif isinstance(payload, (int, float)):
         return str(payload)
+    elif payload is None:
+        return "null"
     else:
         raise ValueError(
             f"Unknown payload type {type(payload) } for Typescript conversion."

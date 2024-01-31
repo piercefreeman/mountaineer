@@ -24,7 +24,9 @@ class ControllerBase(ABC):
 
     bundled_scripts: list[str]
 
-    def __init__(self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0):
+    def __init__(
+        self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0
+    ):
         """
         :param slow_ssr_threshold: Each python process has a single V8 runtime associated with
         it, so SSR rendering can become a bottleneck if it requires processing. We log a warning

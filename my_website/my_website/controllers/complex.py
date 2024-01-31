@@ -24,6 +24,7 @@ class ComplexController(ControllerBase):
     This in-turn lets you test our timeout of 10s for a rendering job.
 
     """
+
     url = "/complex/{detail_id}/"
     view_path = get_view_path("/app/complex/page.tsx")
 
