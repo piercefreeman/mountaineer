@@ -1,6 +1,6 @@
 import pytest
 
-from filzl.client_interface.js_bundler import (
+from filzl.client_interface.source_maps import (
     get_cleaned_js_contents,
     update_source_map_path,
 )

@@ -1,8 +1,8 @@
+import asyncio
 from collections import defaultdict
 from hashlib import md5
 from pathlib import Path
 from shutil import rmtree
-from threading import Thread
 
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
@@ -11,18 +11,19 @@ from inflection import camelize, underscore
 from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
+from filzl.client_builder.bundler import JavascriptBundler
+from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_interface.build_actions import (
     OpenAPIToTypescriptActionConverter,
 )
 from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
-from filzl.client_interface.js_bundler import (
-    bundle_javascript,
+from filzl.client_interface.openapi import OpenAPIDefinition
+from filzl.client_interface.paths import generate_relative_import
+from filzl.client_interface.source_maps import (
     get_cleaned_js_contents,
     update_source_map_path,
 )
-from filzl.client_interface.openapi import OpenAPIDefinition
-from filzl.client_interface.paths import generate_relative_import
 from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.static import get_static_path
@@ -315,8 +316,17 @@ class ClientBuilder:
                 rmtree(clear_dir)
             clear_dir.mkdir(parents=True)
 
-        def spawn_builder(controller: ControllerBase):
-            bundle_definition = bundle_javascript(controller.view_path, self.view_root)
+        # Before we spawn our different processes, we make sure that we can actually resolve
+        # the esbuild path. We want one exception / download flow, not one per process.
+        esbuilder = ESBuildWrapper()
+        if not esbuilder.get_esbuild_path():
+            raise ValueError("Unable to resolve esbuild path")
+
+        async def spawn_builder(controller: ControllerBase):
+            # TODO: If we get to many hundred or thousand of view files, we might want to introduce a work
+            # queue to avoid spawning too many processes concurrently
+            bundler = JavascriptBundler(Path(controller.view_path), self.view_root)
+            bundle_definition = await bundler.convert()
 
             # Client-side scripts have to be provided a cache-invalidation suffix alongside
             # mapping the source map to the new script name
@@ -342,18 +352,17 @@ class ClientBuilder:
             ssr_path = ssr_dir / f"{controller_base}.js"
             ssr_path.write_text(bundle_definition.server_compiled_contents)
 
+        async def parallel_build():
+            tasks = [
+                spawn_builder(controller_definition.controller)
+                for controller_definition in self.app.controllers
+            ]
+            await asyncio.gather(*tasks)
+
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
-        threads: list[Thread] = []
-        for controller_definitions in self.app.controllers:
-            controller = controller_definitions.controller
-            thread = Thread(target=spawn_builder, args=(controller,))
-            threads.append(thread)
-            thread.start()
-
-        for thread in threads:
-            thread.join()
+        asyncio.run(parallel_build())
 
     def get_managed_code_dir(self, path: Path):
         return self.get_managed_dir_common(path, "_server")
