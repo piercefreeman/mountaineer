@@ -29,7 +29,8 @@ class MyModel(BaseModel):
 def test_basic_interface():
     converter = OpenAPIToTypescriptSchemaConverter()
     result = converter.convert(MyModel)
-    assert "interface MyModel {" in result
+    assert set(result.keys()) == {"MyModel", "SubModel1", "SubModel2", "Sub Map"}
+    assert "interface MyModel {" in result["MyModel"]
 
 
 def test_model_gathering():

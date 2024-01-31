@@ -1,0 +1,232 @@
+# Based on - https://github.com/samuelcolvin/rtoml/blob/main/.github/workflows/ci.yml
+# The MIT License (MIT)
+#
+# Copyright (c) 2020 Samuel Colvin
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+
+name: CI
+
+#on:
+#  push:
+#    branches:
+#      - main
+#    tags:
+#      - "**"
+#  pull_request: {}
+on: push
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: test py${{ matrix.python-version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    env:
+      PYTHON: ${{ matrix.python-version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: install rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - id: cache-rust
+        name: cache rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: v1
+
+      - name: Install poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Install
+        run: |
+          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
+          rm poetry.lock
+          poetry install
+
+      - run: poetry run pytest
+
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: install rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: cache rust
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Install
+        run: |
+          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
+          rm poetry.lock
+          poetry install
+
+      - name: Run typehinting
+        run: |
+          ./lint_validate.sh
+
+  # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
+  check:
+    if: always()
+    needs: [test, lint]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Decide whether the needed jobs succeeded or failed
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
+
+  build:
+    name: build os=${{ matrix.os }} target=${{ matrix.target }} int=${{ matrix.interpreter || 'all' }} ml=${{ matrix.manylinux || 'auto' }}
+    #if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The main contraint with our architecture choices at the moment is the dependency
+          # on rusty_v8, which only supports x86_64 and aarch64. Deno is tracking: https://github.com/denoland/deno/issues/7517
+
+          # linux
+          - os: linux
+            target: x86_64
+          - os: linux
+            target: aarch64
+
+          # macos
+          - os: macos
+            target: x86_64
+          - os: macos
+            target: aarch64
+
+          # windows
+          - os: windows
+            target: x86_64
+
+    runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: set up python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          architecture: ${{ matrix.python-architecture || 'x64' }}
+
+      - run: pip install -U twine
+
+      - name: build sdist
+        if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          args: --release --out dist --interpreter ${{ matrix.interpreter || '3.8 3.9 3.10 3.11 3.12' }}
+          rust-toolchain: stable
+          docker-options: -e CI
+
+      - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
+
+      - run: twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: pypi_files
+          path: dist
+
+  inspect-pypi-assets:
+    needs: [build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: get dist artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: pypi_files
+          path: dist
+
+      - name: list dist files
+        run: |
+          ls -lh dist/
+          echo "`ls dist | wc -l` files"
+
+      - name: extract and list sdist file
+        run: |
+          mkdir sdist-files
+          tar -xvf dist/*.tar.gz -C sdist-files
+          tree -a sdist-files
+
+      - name: extract and list wheel file
+        run: |
+          ls dist/*cp310-manylinux*x86_64.whl | head -n 1
+          python -m zipfile --list `ls dist/*cp310-manylinux*x86_64.whl | head -n 1`
+
+      - run: pip install twine
+      - run: twine check dist/*
+
+  # release:
+  #   needs: [check, build, inspect-pypi-assets]
+  #   if: "success() && startsWith(github.ref, 'refs/tags/')"
+  #   runs-on: ubuntu-latest
+  #   environment: release
+
+  #   permissions:
+  #     id-token: write
+
+  #   steps:
+  #     - uses: actions/checkout@v4
+
+  #     - name: get dist artifacts
+  #       uses: actions/download-artifact@v3
+  #       with:
+  #         name: pypi_files
+  #         path: dist
+
+  #     - run: ls -lh dist
+
+  #     - uses: pypa/gh-action-pypi-publish@release/v1

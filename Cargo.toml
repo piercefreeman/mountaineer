@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 ssr_rs = "0.2.3"
-pyo3 = { version = "0.15", features = ["extension-module"] }
+pyo3 = { version = "0.20", features = ["extension-module"] }
 log = "0.4"
 env_logger = "0.9"
 
