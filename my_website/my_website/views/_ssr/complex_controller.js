@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpujo3mua7/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpcwwiom3v/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12777,7 +12777,7 @@ var SSR = (() => {
   };
   var page_default = Page;
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpujo3mua7/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpcwwiom3v/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

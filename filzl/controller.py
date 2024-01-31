@@ -24,11 +24,14 @@ class ControllerBase(ABC):
 
     bundled_scripts: list[str]
 
-    def __init__(self, slow_ssr_threshold: float = 0.1, hard_timeout: float = 10.0):
+    def __init__(self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0):
         """
         :param slow_ssr_threshold: Each python process has a single V8 runtime associated with
         it, so SSR rendering can become a bottleneck if it requires processing. We log a warning
         if we detect that an SSR render took longer than this threshold.
+        :param hard_ssr_timeout: If the SSR render takes longer than this threshold, we will
+        automatically kill the V8 runtime and return an error to the client. This is useful for
+        avoiding blocking the reset of the server process if the React render logic hangs.
 
         """
         # Injected by the build framework
@@ -36,7 +39,7 @@ class ControllerBase(ABC):
         self.ssr_path: Path | None = None
         self.initialized = True
         self.slow_ssr_threshold = slow_ssr_threshold
-        self.hard_timeout = hard_timeout
+        self.hard_ssr_timeout = hard_ssr_timeout
 
     @abstractmethod
     def render(self, *args, **kwargs) -> RenderBase:
@@ -64,7 +67,7 @@ class ControllerBase(ABC):
         ssr_html = render_ssr(
             self.ssr_path.read_text(),
             server_data,
-            hard_timeout=self.hard_timeout,
+            hard_timeout=self.hard_ssr_timeout,
         )
         ssr_duration = time() - start
         if ssr_duration > self.slow_ssr_threshold:

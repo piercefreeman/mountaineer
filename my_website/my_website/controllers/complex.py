@@ -14,12 +14,22 @@ class ComplexRender(RenderBase):
 
 
 class ComplexController(ControllerBase):
+    """
+    We set up our Complex controller and view to simulate what a long running
+    React render looks on the client side. Because of our naive prime-number loop,
+    each "delay_loop" is expected to saturate the process with work for about 2s.
+
+    Adusting the `delay_loops` parameter on the view will allow you to set
+    the number of loops and therefore the total rendering time that it takes.
+    This in-turn lets you test our timeout of 10s for a rendering job.
+
+    """
     url = "/complex/{detail_id}/"
     view_path = get_view_path("/app/complex/page.tsx")
 
     def __init__(self):
         super().__init__(
-            hard_timeout=5,
+            hard_ssr_timeout=5,
         )
 
     def render(
