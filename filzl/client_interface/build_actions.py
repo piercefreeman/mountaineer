@@ -22,9 +22,11 @@ class OpenAPIToTypescriptActionConverter:
 
     """
 
-    def convert(self, openapi: dict[str, Any]):
+    def convert(self, openapi: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
         """
-        :return {function_name: function_body}
+        Our conversion pipeline focuses on creating the action definitions of one file.
+
+        :return {function_name: function_body}, imports required by the function bodies
 
         """
         schema = OpenAPIDefinition(**openapi)
@@ -69,7 +71,7 @@ class OpenAPIToTypescriptActionConverter:
                 body: requestBody,
                 mediaType: 'application/json',
                 errors: {
-                    422: ValidationErrorError,
+                    422: ValidationErrorException,
                 },
             });
         }
@@ -188,7 +190,7 @@ class OpenAPIToTypescriptActionConverter:
                 )
 
         # Remove the optional keys that don't have any values
-        for optional_parameter in ["errors", "path"]:
+        for optional_parameter in ["errors", "path", "query"]:
             if not common_params[optional_parameter]:
                 del common_params[optional_parameter]
 

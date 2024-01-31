@@ -102,8 +102,19 @@ class ContentBodyDefinition(BaseModel):
 
     @model_validator(mode="before")
     def explode_content_dictionary(cls, data: Any) -> Any:
+        # If we're being invoked programatically, we will have the required fields
+        programatic_construction = data.get("content_type") and data.get(
+            "content_schema"
+        )
+
+        if programatic_construction:
+            return data
+
+        # If we're being invoked from a JSON payload, we expect a content dictionary with a single
+        # key/value that provides the specification for content type/content. Explode it so it maps
+        # to our variables.
         if "content" not in data or not isinstance(data["content"], dict):
-            raise ValueError("RequestBodyDefinition.content must be a dict")
+            raise ValueError("ContentBodyDefinition.content must be a dict")
 
         # We only support a single content type for now
         if len(data["content"]) != 1:
