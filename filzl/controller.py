@@ -24,11 +24,18 @@ class ControllerBase(ABC):
 
     bundled_scripts: list[str]
 
-    def __init__(self):
+    def __init__(self, slow_ssr_threshold: float = 0.1):
+        """
+        :param slow_ssr_threshold: Each python process has a single V8 runtime associated with
+        it, so SSR rendering can become a bottleneck if it requires processing. We log a warning
+        if we detect that an SSR render took longer than this threshold.
+
+        """
         # Injected by the build framework
         self.bundled_scripts: list[str] = []
         self.ssr_path: Path | None = None
         self.initialized = True
+        self.slow_ssr_threshold = slow_ssr_threshold
 
     @abstractmethod
     def render(self, *args, **kwargs) -> RenderBase:
@@ -57,7 +64,11 @@ class ControllerBase(ABC):
             self.ssr_path.read_text(),
             server_data,
         )
-        LOGGER.debug(f"SSR render took {(time() - start):.2f}s")
+        ssr_duration = time() - start
+        if ssr_duration > self.slow_ssr_threshold:
+            LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
+        else:
+            LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
 
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = server_data.model_dump_json()

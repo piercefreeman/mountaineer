@@ -1,5 +1,8 @@
+import logging
 from json import dumps as json_dumps
-from logging import DEBUG, Formatter, StreamHandler, getLogger
+from logging import Formatter, StreamHandler, getLogger
+
+from click import secho
 
 
 class JsonFormatter(Formatter):
@@ -14,14 +17,28 @@ class JsonFormatter(Formatter):
         return json_dumps(log_record)
 
 
-def setup_logger(name, log_level=DEBUG):
+class ColorHandler(StreamHandler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            if record.levelno == logging.WARNING:
+                secho(msg, fg="yellow")
+            elif record.levelno >= logging.ERROR:
+                secho(msg, fg="red")
+            else:
+                secho(msg)
+        except Exception:
+            self.handleError(record)
+
+
+def setup_logger(name, log_level=logging.DEBUG):
     # TODO - env driven logging configuration
 
     logger = getLogger(name)
     logger.setLevel(log_level)
 
     # Create a handler that writes log records to the standard error
-    handler = StreamHandler()
+    handler = ColorHandler()
     handler.setLevel(log_level)
 
     formatter = JsonFormatter()
