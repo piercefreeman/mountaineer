@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpk8pdhpww/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpujo3mua7/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12692,10 +12692,13 @@ var SSR = (() => {
 
   // my_website/views/app/complex/_server/links.ts
   var getLink3 = ({
-    detail_id
+    detail_id,
+    delay_loops
   }) => {
     let url = "/complex/{detail_id}/";
-    const queryParameters = {};
+    const queryParameters = {
+      delay_loops
+    };
     const pathParameters = {
       detail_id
     };
@@ -12766,12 +12769,15 @@ var SSR = (() => {
   }
   var Page = () => {
     const serverState = useServer();
-    const count = findPrimes(1e7);
-    return /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("h1", null, "Server"), /* @__PURE__ */ React2.createElement("p", null, "Count: ", count[0], " ", count[count.length - 1], " ", serverState.random_uuid));
+    const counts = [];
+    for (let i = 0; i < serverState.delay_loops; i++) {
+      counts.push(findPrimes(1e7));
+    }
+    return /* @__PURE__ */ React2.createElement("div", null, /* @__PURE__ */ React2.createElement("h1", null, "Server"), /* @__PURE__ */ React2.createElement("p", null, "Count:", " ", counts.map((count, i) => /* @__PURE__ */ React2.createElement("span", { key: i }, count.length, " ")), " ", serverState.random_uuid));
   };
   var page_default = Page;
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpk8pdhpww/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpujo3mua7/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

@@ -10,6 +10,7 @@ from my_website.views import get_view_path
 class ComplexRender(RenderBase):
     client_ip: str
     random_uuid: UUID
+    delay_loops: int
 
 
 class ComplexController(ControllerBase):
@@ -17,11 +18,16 @@ class ComplexController(ControllerBase):
     view_path = get_view_path("/app/complex/page.tsx")
 
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            hard_timeout=5,
+        )
 
-    def render(self, detail_id: UUID, request: Request) -> ComplexRender:
+    def render(
+        self, detail_id: UUID, request: Request, delay_loops: int
+    ) -> ComplexRender:
         return ComplexRender(
             client_ip=request.client.host if request.client else "unknown",
             random_uuid=uuid4(),
             metadata=Metadata(title=f"Complex: {detail_id}"),
+            delay_loops=delay_loops,
         )

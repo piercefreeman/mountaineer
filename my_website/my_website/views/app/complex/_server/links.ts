@@ -1,12 +1,14 @@
 export const getLink = ({
-detail_id
+detail_id,
+delay_loops
 } : {
-detail_id: string
+detail_id: string,
+delay_loops: number
 }) => {
 let url = '/complex/{detail_id}/';
 
 const queryParameters : Record<string, string> = {
-
+delay_loops
 };
 const pathParameters : Record<string, string> = {
 detail_id

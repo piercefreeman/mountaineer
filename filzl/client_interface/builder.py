@@ -263,15 +263,13 @@ class ClientBuilder:
 
             # Step 4: We expect another script has already injected this global `SERVER_DATA` constant. We
             # add the typehinting here just so that the IDE can be happy.
-            chunks.append(
-                "declare global {\n" f"var SERVER_DATA: {render_model_name};\n" "}\n"
-            )
+            chunks.append("declare global {\n" "var SERVER_DATA: any;\n" "}\n")
 
             # Step 5: Final implementation of the useServer() hook, which returns a subview of the overall
             # server state that's only relevant to this controller
             chunks.append(
                 "export const useServer = () => {\n"
-                + "const [ serverState, setServerState ] = useState(SERVER_DATA);\n"
+                + f"const [ serverState, setServerState ] = useState(SERVER_DATA as {render_model_name});\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update

@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpsp3tt9wv/synthetic_client.tsx
+// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpjegx3u_b/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
@@ -23570,10 +23570,13 @@ var getLink2 = ({
 
 // my_website/views/app/complex/_server/links.ts
 var getLink3 = ({
-  detail_id
+  detail_id,
+  delay_loops
 }) => {
   let url = "/complex/{detail_id}/";
-  const queryParameters = {};
+  const queryParameters = {
+    delay_loops
+  };
   const pathParameters = {
     detail_id
   };
@@ -23626,7 +23629,7 @@ var Page = () => {
 };
 var page_default = Page;
 
-// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpsp3tt9wv/synthetic_client.tsx
+// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpjegx3u_b/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
@@ -23680,4 +23683,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=detail_controller-d5b74c40744e041d0a6056fb035654c5.js.map
+//# sourceMappingURL=detail_controller-0c7ccf53cac773aeea09fe2e8cb34cce.js.map

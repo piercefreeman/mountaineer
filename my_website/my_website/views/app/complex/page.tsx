@@ -30,13 +30,20 @@ const Page = () => {
 
   // Arbitrarily do a lot of work to simulate a really complex page
   // Takes about 5 seconds
-  const count = findPrimes(10000000);
+  const counts: number[][] = [];
+  for (let i = 0; i < serverState.delay_loops; i++) {
+    counts.push(findPrimes(10000000));
+  }
 
   return (
     <div>
       <h1>Server</h1>
       <p>
-        Count: {count[0]} {count[count.length - 1]} {serverState.random_uuid}
+        Count:{" "}
+        {counts.map((count, i) => (
+          <span key={i}>{count.length} </span>
+        ))}{" "}
+        {serverState.random_uuid}
       </p>
     </div>
   );

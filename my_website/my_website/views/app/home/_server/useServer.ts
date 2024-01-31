@@ -6,12 +6,12 @@ import { HomeRender } from './models';import { get_external_data, increment_coun
 export type HomeRenderOptional = Partial<HomeRender>;
 
 declare global {
-var SERVER_DATA: HomeRender;
+var SERVER_DATA: any;
 }
 
 
 export const useServer = () => {
-const [ serverState, setServerState ] = useState(SERVER_DATA);
+const [ serverState, setServerState ] = useState(SERVER_DATA as HomeRender);
 const setControllerState = (payload: HomeRenderOptional) => {
 setServerState((state) => ({
 ...state,
