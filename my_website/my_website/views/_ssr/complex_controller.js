@@ -12624,7 +12624,7 @@ var SSR = (() => {
     }
   });
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpcwwiom3v/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmppxedgrvl/synthetic_server.tsx
   var synthetic_server_exports = {};
   __export(synthetic_server_exports, {
     Index: () => Index
@@ -12638,19 +12638,20 @@ var SSR = (() => {
   // my_website/views/app/complex/_server/useServer.ts
   var import_react = __toESM(require_react());
 
-  // my_website/views/app/home/_server/links.ts
-  var getLink = ({}) => {
-    let url = "/";
-    const queryParameters = {};
-    const pathParameters = {};
-    const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-      if (value !== void 0) {
-        acc.push(`${key}=${value}`);
-      }
-      return acc;
-    }, []);
+  // my_website/views/_server/api.ts
+  var __getLink = (params) => {
+    const parsedParams = Object.entries(params.queryParameters).reduce(
+      (acc, [key, value]) => {
+        if (value !== void 0) {
+          acc.push(`${key}=${value}`);
+        }
+        return acc;
+      },
+      []
+    );
     const paramString = parsedParams.join("&");
-    for (const [key, value] of Object.entries(pathParameters)) {
+    let url = params.rawUrl;
+    for (const [key, value] of Object.entries(params.pathParameters)) {
       if (value === void 0) {
         throw new Error(`Missing required path parameter ${key}`);
       }
@@ -12662,32 +12663,24 @@ var SSR = (() => {
     return url;
   };
 
+  // my_website/views/app/home/_server/links.ts
+  var getLink = ({}) => {
+    const url = `/`;
+    const queryParameters = {};
+    const pathParameters = {};
+    return __getLink({ rawUrl: url, queryParameters, pathParameters });
+  };
+
   // my_website/views/app/detail/_server/links.ts
   var getLink2 = ({
     detail_id
   }) => {
-    let url = "/detail/{detail_id}/";
+    const url = `/detail/{detail_id}/`;
     const queryParameters = {};
     const pathParameters = {
       detail_id
     };
-    const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-      if (value !== void 0) {
-        acc.push(`${key}=${value}`);
-      }
-      return acc;
-    }, []);
-    const paramString = parsedParams.join("&");
-    for (const [key, value] of Object.entries(pathParameters)) {
-      if (value === void 0) {
-        throw new Error(`Missing required path parameter ${key}`);
-      }
-      url = url.replace(`{${key}}`, value);
-    }
-    if (paramString) {
-      url = `${url}?${paramString}`;
-    }
-    return url;
+    return __getLink({ rawUrl: url, queryParameters, pathParameters });
   };
 
   // my_website/views/app/complex/_server/links.ts
@@ -12695,30 +12688,14 @@ var SSR = (() => {
     detail_id,
     delay_loops
   }) => {
-    let url = "/complex/{detail_id}/";
+    const url = `/complex/{detail_id}/`;
     const queryParameters = {
       delay_loops
     };
     const pathParameters = {
       detail_id
     };
-    const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-      if (value !== void 0) {
-        acc.push(`${key}=${value}`);
-      }
-      return acc;
-    }, []);
-    const paramString = parsedParams.join("&");
-    for (const [key, value] of Object.entries(pathParameters)) {
-      if (value === void 0) {
-        throw new Error(`Missing required path parameter ${key}`);
-      }
-      url = url.replace(`{${key}}`, value);
-    }
-    if (paramString) {
-      url = `${url}?${paramString}`;
-    }
-    return url;
+    return __getLink({ rawUrl: url, queryParameters, pathParameters });
   };
 
   // my_website/views/_server/links.ts
@@ -12777,7 +12754,7 @@ var SSR = (() => {
   };
   var page_default = Page;
 
-  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpcwwiom3v/synthetic_server.tsx
+  // ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmppxedgrvl/synthetic_server.tsx
   var Entrypoint = () => {
     return /* @__PURE__ */ React3.createElement(page_default, null);
   };

@@ -1,18 +1,24 @@
+from re import sub as re_sub
 from typing import Callable
-from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
+
 import pytest
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
-from re import sub as re_sub
+
+from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
+
 
 def view_endpoint_regular():
     pass
 
+
 def view_endpoint_path_params(path_a: str, path_b: int):
     pass
 
+
 def view_endpoint_query_params(query_a: str, query_b: int | None = None):
     pass
+
 
 @pytest.mark.parametrize(
     "url, endpoint, expected_link",
@@ -34,7 +40,7 @@ def view_endpoint_query_params(query_a: str, query_b: int | None = None):
                     });
                 };
                 """
-            )
+            ),
         ),
         # View endpoint with path params
         (
@@ -91,14 +97,10 @@ def view_endpoint_query_params(query_a: str, query_b: int | None = None):
                 };
                 """
             ),
-        )
-    ]
+        ),
+    ],
 )
-def test_convert(
-    url: str,
-    endpoint: Callable,
-    expected_link: str
-):
+def test_convert(url: str, endpoint: Callable, expected_link: str):
     # Each function needs a response model because we expect that all @sideeffect
     # and @passthrough functions will have an automatically defined response model
     router = APIRouter()

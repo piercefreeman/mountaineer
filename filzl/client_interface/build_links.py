@@ -4,11 +4,10 @@ from filzl.client_interface.openapi import (
     ActionType,
     OpenAPIDefinition,
     ParameterLocationType,
-    OpenAPIProperty,
 )
 from filzl.client_interface.typescript import (
     TSLiteral,
-    map_openapi_type_to_ts,
+    get_typehint_for_parameter,
     python_payload_to_typescript,
 )
 
@@ -54,21 +53,9 @@ class OpenAPIToTypescriptLinkConverter:
             }:
                 continue
 
-            parameter_types = set(self.get_types_from_parameters(parameter.schema_ref))
-
+            typehint_key, typehint_value = get_typehint_for_parameter(parameter)
             input_parameters[TSLiteral(parameter.name)] = TSLiteral(parameter.name)
-            typehint_parameters[
-                TSLiteral(parameter.name)
-                + (TSLiteral("?") if not parameter.required else TSLiteral(""))
-            ] = TSLiteral(
-                " | ".join(
-                    # Sort helps with consistency of generated code
-                    sorted([
-                        map_openapi_type_to_ts(raw_type)
-                        for raw_type in parameter_types
-                    ])
-                )
-            )
+            typehint_parameters[typehint_key] = typehint_value
 
             if parameter.in_location == ParameterLocationType.QUERY:
                 query_parameters[TSLiteral(parameter.name)] = TSLiteral(parameter.name)
@@ -83,7 +70,9 @@ class OpenAPIToTypescriptLinkConverter:
         chunks: list[str] = []
 
         # Step 1: Parameter string with typehints
-        chunks.append(f"export const getLink = ({parameter_str} : {typehint_str}) => {{")
+        chunks.append(
+            f"export const getLink = ({parameter_str} : {typehint_str}) => {{"
+        )
 
         # Step 2: Define our local dictionary to separate query and path parameters
         # We need to do this in the actual view controller itself because only in the backend
@@ -105,33 +94,3 @@ class OpenAPIToTypescriptLinkConverter:
         chunks.append("};")
 
         return "\n\n".join(chunks)
-
-    def get_types_from_parameters(self, schema: OpenAPIProperty):
-        """
-        Handle potentially complex types from the parameter schema, like the case
-        of optional fields.
-
-        """
-        # Recursively gather all of the types that might be nested
-        if schema.type:
-            yield schema.type
-
-        for property in {
-            **schema.properties,
-            **(schema.additionalProperties or {})
-        }.values():
-            yield from self.get_types_from_parameters(property)
-
-        if schema.items:
-            yield from self.get_types_from_parameters(schema.items)
-
-        if schema.anyOf:
-            for one_of in schema.anyOf:
-                yield from self.get_types_from_parameters(one_of)
-
-        # We don't expect $ref values in the URL schema, if we do then the parsing
-        # is likely incorrect
-        if schema.ref:
-            raise ValueError(
-                f"Unexpected $ref in URL schema: {schema.ref}"
-            )

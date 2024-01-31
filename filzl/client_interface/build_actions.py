@@ -10,7 +10,7 @@ from filzl.client_interface.openapi import (
 )
 from filzl.client_interface.typescript import (
     TSLiteral,
-    map_openapi_type_to_ts,
+    get_typehint_for_parameter,
     python_payload_to_typescript,
 )
 
@@ -117,10 +117,9 @@ class OpenAPIToTypescriptActionConverter:
         request_types: list[str] = []
 
         for parameter in action.parameters:
+            typehint_key, typehint_value = get_typehint_for_parameter(parameter)
             parameters_dict[parameter.name] = TSLiteral(parameter.name)
-            typehint_dict[TSLiteral(parameter.name)] = TSLiteral(
-                map_openapi_type_to_ts(parameter.schema_ref.type)
-            )
+            typehint_dict[typehint_key] = typehint_value
 
         if (
             action.requestBody is not None

@@ -173,9 +173,9 @@ class ClientBuilder:
 
             content = ""
             content += f"import {{ __getLink }} from '{root_api_import_path}';\n"
-            link_payload = self.openapi_link_converter.convert(render_openapi)
+            content += self.openapi_link_converter.convert(render_openapi)
 
-            controller_links_path.write_text(link_payload)
+            controller_links_path.write_text(content)
 
     def generate_link_aggregator(self):
         """

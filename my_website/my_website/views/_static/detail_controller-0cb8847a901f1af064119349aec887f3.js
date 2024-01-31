@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmptb4yhc_w/synthetic_client.tsx
+// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpo4f2qs_b/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
@@ -23516,19 +23516,20 @@ var React2 = __toESM(require_react());
 // my_website/views/app/detail/_server/useServer.ts
 var import_react = __toESM(require_react());
 
-// my_website/views/app/home/_server/links.ts
-var getLink = ({}) => {
-  let url = "/";
-  const queryParameters = {};
-  const pathParameters = {};
-  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-    if (value !== void 0) {
-      acc.push(`${key}=${value}`);
-    }
-    return acc;
-  }, []);
+// my_website/views/_server/api.ts
+var __getLink = (params) => {
+  const parsedParams = Object.entries(params.queryParameters).reduce(
+    (acc, [key, value]) => {
+      if (value !== void 0) {
+        acc.push(`${key}=${value}`);
+      }
+      return acc;
+    },
+    []
+  );
   const paramString = parsedParams.join("&");
-  for (const [key, value] of Object.entries(pathParameters)) {
+  let url = params.rawUrl;
+  for (const [key, value] of Object.entries(params.pathParameters)) {
     if (value === void 0) {
       throw new Error(`Missing required path parameter ${key}`);
     }
@@ -23540,32 +23541,24 @@ var getLink = ({}) => {
   return url;
 };
 
+// my_website/views/app/home/_server/links.ts
+var getLink = ({}) => {
+  const url = `/`;
+  const queryParameters = {};
+  const pathParameters = {};
+  return __getLink({ rawUrl: url, queryParameters, pathParameters });
+};
+
 // my_website/views/app/detail/_server/links.ts
 var getLink2 = ({
   detail_id
 }) => {
-  let url = "/detail/{detail_id}/";
+  const url = `/detail/{detail_id}/`;
   const queryParameters = {};
   const pathParameters = {
     detail_id
   };
-  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-    if (value !== void 0) {
-      acc.push(`${key}=${value}`);
-    }
-    return acc;
-  }, []);
-  const paramString = parsedParams.join("&");
-  for (const [key, value] of Object.entries(pathParameters)) {
-    if (value === void 0) {
-      throw new Error(`Missing required path parameter ${key}`);
-    }
-    url = url.replace(`{${key}}`, value);
-  }
-  if (paramString) {
-    url = `${url}?${paramString}`;
-  }
-  return url;
+  return __getLink({ rawUrl: url, queryParameters, pathParameters });
 };
 
 // my_website/views/app/complex/_server/links.ts
@@ -23573,30 +23566,14 @@ var getLink3 = ({
   detail_id,
   delay_loops
 }) => {
-  let url = "/complex/{detail_id}/";
+  const url = `/complex/{detail_id}/`;
   const queryParameters = {
     delay_loops
   };
   const pathParameters = {
     detail_id
   };
-  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-    if (value !== void 0) {
-      acc.push(`${key}=${value}`);
-    }
-    return acc;
-  }, []);
-  const paramString = parsedParams.join("&");
-  for (const [key, value] of Object.entries(pathParameters)) {
-    if (value === void 0) {
-      throw new Error(`Missing required path parameter ${key}`);
-    }
-    url = url.replace(`{${key}}`, value);
-  }
-  if (paramString) {
-    url = `${url}?${paramString}`;
-  }
-  return url;
+  return __getLink({ rawUrl: url, queryParameters, pathParameters });
 };
 
 // my_website/views/_server/links.ts
@@ -23629,7 +23606,7 @@ var Page = () => {
 };
 var page_default = Page;
 
-// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmptb4yhc_w/synthetic_client.tsx
+// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmpo4f2qs_b/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
@@ -23683,4 +23660,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=detail_controller-0c7ccf53cac773aeea09fe2e8cb34cce.js.map
+//# sourceMappingURL=detail_controller-0cb8847a901f1af064119349aec887f3.js.map

@@ -200,6 +200,5 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
 
 ## V0 TODOs
 
-- Global methods for getting the link to another page (should validate these links are actually valid at build-time)
 - How to use a preprocessor like tailwind for the bundling?
 - We should clearly support both async and sync rendering functions / actions.

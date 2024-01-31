@@ -11,10 +11,10 @@ from filzl.client_interface.openapi import (
     ActionType,
     ContentBodyDefinition,
     ContentDefinition,
+    OpenAPIProperty,
     OpenAPISchemaType,
     ParameterLocationType,
     URLParameterDefinition,
-    OpenAPIProperty,
 )
 
 

@@ -23506,7 +23506,7 @@ var require_client = __commonJS({
   }
 });
 
-// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmp21d9g44i/synthetic_client.tsx
+// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmp2ey5oky3/synthetic_client.tsx
 var React3 = __toESM(require_react());
 var import_client = __toESM(require_client());
 
@@ -23581,20 +23581,19 @@ function applySideEffect(apiFunction, setControllerState) {
     return result;
   };
 }
-
-// my_website/views/app/home/_server/links.ts
-var getLink = ({}) => {
-  let url = "/";
-  const queryParameters = {};
-  const pathParameters = {};
-  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-    if (value !== void 0) {
-      acc.push(`${key}=${value}`);
-    }
-    return acc;
-  }, []);
+var __getLink = (params) => {
+  const parsedParams = Object.entries(params.queryParameters).reduce(
+    (acc, [key, value]) => {
+      if (value !== void 0) {
+        acc.push(`${key}=${value}`);
+      }
+      return acc;
+    },
+    []
+  );
   const paramString = parsedParams.join("&");
-  for (const [key, value] of Object.entries(pathParameters)) {
+  let url = params.rawUrl;
+  for (const [key, value] of Object.entries(params.pathParameters)) {
     if (value === void 0) {
       throw new Error(`Missing required path parameter ${key}`);
     }
@@ -23606,32 +23605,24 @@ var getLink = ({}) => {
   return url;
 };
 
+// my_website/views/app/home/_server/links.ts
+var getLink = ({}) => {
+  const url = `/`;
+  const queryParameters = {};
+  const pathParameters = {};
+  return __getLink({ rawUrl: url, queryParameters, pathParameters });
+};
+
 // my_website/views/app/detail/_server/links.ts
 var getLink2 = ({
   detail_id
 }) => {
-  let url = "/detail/{detail_id}/";
+  const url = `/detail/{detail_id}/`;
   const queryParameters = {};
   const pathParameters = {
     detail_id
   };
-  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-    if (value !== void 0) {
-      acc.push(`${key}=${value}`);
-    }
-    return acc;
-  }, []);
-  const paramString = parsedParams.join("&");
-  for (const [key, value] of Object.entries(pathParameters)) {
-    if (value === void 0) {
-      throw new Error(`Missing required path parameter ${key}`);
-    }
-    url = url.replace(`{${key}}`, value);
-  }
-  if (paramString) {
-    url = `${url}?${paramString}`;
-  }
-  return url;
+  return __getLink({ rawUrl: url, queryParameters, pathParameters });
 };
 
 // my_website/views/app/complex/_server/links.ts
@@ -23639,30 +23630,14 @@ var getLink3 = ({
   detail_id,
   delay_loops
 }) => {
-  let url = "/complex/{detail_id}/";
+  const url = `/complex/{detail_id}/`;
   const queryParameters = {
     delay_loops
   };
   const pathParameters = {
     detail_id
   };
-  const parsedParams = Object.entries(queryParameters).reduce((acc, [key, value]) => {
-    if (value !== void 0) {
-      acc.push(`${key}=${value}`);
-    }
-    return acc;
-  }, []);
-  const paramString = parsedParams.join("&");
-  for (const [key, value] of Object.entries(pathParameters)) {
-    if (value === void 0) {
-      throw new Error(`Missing required path parameter ${key}`);
-    }
-    url = url.replace(`{${key}}`, value);
-  }
-  if (paramString) {
-    url = `${url}?${paramString}`;
-  }
-  return url;
+  return __getLink({ rawUrl: url, queryParameters, pathParameters });
 };
 
 // my_website/views/_server/links.ts
@@ -23678,8 +23653,7 @@ var get_external_data = () => {
   return __request(
     {
       "method": "POST",
-      "url": "/internal/api/home_controller/get_external_data",
-      "query": {}
+      "url": "/internal/api/home_controller/get_external_data"
     }
   );
 };
@@ -23690,7 +23664,6 @@ var increment_count = ({
     {
       "method": "POST",
       "url": "/internal/api/home_controller/increment_count",
-      "query": {},
       "errors": {
         422: HTTPValidationErrorException
       },
@@ -23781,7 +23754,7 @@ var Home = () => {
 };
 var page_default = Home;
 
-// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmp21d9g44i/synthetic_client.tsx
+// ../../../../../private/var/folders/0z/txmshp9s1679jxprrlw8f8_h0000gn/T/tmp2ey5oky3/synthetic_client.tsx
 var Entrypoint = () => {
   return /* @__PURE__ */ React3.createElement(page_default, null);
 };
@@ -23835,4 +23808,4 @@ react-dom/cjs/react-dom.development.js:
    * @license Modernizr 3.0.0pre (Custom Build) | MIT
    *)
 */
-//# sourceMappingURL=home_controller-c7ff588b54ae0e4ff1cc2b7cb4e9274a.js.map
+//# sourceMappingURL=home_controller-501f7e05cdcc598e51d62ecfdc354d52.js.map

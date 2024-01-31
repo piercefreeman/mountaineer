@@ -5,7 +5,11 @@ Python definitions.
 """
 from typing import Any
 
-from filzl.client_interface.openapi import OpenAPISchemaType
+from filzl.client_interface.openapi import (
+    OpenAPISchemaType,
+    URLParameterDefinition,
+    get_types_from_parameters,
+)
 
 
 class TSLiteral(str):
@@ -81,3 +85,23 @@ def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType):
         "object": "{types}",
     }
     return mapping[openapi_type]
+
+
+def get_typehint_for_parameter(parameter: URLParameterDefinition):
+    """
+    Get the typehint for a parameter, which may be a single type or a union of types.
+
+    """
+    parameter_types = set(get_types_from_parameters(parameter.schema_ref))
+
+    key = TSLiteral(parameter.name) + (
+        TSLiteral("?") if not parameter.required else TSLiteral("")
+    )
+    value = TSLiteral(
+        " | ".join(
+            # Sort helps with consistency of generated code
+            sorted([map_openapi_type_to_ts(raw_type) for raw_type in parameter_types])
+        )
+    )
+
+    return key, value

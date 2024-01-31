@@ -117,3 +117,37 @@ export function applySideEffect<
     return result;
   };
 }
+
+interface GetLinkParams {
+  rawUrl: string;
+  queryParameters: Record<string, string>;
+  pathParameters: Record<string, string>;
+}
+
+export const __getLink = (params: GetLinkParams) => {
+  // Format the query parameters in raw JS, since our SSR environment doesn't  have
+  // access to the URLSearchParams API.
+  const parsedParams = Object.entries(params.queryParameters).reduce(
+    (acc, [key, value]) => {
+      if (value !== undefined) {
+        acc.push(`${key}=${value}`);
+      }
+      return acc;
+    },
+    [] as string[],
+  );
+  const paramString = parsedParams.join("&");
+
+  // Now fill in the path parameters
+  let url = params.rawUrl;
+  for (const [key, value] of Object.entries(params.pathParameters)) {
+    if (value === undefined) {
+      throw new Error(`Missing required path parameter ${key}`);
+    }
+    url = url.replace(`{${key}}`, value);
+  }
+  if (paramString) {
+    url = `${url}?${paramString}`;
+  }
+  return url;
+};

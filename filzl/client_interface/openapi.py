@@ -199,3 +199,37 @@ class OpenAPIDefinition(BaseModel):
     # { path: { action: ActionDefinition }}
     paths: dict[str, EndpointDefinition]
     components: Components = Components(schemas={})
+
+
+#
+# Helper methods
+#
+
+
+def get_types_from_parameters(schema: OpenAPIProperty):
+    """
+    Handle potentially complex types from the parameter schema, like the case
+    of optional fields.
+
+    """
+    # Recursively gather all of the types that might be nested
+    if schema.type:
+        yield schema.type
+
+    for property in schema.properties.values():
+        yield from get_types_from_parameters(property)
+
+    if schema.additionalProperties:
+        yield from get_types_from_parameters(schema.additionalProperties)
+
+    if schema.items:
+        yield from get_types_from_parameters(schema.items)
+
+    if schema.anyOf:
+        for one_of in schema.anyOf:
+            yield from get_types_from_parameters(one_of)
+
+    # We don't expect $ref values in the URL schema, if we do then the parsing
+    # is likely incorrect
+    if schema.ref:
+        raise ValueError(f"Unexpected $ref in URL schema: {schema.ref}")
