@@ -343,7 +343,7 @@ class ClientBuilder:
             """
             Spawn non-controller based file builder
             """
-            ignore_directories = ["_ssr", "_static", "_server"]
+            ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
             # If any of these directories are in the path, we skip it
             if any([directory in path.parts for directory in ignore_directories]):
                 return
@@ -358,10 +358,7 @@ class ClientBuilder:
             tasks = [
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
-            ] + [
-                spawn_file_builder(path)
-                for path in self.view_root.get_managed_code_dir().rglob("*")
-            ]
+            ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
             await gather_with_concurrency(tasks, n=max_concurrency)
 
         # Each build command is completely independent and there's some overhead with spawning

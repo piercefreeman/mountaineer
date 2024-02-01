@@ -8,7 +8,7 @@ const Home = () => {
   return (
     <div>
       <h1>Home</h1>
-      <p>Home page</p>
+      <p className="text-green-500">Home page</p>
       <p>
         Hello {serverState.client_ip}, current count is{" "}
         {serverState.current_count} {serverState.random_uuid}

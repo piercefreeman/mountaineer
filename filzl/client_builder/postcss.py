@@ -1,14 +1,16 @@
-import subprocess
+import asyncio
 from pathlib import Path
+from subprocess import PIPE
 from tempfile import TemporaryDirectory
 
 from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+from filzl.logging import LOGGER
 
 
 class PostCSSBundler(ClientBuilderBase):
-    def handle_file(
+    async def handle_file(
         self, current_path: ManagedViewPath, controller: ControllerBase | None
     ):
         # If this is a CSS file we try to process it
@@ -16,10 +18,10 @@ class PostCSSBundler(ClientBuilderBase):
             return
 
         root_path = current_path.get_root_link()
-        built_css = self.process_css(current_path)
+        built_css = await self.process_css(current_path)
         (root_path.get_managed_static_dir() / current_path.name).write_text(built_css)
 
-    def process_css(self, css_path: ManagedViewPath) -> str:
+    async def process_css(self, css_path: ManagedViewPath) -> str:
         """
         Process a CSS file using PostCSS and output the transformed contents.
         """
@@ -34,13 +36,24 @@ class PostCSSBundler(ClientBuilderBase):
             temp_dir_path = Path(temp_dir_name)
             output_path = temp_dir_path / "output.css"
 
-            try:
-                subprocess.run(
-                    [cli_path, str(css_path), "-o", str(output_path)],
-                    check=True,
-                )
-            except subprocess.CalledProcessError as e:
-                raise RuntimeError(f"PostCSS processing failed: {e}")
+            command = [str(cli_path), str(css_path), "-o", str(output_path)]
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=PIPE,
+                stderr=PIPE,
+                # postcss won't find the config file if we don't set the cwd
+                cwd=css_path.get_root_link(),
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if stdout.strip():
+                LOGGER.info(stdout.decode())
+            if stderr.strip():
+                LOGGER.warning(stderr.decode())
+
+            if process.returncode != 0:
+                raise Exception(f"postcss error: {stderr.decode()}")
 
             return output_path.read_text()
 

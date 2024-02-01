@@ -17,6 +17,7 @@ from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.bundler import JavascriptBundler
 from filzl.controller import ControllerBase
+from filzl.render import Metadata
 
 
 class ControllerDefinition(BaseModel):
@@ -35,18 +36,29 @@ class ControllerDefinition(BaseModel):
 
 class AppController:
     """
-    Main entrypoint
+    Main entrypoint of a project web application.
 
     """
 
     builders: list[ClientBuilderBase]
+    global_metadata: Metadata | None
 
     def __init__(
-        self, view_root: Path, custom_builders: list[ClientBuilderBase] | None = None
+        self,
+        view_root: Path,
+        global_metadata: Metadata | None = None,
+        custom_builders: list[ClientBuilderBase] | None = None,
     ):
+        """
+        :param global_metadata: Script and meta will be applied to every
+            page rendered by this application. Title will only be applied
+            if the page does not already have a title set.
+
+        """
         self.app = FastAPI()
         self.controllers: list[ControllerDefinition] = []
         self.view_root = view_root
+        self.global_metadata = global_metadata
         self.builders = [
             # Default builders
             JavascriptBundler(),
@@ -62,7 +74,7 @@ class AppController:
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
         self.app.mount(
-            "/static_js",
+            "/static",
             StaticFiles(directory=self.view_root / "_static"),
             name="static",
         )
@@ -89,7 +101,9 @@ class AppController:
         # with the dependency injection kwargs
         @wraps(controller.render)
         async def generate_controller_html(*args, **kwargs):
-            return await controller._generate_html(*args, **kwargs)
+            return await controller._generate_html(
+                *args, global_metadata=self.global_metadata, **kwargs
+            )
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
