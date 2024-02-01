@@ -1,7 +1,6 @@
 import asyncio
 from collections import defaultdict
 from hashlib import md5
-from pathlib import Path
 from shutil import rmtree
 
 from fastapi import APIRouter
@@ -380,26 +379,6 @@ class ClientBuilder:
         # management thread so we complete the build process in parallel.
         asyncio.run(parallel_build())
 
-    def get_managed_code_dir(self, path: Path):
-        return self.get_managed_dir_common(path, "_server")
-
-    def get_managed_static_dir(self, path: Path):
-        return self.get_managed_dir_common(path, "_static")
-
-    def get_managed_ssr_dir(self, path: Path):
-        return self.get_managed_dir_common(path, "_ssr")
-
-    def get_managed_dir_common(self, path: Path, managed_dir: str):
-        # If the path is to a file, we want to get the parent directory
-        # so that we can create the managed code directory
-        # We also create the managed code directory if it doesn't exist so all subsequent
-        # calls can immediately start writing to it
-        if path.is_file():
-            path = path.parent
-        managed_code_dir = path / managed_dir
-        managed_code_dir.mkdir(exist_ok=True)
-        return managed_code_dir
-
     def validate_unique_paths(self):
         """
         Validate that all controller paths are unique. Otherwise we risk stomping
@@ -459,10 +438,3 @@ class ClientBuilder:
             controller_definition.router, prefix=controller_definition.url_prefix
         )
         return get_openapi(title="", version="", routes=root_router.routes)
-
-    def get_controller_view_path(self, controller: ControllerBase):
-        """
-        Assume all paths are specified in terms of their relative root
-        """
-        relative_path = Path(controller.view_path.lstrip("/"))
-        return self.app.view_root / relative_path

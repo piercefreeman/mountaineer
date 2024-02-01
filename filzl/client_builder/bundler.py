@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 
 from pydantic import BaseModel
 
+from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_interface.paths import generate_relative_import
 
@@ -15,17 +16,13 @@ class BundleOutput(BaseModel):
     server_source_map_contents: str
 
 
-class JavascriptBundler:
+class JavascriptBundler(ClientBuilderBase):
     """
     Compile the client-written tsx/jsx to raw javascript files for execution as part
     of the SSR pipeline and client hydration.
     """
 
-    def __init__(
-        self, page_path: Path, view_root_path: Path, root_element: str = "root"
-    ):
-        self.page_path = page_path
-        self.view_root_path = view_root_path
+    def __init__(self, root_element: str = "root"):
         self.root_element = root_element
 
     async def convert(self):
