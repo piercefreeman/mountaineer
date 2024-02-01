@@ -1,17 +1,15 @@
 import asyncio
 from collections import defaultdict
-from hashlib import md5
-from pathlib import Path
+from inspect import isawaitable
 from shutil import rmtree
 
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
-from inflection import camelize, underscore
+from inflection import camelize
 
 from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
-from filzl.client_builder.bundler import JavascriptBundler
 from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_interface.build_actions import (
     OpenAPIToTypescriptActionConverter,
@@ -19,13 +17,10 @@ from filzl.client_interface.build_actions import (
 from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.openapi import OpenAPIDefinition
-from filzl.client_interface.paths import generate_relative_import
-from filzl.client_interface.source_maps import (
-    get_cleaned_js_contents,
-    update_source_map_path,
-)
+from filzl.client_interface.paths import ManagedViewPath, generate_relative_import
 from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
+from filzl.io import gather_with_concurrency
 from filzl.static import get_static_path
 
 
@@ -43,7 +38,7 @@ class ClientBuilder:
         self.openapi_link_converter = OpenAPIToTypescriptLinkConverter()
 
         self.app = app
-        self.view_root = app.view_root
+        self.view_root = ManagedViewPath.from_view_root(app.view_root)
 
     def build(self):
         # Make sure our application definitions are in a valid state before we start
@@ -69,7 +64,7 @@ class ClientBuilder:
         Copy over the static files that are required for the client.
 
         """
-        managed_code_dir = self.get_managed_code_dir(self.view_root)
+        managed_code_dir = self.view_root.get_managed_code_dir()
         api_content = get_static_path("api.ts").read_text()
         (managed_code_dir / "api.ts").write_text(api_content)
 
@@ -105,9 +100,9 @@ class ClientBuilder:
                 )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
-            managed_code_dir = self.get_managed_code_dir(
-                self.get_controller_view_path(controller)
-            )
+            managed_code_dir = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
             (managed_code_dir / "models.ts").write_text(
                 "\n\n".join(
                     [
@@ -125,10 +120,10 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller_code_dir = self.get_managed_code_dir(
-                self.get_controller_view_path(controller)
-            )
-            root_code_dir = self.get_managed_code_dir(self.view_root)
+            controller_code_dir = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
+            root_code_dir = self.view_root.get_managed_code_dir()
 
             controller_action_path = controller_code_dir / "actions.ts"
             root_common_handler = root_code_dir / "api.ts"
@@ -159,10 +154,10 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller_code_dir = self.get_managed_code_dir(
-                self.get_controller_view_path(controller)
-            )
-            root_code_dir = self.get_managed_code_dir(self.view_root)
+            controller_code_dir = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
+            root_code_dir = self.view_root.get_managed_code_dir()
 
             controller_links_path = controller_code_dir / "links.ts"
 
@@ -189,7 +184,7 @@ class ClientBuilder:
         so we can do controller->global->controller.
 
         """
-        global_code_dir = self.get_managed_code_dir(self.view_root)
+        global_code_dir = self.view_root.get_managed_code_dir()
 
         import_paths: list[str] = []
         global_setters: dict[str, str] = {}
@@ -197,9 +192,9 @@ class ClientBuilder:
         # For each controller, import the links and export them
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller_code_dir = self.get_managed_code_dir(
-                self.get_controller_view_path(controller)
-            )
+            controller_code_dir = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
 
             relative_import = generate_relative_import(
                 global_code_dir / "links.ts",
@@ -250,10 +245,10 @@ class ClientBuilder:
             ]
 
             # Step 2: Setup imports from the single global provider
-            controller_model_path = self.get_managed_code_dir(
-                self.get_controller_view_path(controller)
-            )
-            global_server_path = self.get_managed_code_dir(self.view_root)
+            controller_model_path = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
+            global_server_path = self.view_root.get_managed_code_dir()
             relative_server_path = generate_relative_import(
                 controller_model_path, global_server_path
             )
@@ -314,7 +309,7 @@ class ClientBuilder:
 
             (controller_model_path / "useServer.ts").write_text("\n\n".join(chunks))
 
-    def build_javascript_chunks(self):
+    def build_javascript_chunks(self, max_concurrency: int = 25):
         """
         Build the final javascript chunks that will render the react documents. Each page will get
         one chunk associated with it. We suffix these files with the current md5 hash of the contents to
@@ -323,8 +318,8 @@ class ClientBuilder:
 
         """
         # Clear the static directories since we only want the latest files in there
-        static_dir = self.get_managed_static_dir(self.view_root)
-        ssr_dir = self.get_managed_ssr_dir(self.view_root)
+        static_dir = self.view_root.get_managed_static_dir()
+        ssr_dir = self.view_root.get_managed_ssr_dir()
         for clear_dir in [static_dir, ssr_dir]:
             if clear_dir.exists():
                 rmtree(clear_dir)
@@ -337,68 +332,39 @@ class ClientBuilder:
             raise ValueError("Unable to resolve esbuild path")
 
         async def spawn_builder(controller: ControllerBase):
-            # TODO: If we get to many hundred or thousand of view files, we might want to introduce a work
-            # queue to avoid spawning too many processes concurrently
-            bundler = JavascriptBundler(
-                self.get_controller_view_path(controller), self.view_root
-            )
-            bundle_definition = await bundler.convert()
+            for builder in self.app.builders:
+                result = builder.handle_file(
+                    self.view_root.get_controller_view_path(controller), controller
+                )
+                if isawaitable(result):
+                    await result
 
-            # Client-side scripts have to be provided a cache-invalidation suffix alongside
-            # mapping the source map to the new script name
-            controller_base = underscore(controller.__class__.__name__)
-            content_hash = md5(
-                get_cleaned_js_contents(
-                    bundle_definition.client_compiled_contents
-                ).encode()
-            ).hexdigest()
-            script_name = f"{controller_base}-{content_hash}.js"
-            map_name = f"{script_name}.map"
+        async def spawn_file_builder(path: ManagedViewPath):
+            """
+            Spawn non-controller based file builder
+            """
+            ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
+            # If any of these directories are in the path, we skip it
+            if any([directory in path.parts for directory in ignore_directories]):
+                return
 
-            # Map to the new script name
-            contents = update_source_map_path(
-                bundle_definition.client_compiled_contents, map_name
-            )
-
-            (static_dir / script_name).write_text(contents)
-            (static_dir / map_name).write_text(
-                bundle_definition.client_source_map_contents
-            )
-
-            ssr_path = ssr_dir / f"{controller_base}.js"
-            ssr_path.write_text(bundle_definition.server_compiled_contents)
+            # Otherwise loop over our bundlers
+            for builder in self.app.builders:
+                result = builder.handle_file(path, controller=None)
+                if isawaitable(result):
+                    await result
 
         async def parallel_build():
             tasks = [
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
-            ]
-            await asyncio.gather(*tasks)
+            ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
+            await gather_with_concurrency(tasks, n=max_concurrency)
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
         asyncio.run(parallel_build())
-
-    def get_managed_code_dir(self, path: Path):
-        return self.get_managed_dir_common(path, "_server")
-
-    def get_managed_static_dir(self, path: Path):
-        return self.get_managed_dir_common(path, "_static")
-
-    def get_managed_ssr_dir(self, path: Path):
-        return self.get_managed_dir_common(path, "_ssr")
-
-    def get_managed_dir_common(self, path: Path, managed_dir: str):
-        # If the path is to a file, we want to get the parent directory
-        # so that we can create the managed code directory
-        # We also create the managed code directory if it doesn't exist so all subsequent
-        # calls can immediately start writing to it
-        if path.is_file():
-            path = path.parent
-        managed_code_dir = path / managed_dir
-        managed_code_dir.mkdir(exist_ok=True)
-        return managed_code_dir
 
     def validate_unique_paths(self):
         """
@@ -410,9 +376,9 @@ class ClientBuilder:
         view_counts = defaultdict(list)
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            view_counts[self.get_controller_view_path(controller).parent].append(
-                controller
-            )
+            view_counts[
+                self.view_root.get_controller_view_path(controller).parent
+            ].append(controller)
         duplicate_views = [
             (view, controllers)
             for view, controllers in view_counts.items()
@@ -432,7 +398,7 @@ class ClientBuilder:
         # Validation 2: Ensure that the paths actually exist
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            view_path = self.get_controller_view_path(controller)
+            view_path = self.view_root.get_controller_view_path(controller)
             if not view_path.exists():
                 raise ValueError(
                     f"View path {view_path} does not exist, ensure it is created before running the server"
@@ -459,10 +425,3 @@ class ClientBuilder:
             controller_definition.router, prefix=controller_definition.url_prefix
         )
         return get_openapi(title="", version="", routes=root_router.routes)
-
-    def get_controller_view_path(self, controller: ControllerBase):
-        """
-        Assume all paths are specified in terms of their relative root
-        """
-        relative_path = Path(controller.view_path.lstrip("/"))
-        return self.app.view_root / relative_path

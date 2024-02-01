@@ -1,0 +1,25 @@
+from abc import ABC, abstractmethod
+from typing import Any, Coroutine
+
+from filzl.client_interface.paths import ManagedViewPath
+from filzl.controller import ControllerBase
+
+
+class ClientBuilderBase(ABC):
+    """
+    Base class for client builders. When mounted to an AppController, these build plugins
+    will be called for every file defined in the view/app directory. It's up to the plugin
+    whether to handle the incoming file.
+
+    """
+
+    @abstractmethod
+    def handle_file(
+        self, current_path: ManagedViewPath, controller: ControllerBase | None
+    ) -> None | Coroutine[Any, Any, None]:
+        """
+        Only direct controller views are called with (view, controller) inputs. Otherwise we do a
+        recursive search of the raw files on disk with controller=None.
+
+        """
+        pass

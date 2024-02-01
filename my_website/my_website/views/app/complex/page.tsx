@@ -36,8 +36,8 @@ const Page = () => {
   }
 
   return (
-    <div>
-      <h1>Server</h1>
+    <div className="p-6">
+      <h1 className="text-2xl">Server</h1>
       <p>
         Count:{" "}
         {counts.map((count, i) => (

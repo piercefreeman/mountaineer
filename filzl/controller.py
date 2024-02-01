@@ -73,7 +73,7 @@ class ControllerBase(ABC):
         """
         pass
 
-    async def _generate_html(self, *args, **kwargs):
+    async def _generate_html(self, *args, global_metadata: Metadata | None, **kwargs):
         if not self.ssr_path:
             # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
@@ -92,9 +92,13 @@ class ControllerBase(ABC):
                 f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
             )
 
-        header_str = "\n".join(
-            self.build_header(server_data.metadata) if server_data.metadata else []
-        )
+        metadatas: list[Metadata] = []
+        if server_data.metadata:
+            metadatas.append(server_data.metadata)
+        if global_metadata:
+            metadatas.append(global_metadata)
+
+        header_str = "\n".join(self.build_header(self.merge_metadatas(metadatas)))
 
         # Now that we've built the header, we can remove it from the server data
         # This makes our cache more efficient, since metadata changes don't affect
@@ -118,7 +122,7 @@ class ControllerBase(ABC):
         server_data_json = server_data.model_dump_json()
         optional_scripts = "\n".join(
             [
-                f"<script src='/static_js/{script_name}'></script>"
+                f"<script src='/static/{script_name}'></script>"
                 for script_name in self.bundled_scripts
             ]
         )
@@ -216,3 +220,19 @@ class ControllerBase(ABC):
             for path in (view_base / "_static").iterdir()
             if md5_script_pattern.match(path.name)
         ]
+
+    def merge_metadatas(self, metadatas: list[Metadata]):
+        """
+        Merges a list of metadata objects, sorted by priority. Some fields will
+        take the union (like scripts) - others will prioritize earlier entries (title).
+
+        """
+        base_metadata = Metadata()
+
+        for metadata in metadatas:
+            base_metadata.title = base_metadata.title or metadata.title
+
+            base_metadata.metas.extend(metadata.metas)
+            base_metadata.links.extend(metadata.links)
+
+        return base_metadata

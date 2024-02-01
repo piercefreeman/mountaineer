@@ -7,6 +7,7 @@ from click import secho
 from pydantic.main import BaseModel
 
 from filzl.client_interface.builder import ClientBuilder
+from filzl.logging import log_time_duration
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
 from filzl.webservice import UvicornThread
 
@@ -59,10 +60,15 @@ class IsolatedEnvProcess(Process):
             )
             thread.start()
             self.close_signal.wait()
-            thread.stop()
-            thread.join()
+            with log_time_duration("Stop server signal received. Stopped."):
+                thread.stop()
+            with log_time_duration("Joined thread."):
+                thread.join()
 
     def stop(self, hard_timeout: float = 5.0):
+        """
+        Client-side stop method to shut down the running process.
+        """
         # If we've already stopped, don't try to stop again
         if not self.is_alive():
             return
@@ -72,6 +78,12 @@ class IsolatedEnvProcess(Process):
             while self.is_alive() and hard_timeout > 0:
                 self.join(1)
                 hard_timeout -= 1
+
+            if hard_timeout == 0:
+                secho(
+                    f"Server shutdown reached hard timeout deadline: {self.is_alive()}",
+                    fg="red",
+                )
 
         # As a last resort we send a hard termination signal
         if self.is_alive():
