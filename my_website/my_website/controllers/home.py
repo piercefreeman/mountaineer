@@ -1,15 +1,16 @@
+from uuid import UUID, uuid4
+
 from fastapi import Request
 from filzl.actions import passthrough, sideeffect
 from filzl.controller import ControllerBase
 from filzl.render import Metadata, RenderBase
 from pydantic import BaseModel
 
-from my_website.views import get_view_path
-
 
 class HomeRender(RenderBase):
     client_ip: str
     current_count: int
+    random_uuid: UUID
 
 
 class IncrementCountRequest(BaseModel):
@@ -22,7 +23,7 @@ class GetExternalDataResponse(BaseModel):
 
 class HomeController(ControllerBase):
     url = "/"
-    view_path = get_view_path("/app/home/page.tsx")
+    view_path = "/app/home/page.tsx"
 
     def __init__(self):
         super().__init__()
@@ -49,5 +50,7 @@ class HomeController(ControllerBase):
         return HomeRender(
             client_ip=request.client.host if request.client else "unknown",
             current_count=self.global_count,
+            # Bust the server-side cache
+            random_uuid=uuid4(),
             metadata=Metadata(title="Home"),
         )

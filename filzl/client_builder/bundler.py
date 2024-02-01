@@ -38,17 +38,17 @@ class JavascriptBundler:
         with TemporaryDirectory() as temp_dir_name:
             temp_dir_path = Path(temp_dir_name)
 
+            # Actually create the dist directory, since our relative path sniffing approach
+            # prefers to work with directories that exist
+            (temp_dir_path / "dist").mkdir()
+
             # The same endpoint definition is used for both SSR and the client build
-            synthetic_imports, synthetic_endpoint = self.build_synthetic_endpoint(
+            synthetic_payload = self.build_synthetic_endpoint(
                 layout_paths, temp_dir_path / "dist"
             )
 
-            client_entrypoint = self.build_synthetic_client_page(
-                synthetic_imports, synthetic_endpoint
-            )
-            ssr_entrypoint = self.build_synthetic_ssr_page(
-                synthetic_imports, synthetic_endpoint
-            )
+            client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)
+            ssr_entrypoint = self.build_synthetic_ssr_page(*synthetic_payload)
 
             self.link_project_files(temp_dir_path)
             (temp_dir_path / "synthetic_client.tsx").write_text(client_entrypoint)
@@ -102,10 +102,15 @@ class JavascriptBundler:
             )
 
     def build_synthetic_client_page(
-        self, synthetic_imports: list[str], synthetic_endpoint: str
+        self,
+        synthetic_imports: list[str],
+        synthetic_endpoint: str,
+        synthetic_endpoint_name: str,
     ):
         lines: list[str] = []
 
+        # Assume the client page is always being called from a page that has been
+        # initially rendered by SSR
         lines.append("import * as React from 'react';")
         lines.append("import { hydrateRoot } from 'react-dom/client';")
         lines += synthetic_imports
@@ -115,12 +120,15 @@ class JavascriptBundler:
         lines.append(
             f"const container = document.getElementById('{self.root_element}');"
         )
-        lines.append("hydrateRoot(container, <Entrypoint />);")
+        lines.append(f"hydrateRoot(container, <{synthetic_endpoint_name} />);")
 
         return "\n".join(lines)
 
     def build_synthetic_ssr_page(
-        self, synthetic_imports: list[str], synthetic_endpoint: str
+        self,
+        synthetic_imports: list[str],
+        synthetic_endpoint: str,
+        synthetic_endpoint_name: str,
     ):
         lines: list[str] = []
 
@@ -130,7 +138,9 @@ class JavascriptBundler:
 
         lines.append(synthetic_endpoint)
 
-        lines.append("export const Index = () => renderToString(<Entrypoint />);")
+        lines.append(
+            f"export const Index = () => renderToString(<{synthetic_endpoint_name} />);"
+        )
 
         return "\n".join(lines)
 
@@ -168,8 +178,9 @@ class JavascriptBundler:
             )
 
         # The synthetic endpoint is a function that returns a React component
+        entrypoint_name = "Entrypoint"
         content_lines = [
-            "const Entrypoint = () => {",
+            f"const {entrypoint_name} = () => {{",
             "return (",
             *[f"<Layout{i}>" for i in range(len(layout_paths))],
             "<Page />",
@@ -178,7 +189,7 @@ class JavascriptBundler:
             "};",
         ]
 
-        return import_paths, "\n".join(content_lines)
+        return import_paths, "\n".join(content_lines), entrypoint_name
 
     def sniff_for_layouts(self):
         """

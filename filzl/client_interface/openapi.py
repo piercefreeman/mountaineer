@@ -52,6 +52,9 @@ class OpenAPIProperty(BaseModel):
     additionalProperties: Optional["OpenAPIProperty"] = None
     required: list[str] = []
 
+    # Just specified on the leaf object
+    format: str | None = None
+
     # Self-contained type: object, int, etc
     variable_type: OpenAPISchemaType | None = Field(alias="type", default=None)
     # Reference to another type
@@ -61,11 +64,13 @@ class OpenAPIProperty(BaseModel):
     # Pointer to multiple possible subtypes
     anyOf: list["OpenAPIProperty"] = []
 
+    model_config = {"populate_by_name": True}
+
     # Validator to ensure that one of the optional values is set
     @model_validator(mode="after")
     def check_provided_value(self) -> "OpenAPIProperty":
         if not any([self.variable_type, self.ref, self.items, self.anyOf]):
-            raise ValueError("One of variable_type, $ref, or items must be set")
+            raise ValueError("One of variable_type, $ref, anyOf, or items must be set")
         return self
 
     def __hash__(self):
@@ -87,7 +92,11 @@ class ContentDefinition(BaseModel):
     class Reference(BaseModel):
         ref: str | None = Field(default=None, alias="$ref")
 
+        model_config = {"populate_by_name": True}
+
     schema_ref: Reference = Field(alias="schema")
+
+    model_config = {"populate_by_name": True}
 
 
 class ContentBodyDefinition(BaseModel):
@@ -102,8 +111,19 @@ class ContentBodyDefinition(BaseModel):
 
     @model_validator(mode="before")
     def explode_content_dictionary(cls, data: Any) -> Any:
+        # If we're being invoked programatically, we will have the required fields
+        programatic_construction = data.get("content_type") and data.get(
+            "content_schema"
+        )
+
+        if programatic_construction:
+            return data
+
+        # If we're being invoked from a JSON payload, we expect a content dictionary with a single
+        # key/value that provides the specification for content type/content. Explode it so it maps
+        # to our variables.
         if "content" not in data or not isinstance(data["content"], dict):
-            raise ValueError("RequestBodyDefinition.content must be a dict")
+            raise ValueError("ContentBodyDefinition.content must be a dict")
 
         # We only support a single content type for now
         if len(data["content"]) != 1:
@@ -116,17 +136,12 @@ class ContentBodyDefinition(BaseModel):
 
 
 class URLParameterDefinition(BaseModel):
-    class Schema(BaseModel):
-        type: OpenAPISchemaType
-        title: str
-
-        # Specified in the case of a known format that can be validated on the client-side, like a UUID
-        format: str | None = None
-
     name: str
     in_location: ParameterLocationType = Field(alias="in")
-    schema_ref: Schema = Field(alias="schema")
+    schema_ref: OpenAPIProperty = Field(alias="schema")
     required: bool
+
+    model_config = {"populate_by_name": True}
 
 
 class ActionDefinition(BaseModel):
@@ -191,3 +206,37 @@ class OpenAPIDefinition(BaseModel):
     # { path: { action: ActionDefinition }}
     paths: dict[str, EndpointDefinition]
     components: Components = Components(schemas={})
+
+
+#
+# Helper methods
+#
+
+
+def get_types_from_parameters(schema: OpenAPIProperty):
+    """
+    Handle potentially complex types from the parameter schema, like the case
+    of optional fields.
+
+    """
+    # Recursively gather all of the types that might be nested
+    if schema.variable_type:
+        yield schema.variable_type
+
+    for property in schema.properties.values():
+        yield from get_types_from_parameters(property)
+
+    if schema.additionalProperties:
+        yield from get_types_from_parameters(schema.additionalProperties)
+
+    if schema.items:
+        yield from get_types_from_parameters(schema.items)
+
+    if schema.anyOf:
+        for one_of in schema.anyOf:
+            yield from get_types_from_parameters(one_of)
+
+    # We don't expect $ref values in the URL schema, if we do then the parsing
+    # is likely incorrect
+    if schema.ref:
+        raise ValueError(f"Unexpected $ref in URL schema: {schema.ref}")

@@ -1,5 +1,5 @@
 from functools import wraps
-from inspect import signature
+from inspect import isclass, signature
 from pathlib import Path
 from typing import Callable
 
@@ -13,8 +13,8 @@ from filzl.actions import (
     fuse_metadata_to_response_typehint,
     init_function_metadata,
 )
+from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.controller import ControllerBase
-from filzl.render import RenderBase
 
 
 class ControllerDefinition(BaseModel):
@@ -86,31 +86,36 @@ class AppController:
                 "Unable to clear wrapped typehint, no wrapped function found."
             )
 
-        return_model = generate_controller_html.__wrapped__.__annotations__.pop(
-            "return", None
+        return_model = generate_controller_html.__wrapped__.__annotations__.get(
+            "return", FilzlUnsetValue()
         )
-        if not return_model:
+        if isinstance(return_model, FilzlUnsetValue):
             raise ValueError(
                 "Controller render() function must have a return type annotation"
             )
 
-        # Validate the return model is actually a RenderBase
-        if not issubclass(return_model, RenderBase):
+        # Validate the return model is actually a RenderBase or explicitly marked up as None
+        if not (
+            return_model is None
+            or (isclass(return_model) and issubclass(return_model, BaseModel))
+        ):
             raise ValueError(
                 "Controller render() return type annotation is not a RenderBase"
             )
 
         # Attach a new metadata wrapper to the original function so we can easily
         # recover it when attached to the class
-        metadata = init_function_metadata(controller.render, FunctionActionType.RENDER)
-        metadata.render_model = return_model
+        render_metadata = init_function_metadata(
+            controller.render, FunctionActionType.RENDER
+        )
+        render_metadata.render_model = return_model
 
         # Register the rendering view to an isolated APIRoute, so we can keep track of its
         # the resulting router independently of the rest of the application
         # This is useful in cases where we need to do a render()->FastAPI lookup
         view_router = APIRouter()
         view_router.get(controller.url)(generate_controller_html)
-        metadata.render_router = view_router
+        render_metadata.render_router = view_router
         self.app.include_router(view_router)
 
         # Create a wrapper router for each controller to hold the side-effects
@@ -124,7 +129,7 @@ class AppController:
             # context that the action function is being defined within. Here since we have a global view
             # of the controller (render function + actions) this becomes trivial
             metadata.return_model = fuse_metadata_to_response_typehint(
-                metadata, return_model
+                metadata, render_metadata.get_render_model()
             )
 
             # Update the signature of the internal function, which fastapi will sniff for the return declaration

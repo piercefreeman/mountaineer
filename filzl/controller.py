@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from inspect import getmembers, ismethod
 from pathlib import Path
 from re import compile as re_compile
+from time import time
 from typing import Callable, Iterable
 
 from fastapi.responses import HTMLResponse
@@ -12,33 +13,75 @@ from filzl.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
-from filzl.render import Metadata, RenderBase
+from filzl.logging import LOGGER
+from filzl.render import Metadata, RenderBase, RenderNull
 from filzl.ssr import render_ssr
 
 
 class ControllerBase(ABC):
     url: str
-    view_path: str | Path
+    view_path: str
 
     bundled_scripts: list[str]
 
-    def __init__(self):
+    def __init__(
+        self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0
+    ):
+        """
+        :param slow_ssr_threshold: Each python process has a single V8 runtime associated with
+        it, so SSR rendering can become a bottleneck if it requires processing. We log a warning
+        if we detect that an SSR render took longer than this threshold.
+        :param hard_ssr_timeout: If the SSR render takes longer than this threshold, we will
+        automatically kill the V8 runtime and return an error to the client. This is useful for
+        avoiding blocking the reset of the server process if the React render logic hangs.
+
+        """
         # Injected by the build framework
         self.bundled_scripts: list[str] = []
         self.ssr_path: Path | None = None
         self.initialized = True
+        self.slow_ssr_threshold = slow_ssr_threshold
+        self.hard_ssr_timeout = hard_ssr_timeout
 
     @abstractmethod
-    def render(self, *args, **kwargs) -> RenderBase:
+    def render(self, *args, **kwargs) -> RenderBase | None:
+        """
+        Client implementations must override render() to define the data that will
+        be pushed from the server to the client. This function must be typehinted with
+        your response type:
+
+        ```python
+        class MyServerData(RenderBase):
+            pass
+
+        class MyController:
+            def render(self) -> MyServerData:
+                pass
+        ```
+
+        If you don't intend to sync any data from server->client you can typehint this function
+        with an explicit None return annotation:
+
+        ```python
+        class MyController:
+            def render(self) -> None:
+                pass
+        ```
+
+        """
         pass
 
     def _generate_html(self, *args, **kwargs):
         if not self.ssr_path:
+            # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
 
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
+        if server_data is None:
+            server_data = RenderNull()
+
         header_str = "\n".join(
             self.build_header(server_data.metadata) if server_data.metadata else []
         )
@@ -49,10 +92,17 @@ class ControllerBase(ABC):
         server_data = server_data.model_copy(update={"metadata": None})
 
         # TODO: Provide a function to automatically sniff for the client view folder
+        start = time()
         ssr_html = render_ssr(
             self.ssr_path.read_text(),
             server_data,
+            hard_timeout=self.hard_ssr_timeout,
         )
+        ssr_duration = time() - start
+        if ssr_duration > self.slow_ssr_threshold:
+            LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
+        else:
+            LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
 
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = server_data.model_dump_json()

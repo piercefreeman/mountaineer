@@ -98,9 +98,9 @@ def test_require_json_dictionaries():
         converter.validate_typescript_candidate(InvalidDictModel)
 
 
-def test_get_model_json_schema():
+def test_get_model_json_schema_excludes_masked_fields():
     """
-    Ensure we avoid serializing optional fields.
+    Ensure we avoid serializing "excluded" fields.
     """
 
     class ExcludedModel(BaseModel):

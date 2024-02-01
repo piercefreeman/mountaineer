@@ -91,7 +91,7 @@ class ClientBuilder:
             # Convert the render model
             render_metadata = get_function_metadata(controller.render)
             for schema_name, component in self.openapi_schema_converter.convert(
-                render_metadata.get_render_model(),
+                render_metadata.get_render_model()
             ).items():
                 schemas[schema_name] = component
 
@@ -105,7 +105,9 @@ class ClientBuilder:
                 )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
-            managed_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            managed_code_dir = self.get_managed_code_dir(
+                self.get_controller_view_path(controller)
+            )
             (managed_code_dir / "models.ts").write_text(
                 "\n\n".join(
                     [
@@ -123,7 +125,9 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            controller_code_dir = self.get_managed_code_dir(
+                self.get_controller_view_path(controller)
+            )
             root_code_dir = self.get_managed_code_dir(self.view_root)
 
             controller_action_path = controller_code_dir / "actions.ts"
@@ -139,7 +143,6 @@ class ClientBuilder:
 
             chunks: list[str] = []
 
-            # Step 1: Requirements
             chunks.append(
                 f"import {{ __request, FetchErrorBase }} from '{root_api_import_path}';\n"
                 + f"import type {{ {', '.join(required_types)} }} from './models';"
@@ -156,8 +159,17 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            controller_code_dir = self.get_managed_code_dir(
+                self.get_controller_view_path(controller)
+            )
+            root_code_dir = self.get_managed_code_dir(self.view_root)
 
+            controller_links_path = controller_code_dir / "links.ts"
+
+            root_common_handler = root_code_dir / "api.ts"
+            root_api_import_path = generate_relative_import(
+                controller_links_path, root_common_handler
+            )
             render_route = get_function_metadata(controller.render).get_render_router()
             render_openapi = get_openapi(
                 title="",
@@ -165,9 +177,11 @@ class ClientBuilder:
                 routes=render_route.routes,
             )
 
-            link_payload = self.openapi_link_converter.convert(render_openapi)
+            content = ""
+            content += f"import {{ __getLink }} from '{root_api_import_path}';\n"
+            content += self.openapi_link_converter.convert(render_openapi)
 
-            (controller_code_dir / "links.ts").write_text(link_payload)
+            controller_links_path.write_text(content)
 
     def generate_link_aggregator(self):
         """
@@ -183,7 +197,9 @@ class ClientBuilder:
         # For each controller, import the links and export them
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller_code_dir = self.get_managed_code_dir(Path(controller.view_path))
+            controller_code_dir = self.get_managed_code_dir(
+                self.get_controller_view_path(controller)
+            )
 
             relative_import = generate_relative_import(
                 global_code_dir / "links.ts",
@@ -235,7 +251,7 @@ class ClientBuilder:
 
             # Step 2: Setup imports from the single global provider
             controller_model_path = self.get_managed_code_dir(
-                Path(controller.view_path)
+                self.get_controller_view_path(controller)
             )
             global_server_path = self.get_managed_code_dir(self.view_root)
             relative_server_path = generate_relative_import(
@@ -263,15 +279,13 @@ class ClientBuilder:
 
             # Step 4: We expect another script has already injected this global `SERVER_DATA` constant. We
             # add the typehinting here just so that the IDE can be happy.
-            chunks.append(
-                "declare global {\n" f"var SERVER_DATA: {render_model_name};\n" "}\n"
-            )
+            chunks.append("declare global {\n" "var SERVER_DATA: any;\n" "}\n")
 
             # Step 5: Final implementation of the useServer() hook, which returns a subview of the overall
             # server state that's only relevant to this controller
             chunks.append(
                 "export const useServer = () => {\n"
-                + "const [ serverState, setServerState ] = useState(SERVER_DATA);\n"
+                + f"const [ serverState, setServerState ] = useState(SERVER_DATA as {render_model_name});\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update
@@ -325,7 +339,9 @@ class ClientBuilder:
         async def spawn_builder(controller: ControllerBase):
             # TODO: If we get to many hundred or thousand of view files, we might want to introduce a work
             # queue to avoid spawning too many processes concurrently
-            bundler = JavascriptBundler(Path(controller.view_path), self.view_root)
+            bundler = JavascriptBundler(
+                self.get_controller_view_path(controller), self.view_root
+            )
             bundle_definition = await bundler.convert()
 
             # Client-side scripts have to be provided a cache-invalidation suffix alongside
@@ -394,7 +410,9 @@ class ClientBuilder:
         view_counts = defaultdict(list)
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            view_counts[Path(controller.view_path).parent].append(controller)
+            view_counts[self.get_controller_view_path(controller).parent].append(
+                controller
+            )
         duplicate_views = [
             (view, controllers)
             for view, controllers in view_counts.items()
@@ -414,7 +432,7 @@ class ClientBuilder:
         # Validation 2: Ensure that the paths actually exist
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            view_path = Path(controller.view_path)
+            view_path = self.get_controller_view_path(controller)
             if not view_path.exists():
                 raise ValueError(
                     f"View path {view_path} does not exist, ensure it is created before running the server"
@@ -441,3 +459,10 @@ class ClientBuilder:
             controller_definition.router, prefix=controller_definition.url_prefix
         )
         return get_openapi(title="", version="", routes=root_router.routes)
+
+    def get_controller_view_path(self, controller: ControllerBase):
+        """
+        Assume all paths are specified in terms of their relative root
+        """
+        relative_path = Path(controller.view_path.lstrip("/"))
+        return self.app.view_root / relative_path

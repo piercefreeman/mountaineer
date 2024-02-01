@@ -10,7 +10,7 @@ from filzl.client_interface.openapi import (
 )
 from filzl.client_interface.typescript import (
     TSLiteral,
-    map_openapi_type_to_ts,
+    get_typehint_for_parameter,
     python_payload_to_typescript,
 )
 
@@ -22,9 +22,11 @@ class OpenAPIToTypescriptActionConverter:
 
     """
 
-    def convert(self, openapi: dict[str, Any]):
+    def convert(self, openapi: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
         """
-        :return {function_name: function_body}
+        Our conversion pipeline focuses on creating the action definitions of one file.
+
+        :return {function_name: function_body}, imports required by the function bodies
 
         """
         schema = OpenAPIDefinition(**openapi)
@@ -69,7 +71,7 @@ class OpenAPIToTypescriptActionConverter:
                 body: requestBody,
                 mediaType: 'application/json',
                 errors: {
-                    422: ValidationErrorError,
+                    422: ValidationErrorException,
                 },
             });
         }
@@ -115,10 +117,9 @@ class OpenAPIToTypescriptActionConverter:
         request_types: list[str] = []
 
         for parameter in action.parameters:
+            typehint_key, typehint_value = get_typehint_for_parameter(parameter)
             parameters_dict[parameter.name] = TSLiteral(parameter.name)
-            typehint_dict[TSLiteral(parameter.name)] = TSLiteral(
-                map_openapi_type_to_ts(parameter.schema_ref.type)
-            )
+            typehint_dict[typehint_key] = typehint_value
 
         if (
             action.requestBody is not None
@@ -188,7 +189,7 @@ class OpenAPIToTypescriptActionConverter:
                 )
 
         # Remove the optional keys that don't have any values
-        for optional_parameter in ["errors", "path"]:
+        for optional_parameter in ["errors", "path", "query"]:
             if not common_params[optional_parameter]:
                 del common_params[optional_parameter]
 

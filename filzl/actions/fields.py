@@ -1,13 +1,14 @@
 from enum import Enum
 from inspect import ismethod
-from typing import Callable, Type
+from typing import Callable, Optional, Type
 
 from fastapi import APIRouter
 from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
-from filzl.render import FieldClassDefinition, Metadata, RenderBase
+from filzl.annotation_helpers import FilzlUnsetValue
+from filzl.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
 
 
 class FunctionActionType(Enum):
@@ -22,20 +23,23 @@ class FunctionMetadata(BaseModel):
 
     # Specified for sideeffects, where all data shouldn't be update. Limits the
     # update to fields defined in this tuple.
-    reload_states: tuple[FieldClassDefinition, ...] | None = None
+    reload_states: tuple[
+        FieldClassDefinition, ...
+    ] | None | FilzlUnsetValue = FilzlUnsetValue()
 
     # Defines the data schema returned from the function that will be included in the
     # response payload sent to the client. This might be used for either passthrough
     # or sideeffect
-    passthrough_model: Type[BaseModel] | None = None
+    passthrough_model: Type[BaseModel] | None | FilzlUnsetValue = FilzlUnsetValue()
 
     # Render type, defines the data model that is returned by the render typehint
-    render_model: Type[RenderBase] | None = None
+    # If "None", the user has explicitly stated that no render model is returned
+    render_model: Type[RenderBase] | FilzlUnsetValue = FilzlUnsetValue()
 
     # Inserted by the render decorator
-    url: str | None = None
-    return_model: Type[BaseModel] | None = None
-    render_router: APIRouter | None = None
+    url: str | FilzlUnsetValue = FilzlUnsetValue()
+    return_model: Type[BaseModel] | FilzlUnsetValue = FilzlUnsetValue()
+    render_router: APIRouter | FilzlUnsetValue = FilzlUnsetValue()
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -47,33 +51,33 @@ class FunctionMetadata(BaseModel):
     # does have the expected values. They should only be used in cases that you know based on runtime
     # guarantees that certain functions will have certain attributes.
     #
-    def get_reload_states(self) -> tuple[FieldClassDefinition, ...]:
-        if not self.reload_states:
+    def get_reload_states(self) -> tuple[FieldClassDefinition, ...] | None:
+        if isinstance(self.reload_states, FilzlUnsetValue):
             raise ValueError("Reload states not set")
         return self.reload_states
 
     def get_render_model(self) -> Type[RenderBase]:
-        if not self.render_model:
+        if isinstance(self.render_model, FilzlUnsetValue):
             raise ValueError("Render model not set")
-        return self.render_model
+        return self.render_model or RenderNull
 
-    def get_passthrough_model(self) -> Type[BaseModel]:
-        if not self.passthrough_model:
+    def get_passthrough_model(self) -> Type[BaseModel] | None:
+        if isinstance(self.passthrough_model, FilzlUnsetValue):
             raise ValueError("Passthrough model not set")
         return self.passthrough_model
 
     def get_url(self) -> str:
-        if not self.url:
+        if isinstance(self.url, FilzlUnsetValue):
             raise ValueError("URL not set")
         return self.url
 
     def get_return_model(self) -> Type[BaseModel]:
-        if not self.return_model:
+        if isinstance(self.return_model, FilzlUnsetValue):
             raise ValueError("Return model not set")
         return self.return_model
 
     def get_render_router(self) -> APIRouter:
-        if not self.render_router:
+        if isinstance(self.render_router, FilzlUnsetValue):
             raise ValueError("Render router not set")
         return self.render_router
 
@@ -106,6 +110,13 @@ def get_function_metadata(fn: Callable) -> FunctionMetadata:
     return metadata
 
 
+def annotation_is_metadata(annotation: type | None):
+    if not annotation:
+        return
+
+    return annotation == Metadata or annotation == Optional[Metadata]
+
+
 def fuse_metadata_to_response_typehint(
     metadata: FunctionMetadata,
     render_model: Type[RenderBase],
@@ -117,7 +128,9 @@ def fuse_metadata_to_response_typehint(
     passthrough_fields = {}
     sideeffect_fields = {}
 
-    if metadata.passthrough_model:
+    if metadata.passthrough_model is not None and not isinstance(
+        metadata.passthrough_model, FilzlUnsetValue
+    ):
         passthrough_fields = {**metadata.passthrough_model.model_fields}
 
     if metadata.action_type == FunctionActionType.SIDEEFFECT:
@@ -128,10 +141,12 @@ def fuse_metadata_to_response_typehint(
         sideeffect_fields = {
             field_name: field_definition
             for field_name, field_definition in sideeffect_fields.items()
-            if not isinstance(field_definition.annotation, Metadata)
+            if not annotation_is_metadata(field_definition.annotation)
         }
 
-        if metadata.reload_states:
+        if metadata.reload_states is not None and not isinstance(
+            metadata.reload_states, FilzlUnsetValue
+        ):
             # Make sure this class actually aligns to the response model
             # If not the user mis-specified the reload states
             reload_classes = {field.root_model for field in metadata.reload_states}
