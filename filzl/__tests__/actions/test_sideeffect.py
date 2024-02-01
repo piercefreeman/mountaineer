@@ -1,4 +1,6 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi import Depends, Request
@@ -6,7 +8,7 @@ from pydantic.main import BaseModel
 from starlette.datastructures import Headers
 
 from filzl.actions.fields import FunctionActionType, get_function_metadata
-from filzl.actions.sideeffect import get_render_parameters, sideeffect
+from filzl.actions.sideeffect import sideeffect
 from filzl.app import AppController
 from filzl.controller import ControllerBase
 from filzl.render import RenderBase
@@ -49,12 +51,78 @@ def test_markup_sideeffect():
 
 
 @pytest.mark.asyncio
+async def test_can_call_sideeffect():
+    """
+    Ensure that we can call the sideeffect, which will in turn
+    call the render function to get fresh data.
+    """
+
+    class ExampleRenderModel(RenderBase):
+        value_a: str
+        value_b: str
+
+    class TestController(ControllerBase):
+        url: str = "/test/{query_id}/"
+
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+
+        def render(
+            self,
+            query_id: int,
+        ) -> ExampleRenderModel:
+            return ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            )
+
+        @sideeffect
+        def call_sideeffect(self, payload: dict):
+            self.counter += 1
+
+    app = AppController(Path())
+    controller = TestController()
+    app.register(controller)
+
+    @asynccontextmanager
+    async def mock_get_render_parameters(*args, **kwargs):
+        yield {
+            "query_id": 1,
+        }
+
+    # After our wrapper is called, our function is now async
+    # Avoid the dependency resolution logic since that's tested separately
+    with patch(
+        "filzl.actions.sideeffect.get_render_parameters"
+    ) as patched_get_render_params:
+        patched_get_render_params.side_effect = mock_get_render_parameters
+
+        return_value = await controller.call_sideeffect(
+            {},
+            request=Request({"type": "http"}),
+        )  # type: ignore
+
+        assert return_value == {
+            "sideeffect": ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            ),
+            "passthrough": None,
+        }
+
+        assert controller.counter == 1
+
+
+@pytest.mark.asyncio
 async def test_get_render_parameters():
     """
     Given a controller, reproduce the logic of FastAPI to sniff the render()
     function for dependencies and resolve them.
 
     """
+    from filzl.actions.sideeffect import get_render_parameters
+
     found_cookie = None
 
     def grab_cookie_dependency(request: Request):
@@ -74,7 +142,7 @@ async def test_get_render_parameters():
             query_id: int,
             cookie_dependency: str = Depends(grab_cookie_dependency),
         ) -> ExampleRenderModel:
-            return dict(
+            return ExampleRenderModel(
                 value_a="Hello",
                 value_b="World",
             )
