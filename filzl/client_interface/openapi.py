@@ -53,7 +53,6 @@ class OpenAPIProperty(BaseModel):
     required: list[str] = []
 
     # Just specified on the leaf object
-    type: OpenAPISchemaType | None = None
     format: str | None = None
 
     # Self-contained type: object, int, etc
@@ -65,11 +64,13 @@ class OpenAPIProperty(BaseModel):
     # Pointer to multiple possible subtypes
     anyOf: list["OpenAPIProperty"] = []
 
+    model_config = {"populate_by_name": True}
+
     # Validator to ensure that one of the optional values is set
     @model_validator(mode="after")
     def check_provided_value(self) -> "OpenAPIProperty":
         if not any([self.variable_type, self.ref, self.items, self.anyOf]):
-            raise ValueError("One of variable_type, $ref, or items must be set")
+            raise ValueError("One of variable_type, $ref, anyOf, or items must be set")
         return self
 
     def __hash__(self):
@@ -91,7 +92,11 @@ class ContentDefinition(BaseModel):
     class Reference(BaseModel):
         ref: str | None = Field(default=None, alias="$ref")
 
+        model_config = {"populate_by_name": True}
+
     schema_ref: Reference = Field(alias="schema")
+
+    model_config = {"populate_by_name": True}
 
 
 class ContentBodyDefinition(BaseModel):
@@ -135,6 +140,8 @@ class URLParameterDefinition(BaseModel):
     in_location: ParameterLocationType = Field(alias="in")
     schema_ref: OpenAPIProperty = Field(alias="schema")
     required: bool
+
+    model_config = {"populate_by_name": True}
 
 
 class ActionDefinition(BaseModel):
@@ -213,8 +220,8 @@ def get_types_from_parameters(schema: OpenAPIProperty):
 
     """
     # Recursively gather all of the types that might be nested
-    if schema.type:
-        yield schema.type
+    if schema.variable_type:
+        yield schema.variable_type
 
     for property in schema.properties.values():
         yield from get_types_from_parameters(property)

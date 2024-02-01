@@ -60,17 +60,15 @@ def test_convert():
 EXAMPLE_REQUEST_BODY = ContentBodyDefinition(
     content_type="application/json",
     content_schema=ContentDefinition(
-        schema=ContentDefinition.Reference(
-            **{"$ref": "#/components/schemas/ExampleModel"}
-        )
+        schema_ref=ContentDefinition.Reference(ref="#/components/schemas/ExampleModel")
     ),
 )
 
 EXAMPLE_RESPONSE_200 = ContentBodyDefinition(
     content_type="application/json",
     content_schema=ContentDefinition(
-        schema=ContentDefinition.Reference(
-            **{"$ref": "#/components/schemas/ExampleResponseModel"}
+        schema_ref=ContentDefinition.Reference(
+            ref="#/components/schemas/ExampleResponseModel"
         )
     ),
 )
@@ -78,9 +76,8 @@ EXAMPLE_RESPONSE_200 = ContentBodyDefinition(
 EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
     content_type="application/json",
     content_schema=ContentDefinition(
-        schema=ContentDefinition.Reference(
-            # 01-31-2023: This is a hack to provide alias variables for the pydantic model
-            **{"$ref": "#/components/schemas/HTTPValidationError"}
+        schema_ref=ContentDefinition.Reference(
+            ref="#/components/schemas/HTTPValidationError"
         )
     ),
 )
@@ -141,37 +138,31 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                     # All path parameters are required
                     URLParameterDefinition(
                         name="item_id",
-                        schema=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty(
                             title="",
-                            type=OpenAPISchemaType.STRING,
+                            variable_type=OpenAPISchemaType.STRING,
                         ),
-                        **{
-                            "in": ParameterLocationType.PATH,
-                        },
+                        in_location=ParameterLocationType.PATH,
                         required=True,
                     ),
                     # Required query parameter
                     URLParameterDefinition(
                         name="query_param_required_id",
-                        schema=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty(
                             title="",
-                            type=OpenAPISchemaType.STRING,
+                            variable_type=OpenAPISchemaType.STRING,
                         ),
-                        **{
-                            "in": ParameterLocationType.QUERY,
-                        },
+                        in_location=ParameterLocationType.QUERY,
                         required=True,
                     ),
                     # Optional query parameter
                     URLParameterDefinition(
                         name="query_param_optional_id",
-                        schema=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty(
                             title="",
-                            type=OpenAPISchemaType.STRING,
+                            variable_type=OpenAPISchemaType.STRING,
                         ),
-                        **{
-                            "in": ParameterLocationType.QUERY,
-                        },
+                        in_location=ParameterLocationType.QUERY,
                         required=False,
                     ),
                 ],

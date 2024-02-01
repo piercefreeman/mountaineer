@@ -3,7 +3,17 @@ from typing import Any
 
 import pytest
 
-from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
+from filzl.client_interface.openapi import (
+    OpenAPIProperty,
+    OpenAPISchemaType,
+    ParameterLocationType,
+    URLParameterDefinition,
+)
+from filzl.client_interface.typescript import (
+    TSLiteral,
+    get_typehint_for_parameter,
+    python_payload_to_typescript,
+)
 
 
 @pytest.mark.parametrize(
@@ -88,4 +98,51 @@ def test_collapse_repeated_literals(
     """
     assert re_sub(r"\s+", "", python_payload_to_typescript(original_payload)) == re_sub(
         r"\s+", "", expected_str
+    )
+
+
+@pytest.mark.parametrize(
+    "url_parameter, expected_ts_key, expected_ts_type",
+    [
+        (
+            URLParameterDefinition(
+                name="test",
+                required=True,
+                schema_ref=OpenAPIProperty(
+                    format="uuid",
+                    variable_type=OpenAPISchemaType.STRING,
+                ),
+                in_location=ParameterLocationType.PATH,
+            ),
+            "test",
+            "string",
+        ),
+        (
+            URLParameterDefinition(
+                name="test",
+                required=True,
+                schema_ref=OpenAPIProperty(
+                    anyOf=[
+                        OpenAPIProperty(
+                            format="uuid",
+                            variable_type=OpenAPISchemaType.STRING,
+                        ),
+                        OpenAPIProperty(
+                            variable_type=OpenAPISchemaType.INTEGER,
+                        ),
+                    ]
+                ),
+                in_location=ParameterLocationType.PATH,
+            ),
+            "test",
+            "number | string",
+        ),
+    ],
+)
+def test_get_typehint_for_parameter(
+    url_parameter: URLParameterDefinition, expected_ts_key: str, expected_ts_type: str
+):
+    assert get_typehint_for_parameter(url_parameter) == (
+        expected_ts_key,
+        expected_ts_type,
     )

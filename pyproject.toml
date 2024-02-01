@@ -34,6 +34,14 @@ build-backend = "maturin"
 warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
+plugins = [
+  "pydantic.mypy"
+]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
