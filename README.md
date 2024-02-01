@@ -61,7 +61,7 @@ class HomeRender(RenderBase):
 
 class HomeController(ControllerBase):
     url = "/"
-    view_path = get_view_path("/app/home/page.tsx")
+    view_path = "/app/home/page.tsx"
 
     def __init__(self):
         super().__init__()

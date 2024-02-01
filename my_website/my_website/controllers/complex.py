@@ -4,8 +4,6 @@ from fastapi import Request
 from filzl.controller import ControllerBase
 from filzl.render import Metadata, RenderBase
 
-from my_website.views import get_view_path
-
 
 class ComplexRender(RenderBase):
     client_ip: str
@@ -26,7 +24,7 @@ class ComplexController(ControllerBase):
     """
 
     url = "/complex/{detail_id}/"
-    view_path = get_view_path("/app/complex/page.tsx")
+    view_path = "/app/complex/page.tsx"
 
     def __init__(self):
         super().__init__(

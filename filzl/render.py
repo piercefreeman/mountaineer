@@ -109,3 +109,7 @@ class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):
         # for changes in our SSR renderer
         "frozen": True,
     }
+
+
+class RenderNull(RenderBase):
+    pass

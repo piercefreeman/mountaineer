@@ -6,8 +6,6 @@ from filzl.controller import ControllerBase
 from filzl.render import Metadata, RenderBase
 from pydantic import BaseModel
 
-from my_website.views import get_view_path
-
 
 class HomeRender(RenderBase):
     client_ip: str
@@ -25,7 +23,7 @@ class GetExternalDataResponse(BaseModel):
 
 class HomeController(ControllerBase):
     url = "/"
-    view_path = get_view_path("/app/home/page.tsx")
+    view_path = "/app/home/page.tsx"
 
     def __init__(self):
         super().__init__()

@@ -14,13 +14,13 @@ from filzl.actions import (
     get_function_metadata,
 )
 from filzl.logging import LOGGER
-from filzl.render import Metadata, RenderBase
+from filzl.render import Metadata, RenderBase, RenderNull
 from filzl.ssr import render_ssr
 
 
 class ControllerBase(ABC):
     url: str
-    view_path: str | Path
+    view_path: str
 
     bundled_scripts: list[str]
 
@@ -44,7 +44,31 @@ class ControllerBase(ABC):
         self.hard_ssr_timeout = hard_ssr_timeout
 
     @abstractmethod
-    def render(self, *args, **kwargs) -> RenderBase:
+    def render(self, *args, **kwargs) -> RenderBase | None:
+        """
+        Client implementations must override render() to define the data that will
+        be pushed from the server to the client. This function must be typehinted with
+        your response type:
+
+        ```python
+        class MyServerData(RenderBase):
+            pass
+
+        class MyController:
+            def render(self) -> MyServerData:
+                pass
+        ```
+
+        If you don't intend to sync any data from server->client you can typehint this function
+        with an explicit None return annotation:
+
+        ```python
+        class MyController:
+            def render(self) -> None:
+                pass
+        ```
+
+        """
         pass
 
     def _generate_html(self, *args, **kwargs):
@@ -55,6 +79,9 @@ class ControllerBase(ABC):
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
+        if server_data is None:
+            server_data = RenderNull()
+
         header_str = "\n".join(
             self.build_header(server_data.metadata) if server_data.metadata else []
         )

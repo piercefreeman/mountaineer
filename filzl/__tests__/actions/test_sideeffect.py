@@ -9,6 +9,7 @@ from starlette.datastructures import Headers
 
 from filzl.actions.fields import FunctionActionType, get_function_metadata
 from filzl.actions.sideeffect import sideeffect
+from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.app import AppController
 from filzl.controller import ControllerBase
 from filzl.render import RenderBase
@@ -44,10 +45,10 @@ def test_markup_sideeffect():
     assert metadata.get_passthrough_model() == ExamplePassthroughModel
     assert metadata.function_name == "sideeffect_and_return_data"
     assert metadata.reload_states == tuple([ExampleRenderModel.value_a])
-    assert metadata.render_model is None
-    assert metadata.url is None
-    assert metadata.return_model is None
-    assert metadata.render_router is None
+    assert isinstance(metadata.render_model, FilzlUnsetValue)
+    assert isinstance(metadata.url, FilzlUnsetValue)
+    assert isinstance(metadata.return_model, FilzlUnsetValue)
+    assert isinstance(metadata.render_router, FilzlUnsetValue)
 
 
 @pytest.mark.asyncio

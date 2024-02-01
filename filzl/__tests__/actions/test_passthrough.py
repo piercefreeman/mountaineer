@@ -2,6 +2,7 @@ from pydantic.main import BaseModel
 
 from filzl.actions.fields import FunctionActionType, get_function_metadata
 from filzl.actions.passthrough import passthrough
+from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.controller import ControllerBase
 
 
@@ -25,8 +26,8 @@ def test_markup_passthrough():
     assert metadata.action_type == FunctionActionType.PASSTHROUGH
     assert metadata.get_passthrough_model() == ExamplePassthroughModel
     assert metadata.function_name == "get_external_data"
-    assert metadata.reload_states is None
-    assert metadata.render_model is None
-    assert metadata.url is None
-    assert metadata.return_model is None
-    assert metadata.render_router is None
+    assert isinstance(metadata.reload_states, FilzlUnsetValue)
+    assert isinstance(metadata.render_model, FilzlUnsetValue)
+    assert isinstance(metadata.url, FilzlUnsetValue)
+    assert isinstance(metadata.return_model, FilzlUnsetValue)
+    assert isinstance(metadata.render_router, FilzlUnsetValue)
