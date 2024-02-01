@@ -160,7 +160,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         **{
                             "in": ParameterLocationType.QUERY,
                         },
-                        required=False,
+                        required=True,
                     ),
                     # Optional query parameter
                     URLParameterDefinition(
@@ -187,7 +187,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                     }: {
                         item_id: string,
                         query_param_required_id: string,
-                        query_param_optional_id: string,
+                        query_param_optional_id?: string,
                         requestBody: ExampleModel
                     }
                 ): Promise<ExampleResponseModel> => {
