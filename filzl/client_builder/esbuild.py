@@ -14,6 +14,7 @@ from urllib.request import urlopen
 
 from packaging import version
 from tqdm import tqdm
+from filzl.client_builder.exceptions import BuildProcessException
 
 ESBUILD_VERSION = "0.19.11"
 URL_PATTERN = "https://registry.npmjs.org/@esbuild/{platform}/-/{filename}"
@@ -79,7 +80,7 @@ class ESBuildWrapper:
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            raise Exception(f"esbuild error: {stderr.decode()}")
+            raise BuildProcessException(f"esbuild error: {stderr.decode()}")
 
         return stdout.decode()
 

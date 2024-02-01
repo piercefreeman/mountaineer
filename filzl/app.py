@@ -18,6 +18,7 @@ from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.bundler import JavascriptBundler
 from filzl.controller import ControllerBase
 from filzl.render import Metadata
+from filzl.client_interface.paths import ManagedViewPath
 
 
 class ControllerDefinition(BaseModel):
@@ -57,7 +58,7 @@ class AppController:
         """
         self.app = FastAPI()
         self.controllers: list[ControllerDefinition] = []
-        self.view_root = view_root
+        self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
         self.builders = [
             # Default builders
@@ -66,19 +67,20 @@ class AppController:
             *(custom_builders if custom_builders else []),
         ]
 
+
         self.internal_api_prefix = "/internal/api"
 
         # The static directory has to exist before we try to mount it
-        (self.view_root / "_static").mkdir(exist_ok=True)
+        static_dir = self.view_root.get_managed_static_dir()
 
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
         self.app.mount(
             "/static",
-            StaticFiles(directory=self.view_root / "_static"),
+            StaticFiles(directory=str(static_dir)),
             name="static",
         )
-        print("Will mount", self.view_root / "_static")
+        print("Will mount", static_dir)
 
     def register(self, controller: ControllerBase):
         """

@@ -6,6 +6,7 @@ async def gather_with_concurrency(
     tasks: list[Coroutine[Any, Any, Any]],
     *,
     n: int,
+    catch_exceptions: bool = False,
 ) -> list[Any]:
     semaphore = asyncio.Semaphore(n)
 
@@ -13,4 +14,7 @@ async def gather_with_concurrency(
         async with semaphore:
             return await task
 
-    return await asyncio.gather(*(sem_task(task) for task in tasks))
+    return await asyncio.gather(
+        *(sem_task(task) for task in tasks),
+        return_exceptions=catch_exceptions,
+    )

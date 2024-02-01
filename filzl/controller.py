@@ -220,6 +220,7 @@ class ControllerBase(ABC):
             for path in (view_base / "_static").iterdir()
             if md5_script_pattern.match(path.name)
         ]
+        print("Resolved paths...", self.bundled_scripts)
 
     def merge_metadatas(self, metadatas: list[Metadata]):
         """

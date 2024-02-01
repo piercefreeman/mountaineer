@@ -7,7 +7,7 @@ from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
 from filzl.logging import LOGGER
-
+from filzl.client_builder.exceptions import BuildProcessException
 
 class PostCSSBundler(ClientBuilderBase):
     async def handle_file(
@@ -53,7 +53,7 @@ class PostCSSBundler(ClientBuilderBase):
                 LOGGER.warning(stderr.decode())
 
             if process.returncode != 0:
-                raise Exception(f"postcss error: {stderr.decode()}")
+                raise BuildProcessException(f"postcss error: {stderr.decode()}")
 
             return output_path.read_text()
 

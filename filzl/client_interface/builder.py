@@ -2,6 +2,7 @@ import asyncio
 from collections import defaultdict
 from inspect import isawaitable
 from shutil import rmtree
+from click import secho
 
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
@@ -14,6 +15,7 @@ from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_interface.build_actions import (
     OpenAPIToTypescriptActionConverter,
 )
+from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.openapi import OpenAPIDefinition
@@ -21,6 +23,7 @@ from filzl.client_interface.paths import ManagedViewPath, generate_relative_impo
 from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.io import gather_with_concurrency
+from filzl.logging import LOGGER
 from filzl.static import get_static_path
 
 
@@ -58,6 +61,11 @@ class ClientBuilder:
         self.generate_view_servers()
 
         self.build_javascript_chunks()
+
+        # Update the cached paths attached to the app
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            controller.resolve_paths(self.view_root)
 
     def generate_static_files(self):
         """
@@ -359,7 +367,15 @@ class ClientBuilder:
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
             ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
-            await gather_with_concurrency(tasks, n=max_concurrency)
+            results = await gather_with_concurrency(tasks, n=max_concurrency, catch_exceptions=True)
+
+            # Go through the exceptions, logging the build errors explicitly
+            for result in results:
+                if isinstance(result, Exception):
+                    if isinstance(result, BuildProcessException):
+                        secho(f"Build error: {result}", fg="red")
+                    else:
+                       raise result
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
