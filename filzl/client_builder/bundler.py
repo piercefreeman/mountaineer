@@ -38,6 +38,10 @@ class JavascriptBundler:
         with TemporaryDirectory() as temp_dir_name:
             temp_dir_path = Path(temp_dir_name)
 
+            # Actually create the dist directory, since our relative path sniffing approach
+            # prefers to work with directories that exist
+            (temp_dir_path / "dist").mkdir()
+
             # The same endpoint definition is used for both SSR and the client build
             synthetic_payload = self.build_synthetic_endpoint(
                 layout_paths, temp_dir_path / "dist"
