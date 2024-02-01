@@ -1,12 +1,19 @@
 import asyncio
+from hashlib import md5
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from inflection import underscore
 from pydantic import BaseModel
 
 from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.esbuild import ESBuildWrapper
-from filzl.client_interface.paths import generate_relative_import
+from filzl.client_builder.source_maps import (
+    get_cleaned_js_contents,
+    update_source_map_path,
+)
+from filzl.client_interface.paths import ManagedViewPath, generate_relative_import
+from filzl.controller import ControllerBase
 
 
 class BundleOutput(BaseModel):
@@ -25,11 +32,54 @@ class JavascriptBundler(ClientBuilderBase):
     def __init__(self, root_element: str = "root"):
         self.root_element = root_element
 
-    async def convert(self):
-        # Before starting, make sure all the files are valid
-        self.validate_page(self.page_path, self.view_root_path)
+    async def handle_file(
+        self,
+        file_path: ManagedViewPath,
+        controller: ControllerBase | None,
+    ):
+        if controller is None:
+            # Require a controller for our bundling
+            return None
+        if file_path.suffix not in [".tsx", ".jsx"]:
+            # We only know how to parse tsx and jsx files
+            return None
 
-        layout_paths = self.sniff_for_layouts()
+        # We need to generate a relative import path from the view root to the current file
+        root_path = file_path.get_root_link()
+        static_dir = root_path.get_managed_static_dir()
+        ssr_dir = root_path.get_managed_ssr_dir()
+        bundle = await self.generate_js_bundle(
+            view_root_path=root_path, current_path=file_path
+        )
+
+        # Write the compiled files to disk
+        # Client-side scripts have to be provided a cache-invalidation suffix alongside
+        # mapping the source map to the new script name
+        controller_base = underscore(controller.__class__.__name__)
+        content_hash = md5(
+            get_cleaned_js_contents(bundle.client_compiled_contents).encode()
+        ).hexdigest()
+        script_name = f"{controller_base}-{content_hash}.js"
+        map_name = f"{script_name}.map"
+
+        # Map to the new script name
+        contents = update_source_map_path(bundle.client_compiled_contents, map_name)
+
+        (static_dir / script_name).write_text(contents)
+        (static_dir / map_name).write_text(bundle.client_source_map_contents)
+
+        ssr_path = ssr_dir / f"{controller_base}.js"
+        ssr_path.write_text(bundle.server_compiled_contents)
+
+    async def generate_js_bundle(
+        self, view_root_path: Path, current_path: Path
+    ) -> BundleOutput:
+        # Before starting, make sure all the files are valid
+        self.validate_page(page_path=current_path, view_root_path=view_root_path)
+
+        layout_paths = self.sniff_for_layouts(
+            page_path=current_path, view_root_path=view_root_path
+        )
 
         # esbuild works on disk files
         with TemporaryDirectory() as temp_dir_name:
@@ -41,13 +91,15 @@ class JavascriptBundler(ClientBuilderBase):
 
             # The same endpoint definition is used for both SSR and the client build
             synthetic_payload = self.build_synthetic_endpoint(
-                layout_paths, temp_dir_path / "dist"
+                current_path, layout_paths, temp_dir_path / "dist"
             )
 
             client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)
             ssr_entrypoint = self.build_synthetic_ssr_page(*synthetic_payload)
 
-            self.link_project_files(temp_dir_path)
+            self.link_project_files(
+                view_root_path=view_root_path, temp_dir_path=temp_dir_path
+            )
             (temp_dir_path / "synthetic_client.tsx").write_text(client_entrypoint)
             (temp_dir_path / "synthetic_server.tsx").write_text(ssr_entrypoint)
 
@@ -141,19 +193,9 @@ class JavascriptBundler(ClientBuilderBase):
 
         return "\n".join(lines)
 
-    def link_project_files(self, temp_dir_path: Path):
-        """
-        Javascript packages define a variety of build metadata in the root directory
-        of the project (tsconfig.json, package.json, etc). Since we're running our esbuild pipeline
-        in a temporary directory, we need to copy over the key files. We use a symbolic link
-        to avoid copying the files over.
-        """
-        to_link = ["package.json", "tsconfig.json", "node_modules"]
-
-        for file_name in to_link:
-            (temp_dir_path / file_name).symlink_to(self.view_root_path / file_name)
-
-    def build_synthetic_endpoint(self, layout_paths: list[Path], output_path: Path):
+    def build_synthetic_endpoint(
+        self, page_path: Path, layout_paths: list[Path], output_path: Path
+    ):
         """
         Following the Next.js syntax, layouts wrap individual pages in a top-down order. Here we
         create a synthetic page that wraps the actual page in the correct order.
@@ -166,7 +208,7 @@ class JavascriptBundler(ClientBuilderBase):
         import_paths: list[str] = []
 
         import_paths.append(
-            f"import Page from '{generate_relative_import(output_path, self.page_path)}';"
+            f"import Page from '{generate_relative_import(output_path, page_path)}';"
         )
 
         for i, layout_path in enumerate(layout_paths):
@@ -188,7 +230,19 @@ class JavascriptBundler(ClientBuilderBase):
 
         return import_paths, "\n".join(content_lines), entrypoint_name
 
-    def sniff_for_layouts(self):
+    def link_project_files(self, *, view_root_path: Path, temp_dir_path: Path):
+        """
+        Javascript packages define a variety of build metadata in the root directory
+        of the project (tsconfig.json, package.json, etc). Since we're running our esbuild pipeline
+        in a temporary directory, we need to copy over the key files. We use a symbolic link
+        to avoid copying the files over.
+        """
+        to_link = ["package.json", "tsconfig.json", "node_modules"]
+
+        for file_name in to_link:
+            (temp_dir_path / file_name).symlink_to(view_root_path / file_name)
+
+    def sniff_for_layouts(self, *, page_path: Path, view_root_path: Path):
         """
         Given a page.tsx path, find all the layouts that apply to it.
         Returns the layout paths that are found. Orders them from the top->down
@@ -197,8 +251,8 @@ class JavascriptBundler(ClientBuilderBase):
         """
         # It's easier to handle absolute paths when doing direct string comparisons
         # of the file hierarchy.
-        page_path = self.page_path.resolve().absolute()
-        view_root_path = self.view_root_path.resolve().absolute()
+        page_path = page_path.resolve().absolute()
+        view_root_path = view_root_path.resolve().absolute()
 
         # Starting at the page path, walk up the directory tree and yield each layout
         # that is found.
@@ -225,7 +279,7 @@ class JavascriptBundler(ClientBuilderBase):
         # Return the layouts in the order they should be rendered
         return list(reversed(layouts))
 
-    def validate_page(self, page_path: Path, view_root_path: Path):
+    def validate_page(self, *, page_path: Path, view_root_path: Path):
         # Validate that we're actually calling on a path file
         if page_path.name not in {"page.tsx", "page.jsx"}:
             raise ValueError(f"Invalid page path: {page_path}")

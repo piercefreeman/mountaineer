@@ -14,6 +14,8 @@ from filzl.actions import (
     init_function_metadata,
 )
 from filzl.annotation_helpers import FilzlUnsetValue
+from filzl.client_builder.base import ClientBuilderBase
+from filzl.client_builder.bundler import JavascriptBundler
 from filzl.controller import ControllerBase
 
 
@@ -37,10 +39,20 @@ class AppController:
 
     """
 
-    def __init__(self, view_root: Path):
+    builders: list[ClientBuilderBase]
+
+    def __init__(
+        self, view_root: Path, custom_builders: list[ClientBuilderBase] | None = None
+    ):
         self.app = FastAPI()
         self.controllers: list[ControllerDefinition] = []
         self.view_root = view_root
+        self.builders = [
+            # Default builders
+            JavascriptBundler(),
+            # Custom builders
+            *(custom_builders if custom_builders else []),
+        ]
 
         self.internal_api_prefix = "/internal/api"
 

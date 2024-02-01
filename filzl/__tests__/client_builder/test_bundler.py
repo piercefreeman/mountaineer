@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, _Call, call, patch
 import pytest
 
 from filzl.client_builder.bundler import JavascriptBundler
+from filzl.client_interface.paths import ManagedViewPath
 
 
 class MockedESBuild:
@@ -22,9 +23,9 @@ class MockedESBuild:
 
 
 @pytest.fixture
-def fake_view_root() -> Iterable[Path]:
+def fake_view_root() -> Iterable[ManagedViewPath]:
     with TemporaryDirectory() as temp_dir_name:
-        yield Path(temp_dir_name)
+        yield ManagedViewPath.from_view_root(temp_dir_name)
 
 
 @pytest.fixture
@@ -37,33 +38,28 @@ def mocked_esbuild():
 
 
 @pytest.fixture(scope="function")
-def base_javascript_bundler(
-    mocked_esbuild: MagicMock, fake_view_root: Path
-) -> JavascriptBundler:
+def base_javascript_bundler(mocked_esbuild: MagicMock) -> JavascriptBundler:
     from filzl.client_builder.bundler import JavascriptBundler
 
     # Recycle this object every function call, since the end function will usually
     # modify the page_path or other instance variables
     return JavascriptBundler(
-        page_path=fake_view_root / "fake_page_path.tsx",
-        view_root_path=fake_view_root,
         root_element="root",
     )
 
 
 def test_build_synthetic_endpoint(
-    fake_view_root: Path, base_javascript_bundler: JavascriptBundler
+    fake_view_root: ManagedViewPath, base_javascript_bundler: JavascriptBundler
 ):
     # The paths don't actually have to exist for this function
-    base_javascript_bundler.page_path = (
-        fake_view_root / "detail" / "nested" / "page.tsx"
-    )
+    page_path = fake_view_root / "detail" / "nested" / "page.tsx"
 
     (
         import_paths,
         content,
         endpoint_name,
     ) = base_javascript_bundler.build_synthetic_endpoint(
+        page_path,
         layout_paths=[
             fake_view_root / "detail" / "layout.tsx",
             fake_view_root / "detail" / "nested" / "layout.tsx",
@@ -100,11 +96,7 @@ def test_build_synthetic_endpoint(
     assert endpoint_name == "Entrypoint"
 
 
-def test_build_synthetic_client_page(
-    base_javascript_bundler: JavascriptBundler, fake_view_root: Path
-):
-    base_javascript_bundler.page_path = fake_view_root / "page.tsx"
-
+def test_build_synthetic_client_page(base_javascript_bundler: JavascriptBundler):
     # Test with simple string substitutions instead of real values so we can
     # be sure the resulting payload is dynamic.
     content = base_javascript_bundler.build_synthetic_client_page(
@@ -135,11 +127,7 @@ def test_build_synthetic_client_page(
     )
 
 
-def test_build_synthetic_ssr_page(
-    base_javascript_bundler: JavascriptBundler, fake_view_root: Path
-):
-    base_javascript_bundler.page_path = fake_view_root / "page.tsx"
-
+def test_build_synthetic_ssr_page(base_javascript_bundler: JavascriptBundler):
     content = base_javascript_bundler.build_synthetic_ssr_page(
         synthetic_imports=[
             "SYNTHETIC_IMPORT_0",
@@ -188,7 +176,7 @@ def test_sniff_for_layouts(
     page_path: Path,
     expected_layouts: list[Path],
     base_javascript_bundler: JavascriptBundler,
-    fake_view_root: Path,
+    fake_view_root: ManagedViewPath,
 ):
     # We don't have to actually add any values here, but we
     home_directory = fake_view_root / "home"
@@ -204,8 +192,10 @@ def test_sniff_for_layouts(
     (home_detail_directory / "layout.tsx").touch()
     (auth_directory / "layout.tsx").touch()
 
-    base_javascript_bundler.page_path = fake_view_root / page_path
-    assert base_javascript_bundler.sniff_for_layouts() == [
+    assert base_javascript_bundler.sniff_for_layouts(
+        page_path=fake_view_root / page_path,
+        view_root_path=fake_view_root,
+    ) == [
         (fake_view_root / relative_path).resolve().absolute()
         for relative_path in expected_layouts
     ]
@@ -214,11 +204,9 @@ def test_sniff_for_layouts(
 @pytest.mark.asyncio
 async def test_convert(
     base_javascript_bundler: JavascriptBundler,
-    fake_view_root: Path,
+    fake_view_root: ManagedViewPath,
     mocked_esbuild: MockedESBuild,
 ):
-    base_javascript_bundler.page_path = fake_view_root / "page.tsx"
-
     with (
         patch.object(base_javascript_bundler, "sniff_for_layouts") as sniff_for_layouts,
         patch.object(
@@ -245,7 +233,9 @@ async def test_convert(
         build_synthetic_client_page.return_value = "CLIENT_PAGE"
         build_synthetic_ssr_page.return_value = "SSR_PAGE"
 
-        output_bundle = await base_javascript_bundler.convert()
+        output_bundle = await base_javascript_bundler.generate_js_bundle(
+            view_root_path=fake_view_root, current_path=fake_view_root / "page.tsx"
+        )
 
         # Assert that our build pipeline called our mocked esbuild_wrapper
         assert len(mocked_esbuild.calls) == 2
@@ -300,6 +290,10 @@ def test_validate_nested_paths(
 ):
     if expected_throws:
         with pytest.raises(ValueError):
-            base_javascript_bundler.validate_page(page_path, view_root_path)
+            base_javascript_bundler.validate_page(
+                page_path=page_path, view_root_path=view_root_path
+            )
     else:
-        base_javascript_bundler.validate_page(page_path, view_root_path)
+        base_javascript_bundler.validate_page(
+            page_path=page_path, view_root_path=view_root_path
+        )

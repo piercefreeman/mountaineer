@@ -89,21 +89,52 @@ def test_generate_relative_import(
     )
 
 
-def test_managed_view_path_constructors():
+def test_managed_view_path_not_inheriting_root_state():
+    """
+    Only ManagedViewPaths that are explicitly created with `from_view_root` should
+    be considered root views. All other paths should be considered subviews.
+
+    """
+    root_path = ManagedViewPath.from_view_root("root_view")
+    detail_path = root_path / "detail" / "page.tsx"
+    not_root_path = ManagedViewPath("not_root_view")
+
     # Test root view construction - unless created with the class constructor
     # we don't know that the path is in fact a root view
-    assert ManagedViewPath("not_root_view").is_root_link is False
-    assert ManagedViewPath.from_view_root("root_view").is_root_link is True
+    assert root_path.is_root_link is True
+    assert detail_path.is_root_link is False
+    assert not_root_path.is_root_link is False
 
-    # Test link creation maintains the root view status
-    root_path = ManagedViewPath.from_view_root("root")
-    assert isinstance(root_path / "file.psx", ManagedViewPath)
-    assert isinstance(Path("other_path") / ManagedViewPath("file.psx"), ManagedViewPath)
 
-    # Make sure that is_root_link is not inherited
-    assert (root_path / "file.psx").is_root_link is False
+def test_managed_view_path_inherits_root_pointer():
+    """
+    Ensure all path functions that create new paths will be of type
+    ManagedViewPath instead of reverting to a Path.
+
+    """
+    root_path = ManagedViewPath.from_view_root("root_view")
+    subpath = root_path / "subdir" / "file.tsx"
+
+    def common_assert_path_type(path):
+        assert isinstance(path, ManagedViewPath)
+        assert path.is_root_link is False
+        assert path.root_link == root_path
+
+    # Test all path functions maintain the custom path class
+    common_assert_path_type(subpath)
+    common_assert_path_type(subpath.resolve())
+    common_assert_path_type(subpath.absolute())
+    common_assert_path_type(subpath.relative_to(root_path))
+    common_assert_path_type(subpath.with_name("new_name.tsx"))
+    common_assert_path_type(subpath.with_suffix(".js"))
+    common_assert_path_type(subpath.parent)
+
 
 def test_managed_view_paths_code_directories(tmpdir):
+    """
+    Ensure that the paths can correctly derive the managed folders.
+
+    """
     root_path = ManagedViewPath.from_view_root(tmpdir)
     assert root_path.get_managed_code_dir() == root_path / "_server"
     assert root_path.get_managed_static_dir() == root_path / "_static"
@@ -119,7 +150,11 @@ def test_managed_view_paths_code_directories(tmpdir):
     with pytest.raises(ValueError):
         non_root_path.get_managed_ssr_dir()
 
+
 def test_managed_view_paths_get_controller(tmpdir):
+    """
+    Ensure that we can get the full view's filesystem path from a controller.
+    """
     root_path = ManagedViewPath.from_view_root(tmpdir)
 
     class ExampleController(ControllerBase):
@@ -128,4 +163,7 @@ def test_managed_view_paths_get_controller(tmpdir):
         def render(self) -> None:
             pass
 
-    assert root_path.get_controller_view_path(ExampleController()) == root_path / "detail/page.tsx"
+    controller_path = root_path.get_controller_view_path(ExampleController())
+    assert controller_path == root_path / "detail/page.tsx"
+    assert controller_path.is_root_link is False
+    assert controller_path.root_link == root_path

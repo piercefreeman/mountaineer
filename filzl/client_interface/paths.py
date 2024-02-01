@@ -1,24 +1,26 @@
 from os import PathLike
 from os.path import relpath
 from pathlib import Path
+from typing import Optional
 
 from filzl.controller import ControllerBase
 from filzl.logging import LOGGER
 
 
-class ManagedViewPath(type(Path())):
+class ManagedViewPath(type(Path())):  # type: ignore
     """
-    Helper class to manage our view directory conventions.
+    Helper class to manage our view directory conventions. We choose the superclass of this
+    class at runtime to conform to the OS-specific Path implementation.
 
     """
 
-    is_root_link: bool
+    root_link: Optional["ManagedViewPath"]
 
     def __new__(cls, *args, **kwargs):
         # Ensure instances are created properly by using the __new__ method of the Path class
         # path = ManagedViewPath(*args, **kwargs)
         path = super().__new__(cls, *args, **kwargs)
-        path.is_root_link = False
+        path.root_link = None
         return path
 
     @classmethod
@@ -27,18 +29,26 @@ class ManagedViewPath(type(Path())):
         Constructor to create a ManagedViewPath from the view root
         """
         path = cls(root_path)
-        path.is_root_link = True
+        path.root_link = path
         return path
 
     def __truediv__(self, key):
         # Override '/' operation for when ManagedViewPath is on the left
         result = super().__truediv__(key)
-        return ManagedViewPath(result)
+        return self._inherit_root_link(result)
 
     def __rtruediv__(self, key):
         # Override '/' operation for when ManagedViewPath is on the right
         result = super().__rtruediv__(key)
         return ManagedViewPath(result)
+
+    def get_root_link(self):
+        """
+        Get the original root link for this view path. If the current view is a root link, it will return itself.
+        """
+        if self.root_link is None:
+            raise ValueError("Cannot get root link from a non-root linked view path")
+        return self.root_link
 
     def get_managed_code_dir(self):
         return self.get_managed_dir_common("_server")
@@ -46,13 +56,17 @@ class ManagedViewPath(type(Path())):
     def get_managed_static_dir(self):
         # Only root paths can have static directories
         if not self.is_root_link:
-            raise ValueError("Cannot get static directory from a non-root linked view path")
+            raise ValueError(
+                "Cannot get static directory from a non-root linked view path"
+            )
         return self.get_managed_dir_common("_static")
 
     def get_managed_ssr_dir(self):
         # Only root paths can have SSR directories
         if not self.is_root_link:
-            raise ValueError("Cannot get SSR directory from a non-root linked view path")
+            raise ValueError(
+                "Cannot get SSR directory from a non-root linked view path"
+            )
         return self.get_managed_dir_common("_ssr")
 
     def get_managed_dir_common(self, managed_dir: str):
@@ -78,6 +92,39 @@ class ManagedViewPath(type(Path())):
             )
         relative_path = Path(controller.view_path.lstrip("/"))
         return self / relative_path
+
+    def rglob(self, pattern: str):
+        # Override the rglob method to return a ManagedViewPath
+        for path in super().rglob(pattern):
+            yield self._inherit_root_link(path)
+
+    def resolve(self):
+        return self._inherit_root_link(super().resolve())
+
+    def absolute(self):
+        return self._inherit_root_link(super().absolute())
+
+    def relative_to(self, *other):
+        return self._inherit_root_link(super().relative_to(*other))
+
+    def with_name(self, name):
+        return self._inherit_root_link(super().with_name(name))
+
+    def with_suffix(self, suffix):
+        return self._inherit_root_link(super().with_suffix(suffix))
+
+    @property
+    def is_root_link(self):
+        return self == self.root_link
+
+    @property
+    def parent(self):
+        return self._inherit_root_link(super().parent)
+
+    def _inherit_root_link(self, new_path: Path) -> "ManagedViewPath":
+        managed_path = ManagedViewPath(new_path)
+        managed_path.root_link = self.root_link
+        return managed_path
 
 
 def is_path_file(path: Path):
