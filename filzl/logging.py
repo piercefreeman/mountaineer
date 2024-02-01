@@ -1,6 +1,8 @@
 import logging
+from contextlib import contextmanager
 from json import dumps as json_dumps
 from logging import Formatter, StreamHandler, getLogger
+from time import time
 
 from click import secho
 
@@ -47,6 +49,13 @@ def setup_logger(name, log_level=logging.DEBUG):
     logger.addHandler(handler)
 
     return logger
+
+
+@contextmanager
+def log_time_duration(message: str):
+    start = time()
+    yield
+    LOGGER.debug(f"{message} : Took {time() - start:.2f}s")
 
 
 LOGGER = setup_logger(__name__)
