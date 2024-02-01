@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
-from inspect import getmembers, ismethod
+from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import time
-from typing import Callable, Iterable
+from typing import Any, Callable, Coroutine, Iterable
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -44,7 +44,9 @@ class ControllerBase(ABC):
         self.hard_ssr_timeout = hard_ssr_timeout
 
     @abstractmethod
-    def render(self, *args, **kwargs) -> RenderBase | None:
+    def render(
+        self, *args, **kwargs
+    ) -> RenderBase | None | Coroutine[Any, Any, RenderBase]:
         """
         Client implementations must override render() to define the data that will
         be pushed from the server to the client. This function must be typehinted with
@@ -71,7 +73,7 @@ class ControllerBase(ABC):
         """
         pass
 
-    def _generate_html(self, *args, **kwargs):
+    async def _generate_html(self, *args, **kwargs):
         if not self.ssr_path:
             # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
@@ -79,8 +81,16 @@ class ControllerBase(ABC):
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
+        if isawaitable(server_data):
+            server_data = await server_data
         if server_data is None:
             server_data = RenderNull()
+
+        # This isn't expected to happen, but we add a check to typeguard the following logic
+        if not isinstance(server_data, RenderBase):
+            raise ValueError(
+                f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
+            )
 
         header_str = "\n".join(
             self.build_header(server_data.metadata) if server_data.metadata else []

@@ -1,9 +1,14 @@
+from pathlib import Path
+
+import pytest
 from pydantic.main import BaseModel
 
 from filzl.actions.fields import FunctionActionType, get_function_metadata
 from filzl.actions.passthrough import passthrough
 from filzl.annotation_helpers import FilzlUnsetValue
+from filzl.app import AppController
 from filzl.controller import ControllerBase
+from filzl.render import RenderBase
 
 
 def test_markup_passthrough():
@@ -31,3 +36,64 @@ def test_markup_passthrough():
     assert isinstance(metadata.url, FilzlUnsetValue)
     assert isinstance(metadata.return_model, FilzlUnsetValue)
     assert isinstance(metadata.render_router, FilzlUnsetValue)
+
+
+class ExampleRenderModel(RenderBase):
+    value_a: str
+    value_b: str
+
+
+@pytest.mark.asyncio
+async def test_can_call_passthrough():
+    class TestController(ControllerBase):
+        url: str = "/test/{query_id}/"
+
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+            self.render_counts = 0
+
+        def render(
+            self,
+            query_id: int,
+        ) -> ExampleRenderModel:
+            self.render_counts += 1
+            return ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            )
+
+        @passthrough
+        def call_passthrough(self, payload: dict):
+            self.counter += 1
+            return dict(status="success")
+
+        @passthrough
+        async def call_passthrough_async(self, payload: dict):
+            self.counter += 1
+            return dict(status="success")
+
+    app = AppController(Path())
+    controller = TestController()
+    app.register(controller)
+
+    return_value_sync = await controller.call_passthrough(
+        {},
+    )
+
+    return_value_async = await controller.call_passthrough_async(
+        {},
+    )
+
+    # The response payload should be the same both both sync and async endpoints
+    expected_response = {
+        "status": "success",
+    }
+
+    assert return_value_sync == expected_response
+    assert return_value_async == expected_response
+
+    assert controller.counter == 2
+
+    # Our passthrough logic by definition should not re-render
+    assert controller.render_counts == 0

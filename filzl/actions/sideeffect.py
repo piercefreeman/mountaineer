@@ -1,6 +1,6 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import wraps
-from inspect import Parameter, signature
+from inspect import Parameter, isawaitable, signature
 from typing import TYPE_CHECKING, Any, Callable, Type, overload
 from urllib.parse import urlparse
 
@@ -69,14 +69,22 @@ def sideeffect(*args, **kwargs):
 
                 passthrough_values = func(self, *func_args, **func_kwargs)
 
+                # If the original function is async, we now have an awaitable task
+                if isawaitable(passthrough_values):
+                    passthrough_values = await passthrough_values
+
                 # We need to get the original function signature, and then call it with the request
                 async with get_render_parameters(self, request) as values:
                     # Some render functions rely on the URL of the page to make different logic
                     # For this we rely on the Referrer header that is sent on the fetch(). Note that this
                     # referrer can be spoofed, so it assumes that the endpoint also internally validates
                     # the caller has correct permissions to access the data.
+                    server_data = self.render(**values)
+                    if isawaitable(server_data):
+                        server_data = await server_data
+
                     return dict(
-                        sideeffect=self.render(**values),
+                        sideeffect=server_data,
                         passthrough=passthrough_values,
                     )
 
