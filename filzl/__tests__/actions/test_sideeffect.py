@@ -15,15 +15,16 @@ from filzl.controller import ControllerBase
 from filzl.render import RenderBase
 
 
+class ExampleRenderModel(RenderBase):
+    value_a: str
+    value_b: str
+
+
 def test_markup_sideeffect():
     """
     Check that the @sideeffect decorator extracts the expected
     data from our model definition.
     """
-
-    class ExampleRenderModel(RenderBase):
-        value_a: str
-        value_b: str
 
     class ExamplePassthroughModel(BaseModel):
         first_name: str
@@ -57,10 +58,6 @@ async def test_can_call_sideeffect():
     Ensure that we can call the sideeffect, which will in turn
     call the render function to get fresh data.
     """
-
-    class ExampleRenderModel(RenderBase):
-        value_a: str
-        value_b: str
 
     class TestController(ControllerBase):
         url: str = "/test/{query_id}/"
@@ -130,10 +127,6 @@ async def test_get_render_parameters():
         nonlocal found_cookie
         found_cookie = request.cookies.get("test-cookie")
         return found_cookie
-
-    class ExampleRenderModel(RenderBase):
-        value_a: str
-        value_b: str
 
     class TestController(ControllerBase):
         url: str = "/test/{query_id}/"
