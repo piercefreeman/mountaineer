@@ -79,8 +79,12 @@ def sideeffect(*args, **kwargs):
                     # For this we rely on the Referrer header that is sent on the fetch(). Note that this
                     # referrer can be spoofed, so it assumes that the endpoint also internally validates
                     # the caller has correct permissions to access the data.
+                    server_data = self.render(**values)
+                    if isawaitable(server_data):
+                        server_data = await server_data
+
                     return dict(
-                        sideeffect=self.render(**values),
+                        sideeffect=server_data,
                         passthrough=passthrough_values,
                     )
 

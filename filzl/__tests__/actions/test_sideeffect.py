@@ -131,6 +131,83 @@ async def test_can_call_sideeffect():
 
 
 @pytest.mark.asyncio
+async def test_can_call_sideeffect_async_render():
+    """
+    Render functions can also work asynchronously.
+    """
+
+    class TestAsyncRenderController(ControllerBase):
+        url: str = "/test/{query_id}/"
+
+        def __init__(self):
+            super().__init__()
+            self.counter = 0
+            self.render_counts = 0
+
+        async def render(
+            self,
+            query_id: int,
+        ) -> ExampleRenderModel:
+            self.render_counts += 1
+            return ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            )
+
+        @sideeffect
+        def call_sideeffect(self, payload: dict):
+            self.counter += 1
+
+        @sideeffect
+        async def call_sideeffect_async(self, payload: dict):
+            self.counter += 1
+
+    app = AppController(Path())
+    controller = TestAsyncRenderController()
+    app.register(controller)
+
+    @asynccontextmanager
+    async def mock_get_render_parameters(*args, **kwargs):
+        yield {
+            "query_id": 1,
+        }
+
+    # After our wrapper is called, our function is now async
+    # Avoid the dependency resolution logic since that's tested separately
+    with patch(
+        "filzl.actions.sideeffect.get_render_parameters"
+    ) as patched_get_render_params:
+        patched_get_render_params.side_effect = mock_get_render_parameters
+
+        # Even if the "request" is not required by our sideeffects, it's required
+        # by the function injected by the sideeffect decorator.
+        return_value_sync = await controller.call_sideeffect(
+            {},
+            request=Request({"type": "http"}),
+        )
+
+        return_value_async = await controller.call_sideeffect_async(
+            {},
+            request=Request({"type": "http"}),
+        )
+
+        # The response payload should be the same both both sync and async endpoints
+        expected_response = {
+            "sideeffect": ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            ),
+            "passthrough": None,
+        }
+
+        assert return_value_sync == expected_response
+        assert return_value_async == expected_response
+
+        assert controller.counter == 2
+        assert controller.render_counts == 2
+
+
+@pytest.mark.asyncio
 async def test_get_render_parameters():
     """
     Given a controller, reproduce the logic of FastAPI to sniff the render()
