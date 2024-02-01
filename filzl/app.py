@@ -88,8 +88,8 @@ class AppController:
         # We need to passthrough the API of the render function to the FastAPI router so it's called properly
         # with the dependency injection kwargs
         @wraps(controller.render)
-        def generate_controller_html(*args, **kwargs):
-            return controller._generate_html(*args, **kwargs)
+        async def generate_controller_html(*args, **kwargs):
+            return await controller._generate_html(*args, **kwargs)
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
@@ -105,6 +105,12 @@ class AppController:
             raise ValueError(
                 "Controller render() function must have a return type annotation"
             )
+
+        # Only the signature of the actual rendering function, not the original. We might
+        # need to sniff render() again for its typehint
+        generate_controller_html.__signature__ = signature(  # type: ignore
+            generate_controller_html,
+        ).replace(return_annotation=None)
 
         # Validate the return model is actually a RenderBase or explicitly marked up as None
         if not (
