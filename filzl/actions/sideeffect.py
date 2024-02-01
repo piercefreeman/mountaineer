@@ -1,6 +1,6 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 from functools import wraps
-from inspect import Parameter, signature
+from inspect import Parameter, isawaitable, signature
 from typing import TYPE_CHECKING, Any, Callable, Type, overload
 from urllib.parse import urlparse
 
@@ -68,6 +68,10 @@ def sideeffect(*args, **kwargs):
                     func_kwargs["request"] = request
 
                 passthrough_values = func(self, *func_args, **func_kwargs)
+
+                # If the original function is async, we now have an awaitable task
+                if isawaitable(passthrough_values):
+                    passthrough_values = await passthrough_values
 
                 # We need to get the original function signature, and then call it with the request
                 async with get_render_parameters(self, request) as values:

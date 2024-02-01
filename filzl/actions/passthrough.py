@@ -1,4 +1,5 @@
 from functools import wraps
+from inspect import isawaitable
 from typing import TYPE_CHECKING, Callable, Type, overload
 
 from pydantic import BaseModel
@@ -34,8 +35,11 @@ def passthrough(*args, **kwargs):
     def decorator_with_args(response_model: Type[BaseModel] | None):
         def wrapper(func: Callable):
             @wraps(func)
-            def inner(self: "ControllerBase", *func_args, **func_kwargs):
-                return func(self, *func_args, **func_kwargs)
+            async def inner(self: "ControllerBase", *func_args, **func_kwargs):
+                response = func(self, *func_args, **func_kwargs)
+                if isawaitable(response):
+                    response = await response
+                return response
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = response_model

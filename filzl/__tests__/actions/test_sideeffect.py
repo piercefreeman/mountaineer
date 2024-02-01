@@ -65,11 +65,13 @@ async def test_can_call_sideeffect():
         def __init__(self):
             super().__init__()
             self.counter = 0
+            self.render_counts = 0
 
         def render(
             self,
             query_id: int,
         ) -> ExampleRenderModel:
+            self.render_counts += 1
             return ExampleRenderModel(
                 value_a="Hello",
                 value_b="World",
@@ -77,6 +79,10 @@ async def test_can_call_sideeffect():
 
         @sideeffect
         def call_sideeffect(self, payload: dict):
+            self.counter += 1
+
+        @sideeffect
+        async def call_sideeffect_async(self, payload: dict):
             self.counter += 1
 
     app = AppController(Path())
@@ -96,12 +102,20 @@ async def test_can_call_sideeffect():
     ) as patched_get_render_params:
         patched_get_render_params.side_effect = mock_get_render_parameters
 
-        return_value = await controller.call_sideeffect(
+        # Even if the "request" is not required by our sideeffects, it's required
+        # by the function injected by the sideeffect decorator.
+        return_value_sync = await controller.call_sideeffect(
             {},
             request=Request({"type": "http"}),
-        )  # type: ignore
+        )
 
-        assert return_value == {
+        return_value_async = await controller.call_sideeffect_async(
+            {},
+            request=Request({"type": "http"}),
+        )
+
+        # The response payload should be the same both both sync and async endpoints
+        expected_response = {
             "sideeffect": ExampleRenderModel(
                 value_a="Hello",
                 value_b="World",
@@ -109,7 +123,11 @@ async def test_can_call_sideeffect():
             "passthrough": None,
         }
 
-        assert controller.counter == 1
+        assert return_value_sync == expected_response
+        assert return_value_async == expected_response
+
+        assert controller.counter == 2
+        assert controller.render_counts == 2
 
 
 @pytest.mark.asyncio
