@@ -1,4 +1,4 @@
-from typing import Type
+from typing import Optional, Type
 
 import pytest
 from pydantic import BaseModel
@@ -7,9 +7,10 @@ from pydantic.fields import FieldInfo
 from filzl.actions.fields import (
     FunctionActionType,
     FunctionMetadata,
+    annotation_is_metadata,
     fuse_metadata_to_response_typehint,
 )
-from filzl.render import RenderBase
+from filzl.render import Metadata, RenderBase
 
 
 class ExampleRenderModel(RenderBase):
@@ -126,3 +127,10 @@ def test_fuse_metadata_to_response_typehint(
         )
 
     assert fused_model.__name__ == expected_model_name
+
+
+def test_annotation_is_metadata():
+    assert annotation_is_metadata(Metadata)
+    assert annotation_is_metadata(Optional[Metadata])  # type: ignore
+    assert annotation_is_metadata(Metadata | None)  # type: ignore
+    assert not annotation_is_metadata(str)

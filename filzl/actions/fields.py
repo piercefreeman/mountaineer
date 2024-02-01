@@ -7,7 +7,6 @@ from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
-from filzl.annotation_helpers import yield_all_subtypes
 from filzl.render import FieldClassDefinition, Metadata, RenderBase
 
 
@@ -111,8 +110,7 @@ def annotation_is_metadata(annotation: type | None):
     if not annotation:
         return
 
-    all_subtypes = set(yield_all_subtypes(annotation))
-    return all_subtypes == {Metadata} or all_subtypes == {Optional[Metadata]}
+    return annotation == Metadata or annotation == Optional[Metadata]
 
 
 def fuse_metadata_to_response_typehint(
