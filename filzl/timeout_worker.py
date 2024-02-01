@@ -58,7 +58,7 @@ class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
             self.current_process.start()
 
     def process_data(
-        self, new_payload: INPUT_TYPE, hard_timeout: float | int
+        self, new_payload: INPUT_TYPE, *, hard_timeout: float | int
     ) -> OUTPUT_TYPE:
         """
         Main entrypoint to process a new payload by the worker. If results aren't ready
