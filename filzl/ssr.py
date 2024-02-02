@@ -1,5 +1,4 @@
 from functools import lru_cache
-from time import time
 from typing import cast
 
 from pydantic import BaseModel
