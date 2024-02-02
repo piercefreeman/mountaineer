@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from functools import wraps
 from inspect import isclass, signature
 from pathlib import Path
@@ -58,7 +59,9 @@ class AppController:
             if the page does not already have a title set.
 
         """
-        self.app = FastAPI()
+        self.app = FastAPI(
+            lifespan=self.install_lifecycle_hooks,
+        )
         self.controllers: list[ControllerDefinition] = []
         self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
@@ -81,18 +84,6 @@ class AppController:
             StaticFiles(directory=str(static_dir)),
             name="static",
         )
-
-        # Load up our ssr handler to load the process on startup
-        # and cancel on shutdown
-        @self.app.on_event("startup")
-        async def startup_event():
-            LOGGER.info("Received event startup event, starting SSR worker.")
-            SSR_WORKER.ensure_valid_worker()
-
-        @self.app.on_event("shutdown")
-        async def shutdown_event():
-            LOGGER.info("Received event shutdown event, shutting down SSR worker.")
-            SSR_WORKER.shutdown()
 
     def register(self, controller: ControllerBase):
         """
@@ -208,3 +199,14 @@ class AppController:
                 url_prefix=controller_url_prefix,
             )
         )
+
+    @asynccontextmanager
+    async def install_lifecycle_hooks(self, app: FastAPI):
+        # Load up our ssr handler to avoid having to warm boot the process on the first request
+        LOGGER.info("Received event startup event, starting SSR worker.")
+        SSR_WORKER.ensure_valid_worker()
+
+        yield
+
+        LOGGER.info("Received event shutdown event, shutting down SSR worker.")
+        SSR_WORKER.shutdown()
