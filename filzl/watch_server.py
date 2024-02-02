@@ -57,6 +57,7 @@ class WatcherWebservice:
     async def broadcast_listeners(self):
         for ws in self.websockets:
             await ws.send_text("Build updated")
+        LOGGER.info("Broadcasted build update to %d listeners", len(self.websockets))
 
     def monitor_builds(self):
         while True:
@@ -70,7 +71,9 @@ class WatcherWebservice:
             raise Exception("WatcherWebservice has already started")
 
         self.webservice_thread = UvicornThread(
-            "filzl.watch_server:WATCHER_WEBSERVICE.app", self.webservice_port
+            "filzl.watch_server:WATCHER_WEBSERVICE.app",
+            self.webservice_port,
+            log_level="warning",
         )
         self.webservice_thread.start()
 

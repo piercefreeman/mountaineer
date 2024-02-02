@@ -71,9 +71,10 @@ class ClientBuilder:
         Copy over the static files that are required for the client.
 
         """
-        managed_code_dir = self.view_root.get_managed_code_dir()
-        api_content = get_static_path("api.ts").read_text()
-        (managed_code_dir / "api.ts").write_text(api_content)
+        for static_filename in ["api.ts", "live_reload.ts"]:
+            managed_code_dir = self.view_root.get_managed_code_dir()
+            api_content = get_static_path(static_filename).read_text()
+            (managed_code_dir / static_filename).write_text(api_content)
 
     def generate_model_definitions(self):
         """

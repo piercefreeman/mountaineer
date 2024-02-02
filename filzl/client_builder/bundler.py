@@ -29,8 +29,9 @@ class JavascriptBundler(ClientBuilderBase):
     of the SSR pipeline and client hydration.
     """
 
-    def __init__(self, root_element: str = "root"):
+    def __init__(self, root_element: str = "root", environment: str = "development"):
         self.root_element = root_element
+        self.environment = environment
 
     async def handle_file(
         self,
@@ -48,9 +49,7 @@ class JavascriptBundler(ClientBuilderBase):
         root_path = file_path.get_root_link()
         static_dir = root_path.get_managed_static_dir()
         ssr_dir = root_path.get_managed_ssr_dir()
-        bundle = await self.generate_js_bundle(
-            view_root_path=root_path, current_path=file_path
-        )
+        bundle = await self.generate_js_bundle(current_path=file_path)
 
         # Write the compiled files to disk
         # Client-side scripts have to be provided a cache-invalidation suffix alongside
@@ -71,14 +70,14 @@ class JavascriptBundler(ClientBuilderBase):
         ssr_path = ssr_dir / f"{controller_base}.js"
         ssr_path.write_text(bundle.server_compiled_contents)
 
-    async def generate_js_bundle(
-        self, view_root_path: Path, current_path: Path
-    ) -> BundleOutput:
+    async def generate_js_bundle(self, current_path: ManagedViewPath) -> BundleOutput:
         # Before starting, make sure all the files are valid
-        self.validate_page(page_path=current_path, view_root_path=view_root_path)
+        self.validate_page(
+            page_path=current_path, view_root_path=current_path.get_root_link()
+        )
 
         layout_paths = self.sniff_for_layouts(
-            page_path=current_path, view_root_path=view_root_path
+            page_path=current_path, view_root_path=current_path.get_root_link()
         )
 
         # esbuild works on disk files
@@ -91,14 +90,16 @@ class JavascriptBundler(ClientBuilderBase):
 
             # The same endpoint definition is used for both SSR and the client build
             synthetic_payload = self.build_synthetic_endpoint(
-                current_path, layout_paths, temp_dir_path / "dist"
+                page_path=current_path,
+                layout_paths=layout_paths,
+                output_path=temp_dir_path / "dist",
             )
 
             client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)
             ssr_entrypoint = self.build_synthetic_ssr_page(*synthetic_payload)
 
             self.link_project_files(
-                view_root_path=view_root_path, temp_dir_path=temp_dir_path
+                view_root_path=current_path.get_root_link(), temp_dir_path=temp_dir_path
             )
             (temp_dir_path / "synthetic_client.tsx").write_text(client_entrypoint)
             (temp_dir_path / "synthetic_server.tsx").write_text(ssr_entrypoint)
@@ -117,6 +118,9 @@ class JavascriptBundler(ClientBuilderBase):
                         output_format="esm",
                         bundle=True,
                         sourcemap=True,
+                        define={
+                            "process.env.NODE_ENV": self.environment,
+                        },
                         loaders=common_loader,
                     ),
                     es_builder.bundle(
@@ -126,6 +130,7 @@ class JavascriptBundler(ClientBuilderBase):
                         global_name="SSR",
                         define={
                             "global": "window",
+                            "process.env.NODE_ENV": self.environment,
                         },
                         bundle=True,
                         sourcemap=True,
@@ -194,7 +199,7 @@ class JavascriptBundler(ClientBuilderBase):
         return "\n".join(lines)
 
     def build_synthetic_endpoint(
-        self, page_path: Path, layout_paths: list[Path], output_path: Path
+        self, *, page_path: ManagedViewPath, layout_paths: list[Path], output_path: Path
     ):
         """
         Following the Next.js syntax, layouts wrap individual pages in a top-down order. Here we
@@ -206,6 +211,13 @@ class JavascriptBundler(ClientBuilderBase):
         # All import paths have to be a relative path from the scratch directory
         # to the original file
         import_paths: list[str] = []
+
+        static_api_path = (
+            page_path.get_root_link().get_managed_code_dir() / "live_reload.ts"
+        )
+        import_paths.append(
+            f"import mountLiveReload from '{generate_relative_import(output_path, static_api_path)}';"
+        )
 
         import_paths.append(
             f"import Page from '{generate_relative_import(output_path, page_path)}';"
@@ -220,7 +232,9 @@ class JavascriptBundler(ClientBuilderBase):
         entrypoint_name = "Entrypoint"
         content_lines = [
             f"const {entrypoint_name} = () => {{",
-            "return (",
+            # This hook will only run in the browser, in dev mode
+            # Otherwise it will short-circuit so it won't apply to production
+            "mountLiveReload({});" "return (",
             *[f"<Layout{i}>" for i in range(len(layout_paths))],
             "<Page />",
             *[f"</Layout{i}>" for i in reversed(range(len(layout_paths)))],
