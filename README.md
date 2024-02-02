@@ -197,7 +197,3 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
 - Offload more of the server logic to Rust
 - AST parsing of the tsx files to determine which parts of the serverState they're actually using and mask accordingly
 - Plugins for simple authentication, daemons, billing, etc.
-
-## V0 TODOs
-
-- How to use a preprocessor like tailwind for the bundling?

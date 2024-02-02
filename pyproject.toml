@@ -13,8 +13,8 @@ pydantic = "^2.5.3"
 fastapi = "^0.109.0"
 inflection = "^0.5.1"
 click = "^8.1.7"
-uvicorn = "^0.27.0"
 tqdm = "^4.66.1"
+uvicorn = {extras = ["standard"], version = "^0.27.0.post1"}
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.8.0"
@@ -45,4 +45,5 @@ warn_required_dynamic_aliases = true
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-select = ["E4", "E7", "E9", "F", "I001"]
+# Disable print statements
+select = ["E4", "E7", "E9", "F", "I001", "T201"]

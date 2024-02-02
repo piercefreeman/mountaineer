@@ -59,7 +59,7 @@ def test_build_synthetic_endpoint(
         content,
         endpoint_name,
     ) = base_javascript_bundler.build_synthetic_endpoint(
-        page_path,
+        page_path=page_path,
         layout_paths=[
             fake_view_root / "detail" / "layout.tsx",
             fake_view_root / "detail" / "nested" / "layout.tsx",
@@ -72,6 +72,7 @@ def test_build_synthetic_endpoint(
     # Should be ordered in the same hierarchy order as the layouts
     # so we can codify proper nesting behavior of layouts
     assert import_paths == [
+        "import mountLiveReload from '../_server/live_reload';",
         "import Page from '../detail/nested/page';",
         "import Layout0 from '../detail/layout';",
         "import Layout1 from '../detail/nested/layout';",
@@ -82,6 +83,7 @@ def test_build_synthetic_endpoint(
         (
             """
             const Entrypoint = () => {
+                mountLiveReload({});
                 return (
                     <Layout0>
                         <Layout1>
@@ -234,7 +236,7 @@ async def test_convert(
         build_synthetic_ssr_page.return_value = "SSR_PAGE"
 
         output_bundle = await base_javascript_bundler.generate_js_bundle(
-            view_root_path=fake_view_root, current_path=fake_view_root / "page.tsx"
+            current_path=fake_view_root / "page.tsx"
         )
 
         # Assert that our build pipeline called our mocked esbuild_wrapper

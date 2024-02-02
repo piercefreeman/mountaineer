@@ -3,6 +3,8 @@ from multiprocessing import Process, Queue
 from queue import Empty, Full
 from typing import Callable, Generic, TypeVar
 
+from filzl.logging import LOGGER
+
 INPUT_TYPE = TypeVar("INPUT_TYPE")
 OUTPUT_TYPE = TypeVar("OUTPUT_TYPE")
 
@@ -30,7 +32,11 @@ class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
         result_queue: Queue,
     ):
         while True:
-            payload = queue.get()
+            try:
+                payload = queue.get()
+            except KeyboardInterrupt:
+                LOGGER.debug("TimeoutWorker process received interrupt, shutting down")
+                return
             if isinstance(payload, ShutdownWorker):
                 return
             result_queue.put(target(payload))

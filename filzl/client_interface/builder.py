@@ -3,6 +3,7 @@ from collections import defaultdict
 from inspect import isawaitable
 from shutil import rmtree
 
+from click import secho
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
 from inflection import camelize
@@ -11,6 +12,7 @@ from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
 from filzl.client_builder.esbuild import ESBuildWrapper
+from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.build_actions import (
     OpenAPIToTypescriptActionConverter,
 )
@@ -59,14 +61,20 @@ class ClientBuilder:
 
         self.build_javascript_chunks()
 
+        # Update the cached paths attached to the app
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            controller.resolve_paths(self.view_root)
+
     def generate_static_files(self):
         """
         Copy over the static files that are required for the client.
 
         """
-        managed_code_dir = self.view_root.get_managed_code_dir()
-        api_content = get_static_path("api.ts").read_text()
-        (managed_code_dir / "api.ts").write_text(api_content)
+        for static_filename in ["api.ts", "live_reload.ts"]:
+            managed_code_dir = self.view_root.get_managed_code_dir()
+            api_content = get_static_path(static_filename).read_text()
+            (managed_code_dir / static_filename).write_text(api_content)
 
     def generate_model_definitions(self):
         """
@@ -359,7 +367,17 @@ class ClientBuilder:
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
             ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
-            await gather_with_concurrency(tasks, n=max_concurrency)
+            results = await gather_with_concurrency(
+                tasks, n=max_concurrency, catch_exceptions=True
+            )
+
+            # Go through the exceptions, logging the build errors explicitly
+            for result in results:
+                if isinstance(result, Exception):
+                    if isinstance(result, BuildProcessException):
+                        secho(f"Build error: {result}", fg="red")
+                    else:
+                        raise result
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own

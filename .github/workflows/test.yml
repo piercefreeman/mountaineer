@@ -70,7 +70,8 @@ jobs:
           poetry install
           poetry run maturin develop
 
-      - run: poetry run pytest
+      # Mark all warning errors
+      - run: poetry run pytest -W error
 
   lint:
     runs-on: ubuntu-latest
