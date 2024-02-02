@@ -218,9 +218,9 @@ class ControllerBase(ABC):
         self.bundled_scripts = [
             path.name
             for path in (view_base / "_static").iterdir()
-            if md5_script_pattern.match(path.name)
+            if md5_script_pattern.match(path.name) and ".js.map" not in path.name
         ]
-        print("Resolved paths...", self.bundled_scripts)
+        LOGGER.debug(f"Resolved paths... {self.bundled_scripts}")
 
     def merge_metadatas(self, metadatas: list[Metadata]):
         """

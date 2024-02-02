@@ -14,6 +14,7 @@ from urllib.request import urlopen
 
 from packaging import version
 from tqdm import tqdm
+
 from filzl.client_builder.exceptions import BuildProcessException
 
 ESBUILD_VERSION = "0.19.11"

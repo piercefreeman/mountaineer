@@ -1,5 +1,8 @@
+import asyncio
 from importlib import import_module
 from multiprocessing import Event, Process
+from multiprocessing.queues import Queue
+from signal import SIGINT, signal
 from time import time
 from typing import Callable
 
@@ -7,8 +10,9 @@ from click import secho
 from pydantic.main import BaseModel
 
 from filzl.client_interface.builder import ClientBuilder
-from filzl.logging import log_time_duration
+from filzl.logging import LOGGER
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
+from filzl.watch_server import WATCHER_WEBSERVICE
 from filzl.webservice import UvicornThread
 
 
@@ -32,6 +36,7 @@ class IsolatedEnvProcess(Process):
         self,
         runserver_config: IsolatedRunserverConfig | None = None,
         watch_config: IsolatedWatchConfig | None = None,
+        build_notification_channel: Queue | None = None,
     ):
         super().__init__()
 
@@ -41,6 +46,7 @@ class IsolatedEnvProcess(Process):
         self.runserver_config = runserver_config
         self.watch_config = watch_config
         self.close_signal = Event()
+        self.build_notification_channel = build_notification_channel
 
     def run(self):
         # Finish the build before we start the server since the server launch is going to sniff
@@ -54,16 +60,22 @@ class IsolatedEnvProcess(Process):
             client_builder.build()
             secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
 
+            if self.build_notification_channel:
+                self.build_notification_channel.put(True)
+
         if self.runserver_config is not None:
             thread = UvicornThread(
                 self.runserver_config.entrypoint, self.runserver_config.port
             )
             thread.start()
-            self.close_signal.wait()
-            with log_time_duration("Stop server signal received. Stopped."):
-                thread.stop()
-            with log_time_duration("Joined thread."):
-                thread.join()
+            try:
+                self.close_signal.wait()
+            except KeyboardInterrupt:
+                pass
+            thread.stop()
+            thread.join()
+
+        LOGGER.debug("IsolatedEnvProcess finished")
 
     def stop(self, hard_timeout: float = 5.0):
         """
@@ -135,6 +147,14 @@ def handle_runserver(
     """
     current_process: IsolatedEnvProcess | None = None
 
+    # Start the webservice - it should persist for the lifetime of the
+    # runserver, so a single websocket frontend can be notified across
+    # multiple builds
+    WATCHER_WEBSERVICE.start()
+
+    def update_webservice():
+        asyncio.run(WATCHER_WEBSERVICE.broadcast_listeners())
+
     def update_build():
         nonlocal current_process
 
@@ -148,8 +168,21 @@ def handle_runserver(
                 port=port,
             ),
             watch_config=IsolatedWatchConfig(webcontroller=webcontroller),
+            build_notification_channel=WATCHER_WEBSERVICE.notification_queue,
         )
         current_process.start()
+
+    # Install a signal handler to catch SIGINT and try to
+    # shut down gracefully
+    def graceful_shutdown(signum, frame):
+        if current_process is not None:
+            current_process.stop()
+        if WATCHER_WEBSERVICE is not None:
+            WATCHER_WEBSERVICE.stop()
+        secho("Services shutdown, now exiting...", fg="yellow")
+        exit(0)
+
+    signal(SIGINT, graceful_shutdown)
 
     watchdog = build_common_watchdog(package, update_build)
     watchdog.start_watching()

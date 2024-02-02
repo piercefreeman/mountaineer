@@ -2,8 +2,8 @@ import asyncio
 from collections import defaultdict
 from inspect import isawaitable
 from shutil import rmtree
-from click import secho
 
+from click import secho
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
 from inflection import camelize
@@ -12,10 +12,10 @@ from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
 from filzl.client_builder.esbuild import ESBuildWrapper
+from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.build_actions import (
     OpenAPIToTypescriptActionConverter,
 )
-from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_interface.openapi import OpenAPIDefinition
@@ -23,7 +23,6 @@ from filzl.client_interface.paths import ManagedViewPath, generate_relative_impo
 from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.io import gather_with_concurrency
-from filzl.logging import LOGGER
 from filzl.static import get_static_path
 
 
@@ -367,7 +366,9 @@ class ClientBuilder:
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
             ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
-            results = await gather_with_concurrency(tasks, n=max_concurrency, catch_exceptions=True)
+            results = await gather_with_concurrency(
+                tasks, n=max_concurrency, catch_exceptions=True
+            )
 
             # Go through the exceptions, logging the build errors explicitly
             for result in results:
@@ -375,7 +376,7 @@ class ClientBuilder:
                     if isinstance(result, BuildProcessException):
                         secho(f"Build error: {result}", fg="red")
                     else:
-                       raise result
+                        raise result
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own

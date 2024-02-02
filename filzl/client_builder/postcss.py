@@ -4,10 +4,11 @@ from subprocess import PIPE
 from tempfile import TemporaryDirectory
 
 from filzl.client_builder.base import ClientBuilderBase
+from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
 from filzl.logging import LOGGER
-from filzl.client_builder.exceptions import BuildProcessException
+
 
 class PostCSSBundler(ClientBuilderBase):
     async def handle_file(

@@ -19,6 +19,7 @@ class UvicornThread(Thread):
             reload=False,
             access_log=False,
             loop="asyncio",
+            log_level="warning",
         )
         self.server = Server(config)
         loop.run_until_complete(self.server.serve())

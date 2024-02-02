@@ -16,9 +16,11 @@ from filzl.actions import (
 from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.bundler import JavascriptBundler
-from filzl.controller import ControllerBase
-from filzl.render import Metadata
 from filzl.client_interface.paths import ManagedViewPath
+from filzl.controller import ControllerBase
+from filzl.logging import LOGGER
+from filzl.render import Metadata
+from filzl.ssr import SSR_WORKER
 
 
 class ControllerDefinition(BaseModel):
@@ -67,7 +69,6 @@ class AppController:
             *(custom_builders if custom_builders else []),
         ]
 
-
         self.internal_api_prefix = "/internal/api"
 
         # The static directory has to exist before we try to mount it
@@ -80,7 +81,18 @@ class AppController:
             StaticFiles(directory=str(static_dir)),
             name="static",
         )
-        print("Will mount", static_dir)
+
+        # Load up our ssr handler to load the process on startup
+        # and cancel on shutdown
+        @self.app.on_event("startup")
+        async def startup_event():
+            LOGGER.info("Received event startup event, starting SSR worker.")
+            SSR_WORKER.ensure_valid_worker()
+
+        @self.app.on_event("shutdown")
+        async def shutdown_event():
+            LOGGER.info("Received event shutdown event, shutting down SSR worker.")
+            SSR_WORKER.shutdown()
 
     def register(self, controller: ControllerBase):
         """
