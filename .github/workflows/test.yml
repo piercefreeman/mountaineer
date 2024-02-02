@@ -74,9 +74,6 @@ jobs:
       - name: Python tests
         run: poetry run pytest -W error
 
-      - name: Rust tests
-        run: cargo test --all
-
   lint:
     runs-on: ubuntu-latest
 
@@ -157,6 +154,12 @@ jobs:
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
       - run: pip install -U twine
+
+      # Before we start building, validate that the Rust code compiles
+      # This helps to detect errors on different underlying architectures, since
+      # these wheel builds are representative of our deployment platforms
+      - name: Rust tests
+        run: cargo test --all
 
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}

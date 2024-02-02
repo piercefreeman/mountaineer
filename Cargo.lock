@@ -219,6 +219,7 @@ dependencies = [
  "log",
  "pyo3",
  "v8",
+ "winapi",
 ]
 
 [[package]]
