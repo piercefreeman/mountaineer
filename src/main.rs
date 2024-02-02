@@ -1,6 +1,7 @@
 extern crate libc;
 
 use std::os::unix::thread::JoinHandleExt;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -9,31 +10,65 @@ unsafe fn cancel_thread(thread: thread::JoinHandle<()>) {
     libc::pthread_cancel(handle);
 }
 
-fn main() {
-    // Spawn a thread that runs indefinitely and does some actual
-    // calculation so we avoid sleep() freeing up any OS-level locks
-    let handle = thread::spawn(|| {
-        let mut prev: u64 = 0;
-        let mut curr: u64 = 1;
-        for _ in 0..10_000_000 {
-            // Simulate heavy computation
-            let next = prev.wrapping_add(curr);
-            prev = curr;
-            curr = next;
+fn is_prime(n: u64) -> bool {
+    if n <= 1 {
+        return false;
+    }
+    if n <= 3 {
+        return true;
+    }
+    if n % 2 == 0 || n % 3 == 0 {
+        return false;
+    }
+    let mut i = 5;
+    while i * i <= n {
+        if n % i == 0 || n % (i + 2) == 0 {
+            return false;
+        }
+        i += 6;
+    }
+    true
+}
 
-            // Use the result in a way that requires computation, but do it sparingly to avoid slowing down the loop too much
-            if next % 100_000 == 0 {
-                println!("Current Fibonacci number: {}", next);
+fn main() {
+    let (tx, rx) = mpsc::channel();
+
+    let handle = thread::spawn(move || {
+        println!("Worker thread: Starting work.");
+        let mut largest_prime = 0;
+
+        //for n in 2..=100_000_000 {
+        for n in 2..=10 {
+            if is_prime(n) {
+                largest_prime = n;
+                if n % 1_000_000 == 0 || n == 100_000_000 {
+                    println!("Current largest prime: {}", largest_prime);
+                }
             }
         }
+        println!("Worker thread: Work completed. {}", largest_prime);
+
+        // Work is done, send a notification
+        tx.send(()).unwrap();
+        println!("Worker thread: Work completed and notification sent.");
     });
 
-    thread::sleep(Duration::from_secs(5));
+    // Main thread waits for notification with a hard timeout
+    match rx.recv_timeout(Duration::from_secs(10)) {
+        Ok(_) => {
+            println!("Main thread: Notification received, work completed.");
 
-    // Unsafely kill the thread
-    unsafe {
-        cancel_thread(handle);
+            // Ensure the spawned thread has finished before exiting the program
+            let _ = handle.join();
+        }
+        Err(e) => {
+            println!(
+                "Main thread: Did not receive notification within the timeout, error: {:?}",
+                e
+            );
+            // Unsafe termination logic should go here
+            println!("Main thread: Attempting to terminate the worker thread.");
+            unsafe { cancel_thread(handle) };
+        }
     }
-
-    println!("Thread was killed");
 }
