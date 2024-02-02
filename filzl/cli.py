@@ -1,6 +1,6 @@
 import asyncio
 from importlib import import_module
-from multiprocessing import Event, Process
+from multiprocessing import Event, Process, get_start_method
 from multiprocessing.queues import Queue
 from signal import SIGINT, signal
 from time import time
@@ -114,6 +114,11 @@ def handle_watch(
     :param client_controller: "my_website.app:controller"
 
     """
+    if (spawn_method := get_start_method()) and spawn_method != "spawn":
+        LOGGER.warning(
+            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
+        )
+
     current_process: IsolatedEnvProcess | None = None
 
     def update_build():
@@ -145,6 +150,11 @@ def handle_runserver(
     :param client_controller: "my_website.app:controller"
 
     """
+    if (spawn_method := get_start_method()) and spawn_method != "spawn":
+        LOGGER.warning(
+            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
+        )
+
     current_process: IsolatedEnvProcess | None = None
 
     # Start the webservice - it should persist for the lifetime of the

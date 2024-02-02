@@ -2,7 +2,10 @@
 
 use pyo3::prelude::*;
 
-use ssr_rs::Ssr;
+mod ssr;
+
+#[macro_use]
+extern crate lazy_static;
 
 #[pymodule]
 fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
@@ -14,7 +17,9 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
 
         // We assume that es-build has created an iife (immediately invoked function expression)
         // that is bound to an SSR variable in the global scope.
-        let html = Ssr::render_to_string(&html_str, "SSR", None);
+        let js = ssr::Ssr::new(html_str, "SSR");
+        let html = js.render_to_string(None);
+        //let html = ssr::Ssr::render_to_string(&html_str, "SSR", None);
 
         let html_py: PyObject = html.to_object(py);
 
@@ -23,3 +28,5 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
 
     Ok(())
 }
+
+pub use ssr::Ssr;

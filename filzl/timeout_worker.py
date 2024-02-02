@@ -1,6 +1,8 @@
+import ctypes
 from abc import abstractmethod
-from multiprocessing import Process, Queue
-from queue import Empty, Full
+from inspect import isclass
+from queue import Empty, Full, Queue
+from threading import Thread
 from typing import Callable, Generic, TypeVar
 
 from filzl.logging import LOGGER
@@ -13,15 +15,40 @@ class ShutdownWorker:
     pass
 
 
+def _async_raise(tid, exctype):
+    """
+    Raises an exception to the given thread
+    https://stackoverflow.com/questions/323972/is-there-any-way-to-kill-a-thread
+    """
+    """Raises an exception in the threads with id tid"""
+    if not isclass(exctype):
+        raise TypeError("Only types can be raised (not instances)")
+    res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+        ctypes.c_long(tid), ctypes.py_object(exctype)
+    )
+    if res == 0:
+        raise ValueError("invalid thread id")
+    elif res != 1:
+        # "if it returns a number greater than one, you're in trouble,
+        # and you should call it again with exc=NULL to revert the effect"
+        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(tid), None)
+        raise SystemError("PyThreadState_SetAsyncExc failed")
+
+
 class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
     """
-    A subprocess that works off of a queue. If it is taking longer than
+    A thread that works off of a queue. If it is taking longer than
     the required amount of seconds to process each item, it will respawn.
+
+    Originally this was implemented as a separate process, but we benchmarked
+    around a ~0.3s overhead for each main process->subprocess->main process queue
+    transfer - even when the actual payload size is trivial (0 bytes). We instead
+    opt for a thread and manually implement thread hard-stopping behavior.
 
     """
 
     def __init__(self):
-        self.current_process: Process | None = None
+        self.current_process: Thread | None = None
         self.work_queue: Queue[INPUT_TYPE | ShutdownWorker] = Queue(maxsize=1)
         self.result_queue: Queue[OUTPUT_TYPE] = Queue(maxsize=1)
 
@@ -57,9 +84,10 @@ class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
             self.work_queue = Queue(maxsize=1)
             self.result_queue = Queue(maxsize=1)
 
-            self.current_process = Process(
+            self.current_process = Thread(
                 target=self.process_internal,
                 args=(self.run, self.work_queue, self.result_queue),
+                daemon=True,
             )
             self.current_process.start()
 
@@ -85,7 +113,7 @@ class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
         except (Empty, Full):
             # If we've timed out, hard abort the process and start a new one
             if self.current_process is not None and self.current_process.is_alive():
-                self.current_process.kill()
+                _async_raise(self.current_process.ident, TimeoutError)
                 self.current_process = None
             raise TimeoutError("Timed out waiting for worker to process data")
 

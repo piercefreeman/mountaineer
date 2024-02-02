@@ -1,9 +1,11 @@
 from functools import lru_cache
+from time import time
 from typing import cast
 
 from pydantic import BaseModel
 
 from filzl import filzl as filzl_rs  # type: ignore
+from filzl.logging import LOGGER
 from filzl.static import get_static_path
 from filzl.timeout_worker import TimedWorkerQueue
 
@@ -22,8 +24,11 @@ class SSRQueue(TimedWorkerQueue[InputPayload, str]):
         full_script = (
             f"const SERVER_DATA = {data_json};\n{polyfill_script}\n{element.script}"
         )
+        start = time()
+        render_result = filzl_rs.render_ssr(full_script)
+        LOGGER.debug(f"SSR render in worker thread took {time() - start:.2f}s")
 
-        return cast(str, filzl_rs.render_ssr(full_script))
+        return cast(str, render_result)
 
 
 SSR_WORKER = SSRQueue()
