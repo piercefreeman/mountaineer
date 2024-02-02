@@ -4,10 +4,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ssr_rs = "0.2.3"
+v8 = "0.82.0"
+lazy_static = "1.4.0"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 log = "0.4"
 env_logger = "0.9"
+
+# thread cancellation beta api
+libc = "0.2"
+
+[dev-dependencies]
+criterion = { version = "0.4", features = ["html_reports"] }
 
 [profile.release]
 opt-level = 3
@@ -17,3 +24,8 @@ incremental = false
 
 [package.metadata.maturin]
 name = "filzl"
+
+[[bench]]
+path = "src/benches/my_benchmark.rs"
+name = "my_benchmark"
+harness = false

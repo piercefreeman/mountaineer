@@ -70,8 +70,12 @@ jobs:
           poetry install
           poetry run maturin develop
 
-      # Mark all warning errors
-      - run: poetry run pytest -W error
+      # Mark all warnings as errors so we catch these early
+      - name: Python tests
+        run: poetry run pytest -W error
+
+      - name: Rust tests
+        run: cargo test --all
 
   lint:
     runs-on: ubuntu-latest
