@@ -1,17 +1,38 @@
-use std::os::unix::thread::JoinHandleExt;
 use std::result::Result;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-unsafe fn cancel_thread(thread: thread::JoinHandle<()>) {
-    /*
-     * Unsafe function (probably for obvious reasons). Terminating a thread
-     * on the OS level violates Rust's memory guarantees, since this can leave
-     * malloc'd memory still owned by the main process. Use sparingly.
-     */
-    let handle = thread.into_pthread_t();
-    libc::pthread_cancel(handle);
+#[cfg(unix)]
+mod platform {
+    use libc;
+    use std::os::unix::thread::JoinHandleExt;
+    use std::thread::JoinHandle;
+
+    pub unsafe fn cancel_thread(thread: JoinHandle<()>) {
+        /*
+         * Unsafe function (probably for obvious reasons). Terminating a thread
+         * on the OS level violates Rust's memory guarantees, since this can leave
+         * malloc'd memory still owned by the main process. Use sparingly.
+         */
+        let handle = thread.into_pthread_t();
+        libc::pthread_cancel(handle);
+    }
+}
+
+#[cfg(windows)]
+mod platform {
+    // nits
+    extern crate winapi;
+    use std::os::windows::io::AsRawHandle;
+    use std::thread::JoinHandle;
+    use winapi::um::processthreadsapi::TerminateThread;
+    use winapi::um::winnt::HANDLE;
+
+    pub unsafe fn cancel_thread(thread: JoinHandle<()>) {
+        let handle = thread.as_raw_handle();
+        TerminateThread(handle as HANDLE, 0);
+    }
 }
 
 pub fn run_thread_with_timeout<F, R>(func: F, timeout: Duration) -> Result<R, &'static str>
@@ -34,7 +55,7 @@ where
         } // Function completed within timeout
         Err(_) => {
             unsafe {
-                cancel_thread(handle);
+                platform::cancel_thread(handle);
             }
             Err("Function execution timed out")
         } // Timeout occurred, we should cancel the thread and return
