@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from functools import wraps
 from inspect import isclass, signature
 from pathlib import Path
@@ -19,9 +18,7 @@ from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.bundler import JavascriptBundler
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
-from filzl.logging import LOGGER
 from filzl.render import Metadata
-from filzl.ssr import SSR_WORKER
 
 
 class ControllerDefinition(BaseModel):
@@ -59,9 +56,7 @@ class AppController:
             if the page does not already have a title set.
 
         """
-        self.app = FastAPI(
-            lifespan=self.install_lifecycle_hooks,
-        )
+        self.app = FastAPI()
         self.controllers: list[ControllerDefinition] = []
         self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
@@ -199,14 +194,3 @@ class AppController:
                 url_prefix=controller_url_prefix,
             )
         )
-
-    @asynccontextmanager
-    async def install_lifecycle_hooks(self, app: FastAPI):
-        # Load up our ssr handler to avoid having to warm boot the process on the first request
-        LOGGER.info("Received event startup event, starting SSR worker.")
-        SSR_WORKER.ensure_valid_worker()
-
-        yield
-
-        LOGGER.info("Received event shutdown event, shutting down SSR worker.")
-        SSR_WORKER.shutdown()

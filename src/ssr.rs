@@ -58,18 +58,6 @@ impl<'a> Ssr<'a> {
         lazy_static::initialize(&INIT_PLATFORM);
     }
 
-    /// Evaluates the javascript source code passed as argument and render it as a String.
-    /// Any initial params (if needed) must be passed as JSON.
-    ///
-    /// <a href="https://github.com/Valerioageno/ssr-rs/blob/main/examples/actix_with_initial_props.rs" target="_blank">Here</a> an useful example of how to use initial params with the actix framework.
-    ///
-    /// "enrty_point" is the variable name set from the frontend bundler used. <a href="https://github.com/Valerioageno/ssr-rs/blob/main/client/webpack.ssr.js" target="_blank">Here</a> an example from webpack.
-    pub fn one_shot_render(source: String, entry_point: &str, params: Option<&str>) -> String {
-        Self::init_platform();
-
-        Self::render(source, entry_point, params)
-    }
-
     /// Evaluates the JS source code instanciate in the Ssr struct
     /// "enrty_point" is the variable name set from the frontend bundler used. <a href="https://github.com/Valerioageno/ssr-rs/blob/main/client/webpack.ssr.js" target="_blank">Here</a> an example from webpack.
     pub fn render_to_string(&self, params: Option<&str>) -> String {
@@ -162,11 +150,12 @@ impl<'a> Ssr<'a> {
     }
 }
 
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
+    use super::*;
 
     #[test]
-    fn check_struct_instance() {
+    fn check_ssr_struct_instance() {
         let js = Ssr::new(
             r##"var SSR = {x: () => "<html></html>"};"##.to_string(),
             "SSR",

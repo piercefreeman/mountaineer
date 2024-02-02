@@ -1,40 +1,41 @@
-from pydantic import BaseModel
-from filzl.ssr import SSRQueue, InputPayload
 from time import time
-from filzl.__tests__.fixtures import get_fixture_path
+from uuid import UUID, uuid4
+
 import pytest
+from pydantic import BaseModel
 
-@pytest.fixture
-def ssr_worker():
-    ssr_worker = SSRQueue()
-    ssr_worker.ensure_valid_worker()
-    yield ssr_worker
-    ssr_worker.shutdown()
+from filzl.__tests__.fixtures import get_fixture_path
+from filzl.ssr import render_ssr
 
-def test_ssr_speed_baseline(ssr_worker: SSRQueue):
-    all_measurements : list[float] = []
+
+def test_ssr_speed_baseline():
+    all_measurements: list[float] = []
 
     js_contents = get_fixture_path("home_controller_ssr_with_react.js").read_text()
 
     class FakeModel(BaseModel):
-        pass
+        # We need to bust the cache
+        random_id: UUID
+
+        model_config = {
+            "frozen": True,
+        }
 
     for _ in range(50):
         start = time()
-        ssr_worker.process_data(
-            InputPayload(script=js_contents, render_data=FakeModel()),
+        render_ssr(
+            js_contents,
+            FakeModel(random_id=uuid4()),
             hard_timeout=1,
         )
         all_measurements.append(time() - start)
 
     assert max(all_measurements) < 0.5
 
+
 # We expect an exception is raised in our thread so we don't need
 # the additional log about it
-@pytest.mark.filterwarnings("ignore:Exception in thread")
-def test_ssr_timeout(ssr_worker: SSRQueue):
-    all_measurements : list[float] = []
-
+def test_ssr_timeout():
     js_contents = get_fixture_path("complex_controller_ssr_with_react.js").read_text()
 
     class FakeWaitDurationModel(BaseModel):
@@ -42,10 +43,17 @@ def test_ssr_timeout(ssr_worker: SSRQueue):
         # doing synthetic work
         delay_loops: int
 
+        random_id: UUID
+
+        model_config = {
+            "frozen": True,
+        }
+
     start = time()
     with pytest.raises(TimeoutError):
-        ssr_worker.process_data(
-            InputPayload(script=js_contents, render_data=FakeWaitDurationModel(delay_loops=5)),
+        render_ssr(
+            script=js_contents,
+            render_data=FakeWaitDurationModel(delay_loops=5, random_id=uuid4()),
             hard_timeout=0.5,
         )
     assert time() - start < 1.0

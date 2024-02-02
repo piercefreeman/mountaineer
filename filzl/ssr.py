@@ -5,33 +5,7 @@ from typing import cast
 from pydantic import BaseModel
 
 from filzl import filzl as filzl_rs  # type: ignore
-from filzl.logging import LOGGER
 from filzl.static import get_static_path
-from filzl.timeout_worker import TimedWorkerQueue
-
-
-class InputPayload(BaseModel):
-    script: str
-    render_data: BaseModel
-
-
-class SSRQueue(TimedWorkerQueue[InputPayload, str]):
-    @staticmethod
-    def run(element: InputPayload) -> str:
-        polyfill_script = get_static_path("ssr_polyfills.js").read_text()
-        data_json = element.render_data.model_dump_json()
-
-        full_script = (
-            f"const SERVER_DATA = {data_json};\n{polyfill_script}\n{element.script}"
-        )
-        start = time()
-        render_result = filzl_rs.render_ssr(full_script)
-        LOGGER.debug(f"SSR render in worker thread took {time() - start:.2f}s")
-
-        return cast(str, render_result)
-
-
-SSR_WORKER = SSRQueue()
 
 
 # TODO: Use a size-based cache instead of a slot-based cache
@@ -49,16 +23,18 @@ def render_ssr(
     :raises TimeoutError: If the render takes longer than the hard_timeout
 
     """
-    payload = InputPayload(
-        script=script,
-        render_data=render_data,
-    )
 
-    # If we don't have a timeout, we don't need to run in a separate process
-    if not hard_timeout:
-        return SSR_WORKER.run(payload)
+    polyfill_script = get_static_path("ssr_polyfills.js").read_text()
+    data_json = render_data.model_dump_json()
 
-    return SSR_WORKER.process_data(
-        payload,
-        hard_timeout=hard_timeout,
-    )
+    full_script = f"const SERVER_DATA = {data_json};\n{polyfill_script}\n{script}"
+
+    try:
+        # Convert to milliseconds for the rust worker
+        render_result = filzl_rs.render_ssr(
+            full_script, int(hard_timeout * 1000) if hard_timeout else 0
+        )
+    except ValueError:
+        raise TimeoutError("SSR render was interrupted after hard timeout")
+
+    return cast(str, render_result)
