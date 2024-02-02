@@ -215,6 +215,7 @@ dependencies = [
  "criterion",
  "env_logger",
  "lazy_static",
+ "libc",
  "log",
  "pyo3",
  "v8",

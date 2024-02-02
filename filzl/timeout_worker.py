@@ -23,11 +23,16 @@ def _async_raise(tid, exctype):
     """Raises an exception in the threads with id tid"""
     if not isclass(exctype):
         raise TypeError("Only types can be raised (not instances)")
+
+    print("Should cancel thread now...", tid)
+    print("Current process has GIL?", ctypes.pythonapi.PyGILState_Check())
     res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
-        ctypes.c_long(tid), ctypes.py_object(exctype)
+        # https://docs.python.org/3/c-api/init.html#c.PyThreadState_SetAsyncExc
+        ctypes.c_ulong(tid), ctypes.py_object(exctype)
     )
+    print("Returned")
     if res == 0:
-        raise ValueError("invalid thread id")
+        raise ValueError("Invalid thread id")
     elif res != 1:
         # "if it returns a number greater than one, you're in trouble,
         # and you should call it again with exc=NULL to revert the effect"
@@ -66,7 +71,10 @@ class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
                 return
             if isinstance(payload, ShutdownWorker):
                 return
-            result_queue.put(target(payload))
+            print("WILL GET RESULT")
+            result_value = target(payload)
+            print("GOT RESULT")
+            result_queue.put(result_value)
 
     @staticmethod
     @abstractmethod
@@ -104,15 +112,42 @@ class TimedWorkerQueue(Generic[INPUT_TYPE, OUTPUT_TYPE]):
         # to call this before they start sending data
         self.ensure_valid_worker()
 
+        from time import time, sleep
+
+        #def test_infinite_loop():
+        #    while True:
+        #        print("SUBPROCESS LOOP")
+        #        sleep(0.5)
+
+        #subinfinite = Thread(target=test_infinite_loop, daemon=True)
+        #subinfinite.start()
+        #sleep(1)
+
         self.work_queue.put(new_payload)
 
         # Wait a max of self.hard_timeout seconds for the process to get results
         # back from the queue
+        print("HARD TIMEOUT", hard_timeout)
+        started_at = time()
         try:
-            return self.result_queue.get(block=True, timeout=hard_timeout)
-        except (Empty, Full):
+            while True:
+                try:
+                    print("WAITING")
+                    return self.result_queue.get(block=False)
+                except Empty:
+                    print("WHEE")
+                    if time() - started_at > hard_timeout:
+                        print("SHOULD RAISE", time() - started_at, hard_timeout)
+                        raise Empty
+                    print("SLEEPING")
+                    sleep(0.1)
+                    print("CONTINUING LOOP")
+            #return self.result_queue.get(block=True, timeout=hard_timeout)
+        except (Empty, Full) as e:
+            print("ERR RESULT", str(e))
             # If we've timed out, hard abort the process and start a new one
             if self.current_process is not None and self.current_process.is_alive():
+                print("SHOULD RAISE")
                 _async_raise(self.current_process.ident, TimeoutError)
                 self.current_process = None
             raise TimeoutError("Timed out waiting for worker to process data")

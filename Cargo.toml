@@ -10,6 +10,9 @@ pyo3 = { version = "0.20", features = ["extension-module"] }
 log = "0.4"
 env_logger = "0.9"
 
+# thread cancellation beta api
+libc = "0.2"
+
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
 
