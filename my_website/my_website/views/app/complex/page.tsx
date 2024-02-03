@@ -28,11 +28,17 @@ function findPrimes(end = 5000) {
 const Page = () => {
   const serverState = useServer();
 
-  // Arbitrarily do a lot of work to simulate a really complex page
-  // Takes about 5 seconds
-  const counts: number[][] = [];
-  for (let i = 0; i < serverState.delay_loops; i++) {
-    counts.push(findPrimes(10000000));
+  if (serverState.delay_loops > 0) {
+    // Arbitrarily do a lot of work to simulate a really complex page
+    // Takes about 5 seconds
+    const counts: number[][] = [];
+    for (let i = 0; i < serverState.delay_loops; i++) {
+      counts.push(findPrimes(10000000));
+    }
+  }
+
+  if (serverState.throw_client_error) {
+    throw new Error("Example client error");
   }
 
   return (

@@ -1,4 +1,5 @@
-// Original license:
+//
+// Copyright (c) 2023 Pierce Freeman <pierce@freeman.vc>
 // Copyright (c) 2018 Valerio Ageno <valerioageno@yahoo.it>
 //
 // Permission is hereby granted, free of charge, to any
@@ -25,6 +26,7 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use crate::errors::AppError;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -60,64 +62,118 @@ impl<'a> Ssr<'a> {
 
     /// Evaluates the JS source code instanciate in the Ssr struct
     /// "enrty_point" is the variable name set from the frontend bundler used. <a href="https://github.com/Valerioageno/ssr-rs/blob/main/client/webpack.ssr.js" target="_blank">Here</a> an example from webpack.
-    pub fn render_to_string(&self, params: Option<&str>) -> String {
+    pub fn render_to_string(&self, params: Option<&str>) -> Result<String, AppError> {
         Self::render(self.source.clone(), self.entry_point, params)
     }
 
-    fn render(source: String, entry_point: &str, params: Option<&str>) -> String {
-        //The isolate rapresente an isolated instance of the v8 engine
-        //Object from one isolate must not be used in other isolates.
+    fn render(source: String, entry_point: &str, params: Option<&str>) -> Result<String, AppError> {
+        /*
+         * Main entrypoint for rendering, takes a source string (containing one or many functions) and
+         * an entry point (ie. function name to execute) and returns the result of the execution as
+         * a string.
+         */
         let isolate = &mut v8::Isolate::new(Default::default());
-
-        //A stack-allocated class that governs a number of local handles.
         let handle_scope = &mut v8::HandleScope::new(isolate);
-
-        //A sandboxed execution context with its own set of built-in objects and functions.
         let context = v8::Context::new(handle_scope);
-
-        //Stack-allocated class which sets the execution context for all operations executed within a local scope.
         let scope = &mut v8::ContextScope::new(handle_scope, context);
 
-        let code = v8::String::new(scope, &format!("{};{}", source, entry_point))
-            .expect("Invalid JS: Strings are needed");
+        // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
+        let try_catch = &mut v8::TryCatch::new(scope);
 
-        let script = v8::Script::compile(scope, code, None)
-            .expect("Invalid JS: There aren't runnable scripts");
-
-        let exports = script
-            .run(scope)
-            .expect("Invalid JS: Missing entry point. Is the bundle exported as a variable?");
-
-        let object = exports
-            .to_object(scope)
-            .expect("Invalid JS: There are no objects");
-
-        let fn_map = Self::create_fn_map(scope, object);
-
-        let params: v8::Local<v8::Value> = match v8::String::new(scope, params.unwrap_or("")) {
-            Some(s) => s.into(),
-            None => v8::undefined(scope).into(),
+        let code = match v8::String::new(try_catch, &format!("{};{}", source, entry_point)) {
+            Some(code) => code,
+            None => {
+                // This typically shouldn't fail unless there's a serious issue (like out of memory),
+                // so we don't handle it specifically with try_catch.
+                return Err(AppError::V8ExceptionError(
+                    "Failed to create code string".into(),
+                ));
+            }
         };
 
-        let undef = v8::undefined(scope).into();
+        let script = if let Some(s) = v8::Script::compile(try_catch, code, None) {
+            s
+        } else {
+            return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+                try_catch,
+                "Script compilation failed",
+            )));
+        };
+
+        let result = if let Some(r) = script.run(try_catch) {
+            r
+        } else {
+            return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+                try_catch,
+                "Script execution failed",
+            )));
+        };
+
+        let object = if let Some(obj) = result.to_object(try_catch) {
+            obj
+        } else {
+            return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+                try_catch,
+                "Result is not an object",
+            )));
+        };
+
+        // Assuming `create_fn_map` exists and properly implemented
+        let fn_map = Self::create_fn_map(try_catch, object);
+
+        let params_v8 = match v8::String::new(try_catch, params.unwrap_or_default()) {
+            Some(s) => s.into(),
+            None => v8::undefined(try_catch).into(),
+        };
 
         let mut rendered = String::new();
 
-        for key in fn_map.keys() {
-            let result = fn_map[key].call(scope, undef, &[params]).unwrap();
+        for (key, func) in fn_map {
+            let key_str = key; // Assuming key is already a Rust String
+            let result = func.call(try_catch, object.into(), &[params_v8]);
+            if try_catch.has_caught() {
+                return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+                    try_catch,
+                    &format!("Error calling function '{}'", key_str),
+                )));
+            }
 
-            let result = result
-                .to_string(scope)
-                .expect("Failed to parse the result to string");
+            let result_str = result
+                .expect("Function call did not return a value")
+                .to_rust_string_lossy(try_catch);
 
-            rendered = format!("{}{}", rendered, result.to_rust_string_lossy(scope));
+            rendered.push_str(&result_str);
         }
 
-        rendered
+        Ok(rendered)
+    }
+
+    fn extract_exception_message(
+        try_catch: &mut v8::TryCatch<v8::HandleScope>,
+        user_msg: &str,
+    ) -> String {
+        if let Some(exception) = try_catch.exception() {
+            let exceptions = try_catch.stack_trace();
+            let mut scope = v8::EscapableHandleScope::new(try_catch);
+
+            // Directly use try_catch for extracting the exception message
+            let msg = exception.to_rust_string_lossy(&mut scope);
+
+            // Directly use try_catch to get the stack trace if available
+            let maybe_stack = exceptions.map_or_else(
+                || String::new(),
+                |trace| format!("\nStack: {}", trace.to_rust_string_lossy(&mut scope)),
+            );
+
+            format!("{}: {}{}", user_msg, msg, maybe_stack)
+        } else {
+            // Return a default message or further handle the lack of exception details
+            "An unknown error occurred".to_string()
+        }
     }
 
     fn create_fn_map<'b>(
-        scope: &mut v8::ContextScope<'b, v8::HandleScope>,
+        scope: &mut v8::TryCatch<'b, v8::HandleScope>,
         object: v8::Local<v8::Object>,
     ) -> HashMap<String, v8::Local<'b, v8::Function>> {
         let mut fn_map: HashMap<String, v8::Local<v8::Function>> = HashMap::new();
@@ -167,6 +223,26 @@ mod tests {
                 source: r##"var SSR = {x: () => "<html></html>"};"##.to_string(),
                 entry_point: "SSR"
             }
+        )
+    }
+
+    #[test]
+    fn check_exception() {
+        let js = Ssr::new(
+            r##"
+                var SSR = {
+                    x: () => {
+                        throw new Error('custom_error_text')
+                    }
+                };"##
+                .to_string(),
+            "SSR",
+        );
+        let result = js.render_to_string(None);
+
+        assert_eq!(
+            result,
+            Err(AppError::V8ExceptionError("Error calling function 'x': Error: custom_error_text\nStack: Error: custom_error_text\n    at Object.x (<anonymous>:4:31)".into()))
         )
     }
 }

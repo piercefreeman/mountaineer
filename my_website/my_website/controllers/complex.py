@@ -9,6 +9,7 @@ class ComplexRender(RenderBase):
     client_ip: str
     random_uuid: UUID
     delay_loops: int
+    throw_client_error: bool
 
 
 class ComplexController(ControllerBase):
@@ -32,11 +33,16 @@ class ComplexController(ControllerBase):
         )
 
     def render(
-        self, detail_id: UUID, request: Request, delay_loops: int
+        self,
+        detail_id: UUID,
+        request: Request,
+        delay_loops: int | None = None,
+        throw_client_error: bool = False,
     ) -> ComplexRender:
         return ComplexRender(
             client_ip=request.client.host if request.client else "unknown",
             random_uuid=uuid4(),
             metadata=Metadata(title=f"Complex: {detail_id}"),
-            delay_loops=delay_loops,
+            delay_loops=delay_loops or 0,
+            throw_client_error=throw_client_error,
         )

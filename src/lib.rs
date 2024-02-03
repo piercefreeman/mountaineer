@@ -1,16 +1,18 @@
 #![deny(clippy::print_stdout)]
 
-use pyo3::exceptions::PyValueError;
+use errors::AppError;
+use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use std::time::Duration;
 
+mod errors;
 mod ssr;
 mod timeout;
 
 #[macro_use]
 extern crate lazy_static;
 
-fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, &'static str> {
+fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
     if hard_timeout > 0 {
         timeout::run_thread_with_timeout(
             || {
@@ -22,7 +24,7 @@ fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, &'static str>
     } else {
         // Call inline, no timeout
         let js = ssr::Ssr::new(js_string, "SSR");
-        Ok(js.render_to_string(None))
+        js.render_to_string(None)
     }
 }
 
@@ -46,7 +48,10 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
                 let result_py: PyObject = result.to_object(py);
                 Ok(result_py.into())
             }
-            Err(err) => Err(PyValueError::new_err(err)),
+            Err(err) => match err {
+                AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
+                AppError::V8ExceptionError(msg) => Err(PyValueError::new_err(msg)),
+            },
         }
     }
 
