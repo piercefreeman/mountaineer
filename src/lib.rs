@@ -37,6 +37,10 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
          * :param js_string: the full ssr compiled .js script to execute in V8
          * :param hard_timeout: after this many milliseconds, the V8 engine will be forcibly
          *   terminated. Use 0 for no timeout.
+         *
+         * :raises ConnectionAbortedError: if the hard_timeout is reached
+         * :raises ValueError: if the V8 engine throws an exception, since there's probably
+         *   something wrong with the script
          */
         // init only if we haven't done so already
         let _ = env_logger::try_init();

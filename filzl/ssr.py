@@ -7,6 +7,10 @@ from filzl import filzl as filzl_rs  # type: ignore
 from filzl.static import get_static_path
 
 
+class V8RuntimeError(Exception):
+    pass
+
+
 # TODO: Use a size-based cache instead of a slot-based cache
 @lru_cache(maxsize=128)
 def render_ssr(
@@ -33,7 +37,9 @@ def render_ssr(
         render_result = filzl_rs.render_ssr(
             full_script, int(hard_timeout * 1000) if hard_timeout else 0
         )
-    except ValueError:
+    except ConnectionAbortedError:
         raise TimeoutError("SSR render was interrupted after hard timeout")
+    except ValueError as e:
+        raise V8RuntimeError(e)
 
     return cast(str, render_result)
