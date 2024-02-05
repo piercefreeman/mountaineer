@@ -3,12 +3,11 @@ from re import sub as re_sub
 
 import pytest
 
+from filzl import filzl as filzl_rs  # type: ignore
 from filzl.__tests__.fixtures import get_fixture_path
 from filzl.client_builder.source_maps import (
-    MapMetadata,
     SourceMapParser,
     SourceMapSchema,
-    VLQDecoder,
     get_cleaned_js_contents,
     make_source_map_paths_absolute,
     update_source_map_path,
@@ -72,35 +71,8 @@ def test_update_source_map_path(
     assert update_source_map_path(input_str, replace_path) == expected_output
 
 
-def test_vlq_constants():
-    """
-    Validate our generated bit-masks and alphabet are as intended
-    """
-    decoder = VLQDecoder()
-    assert len(decoder.alphabet) == 64
-    assert format(decoder.sign_bit_mask, "000001")
-    assert format(decoder.continuation_bit_mask, "100000")
-
-
-@pytest.mark.parametrize(
-    "encoded, expected_vit",
-    [
-        ("aAYQA", [13, 0, 12, 8, 0]),
-        ("CAAA", [1, 0, 0, 0]),
-        ("SAAAA", [9, 0, 0, 0, 0]),
-        ("GAAA", [3, 0, 0, 0]),
-        ("mCAAmC", [35, 0, 0, 35]),
-        ("kBAChO", [18, 0, 1, -224]),
-        ("AClrFA", [0, 1, -2738, 0]),
-    ],
-)
-def test_parse_vlq(encoded: str, expected_vit: list[int]):
-    decoder = VLQDecoder()
-    assert decoder.parse_vlq(encoded) == expected_vit
-
-
 @pytest.mark.asyncio
-@benchmark_function(1.0)
+@benchmark_function(0.2)
 async def test_parse_source_map_parse(
     start_timing,
     end_timing,
@@ -139,6 +111,24 @@ def test_map_exception():
 
     """
 
+    def make_map_metadata(
+        line_number: int, column_number: int, source_line: int, source_column: int
+    ) -> filzl_rs.MapMetadata:
+        """
+        Workaround to deal with rust's MapMetadata constructor
+        only accepting line number and column number.
+
+        """
+        metadata = filzl_rs.MapMetadata(
+            line_number=line_number,
+            column_number=column_number,
+        )
+        metadata.source_index = 0
+        metadata.source_line = source_line
+        metadata.source_column = source_column
+        metadata.symbol_index = 0
+        return metadata
+
     parser = SourceMapParser("")
     parser.source_map = SourceMapSchema(
         version=3,
@@ -149,21 +139,17 @@ def test_map_exception():
         file="test.js",
     )
     parser.parsed_mappings = {
-        (12882, 13): MapMetadata(
+        (12882, 13): make_map_metadata(
             line_number=12882,
             column_number=13,
-            source_index=0,
             source_line=500,
             source_column=10,
-            symbol_index=0,
         ),
-        (6333, 26): MapMetadata(
+        (6333, 26): make_map_metadata(
             line_number=6333,
             column_number=13,
-            source_index=0,
             source_line=600,
             source_column=20,
-            symbol_index=1,
         ),
     }
 
@@ -176,98 +162,6 @@ def test_map_exception():
         at renderWithHooks (test.ts:600:20)
     """,
     )
-
-
-@pytest.mark.parametrize(
-    "metadata_state, current_metadata, expected_metadata, expected_metadata_state",
-    [
-        (
-            # Simple merge of relative values, same line
-            MapMetadata(
-                line_number=1,
-                column_number=10,
-                source_index=10,
-                source_line=10,
-                source_column=10,
-                symbol_index=10,
-            ),
-            MapMetadata(
-                line_number=1,
-                column_number=20,
-                source_index=20,
-                source_line=20,
-                source_column=20,
-                symbol_index=20,
-            ),
-            MapMetadata(
-                line_number=1,
-                column_number=30,
-                source_index=30,
-                source_line=30,
-                source_column=30,
-                symbol_index=30,
-            ),
-            MapMetadata(
-                line_number=1,
-                column_number=30,
-                source_index=30,
-                source_line=30,
-                source_column=30,
-                symbol_index=30,
-            ),
-        ),
-        (
-            # Merge of values on a different line, should reset
-            # the column number but leave everything else relative
-            MapMetadata(
-                line_number=1,
-                column_number=10,
-                source_index=10,
-                source_line=10,
-                source_column=10,
-                symbol_index=10,
-            ),
-            MapMetadata(
-                line_number=2,
-                column_number=20,
-                source_index=20,
-                source_line=20,
-                source_column=20,
-                symbol_index=20,
-            ),
-            MapMetadata(
-                line_number=2,
-                column_number=20,
-                source_index=30,
-                source_line=30,
-                source_column=30,
-                symbol_index=30,
-            ),
-            MapMetadata(
-                line_number=2,
-                column_number=20,
-                source_index=30,
-                source_line=30,
-                source_column=30,
-                symbol_index=30,
-            ),
-        ),
-    ],
-)
-def test_merge_metadatas(
-    metadata_state: MapMetadata,
-    current_metadata: MapMetadata,
-    expected_metadata: MapMetadata,
-    expected_metadata_state: MapMetadata,
-):
-    source_map = SourceMapParser("")
-    assert (
-        source_map.merge_relative_metadatas(
-            metadata_state=metadata_state, current_metadata=current_metadata
-        )
-        == expected_metadata
-    )
-    assert metadata_state == expected_metadata_state
 
 
 def test_make_source_map_paths_absolute():

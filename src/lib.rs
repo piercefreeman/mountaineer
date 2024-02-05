@@ -6,11 +6,15 @@ use pyo3::prelude::*;
 use std::time::Duration;
 
 mod errors;
+mod source_map;
 mod ssr;
 mod timeout;
 
 #[macro_use]
 extern crate lazy_static;
+
+pub use source_map::{MapMetadata, SourceMapParser, VLQDecoder};
+pub use ssr::Ssr;
 
 fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
     if hard_timeout > 0 {
@@ -30,6 +34,8 @@ fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
 
 #[pymodule]
 fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<MapMetadata>()?;
+
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
     fn render_ssr(py: Python, js_string: String, hard_timeout: u64) -> PyResult<PyObject> {
@@ -56,6 +62,21 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
                 AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
                 AppError::V8ExceptionError(msg) => Err(PyValueError::new_err(msg)),
             },
+        }
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "parse_source_map_mappings")]
+    fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<PyObject> {
+        let mut parser = SourceMapParser::new(VLQDecoder::new());
+        let result = parser.parse_mapping(&mapping);
+
+        match result {
+            Ok(result) => {
+                let result_py: PyObject = result.to_object(py);
+                Ok(result_py.into())
+            }
+            Err(_err) => Err(PyValueError::new_err("Unable to parse source map mappings")),
         }
     }
 
