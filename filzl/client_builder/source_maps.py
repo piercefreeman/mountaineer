@@ -2,8 +2,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from re import finditer as re_finditer
 from re import sub
+from time import time
 
 from pydantic import BaseModel
+
+from filzl.logging import LOGGER
 
 
 @dataclass
@@ -22,7 +25,15 @@ class SourceMapSchema(BaseModel):
     file: str | None = None
 
 
-class MapMetadata(BaseModel):
+@dataclass
+class MapMetadata:
+    """
+    Must be a @dataclass instead of a pydantic BaseModel, because we spend a lot of time
+    modifying the attributes of these objects once created - and pydantic has non-trivial
+    overhead in setattr once the original object is created.
+
+    """
+
     line_number: int
     column_number: int
     source_index: int | None = None
@@ -60,9 +71,11 @@ class SourceMapParser:
         if self.parsed_mappings is not None:
             return
 
+        start_parse = time()
         self.source_map = SourceMapSchema.model_validate_json(
             Path(self.path).read_text()
         )
+        LOGGER.debug(f"Parsed source map in {time() - start_parse:.2f}s")
 
         self.parsed_mappings = {}
 
@@ -70,6 +83,7 @@ class SourceMapParser:
         metadata_state: MapMetadata = MapMetadata(line_number=-1, column_number=-1)
 
         # Empty lines will have semi-colons next to one another
+        start_parse = time()
         for line, encoded_metadata in enumerate(self.source_map.mappings.split(";")):
             for component in encoded_metadata.split(","):
                 if not component.strip():
@@ -87,6 +101,7 @@ class SourceMapParser:
                     # 1-indexed to align with Javascript exception formatting
                     (metadata.line_number + 1, metadata.column_number + 1)
                 ] = metadata
+        LOGGER.debug(f"Parsed mappings in {time() - start_parse:.2f}s")
 
     def get_original_location(self, line: int, column: int):
         if self.parsed_mappings is None:

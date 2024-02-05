@@ -13,6 +13,7 @@ from filzl.client_builder.source_maps import (
     make_source_map_paths_absolute,
     update_source_map_path,
 )
+from filzl.test_utilities import benchmark_function
 
 
 @pytest.mark.parametrize(
@@ -98,9 +99,16 @@ def test_parse_vlq(encoded: str, expected_vit: list[int]):
     assert decoder.parse_vlq(encoded) == expected_vit
 
 
-def test_parse_source_map_parse():
+@pytest.mark.asyncio
+@benchmark_function(1.0)
+async def test_parse_source_map_parse(
+    start_timing,
+    end_timing,
+):
     parser = SourceMapParser(get_fixture_path("home_controller_source_map.js.map"))
+    start_timing()
     parser.parse()
+    end_timing()
     assert parser.source_map
 
     source_filenames = {
