@@ -23,6 +23,16 @@ const Home = () => {
           Detail Link
         </a>
       </p>
+      <p>
+        <a
+          className="font-medium text-blue-500"
+          href={serverState.linkGenerator.complexController({
+            detail_id: "9280ca4d-e607-486a-a343-7bbaae6b5a86",
+          })}
+        >
+          Test Complex Link
+        </a>
+      </p>
       <div className="flex gap-x-4">
         <button
           className="rounded-md bg-blue-500 p-2 text-white"

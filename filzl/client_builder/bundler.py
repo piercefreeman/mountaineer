@@ -10,6 +10,7 @@ from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_builder.source_maps import (
     get_cleaned_js_contents,
+    make_source_map_paths_absolute,
     update_source_map_path,
 )
 from filzl.client_interface.paths import ManagedViewPath, generate_relative_import
@@ -17,8 +18,10 @@ from filzl.controller import ControllerBase
 
 
 class BundleOutput(BaseModel):
+    client_entrypoint_path: Path
     client_compiled_contents: str
     client_source_map_contents: str
+    server_entrypoint_path: Path
     server_compiled_contents: str
     server_source_map_contents: str
 
@@ -65,10 +68,19 @@ class JavascriptBundler(ClientBuilderBase):
         contents = update_source_map_path(bundle.client_compiled_contents, map_name)
 
         (static_dir / script_name).write_text(contents)
-        (static_dir / map_name).write_text(bundle.client_source_map_contents)
+        (static_dir / map_name).write_text(
+            make_source_map_paths_absolute(
+                bundle.client_source_map_contents, bundle.client_entrypoint_path
+            )
+        )
 
         ssr_path = ssr_dir / f"{controller_base}.js"
         ssr_path.write_text(bundle.server_compiled_contents)
+        (ssr_path.with_suffix(".js.map")).write_text(
+            make_source_map_paths_absolute(
+                bundle.server_source_map_contents, bundle.server_entrypoint_path
+            )
+        )
 
     async def generate_js_bundle(self, current_path: ManagedViewPath) -> BundleOutput:
         # Before starting, make sure all the files are valid
@@ -98,11 +110,14 @@ class JavascriptBundler(ClientBuilderBase):
             client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)
             ssr_entrypoint = self.build_synthetic_ssr_page(*synthetic_payload)
 
+            client_entrypoint_path = temp_dir_path / "synthetic_client.tsx"
+            server_entrypoint_path = temp_dir_path / "synthetic_server.tsx"
+
             self.link_project_files(
                 view_root_path=current_path.get_root_link(), temp_dir_path=temp_dir_path
             )
-            (temp_dir_path / "synthetic_client.tsx").write_text(client_entrypoint)
-            (temp_dir_path / "synthetic_server.tsx").write_text(ssr_entrypoint)
+            client_entrypoint_path.write_text(client_entrypoint)
+            server_entrypoint_path.write_text(ssr_entrypoint)
 
             common_loader = {
                 ".tsx": "tsx",
@@ -113,7 +128,7 @@ class JavascriptBundler(ClientBuilderBase):
             await asyncio.gather(
                 *[
                     es_builder.bundle(
-                        entry_points=[temp_dir_path / "synthetic_client.tsx"],
+                        entry_points=[client_entrypoint_path],
                         outfile=temp_dir_path / "dist" / "synthetic_client.js",
                         output_format="esm",
                         bundle=True,
@@ -124,7 +139,7 @@ class JavascriptBundler(ClientBuilderBase):
                         loaders=common_loader,
                     ),
                     es_builder.bundle(
-                        entry_points=[temp_dir_path / "synthetic_server.tsx"],
+                        entry_points=[server_entrypoint_path],
                         outfile=temp_dir_path / "dist" / "synthetic_server.js",
                         output_format="iife",
                         global_name="SSR",
@@ -141,12 +156,14 @@ class JavascriptBundler(ClientBuilderBase):
 
             # Read these files
             return BundleOutput(
+                client_entrypoint_path=client_entrypoint_path,
                 client_compiled_contents=(
                     temp_dir_path / "dist" / "synthetic_client.js"
                 ).read_text(),
                 client_source_map_contents=(
                     temp_dir_path / "dist" / "synthetic_client.js.map"
                 ).read_text(),
+                server_entrypoint_path=server_entrypoint_path,
                 server_compiled_contents=(
                     temp_dir_path / "dist" / "synthetic_server.js"
                 ).read_text(),

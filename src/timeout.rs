@@ -3,6 +3,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+use crate::errors::AppError;
+
 #[cfg(unix)]
 mod platform {
     use libc;
@@ -35,9 +37,9 @@ mod platform {
     }
 }
 
-pub fn run_thread_with_timeout<F, R>(func: F, timeout: Duration) -> Result<R, &'static str>
+pub fn run_thread_with_timeout<F, R>(func: F, timeout: Duration) -> Result<R, AppError>
 where
-    F: FnOnce() -> R + Send + 'static,
+    F: FnOnce() -> Result<R, AppError> + Send + 'static,
     R: Send + 'static,
 {
     let (tx, rx) = mpsc::channel();
@@ -51,13 +53,15 @@ where
     match rx.recv_timeout(timeout) {
         Ok(result) => {
             let _ = handle.join();
-            Ok(result)
+            result
         } // Function completed within timeout
         Err(_) => {
             unsafe {
                 platform::cancel_thread(handle);
             }
-            Err("Function execution timed out")
+            Err(AppError::HardTimeoutError(
+                "Function execution timed out".into(),
+            ))
         } // Timeout occurred, we should cancel the thread and return
     }
 }
@@ -111,20 +115,27 @@ mod tests {
                         }
                     }
                 }
-                largest_prime
+                Ok(largest_prime)
             },
             Duration::from_millis(500),
         );
 
-        assert_eq!(result, Err("Function execution timed out"));
+        assert_eq!(
+            result,
+            Err(AppError::HardTimeoutError(
+                "Function execution timed out".into()
+            ))
+        );
         assert!(start.elapsed() < Duration::from_secs(1));
     }
 
     #[test]
     fn test_run_thread_valid() {
         let start = std::time::Instant::now();
-        let result =
-            run_thread_with_timeout(|| return "returns instantly", Duration::from_millis(500));
+        let result = run_thread_with_timeout(
+            || return Ok("returns instantly"),
+            Duration::from_millis(500),
+        );
 
         assert_eq!(result, Ok("returns instantly"));
         assert!(start.elapsed() < Duration::from_millis(500));

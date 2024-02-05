@@ -68,7 +68,7 @@ jobs:
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           rm poetry.lock
           poetry install
-          poetry run maturin develop
+          poetry run maturin develop --release
 
       # Mark all warnings as errors so we catch these early
       - name: Python tests
@@ -100,7 +100,7 @@ jobs:
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           rm poetry.lock
           poetry install
-          poetry run maturin develop
+          poetry run maturin develop --release
 
       - name: Run typehinting
         run: |
@@ -160,6 +160,10 @@ jobs:
       # these wheel builds are representative of our deployment platforms
       - name: Rust tests
         run: cargo test --all
+
+      # Run basic benchmarks to make sure these still compile
+      - name: Rust benchmarks
+        run: cargo bench
 
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}

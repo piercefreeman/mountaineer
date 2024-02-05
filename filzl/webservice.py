@@ -11,6 +11,7 @@ class UvicornThread(Thread):
         self.entrypoint = entrypoint
         self.port = port
         self.log_level = log_level
+        self.server: Server | None = None
 
     def run(self):
         loop = asyncio.new_event_loop()
@@ -26,4 +27,5 @@ class UvicornThread(Thread):
         loop.run_until_complete(self.server.serve())
 
     def stop(self):
-        self.server.should_exit = True
+        if self.server is not None:
+            self.server.should_exit = True

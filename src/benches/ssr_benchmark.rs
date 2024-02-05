@@ -28,7 +28,7 @@ fn fresh_render(contents: String) -> String {
     // in V8 by default. See the python server build pipeline for a full explanation
     // of this logic.
     let js = Ssr::new(contents, "SSR");
-    return js.render_to_string(None);
+    return js.render_to_string(None).unwrap();
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

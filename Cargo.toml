@@ -27,6 +27,11 @@ incremental = false
 name = "filzl"
 
 [[bench]]
-path = "src/benches/my_benchmark.rs"
-name = "my_benchmark"
+path = "src/benches/source_map_benchmark.rs"
+name = "source_map_benchmark"
+harness = false
+
+[[bench]]
+path = "src/benches/ssr_benchmark.rs"
+name = "ssr_benchmark"
 harness = false

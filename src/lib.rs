@@ -1,16 +1,22 @@
 #![deny(clippy::print_stdout)]
 
-use pyo3::exceptions::PyValueError;
+use errors::AppError;
+use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use std::time::Duration;
 
+mod errors;
+mod source_map;
 mod ssr;
 mod timeout;
 
 #[macro_use]
 extern crate lazy_static;
 
-fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, &'static str> {
+pub use source_map::{MapMetadata, SourceMapParser, VLQDecoder};
+pub use ssr::Ssr;
+
+fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
     if hard_timeout > 0 {
         timeout::run_thread_with_timeout(
             || {
@@ -22,12 +28,14 @@ fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, &'static str>
     } else {
         // Call inline, no timeout
         let js = ssr::Ssr::new(js_string, "SSR");
-        Ok(js.render_to_string(None))
+        js.render_to_string(None)
     }
 }
 
 #[pymodule]
 fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_class::<MapMetadata>()?;
+
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
     fn render_ssr(py: Python, js_string: String, hard_timeout: u64) -> PyResult<PyObject> {
@@ -35,7 +43,15 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
          * :param js_string: the full ssr compiled .js script to execute in V8
          * :param hard_timeout: after this many milliseconds, the V8 engine will be forcibly
          *   terminated. Use 0 for no timeout.
+         *
+         * :raises ConnectionAbortedError: if the hard_timeout is reached
+         * :raises ValueError: if the V8 engine throws an exception, since there's probably
+         *   something wrong with the script
          */
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
         // init only if we haven't done so already
         let _ = env_logger::try_init();
 
@@ -46,7 +62,30 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
                 let result_py: PyObject = result.to_object(py);
                 Ok(result_py.into())
             }
-            Err(err) => Err(PyValueError::new_err(err)),
+            Err(err) => match err {
+                AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
+                AppError::V8ExceptionError(msg) => Err(PyValueError::new_err(msg)),
+            },
+        }
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "parse_source_map_mappings")]
+    fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<PyObject> {
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
+        let mut parser = SourceMapParser::new(VLQDecoder::new());
+
+        let result = parser.parse_mapping(&mapping);
+
+        match result {
+            Ok(result) => {
+                let result_py: PyObject = result.to_object(py);
+                Ok(result_py.into())
+            }
+            Err(_err) => Err(PyValueError::new_err("Unable to parse source map mappings")),
         }
     }
 
