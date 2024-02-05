@@ -8,6 +8,7 @@ use std::time::Duration;
 mod errors;
 mod ssr;
 mod timeout;
+mod vlq;
 
 #[macro_use]
 extern crate lazy_static;

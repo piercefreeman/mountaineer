@@ -95,7 +95,7 @@ def test_ssr_exception_context():
                 """
             Error calling function 'x': Error: custom_error_text
             Stack: Error: custom_error_text
-                    at Object.x (<anonymous>:17:19)
+                    at Object.x (<anonymous>:4:19)
             """,
             )
         )

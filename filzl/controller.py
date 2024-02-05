@@ -13,9 +13,10 @@ from filzl.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
+from filzl.client_builder.source_maps import SourceMapParser
 from filzl.logging import LOGGER
 from filzl.render import Metadata, RenderBase, RenderNull
-from filzl.ssr import render_ssr
+from filzl.ssr import V8RuntimeError, render_ssr
 
 
 class ControllerBase(ABC):
@@ -42,6 +43,7 @@ class ControllerBase(ABC):
         self.initialized = True
         self.slow_ssr_threshold = slow_ssr_threshold
         self.hard_ssr_timeout = hard_ssr_timeout
+        self.source_map: SourceMapParser | None = None
 
     @abstractmethod
     def render(
@@ -107,11 +109,21 @@ class ControllerBase(ABC):
 
         # TODO: Provide a function to automatically sniff for the client view folder
         start = time()
-        ssr_html = render_ssr(
-            self.ssr_path.read_text(),
-            server_data,
-            hard_timeout=self.hard_ssr_timeout,
-        )
+        try:
+            ssr_html = render_ssr(
+                self.ssr_path.read_text(),
+                server_data,
+                hard_timeout=self.hard_ssr_timeout,
+            )
+        except V8RuntimeError as e:
+            # Try to parse the file sources and re-raise the error with the
+            # maps on the current filesystem
+            if self.source_map is not None:
+                # parse() is a no-op if the source map is already parsed, so we can do it again
+                self.source_map.parse()
+                raise V8RuntimeError(self.source_map.map_exception(str(e)))
+            raise e
+
         ssr_duration = time() - start
         if ssr_duration > self.slow_ssr_threshold:
             LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
@@ -210,7 +222,11 @@ class ControllerBase(ABC):
 
         # The SSR path is going to be static
         ssr_path = view_base / "_ssr" / f"{script_name}.js"
+        ssr_map_path = ssr_path.with_suffix(".js.map")
         self.ssr_path = ssr_path if ssr_path.exists() else None
+        self.source_map = (
+            SourceMapParser(ssr_map_path, view_base) if ssr_map_path.exists() else None
+        )
 
         # Find the md5-converted cache path
         md5_script_pattern = re_compile(script_name + "-" + "[a-f0-9]{32}" + ".js")
@@ -220,7 +236,9 @@ class ControllerBase(ABC):
             for path in (view_base / "_static").iterdir()
             if md5_script_pattern.match(path.name) and ".js.map" not in path.name
         ]
-        LOGGER.debug(f"Resolved paths... {self.bundled_scripts}")
+        LOGGER.debug(
+            f"[{self.__class__.__name__}] Resolved paths... {self.bundled_scripts}"
+        )
 
     def merge_metadatas(self, metadatas: list[Metadata]):
         """

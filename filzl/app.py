@@ -18,6 +18,7 @@ from filzl.client_builder.base import ClientBuilderBase
 from filzl.client_builder.bundler import JavascriptBundler
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+from filzl.logging import LOGGER
 from filzl.render import Metadata
 
 
@@ -101,9 +102,17 @@ class AppController:
         # with the dependency injection kwargs
         @wraps(controller.render)
         async def generate_controller_html(*args, **kwargs):
-            return await controller._generate_html(
-                *args, global_metadata=self.global_metadata, **kwargs
-            )
+            try:
+                return await controller._generate_html(
+                    *args, global_metadata=self.global_metadata, **kwargs
+                )
+            except Exception:
+                # Forward along the exception, just modify it to include
+                # the controller name for additional context
+                LOGGER.error(
+                    f"Exception encountered in {controller.__class__.__name__} rendering"
+                )
+                raise
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
