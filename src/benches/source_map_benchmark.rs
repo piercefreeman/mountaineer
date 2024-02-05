@@ -4,9 +4,16 @@ use std::io::Read;
 
 use filzl::{SourceMapParser, VLQDecoder};
 
-fn fresh_parse_mapping(contents: String) -> () {
+fn fresh_parse_mapping(
+    contents: String,
+) -> std::collections::HashMap<(i32, i32), filzl::MapMetadata> {
     let mut parser = SourceMapParser::new(VLQDecoder::new());
-    return parser.parse_mapping(&contents).unwrap();
+    let result = parser.parse_mapping(&contents).unwrap();
+
+    // Ensure the result actually parsed
+    assert!(result.len() > 5000);
+
+    return result;
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

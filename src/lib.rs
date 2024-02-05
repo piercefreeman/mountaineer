@@ -48,6 +48,10 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
          * :raises ValueError: if the V8 engine throws an exception, since there's probably
          *   something wrong with the script
          */
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
         // init only if we haven't done so already
         let _ = env_logger::try_init();
 
@@ -68,7 +72,12 @@ fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(name = "parse_source_map_mappings")]
     fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<PyObject> {
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
         let mut parser = SourceMapParser::new(VLQDecoder::new());
+
         let result = parser.parse_mapping(&mapping);
 
         match result {

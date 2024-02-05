@@ -187,8 +187,10 @@ When doing local development work, use poetry to manage dependencies and maturin
 ```bash
 $ poetry shell
 poetry install
-poetry run maturin develop
+poetry run maturin develop --release
 ```
+
+You can also run maturin just with `poetry run maturin develop`, which will be much faster to compile, but rust execution will be notably slower.
 
 You'll also need a system-wide installation of esbuild. If you don't have one when you run the build pipline it will install one for you within `~/.cache/filzl/esbuild`.
 
