@@ -106,7 +106,7 @@ class OpenAPIToTypescriptActionConverter:
             model_name = response.content_schema.schema_ref.ref.split("/")[-1]
             error_classes[
                 model_name
-            ] = f"class {self.get_exception_class_name(model_name)} extends FetchErrorBase<{model_name}> {{}}"
+            ] = f"export class {self.get_exception_class_name(model_name)} extends FetchErrorBase<{model_name}> {{}}"
             required_types.append(model_name)
 
         return error_classes, required_types

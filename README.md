@@ -4,12 +4,12 @@ filzl is a batteries-included web framework. It uses Python for the backend and 
 
 ## Main Features
 
-Each web framework has its own unique features and tradeoffs. Filzl focuses on developer productivity above all else.
+Each web framework has its own unique features and tradeoffs. Filzl focuses on developer productivity above all else, with production speed a close second.
 
 - 📝 First-class typehints for both the frontend and backend
-- 🎙️ Trivially simple client<->server communication, data binding, and function calling
-- 🌎 Optimized for server rendering of components for better accessibility and SEO
-- 🤩 Avoids the need for a separate gateway API or Node.js server just to serve frontend clients
+- 🎙️ Trivially easy client<->server communication, data binding, and function calling
+- 🌎 Optimized server rendering for better accessibility and SEO
+- 🤩 Skip the API or Node.js server just to serve frontend clients
 - 🏹 Static analysis of templates for strong validation: link validity, data access, etc.
 
 ## Getting Started

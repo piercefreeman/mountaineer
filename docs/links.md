@@ -1,8 +1,8 @@
 # Links
 
-> What is a webapp without links?
-> Probably a lineapp or something.
-> - Shakespeare
+> "What is a webapp without links?"</br>
+> "Probably a lineapp or something."</br>
+> &mdash; William Shakespeare
 
 In a typical webapp, you'll have a lot of links. Most will be internal to your site: detail pages, settings, profiles, etc. Traditionally, developers format these links manually and hope they don't break over time as routes update.
 
@@ -18,7 +18,11 @@ class DetailController:
         ...
 ```
 
-Alongside generating the appropriate API and router files, filzl will detect this render signature and generate a link generator. This generator will require a `detail_id` (since this is a required parameter) and leave the `checking_out` (since this has a default keyword argument it's declared as optional).
+Alongside generating the appropriate API and router files, filzl will detect this render signature and produce a link generator.
+
+This particular generator will require a `detail_id` and support an optional `checking_out` boolean. The `detail_id` is required because it's a part of the controller url. `checking_out` on the other hand is optional, since it has a default keyword argument in the case that another value isn't provided.
+
+On the client side, you can now create these dynamic links anywhere within your application. Mount the server state of the current view and use the included `linkGenerator`.
 
 ```typescript
 const MyHomeRoute = () => {
