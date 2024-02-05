@@ -33,14 +33,13 @@ class SourceMapParser:
 
     """
 
-    def __init__(self, path: str | Path, relative_to_path: str | Path | None = None):
+    def __init__(self, path: str | Path):
         """
         :param relative_to: If specified, will output source paths relative
         to this path.
 
         """
         self.path = Path(path)
-        self.relative_to_path = Path(relative_to_path) if relative_to_path else None
 
         self.source_map: SourceMapSchema | None = None
 
@@ -103,17 +102,18 @@ class SourceMapParser:
 
         return exception
 
-    def convert_relative_path(self, path: str):
-        if not self.relative_to_path:
-            return path
+    def convert_relative_path(self, absolute_path: str):
+        """
+        If we're within a parent directory of path, make it relative to the current
+        working directory. Otherwise just default to the original absolute path.
 
-        source_path = Path(path)
+        """
+        source_path = Path(absolute_path)
 
-        # Get the absolute relative path, if we can
-        if source_path.is_relative_to(self.relative_to_path):
-            return str(source_path.relative_to(self.relative_to_path))
+        if source_path.is_relative_to(Path.cwd()):
+            return "./" + str(source_path.relative_to(Path.cwd()))
 
-        return path
+        return absolute_path
 
 
 def get_cleaned_js_contents(contents: str):

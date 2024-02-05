@@ -225,7 +225,7 @@ class ControllerBase(ABC):
         ssr_map_path = ssr_path.with_suffix(".js.map")
         self.ssr_path = ssr_path if ssr_path.exists() else None
         self.source_map = (
-            SourceMapParser(ssr_map_path, view_base) if ssr_map_path.exists() else None
+            SourceMapParser(ssr_map_path) if ssr_map_path.exists() else None
         )
 
         # Find the md5-converted cache path
