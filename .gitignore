@@ -166,3 +166,7 @@ node_modules
 _server
 _ssr
 _static
+
+# Ignore template files that might be used locally for testing
+# but shouldn't be added to the downstream templates
+**/create_filzl_app/templates/poetry.lock
