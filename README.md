@@ -1,6 +1,6 @@
 # filzl
 
-filzl is a batteries-included web framework. It uses Python for the backend and React for the interactive frontend. If you've used either of these languages before for web development, we think you'll be right at home.
+filzl is a batteries-included framework to easily build webapps in Python and React. If you've used either of these languages before for web development, we think you'll be right at home.
 
 ## Main Features
 
@@ -113,7 +113,7 @@ export default Home;
 
 We define a simple view to show the data coming from the backend. To accomplish this conventionally, we'd need to wire up an API layer, a Node server, or otherwise format the page with Jinja templates.
 
-Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without an roundtrip fetches.
+Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without any roundtrip fetches.
 
 If you access this in your browser at `localhost:5006/` we can see the counter, but we can't really _do_ anything with it yet. Let's add some interactivity to increase the current count.
 
@@ -176,9 +176,19 @@ We run this async handler when the button is clicked and specify our desired inc
 
 Go ahead and load it in your browser. If you open up your web tools, you can increment the ticker and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by filzl.
 
+![Getting Started Final Webapp](./docs/media/getting_started_ticker.png)
+
 You can use these serverState variables anywhere you'd use dynamic React state variables. But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
 
 And that's it. We've just built a fully interactive web application without having to worry about an explicit API. You specify the data model and actions on the server and the appropriate frontend hooks are generated and updated automatically. It gives you the power of server rendered html and the interactivity of a virtual DOM, without having to compromise on complicated data mutations to keep everything in sync.
+
+### Learn More
+
+We have additional documentation that does more of a technical deep dive on different features of filzl. We order these roughly in the order that we anticipate you'll need them.
+
+- [Client Actions](./docs/client_actions.md)
+- [Error Handling](./docs/error_handling.md)
+- [Link Generation](./docs/links.md)
 
 ### Installation
 
