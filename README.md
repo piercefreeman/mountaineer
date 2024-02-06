@@ -53,8 +53,6 @@ from filzl.controller import ControllerBase
 from filzl.render import RenderBase
 from fastapi import Request
 
-from my_website.views import get_view_path
-
 class HomeRender(RenderBase):
     client_ip: str
     current_count: int
