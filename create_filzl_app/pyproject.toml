@@ -17,7 +17,17 @@ new = 'create_filzl_app.cli:main'
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.0.0"
+ruff = "^0.2.1"
+mypy = "^1.8.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+exclude = ".*/templates/.*"
+
+[tool.ruff]
+exclude = [
+    "**/templates/**",
+]

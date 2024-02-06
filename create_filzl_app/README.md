@@ -22,7 +22,7 @@ poetry run new
 For convenience when modifying the template locally, we let you edit templates in non-jinja format and then will apply changes.
 
 ```bash
-$ poetry run start-template-dev
+$ poetry run edit-templates
 
 Customize your project at: XXX.
 ```

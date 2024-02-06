@@ -1,15 +1,16 @@
 from pydantic import BaseModel
-from pathlib import Path
 from jinja2 import Template
 from create_filzl_app.templates import get_template_path
+
 
 class ProjectMetadata(BaseModel):
     project_name: str
     author: str
+    use_poetry: bool
     use_tailwind: bool
-    output_path_base: Path
 
-def format_template(name: str, project_metadata: ProjectMetadata) -> tuple[str, Path]:
+
+def format_template(name: str, project_metadata: ProjectMetadata) -> tuple[str, str]:
     """
     Takes in a template path (relative to /templates) and returns the formatted
     template contents and the final path of the file.
@@ -30,6 +31,6 @@ def format_template(name: str, project_metadata: ProjectMetadata) -> tuple[str, 
 
     output_name = name
     for key, value in metadata_variables.items():
-        output_name = output_name.replace(f"[{key}]", value)
+        output_name = output_name.replace(f"[{key}]", str(value))
 
-    return content, project_metadata.output_path_base / output_name
+    return content, output_name
