@@ -72,6 +72,9 @@ jobs:
       - name: Python tests
         run: make test
 
+      - name: Python integration tests
+        run: make test-integrations
+
   lint:
     runs-on: ubuntu-latest
 

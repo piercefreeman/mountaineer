@@ -1,5 +1,6 @@
 import asyncio
 from asyncio import create_task
+from itertools import product
 from pathlib import Path
 from uuid import uuid4
 
@@ -44,16 +45,14 @@ def test_copy_path(input_path: Path, expected_copy: bool):
 
 @pytest.mark.parametrize(
     "use_poetry, use_tailwind",
-    # product(
-    #    # Use poetry
-    #    [False, True],
-    #    # Use tailwind
-    #    [False, True],
-    # ),
-    [
-        (True, True),
-    ],
+    product(
+        # Use poetry
+        [False, True],
+        # Use tailwind
+        [False, True],
+    ),
 )
+@pytest.mark.integration_tests
 @pytest.mark.asyncio
 async def test_valid_permutations(
     tmpdir: str,
@@ -90,7 +89,7 @@ async def test_valid_permutations(
     build_project(metadata)
 
     app_test_port = get_free_port()
-    secho(f"Found free port: {app_test_port}", fg="green")
+    secho(f"Found free port for test server: {app_test_port}", fg="green")
 
     # Now launch the server in the background
     environment = environment_from_metadata(metadata)

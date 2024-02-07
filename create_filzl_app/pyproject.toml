@@ -39,3 +39,10 @@ exclude = [
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
 # Disable print statements
 select = ["E4", "E7", "E9", "F", "I001", "T201"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration_tests: run longer-running integration tests"
+]
+# Default pytest runs shouldn't execute the integration tests
+addopts = "-m 'not integration_tests'"

@@ -29,6 +29,9 @@ lint-validation: lint-validation-lib lint-validation-create-filzl-app lint-valid
 # Testing target
 test: test-lib test-create-filzl-app
 
+# Integration testing target
+test-integrations: test-create-filzl-app-integrations
+
 # Install all sub-project dependencies with poetry
 install-deps:
 	@echo "Installing dependencies for $(LIB_DIR)..."
@@ -72,15 +75,21 @@ test-lib:
 test-create-filzl-app:
 	$(call test-common,$(CREATE_FILZL_APP_DIR),$(CREATE_FILZL_APP_NAME))
 
+test-create-filzl-app-integrations:
+	$(call test-common-integrations,$(CREATE_FILZL_APP_DIR),$(CREATE_FILZL_APP_NAME))
+
 #
 # Common helper functions
 #
 
 define test-common
 	echo "Running tests for $(2)..."
-
-    # Mark all warnings as errors so we catch these early
 	@(cd $(1) && poetry run pytest -W error $(2))
+endef
+
+define test-common-integrations
+	echo "Running tests for $(2)..."
+	@(cd $(1) && poetry run pytest -s -m integration_tests -W error $(2))
 endef
 
 define lint-common
