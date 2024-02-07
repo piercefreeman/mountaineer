@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, _Call, call, patch
 
 import pytest
 
+from filzl.client_builder.base import ClientBundleMetadata
 from filzl.client_builder.bundler import JavascriptBundler
 from filzl.client_interface.paths import ManagedViewPath
 
@@ -236,7 +237,7 @@ async def test_convert(
         build_synthetic_ssr_page.return_value = "SSR_PAGE"
 
         output_bundle = await base_javascript_bundler.generate_js_bundle(
-            current_path=fake_view_root / "page.tsx"
+            current_path=fake_view_root / "page.tsx", metadata=ClientBundleMetadata()
         )
 
         # Assert that our build pipeline called our mocked esbuild_wrapper

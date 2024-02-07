@@ -3,7 +3,7 @@ from pathlib import Path
 from subprocess import PIPE
 from tempfile import TemporaryDirectory
 
-from filzl.client_builder.base import ClientBuilderBase
+from filzl.client_builder.base import ClientBuilderBase, ClientBundleMetadata
 from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
@@ -12,7 +12,10 @@ from filzl.logging import LOGGER
 
 class PostCSSBundler(ClientBuilderBase):
     async def handle_file(
-        self, current_path: ManagedViewPath, controller: ControllerBase | None
+        self,
+        current_path: ManagedViewPath,
+        controller: ControllerBase | None,
+        metadata: ClientBundleMetadata,
     ):
         # If this is a CSS file we try to process it
         if current_path.suffix not in {".css", ".scss"}:

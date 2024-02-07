@@ -11,6 +11,7 @@ from inflection import camelize
 from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
+from filzl.client_builder.base import ClientBundleMetadata
 from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_builder.exceptions import BuildProcessException
 from filzl.client_interface.build_actions import (
@@ -32,7 +33,7 @@ class ClientBuilder:
 
     """
 
-    def __init__(self, app: AppController):
+    def __init__(self, app: AppController, live_reload_port: int | None = None):
         self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
@@ -41,6 +42,7 @@ class ClientBuilder:
 
         self.app = app
         self.view_root = ManagedViewPath.from_view_root(app.view_root)
+        self.live_reload_port = live_reload_port
 
     def build(self):
         # Make sure our application definitions are in a valid state before we start
@@ -339,10 +341,16 @@ class ClientBuilder:
         if not esbuilder.get_esbuild_path():
             raise ValueError("Unable to resolve esbuild path")
 
+        metadata = ClientBundleMetadata(
+            live_reload_port=self.live_reload_port,
+        )
+
         async def spawn_builder(controller: ControllerBase):
             for builder in self.app.builders:
                 result = builder.handle_file(
-                    self.view_root.get_controller_view_path(controller), controller
+                    self.view_root.get_controller_view_path(controller),
+                    controller,
+                    metadata=metadata,
                 )
                 if isawaitable(result):
                     await result
@@ -358,7 +366,7 @@ class ClientBuilder:
 
             # Otherwise loop over our bundlers
             for builder in self.app.builders:
-                result = builder.handle_file(path, controller=None)
+                result = builder.handle_file(path, controller=None, metadata=metadata)
                 if isawaitable(result):
                     await result
 

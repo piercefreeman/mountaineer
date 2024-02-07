@@ -27,20 +27,6 @@ poetry install
 rm -rf test-project && poetry run new --output-path test-project
 ```
 
-### Modifying the Template
-
-For convenience when modifying the template locally, we let you edit templates in non-jinja format and then will apply changes.
-
-```bash
-$ poetry run edit-templates
-
-Customize your project at: XXX.
-```
-
-Then, just interrupt this session (Control-C) once you're finished editing. We will ask you to review the changes and whether you'd like to apply them to the original jinja template.
-
-If changes are wrapped in jinja blocks, you might have to make manual modifications to the raw template.
-
 ### Client Poetry Installation
 
 If you want to test the full poetry install, you can temporarily uninstall poetry and validate it's installed by this installer:

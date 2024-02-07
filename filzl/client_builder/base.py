@@ -1,8 +1,14 @@
 from abc import ABC, abstractmethod
 from typing import Any, Coroutine
 
+from pydantic import BaseModel
+
 from filzl.client_interface.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+
+
+class ClientBundleMetadata(BaseModel):
+    live_reload_port: int | None = None
 
 
 class ClientBuilderBase(ABC):
@@ -15,7 +21,10 @@ class ClientBuilderBase(ABC):
 
     @abstractmethod
     def handle_file(
-        self, current_path: ManagedViewPath, controller: ControllerBase | None
+        self,
+        current_path: ManagedViewPath,
+        controller: ControllerBase | None,
+        metadata: ClientBundleMetadata,
     ) -> None | Coroutine[Any, Any, None]:
         """
         Only direct controller views are called with (view, controller) inputs. Otherwise we do a

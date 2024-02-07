@@ -1,4 +1,5 @@
 from pathlib import Path
+from re import match as re_match
 
 import questionary
 from click import command, option, secho
@@ -38,17 +39,34 @@ def prompt_should_use_poetry():
     return input_use_poetry
 
 
-def prompt_author():
-    git_name, git_email = get_git_user_info()
-    default_author = f"{git_name} <{git_email}>" if git_name and git_email else None
-    return questionary.text(f"Author [{default_author}]").unsafe_ask() or str(
-        default_author
-    )
+def prompt_author() -> tuple[str, str]:
+    while True:
+        git_name, git_email = get_git_user_info()
+        default_author = (
+            f"{git_name} <{git_email}>" if git_name and git_email else "Name <email>"
+        )
+        author_combined = (
+            questionary.text(f"Author [{default_author}]").unsafe_ask()
+            or default_author
+        )
+
+        # Parse the author into a name and email
+        matched_obj = re_match(r"(.*) <(.*)>", author_combined)
+
+        if not matched_obj:
+            secho(
+                f"Author must be in the format 'Name <email>', not '{author_combined}'",
+                fg="red",
+            )
+            continue
+
+        return matched_obj.group(1), matched_obj.group(2)
 
 
 @command()
 @option("--output-path", help="The output path for the bundled files.")
-def main(output_path: str | None):
+@option("--filzl-dev-path", help="The path to the Filzl dev environment.")
+def main(output_path: str | None, filzl_dev_path: str | None):
     """
     Create a new Filzl project.
 
@@ -60,7 +78,7 @@ def main(output_path: str | None):
     input_project_name = (
         questionary.text("Project name [my-project]:").unsafe_ask() or "my-project"
     )
-    input_author = prompt_author()
+    input_author_name, input_author_email = prompt_author()
     input_use_poetry = prompt_should_use_poetry()
     input_use_tailwind = questionary.confirm(
         "Use Tailwind CSS? [Yes]", default=True
@@ -73,10 +91,12 @@ def main(output_path: str | None):
 
     metadata = ProjectMetadata(
         project_name=input_project_name.replace(" ", "_").replace("-", "_"),
-        author=input_author,
+        author_name=input_author_name,
+        author_email=input_author_email,
         use_poetry=input_use_poetry,
         use_tailwind=input_use_tailwind,
         project_path=project_path,
+        filzl_dev_path=Path(filzl_dev_path).resolve() if filzl_dev_path else None,
     )
 
     build_project(metadata)

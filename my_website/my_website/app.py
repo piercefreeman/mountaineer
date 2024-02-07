@@ -10,7 +10,7 @@ from my_website.views import get_view_path
 controller = AppController(
     view_root=get_view_path(""),
     global_metadata=Metadata(
-        links=[LinkAttribute(rel="stylesheet", href="/static/main.css")]
+        links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
     custom_builders=[
         PostCSSBundler(),

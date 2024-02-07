@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 from inflection import underscore
 from pydantic import BaseModel
 
-from filzl.client_builder.base import ClientBuilderBase
+from filzl.client_builder.base import ClientBuilderBase, ClientBundleMetadata
 from filzl.client_builder.esbuild import ESBuildWrapper
 from filzl.client_builder.source_maps import (
     get_cleaned_js_contents,
@@ -40,6 +40,7 @@ class JavascriptBundler(ClientBuilderBase):
         self,
         file_path: ManagedViewPath,
         controller: ControllerBase | None,
+        metadata: ClientBundleMetadata,
     ):
         if controller is None:
             # Require a controller for our bundling
@@ -52,7 +53,9 @@ class JavascriptBundler(ClientBuilderBase):
         root_path = file_path.get_root_link()
         static_dir = root_path.get_managed_static_dir()
         ssr_dir = root_path.get_managed_ssr_dir()
-        bundle = await self.generate_js_bundle(current_path=file_path)
+        bundle = await self.generate_js_bundle(
+            current_path=file_path, metadata=metadata
+        )
 
         # Write the compiled files to disk
         # Client-side scripts have to be provided a cache-invalidation suffix alongside
@@ -82,7 +85,9 @@ class JavascriptBundler(ClientBuilderBase):
             )
         )
 
-    async def generate_js_bundle(self, current_path: ManagedViewPath) -> BundleOutput:
+    async def generate_js_bundle(
+        self, current_path: ManagedViewPath, metadata: ClientBundleMetadata
+    ) -> BundleOutput:
         # Before starting, make sure all the files are valid
         self.validate_page(
             page_path=current_path, view_root_path=current_path.get_root_link()
@@ -135,6 +140,16 @@ class JavascriptBundler(ClientBuilderBase):
                         sourcemap=True,
                         define={
                             "process.env.NODE_ENV": self.environment,
+                            "process.env.SSR_RENDERING": "false",
+                            **(
+                                {
+                                    "process.env.LIVE_RELOAD_PORT": str(
+                                        metadata.live_reload_port
+                                    ),
+                                }
+                                if metadata.live_reload_port
+                                else {}
+                            ),
                         },
                         loaders=common_loader,
                     ),
@@ -145,6 +160,7 @@ class JavascriptBundler(ClientBuilderBase):
                         global_name="SSR",
                         define={
                             "global": "window",
+                            "process.env.SSR_RENDERING": "true",
                             "process.env.NODE_ENV": self.environment,
                         },
                         bundle=True,

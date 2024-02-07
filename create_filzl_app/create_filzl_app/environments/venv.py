@@ -41,12 +41,14 @@ class VEnvEnvironment(EnvironmentBase):
         secho("Packages installed.", fg="green")
 
     async def run_command(self, command: list[str], path: Path):
+        venv_path = path / self.venv_name
+        if not venv_path.exists():
+            raise ValueError(f"Virtual environment not found at: {venv_path}")
+
         process = await asyncio.create_subprocess_exec(
             *command,
             cwd=path,
-            env={"PATH": f"{path / self.venv_name / 'bin'}:{environ['PATH']}"},
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            env={"PATH": f"{venv_path}/bin:{environ['PATH']}"},
         )
 
         stdout, stderr = await process.communicate()
@@ -55,5 +57,3 @@ class VEnvEnvironment(EnvironmentBase):
             raise subprocess.CalledProcessError(
                 process.returncode or -1, command, stdout, stderr
             )
-
-        return stdout.decode(), stderr.decode()

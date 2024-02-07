@@ -8,10 +8,15 @@ from create_filzl_app.templates import get_template_path
 
 class ProjectMetadata(BaseModel):
     project_name: str
-    author: str
+    author_name: str
+    author_email: str
     use_poetry: bool
     use_tailwind: bool
     project_path: Path
+
+    # If specified, will install filzl in development mode pointing to a local path
+    # This is useful for testing changes to filzl itself
+    filzl_dev_path: Path | None = None
 
 
 class TemplateOutput(BaseModel):

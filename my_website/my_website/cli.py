@@ -9,6 +9,7 @@ def runserver():
         webservice="my_website.main:app",
         webcontroller="my_website.app:controller",
         port=5006,
+        subscribe_to_fizl=True,
     )
 
 
@@ -17,4 +18,5 @@ def watch():
     handle_watch(
         package="my_website",
         webcontroller="my_website.app:controller",
+        subscribe_to_fizl=True,
     )

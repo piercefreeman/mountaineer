@@ -89,8 +89,6 @@ class PoetryEnvironment(EnvironmentBase):
             *["poetry", "run", *command],
             cwd=path,
             env=self.limited_scope_env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
         )
 
         stdout, stderr = await process.communicate()
@@ -99,5 +97,3 @@ class PoetryEnvironment(EnvironmentBase):
             raise subprocess.CalledProcessError(
                 process.returncode or -1, command, stdout, stderr
             )
-
-        return stdout.decode(), stderr.decode()

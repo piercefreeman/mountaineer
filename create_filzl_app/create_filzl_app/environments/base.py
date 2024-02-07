@@ -28,7 +28,7 @@ class EnvironmentBase(ABC):
         pass
 
     @abstractmethod
-    async def run_command(self, command: list[str], path: Path) -> tuple[str, str]:
+    async def run_command(self, command: list[str], path: Path):
         """
         Run a command in the environment
 
