@@ -63,16 +63,26 @@ jobs:
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
-      - name: Install
+      - name: Install main dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           rm poetry.lock
           poetry install
           poetry run maturin develop --release
 
+      - name: Install create-filzl-app dependencies
+        run: |
+          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
+          cd create-filzl-app
+          rm poetry.lock
+          poetry install
+
       # Mark all warnings as errors so we catch these early
       - name: Python tests
-        run: poetry run pytest -W error
+        run: poetry run pytest -W error filzl
+
+      - name: Python create-filzl-app tests
+        run: cd create-filzl-app && poetry run pytest -W error filzl
 
   lint:
     runs-on: ubuntu-latest
@@ -101,6 +111,13 @@ jobs:
           rm poetry.lock
           poetry install
           poetry run maturin develop --release
+
+      - name: Install create-filzl-app dependencies
+        run: |
+          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
+          cd create-filzl-app
+          rm poetry.lock
+          poetry install
 
       - name: Run typehinting
         run: |
