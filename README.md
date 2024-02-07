@@ -196,7 +196,12 @@ We have additional documentation that does more of a technical deep dive on diff
 When doing local development work, use poetry to manage dependencies and maturin to create a build of the combined python/rust project:
 
 ```bash
-$ poetry shell
+make install-deps
+```
+
+This effectively expands to:
+
+```bash
 poetry install
 poetry run maturin develop --release
 ```
@@ -216,7 +221,13 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
 1. Python Testing
 
     ```bash
-    $ poetry run pytest
+    $ make test
+    ```
+
+1. Python Linting
+
+    ```bash
+    $ make lint
     ```
 
 1. Rust Benchmarking

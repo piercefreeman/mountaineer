@@ -66,23 +66,11 @@ jobs:
       - name: Install main dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          rm poetry.lock
-          poetry install
-          poetry run maturin develop --release
+          make clean-poetry-lock
+          make install-deps
 
-      - name: Install create_filzl_app dependencies
-        run: |
-          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          cd create_filzl_app
-          rm poetry.lock
-          poetry install
-
-      # Mark all warnings as errors so we catch these early
       - name: Python tests
-        run: poetry run pytest -W error filzl
-
-      - name: Python create_filzl_app tests
-        run: cd create_filzl_app && poetry run pytest -W error create_filzl_app
+        run: make test
 
   lint:
     runs-on: ubuntu-latest
@@ -105,23 +93,14 @@ jobs:
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
-      - name: Install
+      - name: Install dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          rm poetry.lock
-          poetry install
-          poetry run maturin develop --release
-
-      - name: Install create_filzl_app dependencies
-        run: |
-          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          cd create_filzl_app
-          rm poetry.lock
-          poetry install
+          make clean-poetry-lock
+          make install-deps
 
       - name: Run typehinting
-        run: |
-          ./lint_validate.sh
+        run: make lint-validation
 
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:

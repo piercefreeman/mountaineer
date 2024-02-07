@@ -1,10 +1,13 @@
-from locust import HttpUser, task, between
 from uuid import uuid4
+
+from locust import HttpUser, between, task
+
 
 class SSRTest(HttpUser):
     """
     Load test the server SSR logic
     """
+
     wait_time = between(1, 2)
 
     def on_start(self):

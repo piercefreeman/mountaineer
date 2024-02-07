@@ -8,5 +8,5 @@ def test_path_url_replacement():
         use_tailwind=True,
         use_poetry=True,
     )
-    _, output_path = format_template("[project_name]/app.py", metadata)
-    assert output_path == "TEST_PROJECT_NAME/app.py"
+    bundle = format_template("[project_name]/app.py", metadata)
+    assert bundle.path == "TEST_PROJECT_NAME/app.py"
