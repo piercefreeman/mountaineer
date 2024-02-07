@@ -15,12 +15,15 @@ class PostCSSBundler(ClientBuilderBase):
         self, current_path: ManagedViewPath, controller: ControllerBase | None
     ):
         # If this is a CSS file we try to process it
-        if current_path.suffix != ".css":
+        if current_path.suffix not in {".css", ".scss"}:
             return
 
         root_path = current_path.get_root_link()
         built_css = await self.process_css(current_path)
-        (root_path.get_managed_static_dir() / current_path.name).write_text(built_css)
+        (
+            root_path.get_managed_static_dir()
+            / self.get_style_output_name(current_path)
+        ).write_text(built_css)
 
     async def process_css(self, css_path: ManagedViewPath) -> str:
         """
@@ -57,6 +60,23 @@ class PostCSSBundler(ClientBuilderBase):
                 raise BuildProcessException(f"postcss error: {stderr.decode()}")
 
             return output_path.read_text()
+
+    def get_style_output_name(self, original_stylesheet_path: ManagedViewPath) -> str:
+        """
+        Given a path to an original stylesheet, return the name of the compiled css file
+
+        original_stylesheet_path: "path/to/styles.scss"
+        output: "path_to_styles.css"
+        """
+        root_path = original_stylesheet_path.get_root_link()
+        relative_path = original_stylesheet_path.relative_to(root_path)
+
+        # Convert the parent portions of the path to make sure our final output
+        # filename is unique
+        unique_path = "_".join(
+            [*relative_path.parent.parts, original_stylesheet_path.name]
+        )
+        return str(Path(unique_path).with_suffix(".css"))
 
     def postcss_is_installed(self, view_root_path: Path):
         # Adjust the check to look for local installation of postcss-cli, which we currently

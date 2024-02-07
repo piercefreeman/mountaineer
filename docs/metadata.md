@@ -68,3 +68,16 @@ ViewportMeta(
     user_scalable=True,
 )
 ```
+
+## Global Metadata
+
+For metadata that you know should appear on every page (like stylesheets or global scripts), you can add a metadata tag to your app controller:
+
+```python
+controller = AppController(
+    view_root=get_view_path(""),
+    global_metadata=Metadata(
+        links=[LinkAttribute(rel="stylesheet", href="/static/main.css")]
+    ),
+)
+```

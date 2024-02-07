@@ -82,7 +82,7 @@ jobs:
         run: poetry run pytest -W error filzl
 
       - name: Python create_filzl_app tests
-        run: cd create_filzl_app && poetry run pytest -W error filzl
+        run: cd create_filzl_app && poetry run pytest -W error create_filzl_app
 
   lint:
     runs-on: ubuntu-latest
