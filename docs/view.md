@@ -44,6 +44,28 @@ export default Home;
 
 We also support the Next.js `layout.tsx` convention, which is a special file that will be used to wrap all containing views in a common layout. This is useful for things like headers, footers, and other common elements.
 
+The children of the page will be passed as `{children}` to the layout component. Make sure to include this in your rendered view:
+
+```typescript title="/views/app/layout.tsx"
+const Layout = ({ children } : { children: React.ReactNode }) => {
+  return (
+    <div>
+      <header>
+        <h1>My Website</h1>
+      </header>
+      <main>
+        {children}
+      </main>
+      <footer>
+        <p>© My Website</p>
+      </footer>
+    </div>
+  );
+}
+
+export default Layout;
+```
+
 This allows you to chain layouts before rendering the final, most specific page:
 
 ```

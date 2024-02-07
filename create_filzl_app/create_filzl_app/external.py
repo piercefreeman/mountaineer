@@ -1,6 +1,9 @@
 import subprocess
-from click import secho
+from os import environ
+from pathlib import Path
 from tempfile import NamedTemporaryFile
+
+from click import secho
 
 
 def has_poetry():
@@ -59,6 +62,79 @@ def install_poetry():
     except Exception as e:
         # Handle any other exception
         secho(f"An unexpected error occurred: {e}", fg="red")
+        return False
+
+
+def poetry_install(path: Path):
+    """
+    Perform a poetry install in the given path.
+
+    """
+    # While running our script within poetry, poetry will inject a POETRY_ACTIVE
+    # environment variable. This will cause poetry to only install within the
+    # current directory. We want to avoid tthis since the path we're given could be
+    # anywhere in the system. We'll limit the scope of the new poetry subprocess to
+    # only the PATH environment variable.
+    limited_scope_env = {
+        "PATH": environ["PATH"],
+    }
+
+    try:
+        subprocess.run(
+            ["poetry", "install"],
+            check=True,
+            cwd=str(path),
+            env=limited_scope_env,
+        )
+
+        # Retrieve the location of the new virtualenv
+        result = subprocess.run(
+            ["poetry", "env", "info", "--path"],
+            check=True,
+            capture_output=True,
+            cwd=str(path),
+            env=limited_scope_env,
+        )
+
+        secho(f"Poetry venv created: {result.stdout.decode().strip()}", fg="green")
+        return True
+    except Exception as e:
+        # Handle any other exception
+        secho(
+            f"An unexpected error occurred while installing project dependencies: {e}",
+            fg="red",
+        )
+        return False
+
+
+def has_npm():
+    try:
+        subprocess.run(
+            ["npm", "--version"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return True
+    except FileNotFoundError:
+        return False
+
+
+def npm_install(path: Path):
+    try:
+        subprocess.run(
+            ["npm", "install"],
+            check=True,
+            cwd=str(path),
+        )
+        return True
+    except Exception as e:
+        secho(
+            f"An unexpected error occurred while installing npm dependencies: {e}",
+            fg="red",
+        )
         return False
 
 

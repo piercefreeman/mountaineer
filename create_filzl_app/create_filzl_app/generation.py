@@ -1,5 +1,6 @@
-from pydantic import BaseModel
 from jinja2 import Template
+from pydantic import BaseModel
+
 from create_filzl_app.templates import get_template_path
 
 
@@ -10,7 +11,12 @@ class ProjectMetadata(BaseModel):
     use_tailwind: bool
 
 
-def format_template(name: str, project_metadata: ProjectMetadata) -> tuple[str, str]:
+class TemplateOutput(BaseModel):
+    content: str
+    path: str
+
+
+def format_template(name: str, project_metadata: ProjectMetadata) -> TemplateOutput:
     """
     Takes in a template path (relative to /templates) and returns the formatted
     template contents and the final path of the file.
@@ -20,7 +26,7 @@ def format_template(name: str, project_metadata: ProjectMetadata) -> tuple[str, 
         - Bracket syntax in filenames, like /path/to/[project_name]/file.txt
 
     """
-    path = get_template_path(name)
+    path = get_template_path("project") / name
     if not path.exists():
         raise FileNotFoundError(f"Template file {path} does not exist")
 
@@ -33,4 +39,4 @@ def format_template(name: str, project_metadata: ProjectMetadata) -> tuple[str, 
     for key, value in metadata_variables.items():
         output_name = output_name.replace(f"[{key}]", str(value))
 
-    return content, output_name
+    return TemplateOutput(content=content, path=output_name)

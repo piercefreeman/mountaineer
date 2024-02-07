@@ -7,8 +7,6 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-jupyterlab = "^4.0.11"
-jupytext = "^1.16.1"
 pydantic = "^2.5.3"
 fastapi = "^0.109.0"
 inflection = "^0.5.1"
@@ -16,13 +14,17 @@ click = "^8.1.7"
 tqdm = "^4.66.1"
 uvicorn = {extras = ["standard"], version = "^0.27.0.post1"}
 
+# TODO: Move to optional dependencies, since release configurations
+# will not need these.
+watchdog = "^3.0.0"
+packaging = "^23.2"
+
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.8.0"
 pytest = "^7.4.4"
 ruff = "^0.1.14"
 types-setuptools = "^69.0.0.20240125"
 maturin = "^1.4.0"
-watchdog = "^3.0.0"
 types-tqdm = "^4.66.0.20240106"
 pytest-asyncio = "^0.23.4"
 pyinstrument = "^4.6.2"

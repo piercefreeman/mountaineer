@@ -31,3 +31,8 @@ exclude = ".*/templates/.*"
 exclude = [
     "**/templates/**",
 ]
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Disable print statements
+select = ["E4", "E7", "E9", "F", "I001", "T201"]

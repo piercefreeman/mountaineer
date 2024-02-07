@@ -1,12 +1,16 @@
 # Project Template
 
-CLI to setup a basic scaffolding for filzl. Provides a simple base project that can be executed via pipx. pipx is similar in nature to npx, except it's not installed by default alongside npm. Follow their [install guide](https://pipx.pypa.io/stable/installation/) to get started.
-
-Once pipx is installed, you can call the latest create-filzl-app logic without installing the package globally.
+CLI to setup a basic scaffolding for filzl. This provides a simple base project that can be generated via pipx.
 
 ```bash
 pipx run create-filzl-app new
 ```
+
+## Installing pipx
+
+pipx is similar in nature to npx, except it's not installed by default alongside npm. Follow their [install guide](https://pipx.pypa.io/stable/installation/) to get started.
+
+Once pipx is installed, you can call the latest create-filzl-app logic without installing the package globally.
 
 ## Development
 
@@ -14,7 +18,13 @@ We use poetry to manage local dependencies:
 
 ```bash
 poetry install
-poetry run new
+```
+
+If you're making frequent changes in development, you'll often want to create a fully fresh project directory in the CLI:
+
+```bash
+poetry install
+rm -rf test-project && poetry run new --output-path test-project
 ```
 
 ### Modifying the Template
