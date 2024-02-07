@@ -185,8 +185,10 @@ And that's it. We've just built a fully interactive web application without havi
 We have additional documentation that does more of a technical deep dive on different features of filzl. We order these roughly in the order that we anticipate you'll need them.
 
 - [Client Actions](./docs/client_actions.md)
-- [Error Handling](./docs/error_handling.md)
+- [View Definition](./docs/view.md)
+- [Page Metadata](./docs/metadata.md)
 - [Link Generation](./docs/links.md)
+- [Error Handling](./docs/error_handling.md)
 
 ### Installation
 

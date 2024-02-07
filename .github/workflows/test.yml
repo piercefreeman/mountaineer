@@ -70,10 +70,10 @@ jobs:
           poetry install
           poetry run maturin develop --release
 
-      - name: Install create-filzl-app dependencies
+      - name: Install create_filzl_app dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          cd create-filzl-app
+          cd create_filzl_app
           rm poetry.lock
           poetry install
 
@@ -81,8 +81,8 @@ jobs:
       - name: Python tests
         run: poetry run pytest -W error filzl
 
-      - name: Python create-filzl-app tests
-        run: cd create-filzl-app && poetry run pytest -W error filzl
+      - name: Python create_filzl_app tests
+        run: cd create_filzl_app && poetry run pytest -W error filzl
 
   lint:
     runs-on: ubuntu-latest
@@ -112,10 +112,10 @@ jobs:
           poetry install
           poetry run maturin develop --release
 
-      - name: Install create-filzl-app dependencies
+      - name: Install create_filzl_app dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          cd create-filzl-app
+          cd create_filzl_app
           rm poetry.lock
           poetry install
 
