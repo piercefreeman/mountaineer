@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from jinja2 import Template
 from pydantic import BaseModel
 
@@ -9,6 +11,7 @@ class ProjectMetadata(BaseModel):
     author: str
     use_poetry: bool
     use_tailwind: bool
+    project_path: Path
 
 
 class TemplateOutput(BaseModel):
