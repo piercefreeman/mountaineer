@@ -2,7 +2,26 @@
 
 Miscellaneous notes on development and testing the core library.
 
-## Development
+## Installation
+
+When doing local development work, use poetry to manage dependencies and maturin to create a build of the combined python/rust project:
+
+```bash
+make install-deps
+```
+
+This effectively expands to:
+
+```bash
+poetry install
+poetry run maturin develop --release
+```
+
+You can also run maturin just with `poetry run maturin develop`, which will be much faster to compile, but rust execution will be notably slower.
+
+You'll also need a system-wide installation of esbuild. If you don't have one when you run the build pipline it will install one for you within `~/.cache/filzl/esbuild`.
+
+## Development Utilities
 
 1. Python Testing
 
