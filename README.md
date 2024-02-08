@@ -200,7 +200,7 @@ And that's it. We've just built a fully interactive web application without havi
 
 We have additional documentation that does more of a technical deep dive on different features of filzl. We order these roughly in the order that we anticipate you'll need them.
 
-- [Client Actions](./docs/client_actions.md): Details on @sideeffect, @passthrough, and masking @sideeffect fields for partial re-rendering
+- [Client Actions](./docs/client_actions.md): Details on @sideeffect, @passthrough, and masking @sideeffect fields for partial re-rendering.
 - [View Definition](./docs/view.md): How to define the view and use the serverState hook. Covers `page.tsx` and `layout.tsx` conventions to easily nest your site designs.
 - [Page Metadata](./docs/metadata.md): How to set the title, description, and other metadata for your pages.
 - [Link Generation](./docs/links.md): Generate links to other pages within your webapp, with typehinting and automatic URL generation.

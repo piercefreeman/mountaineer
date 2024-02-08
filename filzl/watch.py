@@ -141,12 +141,13 @@ class PackageWatchdog:
                     )
 
             observer.start()
+
             try:
-                while True:
-                    pass  # Keep the script running
+                secho("Starting observer...")
+                observer.join()
             except KeyboardInterrupt:
                 observer.stop()
-            observer.join()
+                observer.join()
 
     def check_packages_installed(self):
         for package in self.packages:

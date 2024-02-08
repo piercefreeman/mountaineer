@@ -10,7 +10,7 @@ controller = AppController(
     view_root=get_view_path(""),
     {% if use_tailwind %}
     global_metadata=Metadata(
-        links=[LinkAttribute(rel="stylesheet", href="/static/main.css")]
+        links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
     custom_builders=[
         PostCSSBundler(),
