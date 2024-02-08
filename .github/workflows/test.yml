@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -63,16 +63,17 @@ jobs:
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
-      - name: Install
+      - name: Install main dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          rm poetry.lock
-          poetry install
-          poetry run maturin develop --release
+          make clean-poetry-lock
+          make install-deps
 
-      # Mark all warnings as errors so we catch these early
       - name: Python tests
-        run: poetry run pytest -W error
+        run: make test
+
+      - name: Python integration tests
+        run: make test-integrations
 
   lint:
     runs-on: ubuntu-latest
@@ -80,7 +81,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -95,16 +96,14 @@ jobs:
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
-      - name: Install
+      - name: Install dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          rm poetry.lock
-          poetry install
-          poetry run maturin develop --release
+          make clean-poetry-lock
+          make install-deps
 
       - name: Run typehinting
-        run: |
-          ./lint_validate.sh
+        run: make lint-validation
 
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
@@ -148,7 +147,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: set up python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           architecture: ${{ matrix.python-architecture || 'x64' }}

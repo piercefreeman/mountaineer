@@ -4,6 +4,17 @@
  */
 import { useEffect } from "react";
 
+interface CustomProcess {
+  env: {
+    LIVE_RELOAD_PORT?: string;
+    NODE_ENV?: string;
+    SSR_RENDERING?: string;
+  };
+}
+
+// Stub variable for typechecking the build-time variable insertion
+declare var process: CustomProcess;
+
 class ReconnectWebSocket {
   private ws: WebSocket | null = null;
   private url: string;
@@ -100,11 +111,16 @@ class ReconnectWebSocket {
 }
 
 const mountLiveReload = ({ host, port }: { host?: string; port?: number }) => {
-  if (!host) host = "localhost";
-  if (!port) port = 5015;
-
   // Noop if we're not in development mode
-  if (process.env.NODE_ENV !== "development") return;
+  if (
+    process.env.SSR_RENDERING === "true" ||
+    process.env.NODE_ENV !== "development"
+  ) {
+    return;
+  }
+
+  if (!host) host = "localhost";
+  if (!port) port = Number(process.env.LIVE_RELOAD_PORT) || 5015;
 
   useEffect(() => {
     console.log("Connecting to live reload server...");

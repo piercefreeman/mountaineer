@@ -1,20 +1,33 @@
 # filzl
 
-filzl is a batteries-included web framework. It uses Python for the backend and React for the interactive frontend. If you've used either of these languages before for web development, we think you'll be right at home.
+filzl is a batteries-included framework to easily build webapps in Python and React. If you've used either of these languages before for web development, we think you'll be right at home.
 
 ## Main Features
 
-Each web framework has its own unique features and tradeoffs. Filzl focuses on developer productivity above all else.
+Each web framework has its own unique features and tradeoffs. Filzl focuses on developer productivity above all else, with production speed a close second.
 
 - 📝 First-class typehints for both the frontend and backend
-- 🎙️ Trivially simple client<->server communication, data binding, and function calling
-- 🌎 Optimized for server rendering of components for better accessibility and SEO
-- 🤩 Avoids the need for a separate gateway API or Node.js server just to serve frontend clients
+- 🎙️ Trivially easy client<->server communication, data binding, and function calling
+- 🌎 Optimized server rendering for better accessibility and SEO
+- 🤩 Skip the API or Node.js server just to serve frontend clients
 - 🏹 Static analysis of templates for strong validation: link validity, data access, etc.
 
 ## Getting Started
 
-Filzl projects all follow a similar structure. For a project called `my_website`, this is how the directories expand:
+### New Project
+
+To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A.
+
+```bash
+$ pipx run create-filzl-app new
+
+? Project name [my-project]: my_website
+? Use poetry for dependency management? [Yes] Yes
+? Author [Pierce Freeman <pierce@freeman.vc>] Default
+? Use Tailwind CSS? [Yes] Yes
+```
+
+Filzl projects all follow a similar structure. After running this CLI you should see a new folder called `my_website`, with folders like the following:
 
 ```
 my_website
@@ -33,6 +46,8 @@ poetry.lock
 
 Every service file is nested under the `my_website` root package. Views are defined in a disk-based hierarchy (`views`) where nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`. Controllers are defined nearby in a flat folder (`controllers`) where each route is a separate file.
 
+### Development
+
 While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
 
 ```bash
@@ -45,15 +60,15 @@ Or, if you just want to watch the source tree for changes without hosting the se
 $ poetry run watch
 ```
 
-Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
+### Walkthrough
+
+Below we go through some of the unique aspects of filzl. Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
 
 ```python title="my_website/controllers/home.py"
 from filzl.actions import sideeffect
 from filzl.controller import ControllerBase
 from filzl.render import RenderBase
 from fastapi import Request
-
-from my_website.views import get_view_path
 
 class HomeRender(RenderBase):
     client_ip: str
@@ -84,14 +99,13 @@ The only three requirements of a controller are setting the:
 - View path
 - Initial data payload
 
-This particular controller manages a counter that we want to persist across page loads. The client here doesn't need much data so we keep the `HomeRender` model simple, just sending the current count and client IP address.
+This particular controller manages a counter that we want to persist across page loads. We keep it in memory attached to an instance of the class. It will therefore reset when the current webserver process ends. You could imagine we could also persist it to a database via some simple SQL queries, or an ORM like SqlAlchemy. For this walkthrough, database persistence is out of scope.
 
-The data from `render()` is injected into the frontend as we'll see in a minute. This render() function accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
+The client here doesn't need much data so we keep the `HomeRender` model simple, just sending the current count and client IP address. The data from `render()` is injected into the frontend as we'll see in a minute. This render() function accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
 
 Let's move over to the frontend.
 
 ```tsx title="my_website/views/home/page.tsx"
-
 import React from "react";
 import { useServer } from "./_server/useServer";
 
@@ -113,7 +127,7 @@ export default Home;
 
 We define a simple view to show the data coming from the backend. To accomplish this conventionally, we'd need to wire up an API layer, a Node server, or otherwise format the page with Jinja templates.
 
-Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without an roundtrip fetches.
+Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without any roundtrip fetches.
 
 If you access this in your browser at `localhost:5006/` we can see the counter, but we can't really _do_ anything with it yet. Let's add some interactivity to increase the current count.
 
@@ -176,16 +190,35 @@ We run this async handler when the button is clicked and specify our desired inc
 
 Go ahead and load it in your browser. If you open up your web tools, you can increment the ticker and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by filzl.
 
+![Getting Started Final Webapp](./docs/media/getting_started_ticker.png)
+
 You can use these serverState variables anywhere you'd use dynamic React state variables. But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
 
 And that's it. We've just built a fully interactive web application without having to worry about an explicit API. You specify the data model and actions on the server and the appropriate frontend hooks are generated and updated automatically. It gives you the power of server rendered html and the interactivity of a virtual DOM, without having to compromise on complicated data mutations to keep everything in sync.
+
+### Learn More
+
+We have additional documentation that does more of a technical deep dive on different features of filzl. We order these roughly in the order that we anticipate you'll need them.
+
+- [Client Actions](./docs/client_actions.md)
+- [View Definition](./docs/view.md)
+- [Page Metadata](./docs/metadata.md)
+- [Link Generation](./docs/links.md)
+- [Error Handling](./docs/error_handling.md)
+- [PostCSS](./docs/postcss.md)
+- [Core Library](./docs/core_library.md)
 
 ### Installation
 
 When doing local development work, use poetry to manage dependencies and maturin to create a build of the combined python/rust project:
 
 ```bash
-$ poetry shell
+make install-deps
+```
+
+This effectively expands to:
+
+```bash
 poetry install
 poetry run maturin develop --release
 ```
@@ -199,17 +232,3 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
 - Offload more of the server logic to Rust
 - AST parsing of the tsx files to determine which parts of the serverState they're actually using and mask accordingly
 - Plugins for simple authentication, daemons, billing, etc.
-
-## Development
-
-1. Python Testing
-
-    ```bash
-    $ poetry run pytest
-    ```
-
-1. Rust Benchmarking
-
-    ```bash
-    $ cargo bench
-    ```

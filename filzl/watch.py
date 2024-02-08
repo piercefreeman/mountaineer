@@ -3,7 +3,9 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
+from json import loads as json_loads
 from pathlib import Path
+from re import search as re_search
 from typing import Callable
 
 from click import secho
@@ -175,15 +177,32 @@ class PackageWatchdog:
         symbolic_links = [
             path for path in (dist.files or []) if path.name == f"{package_name}.pth"
         ]
+        dist_links = [
+            path
+            for path in (dist.files or [])
+            if path.name == "direct_url.json"
+            and re_search(package_name + r"-[0-9-.]+\.dist-info", path.parent.name)
+        ]
         explicit_links = [
             path
             for path in (dist.files or [])
-            if path.parent.name == package_name and path.name == "__init__.py"
+            if path.parent.name == package_name
+            and (
+                # Sanity check that the parent is the high level project directory
+                # by looking for common base files
+                path.name == "__init__.py"
+            )
         ]
 
         if symbolic_links:
             direct_url_path = symbolic_links[0]
             return dist.locate_file(direct_url_path.read_text().strip())
+
+        if dist_links:
+            dist_link = dist_links[0]
+            direct_metadata = json_loads(dist_link.read_text())
+            package_path = "/" + direct_metadata["url"].lstrip("file://").lstrip("/")
+            return dist.locate_file(package_path)
 
         if explicit_links:
             # Since we found the __init__.py file for the root, we should be able to go up

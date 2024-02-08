@@ -1,4 +1,5 @@
 import asyncio
+import socket
 from functools import wraps
 from typing import Any, Callable, Coroutine, TypeVar
 
@@ -32,3 +33,16 @@ def async_to_sync(async_fn: Callable[..., Coroutine[Any, Any, T]]) -> Callable[.
         return result
 
     return wrapper
+
+
+def get_free_port() -> int:
+    """
+    Leverage the OS-port shortcut :0 to get a free port. Return the value
+    of the port that was assigned.
+
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("", 0))
+        port = s.getsockname()[1]
+        s.close()
+    return int(port)

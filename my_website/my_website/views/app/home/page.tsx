@@ -1,5 +1,6 @@
 import React from "react";
 import { useServer } from "./_server/useServer";
+import { HTTPValidationErrorException } from "./_server/actions";
 
 const Home = () => {
   const serverState = useServer();
@@ -45,6 +46,31 @@ const Home = () => {
           }}
         >
           Increment
+        </button>
+        <button
+          className="rounded-md bg-blue-500 p-2 text-white"
+          onClick={async () => {
+            try {
+              await serverState.increment_count({
+                requestBody: {
+                  // @ts-ignore - we want this payload to be invalid
+                  count: "invalid payload",
+                },
+              });
+            } catch (error) {
+              if (error instanceof HTTPValidationErrorException) {
+                console.log(
+                  "Validation Error",
+                  error.body.detail?.[0].loc,
+                  error.body.detail?.[0].msg,
+                );
+              } else {
+                throw error;
+              }
+            }
+          }}
+        >
+          Invalid Increment
         </button>
         <button
           className="rounded-md bg-blue-500 p-2 text-white"

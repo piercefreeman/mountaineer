@@ -1,6 +1,6 @@
 import asyncio
 from importlib import import_module
-from multiprocessing import Event, Process, get_start_method
+from multiprocessing import Event, Process, get_start_method, set_start_method
 from multiprocessing.queues import Queue
 from signal import SIGINT, signal
 from time import time
@@ -9,16 +9,17 @@ from typing import Callable
 from click import secho
 from pydantic.main import BaseModel
 
-from filzl.client_interface.builder import ClientBuilder
+from filzl.client_builder.builder import ClientBuilder
 from filzl.logging import LOGGER
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
-from filzl.watch_server import WATCHER_WEBSERVICE
+from filzl.watch_server import get_watcher_webservice
 from filzl.webservice import UvicornThread
 
 
 class IsolatedRunserverConfig(BaseModel):
     entrypoint: str
     port: int
+    live_reload_port: int
 
 
 class IsolatedWatchConfig(BaseModel):
@@ -54,10 +55,15 @@ class IsolatedEnvProcess(Process):
         if self.watch_config is not None:
             secho("Starting build...", fg="yellow")
             start = time()
-            client_builder = ClientBuilder(
-                import_from_string(self.watch_config.webcontroller)
+            js_compiler = ClientBuilder(
+                import_from_string(self.watch_config.webcontroller),
+                live_reload_port=(
+                    self.runserver_config.live_reload_port
+                    if self.runserver_config
+                    else None
+                ),
             )
-            client_builder.build()
+            js_compiler.build()
             secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
 
             if self.build_notification_channel:
@@ -106,6 +112,7 @@ def handle_watch(
     *,
     package: str,
     webcontroller: str,
+    subscribe_to_fizl: bool = False,
 ):
     """
     Watch the file directory and rebuild auto-generated files.
@@ -114,10 +121,7 @@ def handle_watch(
     :param client_controller: "my_website.app:controller"
 
     """
-    if (spawn_method := get_start_method()) and spawn_method != "spawn":
-        LOGGER.warning(
-            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
-        )
+    update_multiprocessing_settings()
 
     current_process: IsolatedEnvProcess | None = None
 
@@ -133,7 +137,9 @@ def handle_watch(
         )
         current_process.start()
 
-    watchdog = build_common_watchdog(package, update_build)
+    watchdog = build_common_watchdog(
+        package, update_build, subscribe_to_fizl=subscribe_to_fizl
+    )
     watchdog.start_watching()
 
 
@@ -143,6 +149,7 @@ def handle_runserver(
     webservice: str,
     webcontroller: str,
     port: int,
+    subscribe_to_fizl: bool = False,
 ):
     """
     :param client_package: "my_website"
@@ -150,20 +157,18 @@ def handle_runserver(
     :param client_controller: "my_website.app:controller"
 
     """
-    if (spawn_method := get_start_method()) and spawn_method != "spawn":
-        LOGGER.warning(
-            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
-        )
+    update_multiprocessing_settings()
 
     current_process: IsolatedEnvProcess | None = None
 
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
-    WATCHER_WEBSERVICE.start()
+    watcher_webservice = get_watcher_webservice()
+    watcher_webservice.start()
 
     def update_webservice():
-        asyncio.run(WATCHER_WEBSERVICE.broadcast_listeners())
+        asyncio.run(watcher_webservice.broadcast_listeners())
 
     def update_build():
         nonlocal current_process
@@ -176,9 +181,10 @@ def handle_runserver(
             runserver_config=IsolatedRunserverConfig(
                 entrypoint=webservice,
                 port=port,
+                live_reload_port=watcher_webservice.port,
             ),
             watch_config=IsolatedWatchConfig(webcontroller=webcontroller),
-            build_notification_channel=WATCHER_WEBSERVICE.notification_queue,
+            build_notification_channel=watcher_webservice.notification_queue,
         )
         current_process.start()
 
@@ -187,15 +193,39 @@ def handle_runserver(
     def graceful_shutdown(signum, frame):
         if current_process is not None:
             current_process.stop()
-        if WATCHER_WEBSERVICE is not None:
-            WATCHER_WEBSERVICE.stop()
+        if watcher_webservice is not None:
+            watcher_webservice.stop()
         secho("Services shutdown, now exiting...", fg="yellow")
         exit(0)
 
     signal(SIGINT, graceful_shutdown)
 
-    watchdog = build_common_watchdog(package, update_build)
+    watchdog = build_common_watchdog(
+        package, update_build, subscribe_to_fizl=subscribe_to_fizl
+    )
     watchdog.start_watching()
+
+
+def update_multiprocessing_settings():
+    """
+    fork() is still the default on Linux, and can result in stalls with our asyncio
+    event loops. For consistency and expected behavior, try to switch to spawn()
+    if it's not already enabled.
+
+    """
+    if (spawn_method := get_start_method()) and spawn_method != "spawn":
+        LOGGER.warning(
+            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
+        )
+
+        try:
+            set_start_method("spawn", force=True)
+            LOGGER.info("Start method is now set to 'spawn'.")
+        except RuntimeError as e:
+            # We might catch errors if set_start_method('spawn') is called
+            # in an inappropriate context or after multiprocessing has started, which
+            # is not allowed.
+            LOGGER.error(f"Cannot change the start method after it has been used: {e}")
 
 
 def import_from_string(import_string: str):
@@ -208,20 +238,23 @@ def import_from_string(import_string: str):
     return getattr(module, attribute_name)
 
 
-def restart_build_server(webcontroller: str):
-    client_builder = ClientBuilder(import_from_string(webcontroller))
-    client_builder.build()
-
-
-def build_common_watchdog(client_package: str, callback: Callable):
+def build_common_watchdog(
+    client_package: str,
+    callback: Callable,
+    subscribe_to_fizl: bool,
+):
     """
     Useful creation class to build a watchdog the common client class
     and our internal package.
 
+    :param subscribe_to_fizl: If True, we'll also subscribe to the filzl package
+    changes in the local environment. This is helpful for local development of the core
+    package concurrent with a downstream client application.
+
     """
     return PackageWatchdog(
         client_package,
-        dependent_packages=["filzl"],
+        dependent_packages=["filzl"] if subscribe_to_fizl else [],
         callbacks=[
             CallbackDefinition(
                 CallbackType.CREATED | CallbackType.MODIFIED,

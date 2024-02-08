@@ -13,7 +13,7 @@ from filzl.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
-from filzl.client_builder.source_maps import SourceMapParser
+from filzl.js_compiler.source_maps import SourceMapParser
 from filzl.logging import LOGGER
 from filzl.render import Metadata, RenderBase, RenderNull
 from filzl.ssr import V8RuntimeError, render_ssr
