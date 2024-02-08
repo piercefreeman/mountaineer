@@ -31,7 +31,7 @@ class VEnvEnvironment(EnvironmentBase):
 
         # Install packages using pip
         subprocess.run(
-            [str(venv_path / "bin" / "pip"), "install", "-e" "."],
+            [str(venv_path / "bin" / "pip"), "install", "-e", "."],
             check=True,
             cwd=project_path,
             # Install within our virtualenv
