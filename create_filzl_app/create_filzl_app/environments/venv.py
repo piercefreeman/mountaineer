@@ -1,4 +1,3 @@
-import asyncio
 import subprocess
 from os import environ
 from pathlib import Path
@@ -40,20 +39,13 @@ class VEnvEnvironment(EnvironmentBase):
 
         secho("Packages installed.", fg="green")
 
-    async def run_command(self, command: list[str], path: Path):
+    def run_command(self, command: list[str], path: Path):
         venv_path = path / self.venv_name
         if not venv_path.exists():
             raise ValueError(f"Virtual environment not found at: {venv_path}")
 
-        process = await asyncio.create_subprocess_exec(
-            *command,
+        return subprocess.Popen(
+            command,
             cwd=path,
             env={"PATH": f"{venv_path}/bin:{environ['PATH']}"},
         )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode or -1, command, stdout, stderr
-            )

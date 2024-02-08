@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
+from subprocess import Popen
 
 
 class EnvironmentBase(ABC):
@@ -28,7 +29,7 @@ class EnvironmentBase(ABC):
         pass
 
     @abstractmethod
-    async def run_command(self, command: list[str], path: Path):
+    def run_command(self, command: list[str], path: Path) -> Popen:
         """
         Run a command in the environment
 

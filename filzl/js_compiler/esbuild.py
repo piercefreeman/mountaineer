@@ -16,6 +16,7 @@ from packaging import version
 from tqdm import tqdm
 
 from filzl.js_compiler.exceptions import BuildProcessException
+from filzl.logging import LOGGER
 
 ESBUILD_VERSION = "0.19.11"
 URL_PATTERN = "https://registry.npmjs.org/@esbuild/{platform}/-/{filename}"
@@ -128,6 +129,7 @@ class ESBuildWrapper:
         with TemporaryDirectory() as temp_dir:
             temp_dir_path = Path(temp_dir)
             tgz_path = temp_dir_path / filename
+            LOGGER.info(f"Downloading current version of esbuild from {url}")
             self.download_with_progress(url, tgz_path)
 
             # Extract the binary executable

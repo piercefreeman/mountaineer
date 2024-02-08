@@ -1,4 +1,3 @@
-import asyncio
 import subprocess
 from os import environ
 from pathlib import Path
@@ -84,16 +83,9 @@ class PoetryEnvironment(EnvironmentBase):
 
         secho("Poetry installed successfully.", fg="green")
 
-    async def run_command(self, command: list[str], path: Path):
-        process = await asyncio.create_subprocess_exec(
-            *["poetry", "run", *command],
+    def run_command(self, command: list[str], path: Path):
+        return subprocess.Popen(
+            ["poetry", "run", *command],
             cwd=path,
             env=self.limited_scope_env,
         )
-
-        stdout, stderr = await process.communicate()
-
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(
-                process.returncode or -1, command, stdout, stderr
-            )
