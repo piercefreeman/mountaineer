@@ -206,6 +206,7 @@ We have additional documentation that does more of a technical deep dive on diff
 - [Link Generation](./docs/links.md)
 - [Error Handling](./docs/error_handling.md)
 - [PostCSS](./docs/postcss.md)
+- [Core Library](./docs/core_library.md)
 
 ### Installation
 
@@ -231,23 +232,3 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
 - Offload more of the server logic to Rust
 - AST parsing of the tsx files to determine which parts of the serverState they're actually using and mask accordingly
 - Plugins for simple authentication, daemons, billing, etc.
-
-## Development
-
-1. Python Testing
-
-    ```bash
-    $ make test
-    ```
-
-1. Python Linting
-
-    ```bash
-    $ make lint
-    ```
-
-1. Rust Benchmarking
-
-    ```bash
-    $ cargo bench
-    ```

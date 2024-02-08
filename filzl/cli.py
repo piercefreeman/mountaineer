@@ -1,6 +1,6 @@
 import asyncio
 from importlib import import_module
-from multiprocessing import Event, Process, get_start_method
+from multiprocessing import Event, Process, get_start_method, set_start_method
 from multiprocessing.queues import Queue
 from signal import SIGINT, signal
 from time import time
@@ -121,10 +121,7 @@ def handle_watch(
     :param client_controller: "my_website.app:controller"
 
     """
-    if (spawn_method := get_start_method()) and spawn_method != "spawn":
-        LOGGER.warning(
-            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
-        )
+    update_multiprocessing_settings()
 
     current_process: IsolatedEnvProcess | None = None
 
@@ -160,10 +157,7 @@ def handle_runserver(
     :param client_controller: "my_website.app:controller"
 
     """
-    if (spawn_method := get_start_method()) and spawn_method != "spawn":
-        LOGGER.warning(
-            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
-        )
+    update_multiprocessing_settings()
 
     current_process: IsolatedEnvProcess | None = None
 
@@ -210,6 +204,28 @@ def handle_runserver(
         package, update_build, subscribe_to_fizl=subscribe_to_fizl
     )
     watchdog.start_watching()
+
+
+def update_multiprocessing_settings():
+    """
+    fork() is still the default on Linux, and can result in stalls with our asyncio
+    event loops. For consistency and expected behavior, try to switch to spawn()
+    if it's not already enabled.
+
+    """
+    if (spawn_method := get_start_method()) and spawn_method != "spawn":
+        LOGGER.warning(
+            f"The watch command should be run with the spawn start method, but it's currently set to {spawn_method}",
+        )
+
+        try:
+            set_start_method("spawn", force=True)
+            LOGGER.info("Start method is now set to 'spawn'.")
+        except RuntimeError as e:
+            # We might catch errors if set_start_method('spawn') is called
+            # in an inappropriate context or after multiprocessing has started, which
+            # is not allowed.
+            LOGGER.error(f"Cannot change the start method after it has been used: {e}")
 
 
 def import_from_string(import_string: str):

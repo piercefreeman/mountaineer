@@ -7,10 +7,15 @@ FROM ubuntu:latest
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && rm -rf /var/lib/apt/lists/* # clean up
+
+RUN apt-get update && apt-get install -y \
     curl \
     make \
-    python3.11 \
-    python3.11-venv \
+    python3.12 \
+    python3.12-venv \
     build-essential \
     vim \
     && rm -rf /var/lib/apt/lists/* # clean up
@@ -50,4 +55,6 @@ COPY create_filzl_app create_filzl_app
 COPY README.md .
 COPY Makefile .
 
+# Sometimes this may have to be executed manually after
+# a few fresh launches of the dockerfile
 # RUN make install-deps

@@ -1,3 +1,4 @@
+from itertools import product
 from pathlib import Path
 from time import sleep
 from uuid import uuid4
@@ -43,13 +44,12 @@ def test_copy_path(input_path: Path, expected_copy: bool):
 
 @pytest.mark.parametrize(
     "use_poetry, use_tailwind",
-    # product(
-    # Use poetry
-    # [False, True],
-    # Use tailwind
-    # [False, True],
-    [(False, False)],
-    # ),
+    product(
+        # Use poetry
+        [False, True],
+        # Use tailwind
+        [False, True],
+    ),
 )
 @pytest.mark.integration_tests
 def test_valid_permutations(

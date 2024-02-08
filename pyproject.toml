@@ -61,7 +61,7 @@ dependencies = [
     "inflection",
     "click",
     "tqdm",
-    "uvicorn",
+    "uvicorn[standard]",
     "packaging",
     "watchdog"
 ]
