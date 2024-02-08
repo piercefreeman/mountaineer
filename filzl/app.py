@@ -14,10 +14,10 @@ from filzl.actions import (
     init_function_metadata,
 )
 from filzl.annotation_helpers import FilzlUnsetValue
-from filzl.client_builder.base import ClientBuilderBase
-from filzl.client_builder.bundler import JavascriptBundler
-from filzl.client_interface.paths import ManagedViewPath
+from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+from filzl.js_compiler.base import ClientBuilderBase
+from filzl.js_compiler.bundler import JavascriptBundler
 from filzl.logging import LOGGER
 from filzl.render import Metadata
 

@@ -6,15 +6,15 @@ from tempfile import TemporaryDirectory
 from inflection import underscore
 from pydantic import BaseModel
 
-from filzl.client_builder.base import ClientBuilderBase, ClientBundleMetadata
-from filzl.client_builder.esbuild import ESBuildWrapper
-from filzl.client_builder.source_maps import (
+from filzl.client_builder.paths import ManagedViewPath, generate_relative_import
+from filzl.controller import ControllerBase
+from filzl.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
+from filzl.js_compiler.esbuild import ESBuildWrapper
+from filzl.js_compiler.source_maps import (
     get_cleaned_js_contents,
     make_source_map_paths_absolute,
     update_source_map_path,
 )
-from filzl.client_interface.paths import ManagedViewPath, generate_relative_import
-from filzl.controller import ControllerBase
 
 
 class BundleOutput(BaseModel):
@@ -109,7 +109,9 @@ class JavascriptBundler(ClientBuilderBase):
             synthetic_payload = self.build_synthetic_endpoint(
                 page_path=current_path,
                 layout_paths=layout_paths,
-                output_path=temp_dir_path / "dist",
+                # This output path should be relative to the `synthetic_client` and `synthetic_server`
+                # entrypoint files
+                output_path=temp_dir_path,
             )
 
             client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)

@@ -52,5 +52,5 @@ def get_git_user_info():
             .decode()
         )
         return git_user_name, git_user_email
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, FileNotFoundError):
         return None, None

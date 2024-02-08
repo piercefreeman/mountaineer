@@ -5,8 +5,8 @@ from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
 from pydantic import BaseModel
 
-from filzl.client_interface.build_actions import OpenAPIToTypescriptActionConverter
-from filzl.client_interface.openapi import (
+from filzl.client_builder.build_actions import OpenAPIToTypescriptActionConverter
+from filzl.client_builder.openapi import (
     ActionDefinition,
     ActionType,
     ContentBodyDefinition,

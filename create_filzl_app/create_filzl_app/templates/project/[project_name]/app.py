@@ -1,5 +1,5 @@
 from filzl.app import AppController
-from filzl.client_builder.postcss import PostCSSBundler
+from filzl.js_compiler.postcss import PostCSSBundler
 from filzl.render import LinkAttribute, Metadata
 
 from {{project_name}}.controllers.detail import DetailController

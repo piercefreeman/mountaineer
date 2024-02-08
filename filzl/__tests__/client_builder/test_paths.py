@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from filzl.client_interface.paths import (
+from filzl.client_builder.paths import (
     ManagedViewPath,
     generate_relative_import,
     is_path_file,

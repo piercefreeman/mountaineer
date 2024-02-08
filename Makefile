@@ -87,6 +87,7 @@ define test-common
 	@(cd $(1) && poetry run pytest -W error $(2))
 endef
 
+# Use `-n auto` to run tests in parallel
 define test-common-integrations
 	echo "Running tests for $(2)..."
 	@(cd $(1) && poetry run pytest -s -m integration_tests -W error $(2))

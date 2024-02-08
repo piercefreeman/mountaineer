@@ -9,7 +9,7 @@ from typing import Callable
 from click import secho
 from pydantic.main import BaseModel
 
-from filzl.client_interface.builder import ClientBuilder
+from filzl.client_builder.builder import ClientBuilder
 from filzl.logging import LOGGER
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
 from filzl.watch_server import get_watcher_webservice
@@ -55,7 +55,7 @@ class IsolatedEnvProcess(Process):
         if self.watch_config is not None:
             secho("Starting build...", fg="yellow")
             start = time()
-            client_builder = ClientBuilder(
+            js_compiler = ClientBuilder(
                 import_from_string(self.watch_config.webcontroller),
                 live_reload_port=(
                     self.runserver_config.live_reload_port
@@ -63,7 +63,7 @@ class IsolatedEnvProcess(Process):
                     else None
                 ),
             )
-            client_builder.build()
+            js_compiler.build()
             secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
 
             if self.build_notification_channel:

@@ -5,7 +5,7 @@ import pytest
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
 
-from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
+from filzl.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 
 
 def view_endpoint_regular():

@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, _Call, call, patch
 
 import pytest
 
-from filzl.client_builder.base import ClientBundleMetadata
-from filzl.client_builder.bundler import JavascriptBundler
-from filzl.client_interface.paths import ManagedViewPath
+from filzl.client_builder.paths import ManagedViewPath
+from filzl.js_compiler.base import ClientBundleMetadata
+from filzl.js_compiler.bundler import JavascriptBundler
 
 
 class MockedESBuild:
@@ -33,14 +33,14 @@ def fake_view_root() -> Iterable[ManagedViewPath]:
 def mocked_esbuild():
     mocked_builder = MockedESBuild()
 
-    with patch("filzl.client_builder.bundler.ESBuildWrapper") as mock:
+    with patch("filzl.js_compiler.bundler.ESBuildWrapper") as mock:
         mock.return_value = mocked_builder
         yield mocked_builder
 
 
 @pytest.fixture(scope="function")
 def base_javascript_bundler(mocked_esbuild: MagicMock) -> JavascriptBundler:
-    from filzl.client_builder.bundler import JavascriptBundler
+    from filzl.js_compiler.bundler import JavascriptBundler
 
     # Recycle this object every function call, since the end function will usually
     # modify the page_path or other instance variables

@@ -3,13 +3,13 @@ from typing import Any
 
 import pytest
 
-from filzl.client_interface.openapi import (
+from filzl.client_builder.openapi import (
     OpenAPIProperty,
     OpenAPISchemaType,
     ParameterLocationType,
     URLParameterDefinition,
 )
-from filzl.client_interface.typescript import (
+from filzl.client_builder.typescript import (
     TSLiteral,
     get_typehint_for_parameter,
     python_payload_to_typescript,

@@ -155,6 +155,9 @@ def generate_relative_import(
     suffix. This flag allows callers to strip the suffix from the import path.
 
     """
+    current_import = current_import.resolve()
+    desired_import = desired_import.resolve()
+
     # Calculate the relative path
     relative_path = relpath(
         desired_import,

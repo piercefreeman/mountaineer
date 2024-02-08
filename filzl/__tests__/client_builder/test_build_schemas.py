@@ -3,7 +3,7 @@ from json import dumps as json_dumps
 import pytest
 from pydantic import BaseModel, Field, create_model
 
-from filzl.client_interface.build_schemas import (
+from filzl.client_builder.build_schemas import (
     OpenAPISchema,
     OpenAPIToTypescriptSchemaConverter,
 )

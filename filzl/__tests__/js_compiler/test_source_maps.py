@@ -5,7 +5,7 @@ import pytest
 
 from filzl import filzl as filzl_rs  # type: ignore
 from filzl.__tests__.fixtures import get_fixture_path
-from filzl.client_builder.source_maps import (
+from filzl.js_compiler.source_maps import (
     SourceMapParser,
     SourceMapSchema,
     get_cleaned_js_contents,

@@ -3,10 +3,10 @@ from pathlib import Path
 from subprocess import PIPE
 from tempfile import TemporaryDirectory
 
-from filzl.client_builder.base import ClientBuilderBase, ClientBundleMetadata
-from filzl.client_builder.exceptions import BuildProcessException
-from filzl.client_interface.paths import ManagedViewPath
+from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+from filzl.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
+from filzl.js_compiler.exceptions import BuildProcessException
 from filzl.logging import LOGGER
 
 

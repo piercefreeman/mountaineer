@@ -11,19 +11,19 @@ from inflection import camelize
 from filzl.actions import get_function_metadata
 from filzl.actions.fields import FunctionActionType
 from filzl.app import AppController, ControllerDefinition
-from filzl.client_builder.base import ClientBundleMetadata
-from filzl.client_builder.esbuild import ESBuildWrapper
-from filzl.client_builder.exceptions import BuildProcessException
-from filzl.client_interface.build_actions import (
+from filzl.client_builder.build_actions import (
     OpenAPIToTypescriptActionConverter,
 )
-from filzl.client_interface.build_links import OpenAPIToTypescriptLinkConverter
-from filzl.client_interface.build_schemas import OpenAPIToTypescriptSchemaConverter
-from filzl.client_interface.openapi import OpenAPIDefinition
-from filzl.client_interface.paths import ManagedViewPath, generate_relative_import
-from filzl.client_interface.typescript import TSLiteral, python_payload_to_typescript
+from filzl.client_builder.build_links import OpenAPIToTypescriptLinkConverter
+from filzl.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
+from filzl.client_builder.openapi import OpenAPIDefinition
+from filzl.client_builder.paths import ManagedViewPath, generate_relative_import
+from filzl.client_builder.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.io import gather_with_concurrency
+from filzl.js_compiler.base import ClientBundleMetadata
+from filzl.js_compiler.esbuild import ESBuildWrapper
+from filzl.js_compiler.exceptions import BuildProcessException
 from filzl.static import get_static_path
 
 
@@ -380,12 +380,19 @@ class ClientBuilder:
             )
 
             # Go through the exceptions, logging the build errors explicitly
+            has_build_error = False
             for result in results:
                 if isinstance(result, Exception):
+                    has_build_error = True
                     if isinstance(result, BuildProcessException):
                         secho(f"Build error: {result}", fg="red")
                     else:
                         raise result
+
+            if has_build_error:
+                raise BuildProcessException(
+                    "Build process failed. Errors are listed in the console."
+                )
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own

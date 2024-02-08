@@ -2,13 +2,13 @@ from typing import Any
 
 from inflection import underscore
 
-from filzl.client_interface.openapi import (
+from filzl.client_builder.openapi import (
     ActionDefinition,
     ContentDefinition,
     OpenAPIDefinition,
     ParameterLocationType,
 )
-from filzl.client_interface.typescript import (
+from filzl.client_builder.typescript import (
     TSLiteral,
     get_typehint_for_parameter,
     python_payload_to_typescript,

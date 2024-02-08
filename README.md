@@ -14,7 +14,20 @@ Each web framework has its own unique features and tradeoffs. Filzl focuses on d
 
 ## Getting Started
 
-Filzl projects all follow a similar structure. For a project called `my_website`, this is how the directories expand:
+### New Project
+
+To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A.
+
+```bash
+$ pipx run create-filzl-app new
+
+? Project name [my-project]: my_website
+? Use poetry for dependency management? [Yes] Yes
+? Author [Pierce Freeman <pierce@freeman.vc>] Default
+? Use Tailwind CSS? [Yes] Yes
+```
+
+Filzl projects all follow a similar structure. After running this CLI you should see a new folder called `my_website`, with folders like the following:
 
 ```
 my_website
@@ -33,6 +46,8 @@ poetry.lock
 
 Every service file is nested under the `my_website` root package. Views are defined in a disk-based hierarchy (`views`) where nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`. Controllers are defined nearby in a flat folder (`controllers`) where each route is a separate file.
 
+### Development
+
 While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
 
 ```bash
@@ -45,7 +60,9 @@ Or, if you just want to watch the source tree for changes without hosting the se
 $ poetry run watch
 ```
 
-Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
+### Walkthrough
+
+Below we go through some of the unique aspects of filzl. Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
 
 ```python title="my_website/controllers/home.py"
 from filzl.actions import sideeffect
@@ -82,14 +99,13 @@ The only three requirements of a controller are setting the:
 - View path
 - Initial data payload
 
-This particular controller manages a counter that we want to persist across page loads. The client here doesn't need much data so we keep the `HomeRender` model simple, just sending the current count and client IP address.
+This particular controller manages a counter that we want to persist across page loads. We keep it in memory attached to an instance of the class. It will therefore reset when the current webserver process ends. You could imagine we could also persist it to a database via some simple SQL queries, or an ORM like SqlAlchemy. For this walkthrough, database persistence is out of scope.
 
-The data from `render()` is injected into the frontend as we'll see in a minute. This render() function accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
+The client here doesn't need much data so we keep the `HomeRender` model simple, just sending the current count and client IP address. The data from `render()` is injected into the frontend as we'll see in a minute. This render() function accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
 
 Let's move over to the frontend.
 
 ```tsx title="my_website/views/home/page.tsx"
-
 import React from "react";
 import { useServer } from "./_server/useServer";
 

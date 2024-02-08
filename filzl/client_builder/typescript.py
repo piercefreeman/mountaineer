@@ -5,7 +5,7 @@ Python definitions.
 """
 from typing import Any
 
-from filzl.client_interface.openapi import (
+from filzl.client_builder.openapi import (
     OpenAPISchemaType,
     URLParameterDefinition,
     get_types_from_parameters,

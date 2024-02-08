@@ -14,7 +14,7 @@ Once pipx is installed, you can call the latest create-filzl-app logic without i
 
 ## Development
 
-We use poetry to manage local dependencies:
+To work on `create-filzl-app`, we use poetry to manage local dependencies. Note this is only required if you're hacking on this CLI, not if you just want to run it.
 
 ```bash
 poetry install

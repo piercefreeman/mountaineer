@@ -15,7 +15,7 @@ from urllib.request import urlopen
 from packaging import version
 from tqdm import tqdm
 
-from filzl.client_builder.exceptions import BuildProcessException
+from filzl.js_compiler.exceptions import BuildProcessException
 
 ESBUILD_VERSION = "0.19.11"
 URL_PATTERN = "https://registry.npmjs.org/@esbuild/{platform}/-/{filename}"

@@ -3,7 +3,7 @@ from typing import Any, Coroutine
 
 from pydantic import BaseModel
 
-from filzl.client_interface.paths import ManagedViewPath
+from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
 
 

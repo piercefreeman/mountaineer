@@ -5,7 +5,7 @@
 PostCSS support is handled as a buildtime plugin with filzl. It's disabled by default. To enable, make sure you have `postcss-cli` installed within your `views/project.json` file. You'll also need to properly `npm install` the dependencies before running.
 
 ```python
-from filzl.client_builder.postcss import PostCSSBundler
+from filzl.js_compiler.postcss import PostCSSBundler
 
 controller = AppController(
     view_root=get_view_path(""),

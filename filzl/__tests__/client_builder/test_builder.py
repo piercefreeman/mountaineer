@@ -4,7 +4,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from filzl.app import AppController
-from filzl.client_interface.builder import ClientBuilder
+from filzl.client_builder.builder import ClientBuilder
 from filzl.controller import ControllerBase
 
 

@@ -7,12 +7,12 @@ from inflection import camelize
 from pydantic import BaseModel, create_model
 
 from filzl.annotation_helpers import get_value_by_alias, yield_all_subtypes
-from filzl.client_interface.openapi import (
+from filzl.client_builder.openapi import (
     OpenAPIProperty,
     OpenAPISchema,
     OpenAPISchemaType,
 )
-from filzl.client_interface.typescript import map_openapi_type_to_ts
+from filzl.client_builder.typescript import map_openapi_type_to_ts
 
 
 class OpenAPIToTypescriptSchemaConverter:
