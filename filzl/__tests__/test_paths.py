@@ -167,3 +167,12 @@ def test_managed_view_paths_get_controller(tmpdir):
     assert controller_path == root_path / "detail/page.tsx"
     assert controller_path.is_root_link is False
     assert controller_path.root_link == root_path
+
+
+def test_copy():
+    path = ManagedViewPath.from_view_root("root_view", package_root_link="package_root")
+    new_path = path.copy()
+
+    assert id(path) != id(new_path)
+    assert str(path.root_link) == str(new_path.root_link)
+    assert str(path.package_root_link) == str(new_path.package_root_link)

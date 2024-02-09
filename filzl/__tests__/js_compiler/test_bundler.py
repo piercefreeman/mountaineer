@@ -26,7 +26,12 @@ class MockedESBuild:
 @pytest.fixture
 def fake_view_root() -> Iterable[ManagedViewPath]:
     with TemporaryDirectory() as temp_dir_name:
-        yield ManagedViewPath.from_view_root(temp_dir_name)
+        managed_view = ManagedViewPath.from_view_root(temp_dir_name)
+
+        # Make fake expected directories
+        (managed_view / "node_modules").mkdir()
+        (managed_view / "package.json").write_text("{}")
+        yield managed_view
 
 
 @pytest.fixture
