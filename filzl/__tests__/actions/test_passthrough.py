@@ -73,7 +73,7 @@ async def test_can_call_passthrough():
             self.counter += 1
             return dict(status="success")
 
-    app = AppController(Path())
+    app = AppController(view_root=Path())
     controller = TestController()
     app.register(controller)
 

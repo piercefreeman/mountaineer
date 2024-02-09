@@ -8,6 +8,7 @@ from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
 from filzl.annotation_helpers import FilzlUnsetValue
+from filzl.exceptions import APIException
 from filzl.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
 
 
@@ -31,6 +32,9 @@ class FunctionMetadata(BaseModel):
     # response payload sent to the client. This might be used for either passthrough
     # or sideeffect
     passthrough_model: Type[BaseModel] | None | FilzlUnsetValue = FilzlUnsetValue()
+    exception_models: list[
+        Type[APIException]
+    ] | None | FilzlUnsetValue = FilzlUnsetValue()
 
     # Render type, defines the data model that is returned by the render typehint
     # If "None", the user has explicitly stated that no render model is returned
@@ -65,6 +69,11 @@ class FunctionMetadata(BaseModel):
         if isinstance(self.passthrough_model, FilzlUnsetValue):
             raise ValueError("Passthrough model not set")
         return self.passthrough_model
+
+    def get_exception_models(self) -> list[Type[APIException]] | None:
+        if isinstance(self.exception_models, FilzlUnsetValue):
+            raise ValueError("Exception models not set")
+        return self.exception_models
 
     def get_url(self) -> str:
         if isinstance(self.url, FilzlUnsetValue):

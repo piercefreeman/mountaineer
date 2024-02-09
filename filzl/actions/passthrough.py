@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Callable, Type, overload
 from pydantic import BaseModel
 
 from filzl.actions.fields import FunctionActionType, init_function_metadata
+from filzl.exceptions import APIException
 
 if TYPE_CHECKING:
     from filzl.controller import ControllerBase
@@ -12,7 +13,9 @@ if TYPE_CHECKING:
 
 @overload
 def passthrough(
+    *,
     response_model: Type[BaseModel] | None = None,
+    exception_models: list[Type[APIException]] | None = None,
 ) -> Callable[[Callable], Callable]:
     ...
 
@@ -32,7 +35,10 @@ def passthrough(*args, **kwargs):
 
     """
 
-    def decorator_with_args(response_model: Type[BaseModel] | None):
+    def decorator_with_args(
+        response_model: Type[BaseModel] | None,
+        exception_models: list[Type[APIException]] | None,
+    ):
         def wrapper(func: Callable):
             @wraps(func)
             async def inner(self: "ControllerBase", *func_args, **func_kwargs):
@@ -43,6 +49,7 @@ def passthrough(*args, **kwargs):
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = response_model
+            metadata.exception_models = exception_models
             return inner
 
         return wrapper
@@ -50,7 +57,10 @@ def passthrough(*args, **kwargs):
     if args and callable(args[0]):
         # It's used as @sideeffect without arguments
         func = args[0]
-        return decorator_with_args(None)(func)
+        return decorator_with_args(None, None)(func)
     else:
-        # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(*args, **kwargs)
+        # It's used as @passthrough(xyz=2) with arguments
+        return decorator_with_args(
+            response_model=kwargs.get("response_model"),
+            exception_models=kwargs.get("exception_models"),
+        )

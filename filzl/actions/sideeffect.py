@@ -14,6 +14,7 @@ from filzl.actions.fields import (
     init_function_metadata,
 )
 from filzl.dependencies import get_function_dependencies
+from filzl.exceptions import APIException
 from filzl.render import FieldClassDefinition
 
 if TYPE_CHECKING:
@@ -22,10 +23,12 @@ if TYPE_CHECKING:
 
 @overload
 def sideeffect(
+    *,
     # We need to typehint reload to be Any, because during typechecking our Model.attribute will just
     # yield whatever the typehint of that field is. Only at runtime does it become a FieldClassDefinition
     reload: tuple[Any, ...] | None = None,
     response_model: Type[BaseModel] | None = None,
+    exception_models: list[Type[APIException]] | None = None,
 ) -> Callable[[Callable], Callable]:
     ...
 
@@ -50,6 +53,7 @@ def sideeffect(*args, **kwargs):
     def decorator_with_args(
         reload: tuple[FieldClassDefinition, ...] | None = None,
         response_model: Type[BaseModel] | None = None,
+        exception_models: list[Type[APIException]] | None = None,
     ):
         def wrapper(func: Callable):
             original_sig = signature(func)
@@ -105,6 +109,7 @@ def sideeffect(*args, **kwargs):
             metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
             metadata.reload_states = reload
             metadata.passthrough_model = response_model
+            metadata.exception_models = exception_models
             return inner
 
         return wrapper
@@ -115,7 +120,11 @@ def sideeffect(*args, **kwargs):
         return decorator_with_args()(func)
     else:
         # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(*args, **kwargs)
+        return decorator_with_args(
+            reload=kwargs.get("reload"),
+            response_model=kwargs.get("response_model"),
+            exception_models=kwargs.get("exception_models"),
+        )
 
 
 @asynccontextmanager

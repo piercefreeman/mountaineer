@@ -34,7 +34,7 @@ def simple_app_controller():
         (temp_view_path / "page.tsx").write_text("")
         (temp_view_path / "detail" / "page.tsx").write_text("")
 
-        app_controller = AppController(temp_view_path)
+        app_controller = AppController(view_root=temp_view_path)
         app_controller.register(ExampleHomeController())
         app_controller.register(ExampleDetailController())
         yield app_controller

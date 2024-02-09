@@ -48,6 +48,9 @@ class AppController:
 
     def __init__(
         self,
+        *,
+        name: str = "Filzl Webapp",
+        version: str = "0.1.0",
         view_root: Path,
         global_metadata: Metadata | None = None,
         custom_builders: list[ClientBuilderBase] | None = None,
@@ -60,8 +63,10 @@ class AppController:
         :param config: Application global configuration.
 
         """
-        self.app = FastAPI()
+        self.app = FastAPI(title=name, version=version)
         self.controllers: list[ControllerDefinition] = []
+        self.name = name
+        self.version = version
         self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
         self.builders = [

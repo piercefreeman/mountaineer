@@ -27,7 +27,7 @@ def test_requires_render_return_value():
         def render(self) -> None:
             return None
 
-    app = AppController(Path(""))
+    app = AppController(view_root=Path(""))
     with pytest.raises(ValueError, match="must have a return type annotation"):
         app.register(TestControllerWithoutRenderMarkup())
 
