@@ -1,11 +1,10 @@
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from functools import wraps
 from inspect import Parameter, isawaitable, signature
 from typing import TYPE_CHECKING, Any, Callable, Type, overload
 from urllib.parse import urlparse
 
 from fastapi import Request
-from fastapi.dependencies.utils import get_dependant, solve_dependencies
 from pydantic import BaseModel
 from starlette.routing import Match
 
@@ -14,6 +13,7 @@ from filzl.actions.fields import (
     get_function_metadata,
     init_function_metadata,
 )
+from filzl.dependencies import get_function_dependencies
 from filzl.render import FieldClassDefinition
 
 if TYPE_CHECKING:
@@ -133,12 +133,6 @@ async def get_render_parameters(
     automatic calls to the rendering due to side-effects.
 
     """
-    # Synthetic request object as if we're coming from the original first page
-    dependant = get_dependant(
-        call=controller.render,
-        path=controller.url,
-    )
-
     # Create a synethic request object that we would use to access the core
     # html. This will be passed through the dependency resolution pipeline so to
     # render() it's indistinguishable from a real request and therefore will render
@@ -176,19 +170,12 @@ async def get_render_parameters(
             **child_scope,
         }
 
-    async with AsyncExitStack() as async_exit_stack:
-        values, errors, background_tasks, sub_response, _ = await solve_dependencies(
-            request=view_request,
-            dependant=dependant,
-            async_exit_stack=async_exit_stack,
-        )
-        if background_tasks:
-            raise RuntimeError(
-                "Background tasks are not supported when calling a render() function, due to undesirable side-effects."
-            )
-        if errors:
-            raise RuntimeError(
-                f"Errors encountered while resolving dependencies for a render(): {controller} {errors}"
-            )
-
-        yield values
+    try:
+        async with get_function_dependencies(
+            callable=controller.render, url=controller.url, request=view_request
+        ) as values:
+            yield values
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Error occurred while resolving dependencies for render(): {controller}"
+        ) from e
