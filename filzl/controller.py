@@ -15,13 +15,17 @@ from filzl.actions import (
 )
 from filzl.js_compiler.source_maps import SourceMapParser
 from filzl.logging import LOGGER
+from filzl.paths import ManagedViewPath
 from filzl.render import Metadata, RenderBase, RenderNull
 from filzl.ssr import V8RuntimeError, render_ssr
 
 
 class ControllerBase(ABC):
     url: str
-    view_path: str
+    # Typically, view paths should be a relative path to the local
+    # Paths are only used if you need to specify an absolute path to another
+    # file on disk
+    view_path: str | ManagedViewPath
 
     bundled_scripts: list[str]
 

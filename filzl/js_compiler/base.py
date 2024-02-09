@@ -3,8 +3,8 @@ from typing import Any, Coroutine
 
 from pydantic import BaseModel
 
-from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+from filzl.paths import ManagedViewPath
 
 
 class ClientBundleMetadata(BaseModel):

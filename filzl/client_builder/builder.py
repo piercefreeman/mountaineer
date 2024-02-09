@@ -17,13 +17,13 @@ from filzl.client_builder.build_actions import (
 from filzl.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_builder.openapi import OpenAPIDefinition
-from filzl.client_builder.paths import ManagedViewPath, generate_relative_import
 from filzl.client_builder.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.io import gather_with_concurrency
 from filzl.js_compiler.base import ClientBundleMetadata
 from filzl.js_compiler.esbuild import ESBuildWrapper
 from filzl.js_compiler.exceptions import BuildProcessException
+from filzl.paths import ManagedViewPath, generate_relative_import
 from filzl.static import get_static_path
 
 

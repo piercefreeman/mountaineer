@@ -2,12 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from filzl.client_builder.paths import (
+from filzl.controller import ControllerBase
+from filzl.paths import (
     ManagedViewPath,
     generate_relative_import,
     is_path_file,
 )
-from filzl.controller import ControllerBase
 
 
 @pytest.mark.parametrize(

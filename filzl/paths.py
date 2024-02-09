@@ -1,10 +1,13 @@
 from os import PathLike
 from os.path import relpath
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
-from filzl.controller import ControllerBase
+from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.logging import LOGGER
+
+if TYPE_CHECKING:
+    from filzl.controller import ControllerBase
 
 
 class ManagedViewPath(type(Path())):  # type: ignore
@@ -14,22 +17,37 @@ class ManagedViewPath(type(Path())):  # type: ignore
 
     """
 
+    # Root link to the view directory
     root_link: Optional["ManagedViewPath"]
+
+    # Root link to the directory that stores package.json / node_modules / etc
+    # Typically this is the same thing as the root_link, but in the case of plugins
+    # they may be different
+    package_root_link: Optional["ManagedViewPath"]
 
     def __new__(cls, *args, **kwargs):
         # Ensure instances are created properly by using the __new__ method of the Path class
         # path = ManagedViewPath(*args, **kwargs)
         path = super().__new__(cls, *args, **kwargs)
         path.root_link = None
+        path.package_root_link = None
         return path
 
     @classmethod
-    def from_view_root(cls, root_path: PathLike | str):
+    def from_view_root(
+        cls,
+        root_path: PathLike | str,
+        package_root_link: PathLike | str | FilzlUnsetValue = FilzlUnsetValue(),
+    ):
         """
         Constructor to create a ManagedViewPath from the view root
         """
         path = cls(root_path)
         path.root_link = path
+        if isinstance(package_root_link, FilzlUnsetValue):
+            path.package_root_link = path
+        elif package_root_link is not None:
+            path.package_root_link = cls(package_root_link)
         return path
 
     def __truediv__(self, key):
@@ -47,8 +65,20 @@ class ManagedViewPath(type(Path())):  # type: ignore
         Get the original root link for this view path. If the current view is a root link, it will return itself.
         """
         if self.root_link is None:
-            raise ValueError("Cannot get root link from a non-root linked view path")
+            raise ValueError(
+                f"Cannot get root link from a non-root linked view path: {self}"
+            )
         return self.root_link
+
+    def get_package_root_link(self):
+        """
+        Get the original package root link for this view path. If the current view is a root link, it will return itself.
+        """
+        if self.package_root_link is None:
+            raise ValueError(
+                f"Cannot get package root link from current view path: {self}"
+            )
+        return self.package_root_link
 
     def get_managed_code_dir(self):
         return self.get_managed_dir_common("_server")
@@ -81,7 +111,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
         managed_code_dir.mkdir(exist_ok=True)
         return managed_code_dir
 
-    def get_controller_view_path(self, controller: ControllerBase):
+    def get_controller_view_path(self, controller: "ControllerBase"):
         """
         Assume all paths are specified in terms of their relative root
         """
@@ -90,8 +120,28 @@ class ManagedViewPath(type(Path())):  # type: ignore
             raise ValueError(
                 "Cannot get controller view path from a non-root linked view path"
             )
-        relative_path = Path(controller.view_path.lstrip("/"))
+
+        controller_path = controller.view_path
+
+        # If the user has specified a full path, we will use that
+        if isinstance(controller_path, ManagedViewPath):
+            # Merge in the current attributes, if they don't exist
+            controller_path = controller_path.copy()
+
+            if controller_path.root_link is None:
+                controller_path.root_link = self.root_link
+            if controller_path.package_root_link is None:
+                controller_path.package_root_link = self.package_root_link
+            return controller_path
+
+        relative_path = Path(controller_path.lstrip("/"))
         return self / relative_path
+
+    def copy(self) -> "ManagedViewPath":
+        path = self.__class__(self)
+        path.root_link = self.root_link
+        path.package_root_link = self.package_root_link
+        return path
 
     def rglob(self, pattern: str):
         # Override the rglob method to return a ManagedViewPath
@@ -124,6 +174,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
     def _inherit_root_link(self, new_path: Path) -> "ManagedViewPath":
         managed_path = ManagedViewPath(new_path)
         managed_path.root_link = self.root_link
+        managed_path.package_root_link = self.package_root_link
         return managed_path
 
 

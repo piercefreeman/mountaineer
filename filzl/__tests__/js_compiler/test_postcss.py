@@ -1,7 +1,7 @@
 import pytest
 
-from filzl.client_builder.paths import ManagedViewPath
 from filzl.js_compiler.postcss import PostCSSBundler
+from filzl.paths import ManagedViewPath
 
 
 @pytest.mark.parametrize(

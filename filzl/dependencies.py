@@ -1,8 +1,27 @@
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Callable
+from typing import Callable, Type, TypeVar
 
 from fastapi import Request
 from fastapi.dependencies.utils import get_dependant, solve_dependencies
+from pydantic_settings import BaseSettings
+
+from filzl.config import get_config
+
+T = TypeVar("T", bound=BaseSettings)
+
+
+class CoreDependencies:
+    @staticmethod
+    def get_config_with_type(required_type: Type[T]):
+        def internal_dependency() -> T:
+            config = get_config()
+            if not isinstance(config, required_type):
+                raise TypeError(
+                    f"Expected config to be of type {required_type}, got {type(config)}"
+                )
+            return config
+
+        return internal_dependency
 
 
 @asynccontextmanager
@@ -22,7 +41,15 @@ async def get_function_dependencies(
     if not url:
         url = "/synthetic"
     if not request:
-        request = Request(scope={"type": "http", "path": url})
+        request = Request(
+            scope={
+                "type": "http",
+                "path": url,
+                "path_params": {},
+                "query_string": "",
+                "headers": [],
+            }
+        )
 
     # Synthetic request object as if we're coming from the original first page
     dependant = get_dependant(

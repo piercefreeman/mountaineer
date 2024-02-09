@@ -12,8 +12,9 @@ fastapi = "^0.109.0"
 inflection = "^0.5.1"
 click = "^8.1.7"
 tqdm = "^4.66.1"
-uvicorn = {extras = ["standard"], version = "^0.27.0.post1"}
+uvicorn = { extras = ["standard"], version = "^0.27.0.post1" }
 packaging = "^23.2"
+pydantic-settings = "^2.1.0"
 
 # TODO: Move to optional dependencies, since release configurations
 # will not need these.
@@ -37,9 +38,7 @@ build-backend = "maturin"
 warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
-plugins = [
-  "pydantic.mypy"
-]
+plugins = ["pydantic.mypy"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -63,5 +62,6 @@ dependencies = [
     "tqdm",
     "uvicorn[standard]",
     "packaging",
-    "watchdog"
+    "watchdog",
+    "pydantic-settings",
 ]

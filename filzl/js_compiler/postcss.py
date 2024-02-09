@@ -3,11 +3,11 @@ from pathlib import Path
 from subprocess import PIPE
 from tempfile import TemporaryDirectory
 
-from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
 from filzl.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
 from filzl.js_compiler.exceptions import BuildProcessException
 from filzl.logging import LOGGER
+from filzl.paths import ManagedViewPath
 
 
 class PostCSSBundler(ClientBuilderBase):

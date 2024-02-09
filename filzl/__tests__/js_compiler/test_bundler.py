@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, _Call, call, patch
 
 import pytest
 
-from filzl.client_builder.paths import ManagedViewPath
 from filzl.js_compiler.base import ClientBundleMetadata
 from filzl.js_compiler.bundler import JavascriptBundler
+from filzl.paths import ManagedViewPath
 
 
 class MockedESBuild:

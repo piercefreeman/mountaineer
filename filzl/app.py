@@ -7,6 +7,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 
 from filzl.actions import (
     FunctionActionType,
@@ -14,11 +15,11 @@ from filzl.actions import (
     init_function_metadata,
 )
 from filzl.annotation_helpers import FilzlUnsetValue
-from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
 from filzl.js_compiler.base import ClientBuilderBase
 from filzl.js_compiler.bundler import JavascriptBundler
 from filzl.logging import LOGGER
+from filzl.paths import ManagedViewPath
 from filzl.render import Metadata
 
 
@@ -50,11 +51,13 @@ class AppController:
         view_root: Path,
         global_metadata: Metadata | None = None,
         custom_builders: list[ClientBuilderBase] | None = None,
+        config: BaseSettings | None = None,
     ):
         """
         :param global_metadata: Script and meta will be applied to every
             page rendered by this application. Title will only be applied
             if the page does not already have a title set.
+        :param config: Application global configuration.
 
         """
         self.app = FastAPI()
@@ -67,6 +70,11 @@ class AppController:
             # Custom builders
             *(custom_builders if custom_builders else []),
         ]
+
+        # The act of instantiating the config should register it with the
+        # global settings registry. We keep a reference to it so we can shortcut
+        # to the user-defined settings later, but this is largely optional.
+        self.config = config
 
         self.internal_api_prefix = "/internal/api"
 

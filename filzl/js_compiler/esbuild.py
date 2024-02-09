@@ -1,7 +1,7 @@
 import asyncio
 from json import dumps as json_dumps
 from logging import warning
-from os import PathLike
+from os import PathLike, environ
 from pathlib import Path
 from platform import machine as platform_machine
 from platform import system as platform_system
@@ -45,6 +45,7 @@ class ESBuildWrapper:
         global_name: str | None = None,
         sourcemap: bool | None = None,
         define: dict[str, str] | None = None,
+        node_paths: list[str | Path] | None = None,
     ):
         # Make sure the output file path exists
         Path(outfile).parent.mkdir(parents=True, exist_ok=True)
@@ -76,7 +77,13 @@ class ESBuildWrapper:
             command.append(f"--define:{key}={json_dumps(value)}")
 
         process = await asyncio.create_subprocess_exec(
-            *command, stdout=PIPE, stderr=PIPE
+            *command,
+            stdout=PIPE,
+            stderr=PIPE,
+            env={
+                "NODE_PATH": ":".join([str(path) for path in (node_paths or [])]),
+                **environ,
+            },
         )
 
         stdout, stderr = await process.communicate()
