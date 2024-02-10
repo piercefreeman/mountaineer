@@ -5,7 +5,7 @@ from re import compile as re_compile
 from time import time
 from typing import Any, Callable, Coroutine, Iterable
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from inflection import underscore
 
 from filzl.actions import (
@@ -96,6 +96,14 @@ class ControllerBase(ABC):
         if not isinstance(server_data, RenderBase):
             raise ValueError(
                 f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
+            )
+
+        # If we got back metadata that includes a redirect, we should short-circuit the rest of the
+        # render process and return a redirect response
+        if server_data.metadata and server_data.metadata.redirect:
+            return RedirectResponse(
+                status_code=server_data.metadata.redirect.status_code,
+                url=server_data.metadata.redirect.url,
             )
 
         metadatas: list[Metadata] = []

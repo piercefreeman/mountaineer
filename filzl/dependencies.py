@@ -17,7 +17,7 @@ class CoreDependencies:
             config = get_config()
             if not isinstance(config, required_type):
                 raise TypeError(
-                    f"Expected config to be of type {required_type}, got {type(config)}"
+                    f"Expected config to inherit from {required_type}, {type(config)} is not a valid subclass"
                 )
             return config
 

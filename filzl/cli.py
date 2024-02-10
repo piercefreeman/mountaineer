@@ -111,6 +111,9 @@ class IsolatedEnvProcess(Process):
                     sleep(0.1)
             LOGGER.debug(f"Server took {time() - start:.2f} seconds to come online")
 
+            # Buffer to make sure the server is fully booted
+            sleep(0.5)
+
             if self.build_notification_channel:
                 self.build_notification_channel.put(True)
 
