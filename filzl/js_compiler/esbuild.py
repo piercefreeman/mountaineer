@@ -81,8 +81,8 @@ class ESBuildWrapper:
             stdout=PIPE,
             stderr=PIPE,
             env={
-                "NODE_PATH": ":".join([str(path) for path in (node_paths or [])]),
                 **environ,
+                "NODE_PATH": ":".join([str(path) for path in (node_paths or [])]),
             },
         )
 

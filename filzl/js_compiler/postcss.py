@@ -1,4 +1,5 @@
 import asyncio
+from os import environ
 from pathlib import Path
 from subprocess import PIPE
 from tempfile import TemporaryDirectory
@@ -11,6 +12,16 @@ from filzl.paths import ManagedViewPath
 
 
 class PostCSSBundler(ClientBuilderBase):
+    """
+    Support PostCSS processing for CSS files.
+
+    - Assumes postcss-cli is installed in the primary project's package root (ie.
+      the my_website/views/node_modules directory)
+    - Assumes that the css file under consideration has a root postcss.config.js file
+      within its own view path
+
+    """
+
     async def handle_file(
         self,
         current_path: ManagedViewPath,
@@ -21,7 +32,7 @@ class PostCSSBundler(ClientBuilderBase):
         if current_path.suffix not in {".css", ".scss"}:
             return
 
-        root_path = current_path.get_root_link()
+        root_path = current_path.get_package_root_link()
         built_css = await self.process_css(current_path)
         (
             root_path.get_managed_static_dir()
@@ -32,7 +43,9 @@ class PostCSSBundler(ClientBuilderBase):
         """
         Process a CSS file using PostCSS and output the transformed contents.
         """
-        is_installed, cli_path = self.postcss_is_installed(css_path.get_root_link())
+        is_installed, cli_path = self.postcss_is_installed(
+            css_path.get_package_root_link()
+        )
         if not is_installed:
             raise EnvironmentError(
                 "postcss-cli is not installed in the specified view_root_path. Install it with:\n"
@@ -49,7 +62,13 @@ class PostCSSBundler(ClientBuilderBase):
                 stdout=PIPE,
                 stderr=PIPE,
                 # postcss won't find the config file if we don't set the cwd
+                # we assume this is in each view's root directory
                 cwd=css_path.get_root_link(),
+                env={
+                    **environ,
+                    # We expect the main package root will be the one with node modules installed
+                    "NODE_PATH": str(css_path.get_package_root_link() / "node_modules"),
+                },
             )
 
             stdout, stderr = await process.communicate()

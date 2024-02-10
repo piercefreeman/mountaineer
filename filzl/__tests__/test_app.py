@@ -33,8 +33,8 @@ def test_requires_render_return_value():
 
     app.register(TestControllerWithRenderMarkup())
 
-def test_generate_openapi():
 
+def test_generate_openapi():
     class ExampleSubModel(BaseModel):
         sub_value: str
 

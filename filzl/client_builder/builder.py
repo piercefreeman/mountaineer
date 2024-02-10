@@ -371,7 +371,13 @@ class ClientBuilder:
             tasks = [
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
-            ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
+            ] + [
+                # Optionally build static files the main views and plugin views
+                # This allows plugins to have custom handling for different file types
+                spawn_file_builder(path)
+                for view_root in self.get_all_root_views()
+                for path in view_root.rglob("*")
+            ]
             results = await gather_with_concurrency(
                 tasks, n=max_concurrency, catch_exceptions=True
             )
@@ -433,6 +439,29 @@ class ClientBuilder:
                 raise ValueError(
                     f"View path {view_path} does not exist, ensure it is created before running the server"
                 )
+
+    def get_all_root_views(self) -> list[ManagedViewPath]:
+        """
+        The self.view_root variable is the root of the current user project. We may have other
+        "view roots" that store view for plugins.
+
+        This function inspects the controller path definitions and collects all of the
+        unique root view paths. The returned ManagedViewPaths are all copied and set to
+        share the same package root as the user project.
+
+        """
+        # Find the view roots
+        view_roots = {self.view_root.copy()}
+        for controller_definition in self.app.controllers:
+            view_path = controller_definition.controller.view_path
+            if isinstance(view_path, ManagedViewPath):
+                view_roots.add(view_path.get_root_link().copy())
+
+        # All the view roots should have the same package root
+        for view_root in view_roots:
+            view_root.package_root_link = self.view_root.package_root_link
+
+        return list(view_roots)
 
     def get_render_local_state(self, controller: ControllerBase):
         """
