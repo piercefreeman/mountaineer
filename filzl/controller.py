@@ -5,7 +5,7 @@ from re import compile as re_compile
 from time import time
 from typing import Any, Callable, Coroutine, Iterable
 
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from inflection import underscore
 
 from filzl.actions import (
@@ -15,13 +15,17 @@ from filzl.actions import (
 )
 from filzl.js_compiler.source_maps import SourceMapParser
 from filzl.logging import LOGGER
+from filzl.paths import ManagedViewPath
 from filzl.render import Metadata, RenderBase, RenderNull
 from filzl.ssr import V8RuntimeError, render_ssr
 
 
 class ControllerBase(ABC):
     url: str
-    view_path: str
+    # Typically, view paths should be a relative path to the local
+    # Paths are only used if you need to specify an absolute path to another
+    # file on disk
+    view_path: str | ManagedViewPath
 
     bundled_scripts: list[str]
 
@@ -92,6 +96,14 @@ class ControllerBase(ABC):
         if not isinstance(server_data, RenderBase):
             raise ValueError(
                 f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
+            )
+
+        # If we got back metadata that includes a redirect, we should short-circuit the rest of the
+        # render process and return a redirect response
+        if server_data.metadata and server_data.metadata.redirect:
+            return RedirectResponse(
+                status_code=server_data.metadata.redirect.status_code,
+                url=server_data.metadata.redirect.url,
             )
 
         metadatas: list[Metadata] = []

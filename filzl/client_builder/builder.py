@@ -5,7 +5,6 @@ from shutil import rmtree
 
 from click import secho
 from fastapi import APIRouter
-from fastapi.openapi.utils import get_openapi
 from inflection import camelize
 
 from filzl.actions import get_function_metadata
@@ -17,13 +16,13 @@ from filzl.client_builder.build_actions import (
 from filzl.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 from filzl.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
 from filzl.client_builder.openapi import OpenAPIDefinition
-from filzl.client_builder.paths import ManagedViewPath, generate_relative_import
 from filzl.client_builder.typescript import TSLiteral, python_payload_to_typescript
 from filzl.controller import ControllerBase
 from filzl.io import gather_with_concurrency
 from filzl.js_compiler.base import ClientBundleMetadata
 from filzl.js_compiler.esbuild import ESBuildWrapper
 from filzl.js_compiler.exceptions import BuildProcessException
+from filzl.paths import ManagedViewPath, generate_relative_import
 from filzl.static import get_static_path
 
 
@@ -176,9 +175,7 @@ class ClientBuilder:
                 controller_links_path, root_common_handler
             )
             render_route = get_function_metadata(controller.render).get_render_router()
-            render_openapi = get_openapi(
-                title="",
-                version="",
+            render_openapi = self.app.generate_openapi(
                 routes=render_route.routes,
             )
 
@@ -374,7 +371,13 @@ class ClientBuilder:
             tasks = [
                 spawn_builder(controller_definition.controller)
                 for controller_definition in self.app.controllers
-            ] + [spawn_file_builder(path) for path in self.view_root.rglob("*")]
+            ] + [
+                # Optionally build static files the main views and plugin views
+                # This allows plugins to have custom handling for different file types
+                spawn_file_builder(path)
+                for view_root in self.get_all_root_views()
+                for path in view_root.rglob("*")
+            ]
             results = await gather_with_concurrency(
                 tasks, n=max_concurrency, catch_exceptions=True
             )
@@ -437,6 +440,29 @@ class ClientBuilder:
                     f"View path {view_path} does not exist, ensure it is created before running the server"
                 )
 
+    def get_all_root_views(self) -> list[ManagedViewPath]:
+        """
+        The self.view_root variable is the root of the current user project. We may have other
+        "view roots" that store view for plugins.
+
+        This function inspects the controller path definitions and collects all of the
+        unique root view paths. The returned ManagedViewPaths are all copied and set to
+        share the same package root as the user project.
+
+        """
+        # Find the view roots
+        view_roots = {self.view_root.copy()}
+        for controller_definition in self.app.controllers:
+            view_path = controller_definition.controller.view_path
+            if isinstance(view_path, ManagedViewPath):
+                view_roots.add(view_path.get_root_link().copy())
+
+        # All the view roots should have the same package root
+        for view_root in view_roots:
+            view_root.package_root_link = self.view_root.package_root_link
+
+        return list(view_roots)
+
     def get_render_local_state(self, controller: ControllerBase):
         """
         Returns the local type name for the render model. Scoped for use
@@ -457,4 +483,4 @@ class ClientBuilder:
         root_router.include_router(
             controller_definition.router, prefix=controller_definition.url_prefix
         )
-        return get_openapi(title="", version="", routes=root_router.routes)
+        return self.app.generate_openapi(routes=root_router.routes)

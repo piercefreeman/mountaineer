@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING, Any, Literal, Type
 
 from pydantic import BaseModel, model_validator
 from pydantic._internal._model_construction import ModelMetaclass
@@ -79,6 +79,11 @@ class LinkAttribute(BaseModel):
     optional_attributes: dict[str, str] = {}
 
 
+class RedirectStatus(BaseModel):
+    status_code: Literal[301, 302, 303, 307, 308]
+    url: str
+
+
 class Metadata(BaseModel):
     """
     Metadata lets the client specify the different metadata definitions that should
@@ -88,8 +93,10 @@ class Metadata(BaseModel):
     """
 
     title: str | None = None
+
     metas: list[MetaAttribute] = []
     links: list[LinkAttribute] = []
+    redirect: RedirectStatus | None = None
 
     model_config = {
         "extra": "forbid",

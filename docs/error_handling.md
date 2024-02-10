@@ -76,6 +76,29 @@ class HTTPValidationErrorException extends FetchErrorBase<HTTPValidationError> {
 > [!TIP]
 > For more information on error typehinting and custom handling, see the FastAPI [documentation](https://fastapi.tiangolo.com/tutorial/handling-errors/).
 
+## Custom Errors
+
+A 422 ValidationError is a special error that is included in every action, because your function signature is verified every time a client sends a new payload to your server. To implement a custom error that is specific to your application, you can subclass `APIException`:
+
+```python
+from filzl.exceptions import APIException
+
+class LoginInvalid(APIException):
+    status_code = 401
+    invalid_reason: str
+
+class LoginController(ControllerBase):
+    ...
+
+    @passthrough(exception_models=[LoginInvalid])
+    def login(self, login_payload: LoginRequest):
+        raise LoginInvalid(invalid_reason="Login not implemented")
+```
+
+Provide all the exceptions that your function may throw to `@passthrough(exception_models=[])`. The `@sideeffect` decorator accepts the same argument.
+
+When specified like this, filzl turns your exception into a client-side exception just like `HTTPValidationErrorException`. You can now use it in the same way.
+
 ## SSR timeouts
 
 To render each page on the server side, we have to execute your view's Javascript in a V8 engine. This is the same Javascript interpreter that powers Chrome. As such, you have the full freedom to write any Javascript in your view that will help you render your page - loops, calculations, package calls, etc.

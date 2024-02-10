@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 from inflection import underscore
 from pydantic import BaseModel
 
-from filzl.client_builder.paths import ManagedViewPath, generate_relative_import
 from filzl.controller import ControllerBase
 from filzl.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
 from filzl.js_compiler.esbuild import ESBuildWrapper
@@ -15,6 +14,8 @@ from filzl.js_compiler.source_maps import (
     make_source_map_paths_absolute,
     update_source_map_path,
 )
+from filzl.logging import LOGGER
+from filzl.paths import ManagedViewPath, generate_relative_import
 
 
 class BundleOutput(BaseModel):
@@ -50,7 +51,7 @@ class JavascriptBundler(ClientBuilderBase):
             return None
 
         # We need to generate a relative import path from the view root to the current file
-        root_path = file_path.get_root_link()
+        root_path = file_path.get_package_root_link()
         static_dir = root_path.get_managed_static_dir()
         ssr_dir = root_path.get_managed_ssr_dir()
         bundle = await self.generate_js_bundle(
@@ -121,7 +122,8 @@ class JavascriptBundler(ClientBuilderBase):
             server_entrypoint_path = temp_dir_path / "synthetic_server.tsx"
 
             self.link_project_files(
-                view_root_path=current_path.get_root_link(), temp_dir_path=temp_dir_path
+                view_root_path=current_path.get_package_root_link(),
+                temp_dir_path=temp_dir_path,
             )
             client_entrypoint_path.write_text(client_entrypoint)
             server_entrypoint_path.write_text(ssr_entrypoint)
@@ -154,6 +156,7 @@ class JavascriptBundler(ClientBuilderBase):
                             ),
                         },
                         loaders=common_loader,
+                        node_paths=[temp_dir_path / "node_modules"],
                     ),
                     es_builder.bundle(
                         entry_points=[server_entrypoint_path],
@@ -168,6 +171,7 @@ class JavascriptBundler(ClientBuilderBase):
                         bundle=True,
                         sourcemap=True,
                         loaders=common_loader,
+                        node_paths=[temp_dir_path / "node_modules"],
                     ),
                 ]
             )
@@ -248,7 +252,7 @@ class JavascriptBundler(ClientBuilderBase):
         import_paths: list[str] = []
 
         static_api_path = (
-            page_path.get_root_link().get_managed_code_dir() / "live_reload.ts"
+            page_path.get_package_root_link().get_managed_code_dir() / "live_reload.ts"
         )
         import_paths.append(
             f"import mountLiveReload from '{generate_relative_import(output_path, static_api_path)}';"
@@ -286,9 +290,19 @@ class JavascriptBundler(ClientBuilderBase):
         in a temporary directory, we need to copy over the key files. We use a symbolic link
         to avoid copying the files over.
         """
-        to_link = ["package.json", "tsconfig.json", "node_modules"]
+        required_to_link = ["package.json", "node_modules"]
+        optional_to_link = ["tsconfig.json"]
 
-        for file_name in to_link:
+        for file_name in required_to_link + optional_to_link:
+            # Only throw an error if the file is required to exist
+            if not (view_root_path / file_name).exists():
+                if file_name in required_to_link:
+                    raise ValueError(
+                        f"Error linking, expected {file_name} to exist in {view_root_path}"
+                    )
+                continue
+
+            LOGGER.debug(f"Linking {file_name} to {temp_dir_path}")
             (temp_dir_path / file_name).symlink_to(view_root_path / file_name)
 
     def sniff_for_layouts(self, *, page_path: Path, view_root_path: Path):
@@ -331,9 +345,13 @@ class JavascriptBundler(ClientBuilderBase):
     def validate_page(self, *, page_path: Path, view_root_path: Path):
         # Validate that we're actually calling on a path file
         if page_path.name not in {"page.tsx", "page.jsx"}:
-            raise ValueError(f"Invalid page path: {page_path}")
+            raise ValueError(
+                f"Invalid page path; view need to be specified in a `page.tsx` file: {page_path}"
+            )
 
         # Validate that the page_path is within the view root. The following
         # logic assumes a hierarchical relationship between the two.
         if not page_path.is_relative_to(view_root_path):
-            raise ValueError(f"Invalid page path: {page_path}")
+            raise ValueError(
+                f"Invalid page path, not relative to view root: {page_path} (root: {view_root_path})"
+            )

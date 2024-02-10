@@ -70,7 +70,7 @@ class ControllerCommon(ControllerBase):
 
 
 async def call_sideeffect_common(controller: ControllerCommon):
-    app = AppController(Path())
+    app = AppController(view_root=Path())
     app.register(controller)
 
     @asynccontextmanager
@@ -186,7 +186,7 @@ async def test_get_render_parameters():
 
     # We need to load this test controller to an actual application runtime
     # or else we don't have the render() metadata added
-    app = AppController(Path())
+    app = AppController(view_root=Path())
     controller = TestController()
     app.register(controller)
 

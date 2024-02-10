@@ -1,12 +1,16 @@
 from functools import wraps
 from inspect import isclass, signature
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
+from pydantic_settings import BaseSettings
+from starlette.routing import BaseRoute
 
 from filzl.actions import (
     FunctionActionType,
@@ -14,11 +18,12 @@ from filzl.actions import (
     init_function_metadata,
 )
 from filzl.annotation_helpers import FilzlUnsetValue
-from filzl.client_builder.paths import ManagedViewPath
 from filzl.controller import ControllerBase
+from filzl.exceptions import APIException
 from filzl.js_compiler.base import ClientBuilderBase
 from filzl.js_compiler.bundler import JavascriptBundler
 from filzl.logging import LOGGER
+from filzl.paths import ManagedViewPath
 from filzl.render import Metadata
 
 
@@ -47,18 +52,25 @@ class AppController:
 
     def __init__(
         self,
+        *,
+        name: str = "Filzl Webapp",
+        version: str = "0.1.0",
         view_root: Path,
         global_metadata: Metadata | None = None,
         custom_builders: list[ClientBuilderBase] | None = None,
+        config: BaseSettings | None = None,
     ):
         """
         :param global_metadata: Script and meta will be applied to every
             page rendered by this application. Title will only be applied
             if the page does not already have a title set.
+        :param config: Application global configuration.
 
         """
-        self.app = FastAPI()
+        self.app = FastAPI(title=name, version=version)
         self.controllers: list[ControllerDefinition] = []
+        self.name = name
+        self.version = version
         self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
         self.builders = [
@@ -67,6 +79,11 @@ class AppController:
             # Custom builders
             *(custom_builders if custom_builders else []),
         ]
+
+        # The act of instantiating the config should register it with the
+        # global settings registry. We keep a reference to it so we can shortcut
+        # to the user-defined settings later, but this is largely optional.
+        self.config = config
 
         self.internal_api_prefix = "/internal/api"
 
@@ -80,6 +97,10 @@ class AppController:
             StaticFiles(directory=str(static_dir)),
             name="static",
         )
+
+        self.app.exception_handler(APIException)(self.handle_exception)
+
+        self.app.openapi = self.generate_openapi  # type: ignore
 
     def register(self, controller: ControllerBase):
         """
@@ -195,6 +216,8 @@ class AppController:
             prefix=controller_url_prefix,
         )
 
+        LOGGER.debug(f"Did register controller: {controller.__class__.__name__}")
+
         self.controllers.append(
             ControllerDefinition(
                 controller=controller,
@@ -203,3 +226,98 @@ class AppController:
                 url_prefix=controller_url_prefix,
             )
         )
+
+    async def handle_exception(self, request: Request, exc: APIException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content=exc.internal_model.model_dump(),
+        )
+
+    def generate_openapi(self, routes: list[BaseRoute] | None = None):
+        """
+        Bundle custom user exceptions in the OpenAPI schema. By default
+        endpoints just include the 422 Validation Error, but this allows
+        for custom derived user methods.
+
+        """
+        openapi_base = get_openapi(
+            title=self.name,
+            version=self.version,
+            routes=(routes if routes is not None else self.app.routes),
+        )
+
+        # Loop over the registered controllers and get the actions
+        exceptions_by_url = {}
+        for controller_definition in self.controllers:
+            for (
+                _,
+                _,
+                metadata,
+            ) in controller_definition.controller._get_client_functions():
+                exceptions_models = metadata.get_exception_models()
+                if not exceptions_models:
+                    continue
+                exceptions_by_url[metadata.url] = [
+                    (
+                        model.status_code,
+                        model.InternalModel.__name__,
+                        model.InternalModel.model_json_schema(),
+                    )
+                    for model in exceptions_models
+                ]
+
+        # Add to the schemas dictionary first
+        # TODO: Add validation that throws an error on duplicate names
+        # TODO: Add validation that throws an error for duplicate error codes
+        for url, exception_payloads in exceptions_by_url.items():
+            # Not included in the specified routes, we should ignore this controller
+            if url not in openapi_base["paths"]:
+                continue
+
+            for status_code, schema_name, schema in exception_payloads:
+                other_definitions = {
+                    definition_name: self._update_ref_path(definition)
+                    for definition_name, definition in schema.pop("$defs", {}).items()
+                }
+                openapi_base["components"]["schemas"].update(other_definitions)
+                openapi_base["components"]["schemas"][
+                    schema_name
+                ] = self._update_ref_path(schema)
+
+                # All actions are "posts" by definition
+                openapi_base["paths"][url]["post"]["responses"][str(status_code)] = {
+                    "description": f"Custom Error: {schema_name}",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": f"#/components/schemas/{schema_name}"}
+                        }
+                    },
+                }
+
+        return openapi_base
+
+    def _update_ref_path(self, schema: Any):
+        """
+        The $ref values that come out of the model schema are tied to #/defs instead
+        of the #/components/schemas. This function updates the schema to use the
+        correct prefix for the final OpenAPI schema.
+
+        """
+        if isinstance(schema, dict):
+            new_schema: dict[str, Any] = {}
+            for key, value in schema.items():
+                if key == "$ref":
+                    schema_name = value.split("/")[-1]
+                    new_schema[key] = f"#/components/schemas/{schema_name}"
+                    continue
+                elif key == "additionalProperties":
+                    # If the value is "False", we need to remove the key
+                    if value is False:
+                        continue
+
+                new_schema[key] = self._update_ref_path(value)
+            return new_schema
+        elif isinstance(schema, list):
+            return [self._update_ref_path(value) for value in schema]
+        else:
+            return schema

@@ -1,11 +1,10 @@
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from functools import wraps
 from inspect import Parameter, isawaitable, signature
 from typing import TYPE_CHECKING, Any, Callable, Type, overload
 from urllib.parse import urlparse
 
 from fastapi import Request
-from fastapi.dependencies.utils import get_dependant, solve_dependencies
 from pydantic import BaseModel
 from starlette.routing import Match
 
@@ -14,6 +13,8 @@ from filzl.actions.fields import (
     get_function_metadata,
     init_function_metadata,
 )
+from filzl.dependencies import get_function_dependencies
+from filzl.exceptions import APIException
 from filzl.render import FieldClassDefinition
 
 if TYPE_CHECKING:
@@ -22,10 +23,12 @@ if TYPE_CHECKING:
 
 @overload
 def sideeffect(
+    *,
     # We need to typehint reload to be Any, because during typechecking our Model.attribute will just
     # yield whatever the typehint of that field is. Only at runtime does it become a FieldClassDefinition
     reload: tuple[Any, ...] | None = None,
     response_model: Type[BaseModel] | None = None,
+    exception_models: list[Type[APIException]] | None = None,
 ) -> Callable[[Callable], Callable]:
     ...
 
@@ -50,6 +53,7 @@ def sideeffect(*args, **kwargs):
     def decorator_with_args(
         reload: tuple[FieldClassDefinition, ...] | None = None,
         response_model: Type[BaseModel] | None = None,
+        exception_models: list[Type[APIException]] | None = None,
     ):
         def wrapper(func: Callable):
             original_sig = signature(func)
@@ -105,6 +109,7 @@ def sideeffect(*args, **kwargs):
             metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
             metadata.reload_states = reload
             metadata.passthrough_model = response_model
+            metadata.exception_models = exception_models
             return inner
 
         return wrapper
@@ -115,7 +120,11 @@ def sideeffect(*args, **kwargs):
         return decorator_with_args()(func)
     else:
         # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(*args, **kwargs)
+        return decorator_with_args(
+            reload=kwargs.get("reload"),
+            response_model=kwargs.get("response_model"),
+            exception_models=kwargs.get("exception_models"),
+        )
 
 
 @asynccontextmanager
@@ -133,12 +142,6 @@ async def get_render_parameters(
     automatic calls to the rendering due to side-effects.
 
     """
-    # Synthetic request object as if we're coming from the original first page
-    dependant = get_dependant(
-        call=controller.render,
-        path=controller.url,
-    )
-
     # Create a synethic request object that we would use to access the core
     # html. This will be passed through the dependency resolution pipeline so to
     # render() it's indistinguishable from a real request and therefore will render
@@ -176,19 +179,12 @@ async def get_render_parameters(
             **child_scope,
         }
 
-    async with AsyncExitStack() as async_exit_stack:
-        values, errors, background_tasks, sub_response, _ = await solve_dependencies(
-            request=view_request,
-            dependant=dependant,
-            async_exit_stack=async_exit_stack,
-        )
-        if background_tasks:
-            raise RuntimeError(
-                "Background tasks are not supported when calling a render() function, due to undesirable side-effects."
-            )
-        if errors:
-            raise RuntimeError(
-                f"Errors encountered while resolving dependencies for a render(): {controller} {errors}"
-            )
-
-        yield values
+    try:
+        async with get_function_dependencies(
+            callable=controller.render, url=controller.url, request=view_request
+        ) as values:
+            yield values
+    except RuntimeError as e:
+        raise RuntimeError(
+            f"Error occurred while resolving dependencies for render(): {controller}"
+        ) from e

@@ -1,9 +1,11 @@
 import asyncio
+import socket
 from importlib import import_module
 from multiprocessing import Event, Process, get_start_method, set_start_method
 from multiprocessing.queues import Queue
 from signal import SIGINT, signal
-from time import time
+from threading import Thread
+from time import sleep, time
 from typing import Callable
 
 from click import secho
@@ -66,8 +68,7 @@ class IsolatedEnvProcess(Process):
             js_compiler.build()
             secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
 
-            if self.build_notification_channel:
-                self.build_notification_channel.put(True)
+            self.alert_notification_channel()
 
         if self.runserver_config is not None:
             thread = UvicornThread(
@@ -82,6 +83,42 @@ class IsolatedEnvProcess(Process):
             thread.join()
 
         LOGGER.debug("IsolatedEnvProcess finished")
+
+    def alert_notification_channel(self):
+        """
+        Alerts the notification channel of a build update, once the server
+        comes back online. Before this the client might refresh and get a blank
+        page because the server hasn't yet booted.
+        """
+
+        def wait_for_server():
+            # No need to do anything if we don't have a notification channel
+            if self.runserver_config is None:
+                return
+            if self.build_notification_channel is None:
+                return
+
+            # Loop until there is something bound to the runserver_config.port
+            start = time()
+            LOGGER.debug("Waiting for server to come online")
+            while True:
+                try:
+                    with socket.create_connection(
+                        ("localhost", self.runserver_config.port)
+                    ):
+                        break
+                except ConnectionRefusedError:
+                    sleep(0.1)
+            LOGGER.debug(f"Server took {time() - start:.2f} seconds to come online")
+
+            # Buffer to make sure the server is fully booted
+            sleep(0.5)
+
+            if self.build_notification_channel:
+                self.build_notification_channel.put(True)
+
+        alert_thread = Thread(target=wait_for_server)
+        alert_thread.start()
 
     def stop(self, hard_timeout: float = 5.0):
         """
