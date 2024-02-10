@@ -5,7 +5,6 @@ from shutil import rmtree
 
 from click import secho
 from fastapi import APIRouter
-from fastapi.openapi.utils import get_openapi
 from inflection import camelize
 
 from filzl.actions import get_function_metadata
@@ -176,9 +175,7 @@ class ClientBuilder:
                 controller_links_path, root_common_handler
             )
             render_route = get_function_metadata(controller.render).get_render_router()
-            render_openapi = get_openapi(
-                title="",
-                version="",
+            render_openapi = self.app.generate_openapi(
                 routes=render_route.routes,
             )
 
@@ -457,4 +454,4 @@ class ClientBuilder:
         root_router.include_router(
             controller_definition.router, prefix=controller_definition.url_prefix
         )
-        return get_openapi(title="", version="", routes=root_router.routes)
+        return self.app.generate_openapi(routes=root_router.routes)
