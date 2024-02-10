@@ -1,9 +1,13 @@
 from pathlib import Path
 
 import pytest
+from pydantic import BaseModel
 
+from filzl.actions import passthrough
 from filzl.app import AppController
+from filzl.client_builder.openapi import OpenAPIDefinition
 from filzl.controller import ControllerBase
+from filzl.exceptions import APIException
 
 
 def test_requires_render_return_value():
@@ -42,3 +46,25 @@ def test_generate_openapi():
         status_code = 401
         invalid_reason: str
         sub_model: ExampleSubModel
+
+    class ExampleController(ControllerBase):
+        url = "/example"
+        view_path = "/example.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough(exception_models=[ExampleException])
+        def test_exception_action(self):
+            pass
+
+    app = AppController(view_root=Path(""))
+    app.register(ExampleController())
+    openapi_spec = app.generate_openapi()
+    openapi_definition = OpenAPIDefinition(**openapi_spec)
+
+    assert openapi_definition.components.schemas.keys() == {
+        "TestExceptionActionResponse",
+        "ExampleException",
+        "ExampleSubModel",
+    }
