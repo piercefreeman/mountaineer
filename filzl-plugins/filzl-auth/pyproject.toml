@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "filzl-auth"
+version = "0.1.0"
+description = ""
+authors = ["Pierce Freeman <pierce@freeman.vc>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+bcrypt = "^4.1.2"
+python-jose = { extras = ["cryptography"], version = "^3.3.0" }
+pydantic = "^2.6.1"
+pydantic-settings = "^2.1.0"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.2.1"
+mypy = "^1.8.0"
+types-python-jose = "^3.3.4.20240106"
+
+# Development work is done on the latest merged version of the filzl package
+filzl = { path = "../../", develop = true }
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.mypy]
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Disable print statements
+select = ["E4", "E7", "E9", "F", "I001", "T201"]

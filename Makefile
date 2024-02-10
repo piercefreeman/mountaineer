@@ -17,14 +17,20 @@ CREATE_FILZL_APP_NAME := create_filzl_app
 MY_WEBSITE_DIR := my_website
 MY_WEBSITE_NAME := my_website
 
-# Phony targets for clean commands
-.PHONY: lint lint-validation lint-common lint-validation-common
+PLUGIN_FIZL_AUTH_DIR := filzl-plugins/filzl-auth
+PLUGIN_FIZL_AUTH_NAME := filzl_auth
+
+PLUGIN_FIZL_DAEMONS_DIR := filzl-plugins/filzl-daemons
+PLUGIN_FIZL_DAEMONS_NAME := filzl_daemons
+
+# Ignore these directories in the local filesystem if they exist
+.PHONY: lint test
 
 # Main lint target
-lint: lint-lib lint-create-filzl-app lint-my-website
+lint: lint-lib lint-create-filzl-app lint-my-website lint-plugins
 
 # Lint validation target
-lint-validation: lint-validation-lib lint-validation-create-filzl-app lint-validation-my-website
+lint-validation: lint-validation-lib lint-validation-create-filzl-app lint-validation-my-website lint-validation-plugins
 
 # Testing target
 test: test-lib test-create-filzl-app
@@ -60,6 +66,9 @@ lint-create-filzl-app:
 	$(call lint-common,$(CREATE_FILZL_APP_DIR),$(CREATE_FILZL_APP_NAME))
 lint-my-website:
 	$(call lint-common,$(MY_WEBSITE_DIR),$(MY_WEBSITE_NAME))
+lint-plugins:
+	$(call lint-common,$(PLUGIN_FIZL_AUTH_DIR),$(PLUGIN_FIZL_AUTH_NAME))
+	$(call lint-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
 
 # Lint validation - CI to fail on any errors
 lint-validation-lib:
@@ -68,6 +77,9 @@ lint-validation-create-filzl-app:
 	$(call lint-validation-common,$(CREATE_FILZL_APP_DIR),$(CREATE_FILZL_APP_NAME))
 lint-validation-my-website:
 	$(call lint-validation-common,$(MY_WEBSITE_DIR),$(MY_WEBSITE_NAME))
+lint-validation-plugins:
+	$(call lint-validation-common,$(PLUGIN_FIZL_AUTH_DIR),$(PLUGIN_FIZL_AUTH_NAME))
+	$(call lint-validation-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
 
 test-lib:
 	$(call test-common,$(LIB_DIR),$(LIB_NAME))

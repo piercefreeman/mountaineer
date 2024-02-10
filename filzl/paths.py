@@ -37,7 +37,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
     def from_view_root(
         cls,
         root_path: PathLike | str,
-        package_root_link: PathLike | str | FilzlUnsetValue = FilzlUnsetValue(),
+        package_root_link: PathLike | str | None | FilzlUnsetValue = FilzlUnsetValue(),
     ):
         """
         Constructor to create a ManagedViewPath from the view root
