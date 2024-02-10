@@ -32,3 +32,13 @@ def test_requires_render_return_value():
         app.register(TestControllerWithoutRenderMarkup())
 
     app.register(TestControllerWithRenderMarkup())
+
+def test_generate_openapi():
+
+    class ExampleSubModel(BaseModel):
+        sub_value: str
+
+    class ExampleException(APIException):
+        status_code = 401
+        invalid_reason: str
+        sub_model: ExampleSubModel

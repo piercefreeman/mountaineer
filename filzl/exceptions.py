@@ -40,7 +40,9 @@ class InternalModelMeta(type):
             if key not in ["InternalModel", "internal_model"]
         }
         cls.InternalModel = create_model(
-            f"{cls.__name__}InternalModel",
+            # Mirror the class name so our OpenAPI objects are as the user specifies
+            # for their exception class
+            cls.__name__,
             __base__=APIExceptionInternalModelBase,
             **cast(Any, fields),
         )

@@ -258,7 +258,7 @@ class AppController:
                 exceptions_by_url[metadata.url] = [
                     (
                         model.status_code,
-                        model.__name__,
+                        model.InternalModel.__name__,
                         model.InternalModel.model_json_schema(),
                     )
                     for model in exceptions_models
