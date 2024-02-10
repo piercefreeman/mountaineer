@@ -6,6 +6,7 @@ from enum import Flag, auto
 from json import loads as json_loads
 from pathlib import Path
 from re import search as re_search
+from threading import Timer
 from typing import Callable
 
 from click import secho
@@ -31,12 +32,20 @@ class ChangeEventHandler(FileSystemEventHandler):
         callbacks: list[CallbackDefinition],
         ignore_list=["__pycache__", "_ssr", "_static", "_server"],
         ignore_hidden=True,
+        debounce_interval=0.1,
     ):
+        """
+        :param debounce_interval: Seconds to wait for more events. Will only send one event per batched
+        interval to avoid saturating clients with one action that results in many files.
+
+        """
         super().__init__()
         self.callbacks = callbacks
         self.ignore_changes = False
         self.ignore_list = ignore_list
         self.ignore_hidden = ignore_hidden
+        self.debounce_interval = debounce_interval
+        self.debounce_timer: Timer | None = None
 
     def on_modified(self, event):
         super().on_modified(event)
@@ -44,7 +53,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File modified: {event.src_path}", fg="yellow")
-            self.handle_callbacks(CallbackType.MODIFIED)
+            self._debounce(CallbackType.MODIFIED)
 
     def on_created(self, event):
         super().on_created(event)
@@ -52,7 +61,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File created: {event.src_path}", fg="yellow")
-            self.handle_callbacks(CallbackType.CREATED)
+            self._debounce(CallbackType.CREATED)
 
     def on_deleted(self, event):
         super().on_deleted(event)
@@ -60,7 +69,15 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File deleted: {event.src_path}", fg="yellow")
-            self.handle_callbacks(CallbackType.DELETED)
+            self._debounce(CallbackType.DELETED)
+
+    def _debounce(self, action: CallbackType):
+        if self.debounce_timer is not None:
+            self.debounce_timer.cancel()
+        self.debounce_timer = Timer(
+            self.debounce_interval, self.handle_callbacks, [action]
+        )
+        self.debounce_timer.start()
 
     def handle_callbacks(self, action: CallbackType):
         """

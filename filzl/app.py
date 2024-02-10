@@ -216,6 +216,8 @@ class AppController:
             prefix=controller_url_prefix,
         )
 
+        LOGGER.debug(f"Did register controller: {controller.__class__.__name__}")
+
         self.controllers.append(
             ControllerDefinition(
                 controller=controller,
