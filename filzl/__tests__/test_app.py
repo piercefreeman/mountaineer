@@ -68,3 +68,40 @@ def test_generate_openapi():
         "ExampleException",
         "ExampleSubModel",
     }
+
+
+def test_update_ref_path():
+    app = AppController(view_root=Path(""))
+
+    # Test both dictionaries and lists
+    fixed_schema = app._update_ref_path(
+        {
+            "components": {
+                "schemas": {
+                    "ExampleSubModel": {
+                        "properties": {
+                            "sub_value": {
+                                "$ref": "#/defs/ExampleSubModel",
+                            },
+                            "list_values": {
+                                "type": "array",
+                                "items": [
+                                    {
+                                        "$ref": "#/defs/ExampleSubModel",
+                                    }
+                                ],
+                            },
+                        },
+                    }
+                }
+            }
+        }
+    )
+
+    assert isinstance(fixed_schema, dict)
+    properties = fixed_schema["components"]["schemas"]["ExampleSubModel"]["properties"]
+    assert properties["sub_value"]["$ref"] == "#/components/schemas/ExampleSubModel"
+    assert (
+        properties["list_values"]["items"][0]["$ref"]
+        == "#/components/schemas/ExampleSubModel"
+    )
