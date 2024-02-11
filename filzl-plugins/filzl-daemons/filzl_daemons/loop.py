@@ -1,10 +1,22 @@
 import asyncio
 import heapq
 from contextvars import Context
-from typing import Any, Callable, List, Optional, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Generator,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 from filzl_daemons.actions import ActionMeta
+from filzl_daemons.logging import LOGGER
 from filzl_daemons.tasks import TASK_MANAGER
+
+_T = TypeVar("_T")
 
 
 class CustomRunLoop(asyncio.AbstractEventLoop):
@@ -31,15 +43,26 @@ class CustomRunLoop(asyncio.AbstractEventLoop):
             if self._exc is not None:
                 raise self._exc
 
-    def run_until_complete(self, future: asyncio.Future) -> Any:
+    def run_until_complete(
+        self, future: Generator[Any, None, _T] | Awaitable[_T]
+    ) -> Any:
+        valid_future: asyncio.Future
+
         if not isinstance(future, asyncio.Future):
-            future = asyncio.ensure_future(future, loop=self)
-        future.add_done_callback(lambda f: self.stop())
+            # Ensure future is an asyncio.Future. `asyncio.ensure_future` accepts Awaitable as an argument.
+            valid_future = asyncio.ensure_future(future, loop=self)  # type: ignore
+        else:
+            valid_future = future
+
+        valid_future.add_done_callback(lambda f: self.stop())
         self.run_forever()
-        future.remove_done_callback(lambda f: self.stop())
-        if future.exception() is not None:
-            raise future.exception()
-        return future.result()
+        valid_future.remove_done_callback(lambda f: self.stop())
+
+        exception = valid_future.exception()
+        if exception is not None:
+            raise exception
+
+        return valid_future.result()
 
     def call_soon(
         self, callback: Callable[..., Any], *args: Any, context: Context | None = None
@@ -48,10 +71,10 @@ class CustomRunLoop(asyncio.AbstractEventLoop):
         self._immediate.append(handle)
         return handle
 
-    def call_soon_threadsafe(
-        self, callback: Callable[..., Any], *args: Any, context: Context | None = None
-    ) -> None:
-        raise NotImplementedError()
+    # def call_soon_threadsafe(
+    #    self, callback: Callable[..., Any], *args: Any, context: Context | None = None
+    # )  -> None:
+    #    raise NotImplementedError()
 
     def call_later(
         self,
@@ -69,7 +92,7 @@ class CustomRunLoop(asyncio.AbstractEventLoop):
         when: float,
         callback: Callable[..., Any],
         *args: Any,
-        context: Context = None,
+        context: Context | None = None,
     ) -> asyncio.TimerHandle:
         if when < self._time:
             raise ValueError("Can't schedule in the past")
@@ -88,19 +111,18 @@ class CustomRunLoop(asyncio.AbstractEventLoop):
 
     def create_task(
         self,
-        coro: Union[Callable[..., Any], Any],
+        coro: Union[Callable[..., Awaitable[Any]], Any],
         *,
         name: Optional[str] = None,
-        context: Optional[dict] = None,
+        context: Context | None = None,
     ) -> asyncio.Task:
         async def wrapper():
             try:
-                result = await coro
-                print("Result", result)
+                awaitable_result = coro() if callable(coro) else coro
+                result = await awaitable_result
                 if isinstance(result, ActionMeta):
-                    # This should be scheduled in another task
-                    print("Scheduling another task")
-                    print("TO SCHEDULE", result)
+                    # This should be scheduled in a task worker
+                    LOGGER.info(f"ActionMeta received, scheduling task: {result}")
                     # See if it's already been queued
                     task_id, wait_for_completion = await TASK_MANAGER.queue_work(result)
                     # TODO: GET THE RESULT
@@ -108,10 +130,9 @@ class CustomRunLoop(asyncio.AbstractEventLoop):
                     result = TASK_MANAGER.results[task_id]
                 return result
             except Exception as e:
-                print("Wrapped exception")
+                LOGGER.warning(f"Internal exception: {e}")
                 self._exc = e
 
-        print("CREATE TASK", coro)
         # inspect coro to get the args and kwargs
         return asyncio.Task(wrapper(), loop=self)
 

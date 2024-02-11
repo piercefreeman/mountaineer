@@ -1,19 +1,22 @@
-from dataclasses import dataclass, field
-from enum import Enum
-from threading import Thread, Semaphore, Lock
-from multiprocessing import Queue, Process
-from time import CLOCK_THREAD_CPUTIME_ID, clock_gettime
-from uuid import UUID, uuid4
-from filzl_daemons import filzl_daemons as filzl_daemons_rs # type: none
-from time import sleep
 import asyncio
+from dataclasses import dataclass, field
 from datetime import datetime
-from filzl_daemons.actions import REGISTRY, ActionMeta
+from enum import Enum
+from multiprocessing import Process, Queue
 from queue import Empty, Full
+from threading import Lock, Semaphore, Thread
+from time import sleep
+from uuid import UUID, uuid4
+
+from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
+from filzl_daemons.actions import REGISTRY
+from filzl_daemons.logging import LOGGER
+
 
 class TimeoutMeasureType(Enum):
     CPU_TIME = "CPU_TIME"
     WALL_TIME = "WALL_TIME"
+
 
 class TimeoutType(Enum):
     """
@@ -22,8 +25,10 @@ class TimeoutType(Enum):
     Hard is a hard timeout, that will kill the task (ie. recycle the process) if it's
     not able to give up control.
     """
+
     SOFT = "SOFT"
     HARD = "HARD"
+
 
 @dataclass
 class TimeoutDefinition:
@@ -31,12 +36,14 @@ class TimeoutDefinition:
     timeout_type: TimeoutType
     timeout_seconds: float
 
+
 @dataclass
 class TaskDefinition:
     registry_id: str
     args: list
     kwargs: dict
     timeouts: list[TimeoutDefinition]
+
 
 @dataclass
 class ThreadDefinition:
@@ -47,7 +54,8 @@ class ThreadDefinition:
 
     # Flagged when any timeout is triggered, allows internal handlers to try
     # and clean up gracefully
-    timed_out: bool = False
+    timed_out_causes: set[TimeoutType] = field(default_factory=set)
+
 
 class WorkerProcess(Process):
     """
@@ -78,12 +86,27 @@ class WorkerProcess(Process):
     for the current thread. If the worker thread is blocking, this isn't helpful.
 
     """
-    def __init__(self, task_queue: "Queue[TaskDefinition]", *, pool_size: int):
+
+    def __init__(
+        self,
+        task_queue: "Queue[TaskDefinition]",
+        *,
+        pool_size: int,
+        tasks_before_recycle: int | None = None,
+    ):
+        """
+        :param tasks_before_recycle: If set, the worker process will stop accepting
+            tasks and start to drain the pool after this many tasks have been processed. Note
+            that we include timed-out tasks in this count. If this is None, the worker process
+            will continue to accept tasks until another termination event occurs.
+
+        """
         super().__init__()
 
         # Initialized by the parent process
         self.task_queue = task_queue
         self.pool_size = pool_size
+        self.tasks_before_recycle = tasks_before_recycle
 
         # Assumes we're instantiating the worker process after we've imported all
         # the modules that we want to use into the global namespace, and therfore
@@ -95,7 +118,7 @@ class WorkerProcess(Process):
         self.pool_semaphore = Semaphore(self.pool_size)
         self.is_draining = False
         self.pool_threads_lock = Lock()
-        self.pool_threads : dict[UUID, ThreadDefinition] = {}
+        self.pool_threads: dict[UUID, ThreadDefinition] = {}
 
         # Load back the modules into the new process's registry
         REGISTRY.load_modules(self.action_modules)
@@ -103,11 +126,14 @@ class WorkerProcess(Process):
     def run(self):
         self.worker_init()
 
-        #ping_thread = Thread(target=self.ping, daemon=True)
-        #ping_thread.start()
+        # ping_thread = Thread(target=self.ping, daemon=True)
+        # ping_thread.start()
 
         watcher_thread = Thread(target=self.watch, daemon=True)
         watcher_thread.start()
+
+        # Only tracked if tasks_before_recycle is set
+        handled_tasks = 0
 
         while not self.is_draining:
             # Get access to a free slot before we try to dequeue a task
@@ -125,12 +151,19 @@ class WorkerProcess(Process):
             if task is None:
                 break
 
-            print("Got task", task)
+            LOGGER.debug(f"Received task: {task}")
             self.execute_task(task)
+
+            # If we have exhausted the number of tasks we can process, we
+            # should start draining the pool
+            if self.tasks_before_recycle is not None:
+                handled_tasks += 1
+                if handled_tasks >= self.tasks_before_recycle:
+                    self.is_draining = True
 
         # If this triggered we must be draining
         # The watch thread will process until this process is safe to kill
-        print("Joining on watcher thread.")
+        LOGGER.debug("Joining on watcher thread.")
         watcher_thread.join()
 
     def watch(self):
@@ -155,26 +188,35 @@ class WorkerProcess(Process):
                 sleep(1)
             initialized_watch = True
 
-            to_delete_ids : set[UUID] = set()
+            to_delete_ids: set[UUID] = set()
 
             # Copy values in case they are modified by another thread while we're looping
             for definition in list(self.pool_threads.values()):
                 if not definition.thread:
                     # We shouldn't get here
-                    print(f"Cleanup process found {definition.thread_id} without initialized thread.")
+                    LOGGER.warning(
+                        f"Cleanup process found {definition.thread_id} without initialized thread."
+                    )
                 elif definition.thread.is_alive():
                     # We want to potentially trigger this multiple times, even after the process
                     # has timed out once. This lets us escalate from soft to hard timeouts.
                     if timeout_type := self.thread_is_timed_out(definition):
-                        print(f"Thread {definition.thread_id} has exceeded its {timeout_type} timeout.")
-                        definition.timed_out = True
+                        if timeout_type in definition.timed_out_causes:
+                            # We've already processed this timeout type
+                            continue
+
+                        LOGGER.warning(
+                            f"Thread {definition.thread_id} has exceeded its {timeout_type} timeout."
+                        )
+                        definition.timed_out_causes.add(timeout_type)
 
                         # Special handling for hard timeouts
                         if timeout_type == TimeoutType.HARD:
-                            print(f"Thread {definition.thread_id} has exceeded its hard timeout.")
                             self.trigger_hard_timeout(definition)
                 elif not definition.thread.is_alive():
-                    print(f"Cleanup process found {definition.thread_id} crashed without cleaning up thread definitions.")
+                    LOGGER.warning(
+                        f"Cleanup process found {definition.thread_id} crashed without cleaning up thread definitions."
+                    )
                     to_delete_ids.add(definition.thread_id)
 
             for to_delete_id in to_delete_ids:
@@ -187,6 +229,11 @@ class WorkerProcess(Process):
         its execution limits.
 
         """
+        # This shouldn't happen because parent callers should check for thread validity, but if
+        # it does we should just ignore it
+        if not definition.thread:
+            return None
+
         wall_elapsed = datetime.now() - definition.started_wall
         cpu_elapsed = filzl_daemons_rs.get_thread_cpu_time(definition.thread.ident)
 
@@ -197,10 +244,14 @@ class WorkerProcess(Process):
             TimeoutType.SOFT: 1,
         }
 
-        for timeout in sorted(definition.timeouts, key=lambda x: time_priority[x.timeout_type]):
+        for timeout in sorted(
+            definition.timeouts, key=lambda x: time_priority[x.timeout_type]
+        ):
             if (
-                timeout.measurement == TimeoutMeasureType.WALL_TIME and wall_elapsed.total_seconds() > timeout.timeout_seconds
-                or timeout.measurement == TimeoutMeasureType.CPU_TIME and cpu_elapsed > timeout.timeout_seconds
+                timeout.measurement == TimeoutMeasureType.WALL_TIME
+                and wall_elapsed.total_seconds() > timeout.timeout_seconds
+                or timeout.measurement == TimeoutMeasureType.CPU_TIME
+                and cpu_elapsed > timeout.timeout_seconds
             ):
                 return timeout.timeout_type
 
@@ -220,7 +271,11 @@ class WorkerProcess(Process):
 
         # We launch each thread pool as a daemon so they will be killed by the OS when we let our
         # process terminate, which is true after the draining has completed
-        thread = Thread(target=self.task_thread, args=(task_definition, thread_definition), daemon=True)
+        thread = Thread(
+            target=self.task_thread,
+            args=(task_definition, thread_definition),
+            daemon=True,
+        )
         thread_definition.thread = thread
 
         with self.pool_threads_lock:
@@ -228,10 +283,15 @@ class WorkerProcess(Process):
 
         thread.start()
 
-    def task_thread(self, task_definition: TaskDefinition, thread_definition: ThreadDefinition):
-        print(f"Thread {thread_definition.thread_id} is starting...")
+    def task_thread(
+        self, task_definition: TaskDefinition, thread_definition: ThreadDefinition
+    ):
+        LOGGER.info(f"Thread {thread_definition.thread_id} is starting...")
+        worker_event_loop = asyncio.new_event_loop()
 
         async def soft_timeout():
+            nonlocal worker_event_loop
+
             # We won't need to check this value until we hit at least one of time
             # timeout intervals, so we do an initial sleep until the earliest point
             # we need to check for a timeout
@@ -251,11 +311,12 @@ class WorkerProcess(Process):
             # After this, we check status every second to see if our watchdog flagged
             # us for a timeout
             while True:
-                if thread_definition.timed_out:
-                    print("Thread timed out, trying a soft cancel...")
+                if thread_definition.timed_out_causes:
+                    LOGGER.info("Thread timed out, trying a soft cancel...")
                     # Try to cancel the task
                     task_runner.cancel()
-                    print("Asyncio task cancelled, now returning...")
+                    worker_event_loop.stop()
+                    LOGGER.debug("Asyncio task cancelled, now returning...")
                     return
                 await asyncio.sleep(1)
 
@@ -264,12 +325,15 @@ class WorkerProcess(Process):
             result = await task_fn(*task_definition.args, **task_definition.kwargs)
 
             # TODO: Upload the result to the results queue
-            print(result)
+            # print(result)
+            LOGGER.info(f"Process result: {result}")
 
-        new_event_loop = asyncio.new_event_loop()
-        task_runner = new_event_loop.create_task(run_task())
-        new_event_loop.create_task(soft_timeout())
-        new_event_loop.run_forever()
+            LOGGER.debug(f"Thread {thread_definition.thread_id} has finished its task.")
+            worker_event_loop.stop()
+
+        task_runner = worker_event_loop.create_task(run_task())
+        worker_event_loop.create_task(soft_timeout())
+        worker_event_loop.run_forever()
 
         # Remove this ID from the pool
         self.remove_thread_from_pool(thread_definition.thread_id)
@@ -285,7 +349,9 @@ class WorkerProcess(Process):
             return {
                 thread_id: thread_definition
                 for thread_id, thread_definition in self.pool_threads.items()
-                if thread_definition.thread and thread_definition.thread.is_alive() and not thread_definition.timed_out
+                if thread_definition.thread
+                and thread_definition.thread.is_alive()
+                and not thread_definition.timed_out_causes
             }
 
     def remove_thread_from_pool(self, thread_id: UUID):

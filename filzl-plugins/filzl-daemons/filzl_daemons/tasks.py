@@ -2,6 +2,8 @@ import asyncio
 from threading import Thread
 from uuid import uuid4
 
+from filzl.logging import LOGGER
+
 from filzl_daemons.actions import ActionMeta
 
 
@@ -79,7 +81,7 @@ class TaskManager:
         while True:
             # try to pop off the queue
             task, task_id = await self.worker_jobs.get()
-            print("WORKER THREAD SHOULD HANDLE JOB", task, task_id)
+            LOGGER.info(f"Worker thread should handle job: {task} {task_id}")
             await self._simulate_task(task, task_id)
 
 

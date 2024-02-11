@@ -1,6 +1,7 @@
 import asyncio
 
 from filzl_daemons.actions import action
+from filzl_daemons.logging import LOGGER
 from filzl_daemons.loop import CustomRunLoop
 from filzl_daemons.tasks import TASK_MANAGER
 
@@ -21,7 +22,7 @@ def test_workflow():
             subjob(1),
             subjob(10),
         )
-        print("RESULTS", results)
+        LOGGER.info("RESULTS", results)
 
     async def handle_jobs():
         await TASK_MANAGER.handle_jobs()

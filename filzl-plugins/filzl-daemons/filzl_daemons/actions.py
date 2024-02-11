@@ -1,25 +1,30 @@
+import sys
 from functools import wraps
+from importlib import import_module
+from inspect import iscoroutinefunction
 from typing import Any, Callable
 
 from pydantic import BaseModel
-import sys
-from importlib import import_module
-from inspect import iscoroutinefunction
+
+from filzl_daemons.logging import LOGGER
+
 
 class FunctionMetadata(BaseModel):
     function_name: str
     func: Callable
     module: str
 
+
 class ActionMeta(BaseModel):
     registry_id: str
     args: tuple[Any] = tuple()
     kwargs: dict[str, Any] = {}
 
+
 def action(f):
     global REGISTRY
 
-    print(f"Adding to registry: {f.__name__}")
+    LOGGER.debug(f"Adding to registry: {f.__name__}")
     registry_id = REGISTRY.register_action(f)
 
     # Require the function to be async
@@ -41,23 +46,23 @@ def action(f):
 
     return wrapper
 
+
 class ActionRegistry:
     """
     Note that the registry is tied to each process. Worker processes
     will have to ensure that things are brought back into.
 
     """
+
     def __init__(self):
-        self.registry : dict[str, FunctionMetadata] = {}
+        self.registry: dict[str, FunctionMetadata] = {}
 
     def get_modules_in_registry(self) -> list[str]:
         """
         Returns a picklable set of modules that are in the registry.
         Can be mounted to another processes' registry by calling import_modules.
         """
-        return list({
-            action_meta.module for action_meta in self.registry.values()
-        })
+        return list({action_meta.module for action_meta in self.registry.values()})
 
     def load_modules(self, modules: list[str]):
         """
@@ -86,7 +91,9 @@ class ActionRegistry:
         registry_id = self.get_registry_id_for_action(action)
 
         if registry_id in self.registry:
-            raise Exception(f"Another function {action.__name__} is already in the registry, action names must be globally unique.")
+            raise Exception(
+                f"Another function {action.__name__} is already in the registry, action names must be globally unique."
+            )
 
         self.registry[registry_id] = FunctionMetadata(
             function_name=action.__name__,
@@ -101,5 +108,6 @@ class ActionRegistry:
         # This function must be deterministic given an action called from
         # any process.
         return f"{action.__module__}.{action.__name__}"
+
 
 REGISTRY = ActionRegistry()

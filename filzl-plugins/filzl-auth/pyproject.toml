@@ -18,10 +18,10 @@ email-validator = "^2.1.0.post1"
 ruff = "^0.2.1"
 mypy = "^1.8.0"
 types-python-jose = "^3.3.4.20240106"
+pytest = "^8.0.0"
 
 # Development work is done on the latest merged version of the filzl package
 filzl = { path = "../../", develop = true }
-pytest = "^8.0.0"
 
 [build-system]
 requires = ["poetry-core"]
