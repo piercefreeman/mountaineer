@@ -1,6 +1,6 @@
-from typing import TYPE_CHECKING, Any, Literal, Type
+from typing import TYPE_CHECKING, Any, Type
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import Field, FieldInfo
 from typing_extensions import dataclass_transform
@@ -80,8 +80,15 @@ class LinkAttribute(BaseModel):
 
 
 class RedirectStatus(BaseModel):
-    status_code: Literal[301, 302, 303, 307, 308]
+    status_code: int
     url: str
+
+    @field_validator("status_code")
+    def validate_status_code(cls, value):
+        # Workaround to Literals not being parsed properly as pydantic typehints in 3.12
+        if value not in {301, 302, 303, 307, 308}:
+            raise ValueError("Status code must be valid 3xx")
+        return value
 
 
 class Metadata(BaseModel):
