@@ -33,7 +33,7 @@ lint: lint-lib lint-create-filzl-app lint-my-website lint-plugins
 lint-validation: lint-validation-lib lint-validation-create-filzl-app lint-validation-my-website lint-validation-plugins
 
 # Testing target
-test: test-lib test-create-filzl-app
+test: test-lib test-create-filzl-app test-plugin-auth test-plugin-daemons
 
 # Integration testing target
 test-integrations: test-create-filzl-app-integrations
@@ -81,14 +81,19 @@ lint-validation-plugins:
 	$(call lint-validation-common,$(PLUGIN_FIZL_AUTH_DIR),$(PLUGIN_FIZL_AUTH_NAME))
 	$(call lint-validation-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
 
+# Tests
 test-lib:
 	$(call test-common,$(LIB_DIR),$(LIB_NAME))
-
+	$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
 test-create-filzl-app:
 	$(call test-common,$(CREATE_FILZL_APP_DIR),$(CREATE_FILZL_APP_NAME))
-
 test-create-filzl-app-integrations:
 	$(call test-common-integrations,$(CREATE_FILZL_APP_DIR),$(CREATE_FILZL_APP_NAME))
+test-plugin-auth:
+	$(call test-common,$(PLUGIN_FIZL_AUTH_DIR),$(PLUGIN_FIZL_AUTH_NAME))
+test-plugin-daemons:
+	$(call test-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
+	$(call test-rust-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
 
 #
 # Common helper functions
@@ -97,6 +102,11 @@ test-create-filzl-app-integrations:
 define test-common
 	echo "Running tests for $(2)..."
 	@(cd $(1) && poetry run pytest -W error $(2))
+endef
+
+define test-rust-common
+	echo "Running rust tests for $(2)..."
+	@(cd $(1) && cargo test --all)
 endef
 
 # Use `-n auto` to run tests in parallel
