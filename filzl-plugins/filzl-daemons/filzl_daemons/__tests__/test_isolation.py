@@ -2,6 +2,7 @@ import ctypes
 import ctypes.util
 import threading
 import time
+from filzl_daemons import filzl_daemons
 
 libsystem_kernel_path = ctypes.util.find_library("System")
 libsystem_kernel = ctypes.CDLL(libsystem_kernel_path, use_errno=True)
@@ -92,6 +93,12 @@ def test_isolation():
 
     print("THREAD IDENT", thread.ident)
 
+    time.sleep(3)
+    print("TRY TO RUN")
+    try:
+        print(filzl_daemons.get_thread_cpu_time(thread.ident))
+    except Exception as e:
+        print("FAILED", e)
     # Now, get the CPU time of the thread
     #clk_id = time.pthread_getcpuclockid(thread.ident)
     #t1 = time.clock_gettime(clk_id)
