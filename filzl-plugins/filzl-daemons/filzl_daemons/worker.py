@@ -6,36 +6,13 @@ from multiprocessing import Process, Queue
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
 from time import sleep
+from typing import Callable
 from uuid import UUID, uuid4
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
 from filzl_daemons.actions import REGISTRY
 from filzl_daemons.logging import LOGGER
-
-
-class TimeoutMeasureType(Enum):
-    CPU_TIME = "CPU_TIME"
-    WALL_TIME = "WALL_TIME"
-
-
-class TimeoutType(Enum):
-    """
-    Soft is just within the thread itself, assumes that the active task is able to
-    give up control of the async loop.
-    Hard is a hard timeout, that will kill the task (ie. recycle the process) if it's
-    not able to give up control.
-    """
-
-    SOFT = "SOFT"
-    HARD = "HARD"
-
-
-@dataclass
-class TimeoutDefinition:
-    measurement: TimeoutMeasureType
-    timeout_type: TimeoutType
-    timeout_seconds: float
-
+from filzl_daemons.timeouts import TimeoutDefinition, TimeoutType, TimeoutMeasureType
 
 @dataclass
 class TaskDefinition:
@@ -107,11 +84,23 @@ class WorkerProcess(Process):
         self.task_queue = task_queue
         self.pool_size = pool_size
         self.tasks_before_recycle = tasks_before_recycle
+        self.is_draining_callbacks : list[Callable] = []
+        self.process_id = uuid4()
 
         # Assumes we're instantiating the worker process after we've imported all
         # the modules that we want to use into the global namespace, and therfore
         # into the registry.
         self.action_modules = REGISTRY.get_modules_in_registry()
+
+        # Allows listeners to get alerted when the worker process is draining
+        self.is_draining_event = Queue(maxsize=1)
+
+    def start(self):
+        # Needs to be spawned in the parent process
+        is_draining_monitor = Thread(target=self.monitor_is_draining, daemon=True)
+        is_draining_monitor.start()
+
+        super().start()
 
     def worker_init(self):
         # Usable within the worker process
@@ -159,7 +148,7 @@ class WorkerProcess(Process):
             if self.tasks_before_recycle is not None:
                 handled_tasks += 1
                 if handled_tasks >= self.tasks_before_recycle:
-                    self.is_draining = True
+                    self.flag_is_draining()
 
         # If this triggered we must be draining
         # The watch thread will process until this process is safe to kill
@@ -258,7 +247,7 @@ class WorkerProcess(Process):
         return None
 
     def trigger_hard_timeout(self, thread_definition: ThreadDefinition):
-        self.is_draining = True
+        self.flag_is_draining()
 
     def execute_task(self, task_definition: TaskDefinition):
         # Stub definition
@@ -353,6 +342,35 @@ class WorkerProcess(Process):
                 and thread_definition.thread.is_alive()
                 and not thread_definition.timed_out_causes
             }
+
+    def add_is_draining_callback(self, callback: Callable):
+        """
+        Notify a client function in the parent process when the pool starts draining.
+
+        """
+        self.is_draining_callbacks.append(callback)
+
+    def monitor_is_draining(self):
+        while True:
+            try:
+                self.is_draining_event.get_nowait()
+            except Empty:
+                continue
+
+            for callback in self.is_draining_callbacks:
+                callback(self)
+
+    def flag_is_draining(self):
+        if self.is_draining:
+            return
+
+        self.is_draining = True
+        try:
+            self.is_draining_event.put_nowait(True)
+        except Full:
+            # Shouldn't happen because we should only send one is_draining event per process
+            LOGGER.warning("Draining event queue is full, cannot put is_draining event.")
+            return
 
     def remove_thread_from_pool(self, thread_id: UUID):
         with self.pool_threads_lock:

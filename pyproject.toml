@@ -20,6 +20,8 @@ sqlmodel = "^0.0.14"
 # TODO: Move to optional dependencies, since release configurations
 # will not need these.
 watchdog = "^3.0.0"
+asyncpg = "^0.29.0"
+sqlalchemy = {extras = ["asyncio"], version = "^2.0.26"}
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.8.0"

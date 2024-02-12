@@ -14,7 +14,6 @@ from typing import (
 
 from filzl_daemons.actions import ActionMeta
 from filzl_daemons.logging import LOGGER
-from filzl_daemons.tasks import TASK_MANAGER
 
 _T = TypeVar("_T")
 
