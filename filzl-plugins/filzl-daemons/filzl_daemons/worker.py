@@ -1,7 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from multiprocessing import Process, Queue
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
@@ -12,7 +11,8 @@ from uuid import UUID, uuid4
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
 from filzl_daemons.actions import REGISTRY
 from filzl_daemons.logging import LOGGER
-from filzl_daemons.timeouts import TimeoutDefinition, TimeoutType, TimeoutMeasureType
+from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
+
 
 @dataclass
 class TaskDefinition:
@@ -84,7 +84,7 @@ class WorkerProcess(Process):
         self.task_queue = task_queue
         self.pool_size = pool_size
         self.tasks_before_recycle = tasks_before_recycle
-        self.is_draining_callbacks : list[Callable] = []
+        self.is_draining_callbacks: list[Callable] = []
         self.process_id = uuid4()
 
         # Assumes we're instantiating the worker process after we've imported all
@@ -369,7 +369,9 @@ class WorkerProcess(Process):
             self.is_draining_event.put_nowait(True)
         except Full:
             # Shouldn't happen because we should only send one is_draining event per process
-            LOGGER.warning("Draining event queue is full, cannot put is_draining event.")
+            LOGGER.warning(
+                "Draining event queue is full, cannot put is_draining event."
+            )
             return
 
     def remove_thread_from_pool(self, thread_id: UUID):

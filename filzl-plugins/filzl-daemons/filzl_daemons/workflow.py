@@ -1,17 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import Awaitable, TypeVar, Generic, Type, Any
-
-from sqlalchemy.ext.asyncio import AsyncEngine
-from filzl_daemons.timeouts import TimeoutDefinition
-from filzl_daemons.models import LocalModelDefinition
-from sqlmodel import Session
 from datetime import datetime
-from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Any, Awaitable, Generic, Type, TypeVar
 
-from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+
+from filzl_daemons.models import LocalModelDefinition
+from filzl_daemons.timeouts import TimeoutDefinition
 
 T = TypeVar("T")
+
 
 class WorkflowInstance(Generic[T]):
     def __init__(self, payload: T):
@@ -24,6 +21,7 @@ class WorkflowInstance(Generic[T]):
         max_retries: int,
     ):
         pass
+
 
 class Workflow(ABC, Generic[T]):
     def __init__(
@@ -39,7 +37,9 @@ class Workflow(ABC, Generic[T]):
         pass
 
     async def queue_task(self, task_input: T):
-        print("DB INSTANCE", self.model_definitions.DaemonWorkflowInstance.__tablename__)
+        print(
+            "DB INSTANCE", self.model_definitions.DaemonWorkflowInstance.__tablename__
+        )
         db_instance = self.model_definitions.DaemonWorkflowInstance(
             workflow_name=self.__class__.__name__,
             task_input=task_input.model_dump_json().encode(),
@@ -51,12 +51,14 @@ class Workflow(ABC, Generic[T]):
             session.add(db_instance)
             await session.commit()
 
+
 class Daemon:
     """
     Main local entrypoint to a daemon. Supports multiple workflows
     running in one daemon.
 
     """
+
     def __init__(
         self,
         model_definitions: LocalModelDefinition,
@@ -69,13 +71,17 @@ class Daemon:
         self.model_definitions = model_definitions
         self.engine = engine
 
-        # Users typically want to keep objects in scope after the session commits
-        self.session_maker = async_sessionmaker(engine, expire_on_commit=False)
-
-        self.workflows = {
-            workflow: workflow(model_definitions=model_definitions, session_maker=self.session_maker)
-            for workflow in workflows
-        } if workflows else {}
+        self.workflows = (
+            {
+                workflow: workflow(
+                    model_definitions=model_definitions,
+                    session_maker=self.session_maker,
+                )
+                for workflow in workflows
+            }
+            if workflows
+            else {}
+        )
 
     async def queue_new(self, workflow: Type[Workflow[T]], payload: T):
         """
@@ -104,6 +110,7 @@ class Daemon:
 
         # We want to be alerted to any of these queues being updated
         # TODO: This is probably a better fit for our task manager than here
+
 
 # from abc import ABC, abstractmethod
 # from hashlib import sha256

@@ -1,5 +1,6 @@
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
+
 
 class TimeoutMeasureType(Enum):
     CPU_TIME = "CPU_TIME"
