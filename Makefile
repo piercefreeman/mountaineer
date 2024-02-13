@@ -42,13 +42,20 @@ test-integrations: test-create-filzl-app-integrations
 install-deps:
 	@echo "Installing dependencies for $(LIB_DIR)..."
 	@(cd $(LIB_DIR) && poetry install)
-	@(poetry run maturin develop --release)
+	@(cd $(LIB_DIR) && poetry run maturin develop --release)
 
 	@echo "Installing dependencies for $(CREATE_FILZL_APP_DIR)..."
 	@(cd $(CREATE_FILZL_APP_DIR) && poetry install)
 
 	@echo "Installing dependencies for $(MY_WEBSITE_DIR)..."
 	@(cd $(MY_WEBSITE_DIR) && poetry install)
+
+	@echo "Installing dependencies for $(PLUGIN_FIZL_AUTH_DIR)..."
+	@(cd $(PLUGIN_FIZL_AUTH_DIR) && poetry install)
+
+	@echo "Installing dependencies for $(PLUGIN_FIZL_DAEMONS_DIR)..."
+	@(cd $(PLUGIN_FIZL_DAEMONS_DIR) && poetry install)
+	@(cd $(PLUGIN_FIZL_DAEMONS_DIR) && poetry run maturin develop --release)
 
 # Clean the current poetry.lock files, useful for remote CI machines
 # where we're running on a different base architecture than when
