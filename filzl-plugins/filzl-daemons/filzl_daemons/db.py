@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from hashlib import sha256
-from typing import Callable, Type, TypeVar
+from typing import Type, TypeVar
 
 import asyncpg
 from filzl.logging import LOGGER
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlmodel import SQLModel
 
-from filzl_daemons.models import QueableItemMixin
+from filzl_daemons.models import LocalModelDefinition, QueableItemMixin
 
 
 class WorkflowInstanceNotification(BaseModel):
@@ -37,6 +37,7 @@ class PostgresBackend:
     def __init__(
         self,
         engine: AsyncEngine,
+        local_models: LocalModelDefinition,
     ):
         self.engine = engine
 
@@ -47,6 +48,8 @@ class PostgresBackend:
         # Mapping of { action_id: Future }
         self.pending_notifications: dict[int, asyncio.Future] = {}
 
+        self.local_models = local_models
+
     def __getstate__(self):
         # Return state to be pickled, focusing on database connection info
         # Here, we extract only the necessary components to recreate the engine
@@ -56,6 +59,7 @@ class PostgresBackend:
             "database": self.engine.url.database,
             "host": self.engine.url.host,
             "port": self.engine.url.port,
+            "local_models": self.local_models.__getstate__(),
         }
 
     def __setstate__(self, state):
@@ -71,6 +75,9 @@ class PostgresBackend:
         # Recreate the AsyncEngine with the original connection parameters
         self.engine = create_async_engine(url)
         self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
+
+        self.local_models = LocalModelDefinition.__new__(LocalModelDefinition)
+        self.local_models.__setstate__(state["local_models"])
 
     async def get_object_by_id(self, model: Type[T], id: int) -> T:
         async with self.session_maker() as session:
@@ -228,16 +235,16 @@ class PostgresBackend:
         while True:
             yield await ready_queue.get()
 
-    def get_table_name(self, model: SQLModel) -> str:
+    def get_table_name(self, model: Type[SQLModel] | SQLModel) -> str:
         table_name = model.__tablename__
         if not isinstance(table_name, str):
-            raise ValueError(f"Table name is expected to be a string, received: {table_name}")
+            raise ValueError(
+                f"Table name is expected to be a string, received: {table_name}"
+            )
         return table_name
 
     @asynccontextmanager
-    async def get_asyncpg_connection_from_engine(
-        self, engine: AsyncEngine
-    ) -> asyncpg.Connection:
+    async def get_asyncpg_connection_from_engine(self, engine: AsyncEngine):
         """
         Returns the asyncpg connection that backs the given SQLAlchemy async engine
 
@@ -246,4 +253,6 @@ class PostgresBackend:
         """
         async with engine.connect() as conn:
             raw_conn = await conn.get_raw_connection()
+            if raw_conn.driver_connection is None:
+                raise ValueError("Driver connection is not available")
             yield raw_conn.driver_connection

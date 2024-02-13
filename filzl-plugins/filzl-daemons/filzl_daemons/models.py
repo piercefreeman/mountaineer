@@ -1,4 +1,7 @@
+import sys
 from datetime import datetime
+from importlib import import_module
+from inspect import isclass
 from typing import Type, TypeVar
 from uuid import UUID
 
@@ -62,7 +65,7 @@ class DaemonAction(QueableItemMixin, SQLModel):
     state: str
 
     registry_id: str
-    input_body: str  # json payload
+    input_body: str | None  # json payload
 
     # The most recent DaemonActionResult. If there is an exit condition, this
     # will be the final result.
@@ -117,3 +120,20 @@ class LocalModelDefinition:
         self.WorkerStatus = WorkerStatus
         self.DaemonAction = DaemonAction
         self.DaemonActionResult = DaemonActionResult
+
+    def __getstate__(self):
+        # Find the modules that implement these different models
+        return {
+            key: value.__module__
+            for key, value in self.__dict__.items()
+            if isclass(value) and issubclass(value, SQLModel)
+        }
+
+    def __setstate__(self, state):
+        # Dynamically import the modules that implement these different models
+        for key, module in state.items():
+            if module not in sys.modules:
+                imported_module = import_module(module)
+            else:
+                imported_module = sys.modules[module]
+            setattr(self, key, getattr(imported_module, key))

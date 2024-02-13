@@ -13,26 +13,24 @@ class TaskManager:
 
     def __init__(
         self,
-        local_model_definition,
-        postgres_backend: PostgresBackend,
+        backend: PostgresBackend,
     ):
-        self.postgres_backend = postgres_backend
-        self.local_model_definition = local_model_definition
+        self.backend = backend
 
         # In-memory waits that are part of the current event loop
         # Mapping of task ID to signal
         self.wait_signals: dict[int, asyncio.Future] = {}
 
     async def queue_work(self, task: ActionExecutionStub):
-        async with self.postgres_backend.session_maker() as session:
-            action_task = self.local_model_definition.DaemonAction(
+        async with self.backend.session_maker() as session:
+            action_task = self.backend.local_models.DaemonAction(
                 workflow_name="todo",
                 instance_id=-1,
                 state="todo",
                 registry_id=task.registry_id,
-                input_body=task.input_body.model_dump_json()
-                if task.input_body
-                else None,
+                input_body=(
+                    task.input_body.model_dump_json() if task.input_body else None
+                ),
             )
             session.add(action_task)
             await session.commit()
@@ -40,6 +38,9 @@ class TaskManager:
         # Queue work
         # We should be notified once it's completed
         # Return a signal that we can wait on
+        if action_task.id is None:
+            raise ValueError("Action task ID is None")
+
         self.wait_signals[action_task.id] = asyncio.Future()
         return self.wait_signals[action_task.id]
 
@@ -49,8 +50,8 @@ class TaskManager:
         in the current runloop.
 
         """
-        async for notification in self.postgres_backend.iter_ready_objects(
-            model=self.local_model_definition.DaemonAction,
+        async for notification in self.backend.iter_ready_objects(
+            model=self.backend.local_models.DaemonAction,
             queues=[],
             status="done",
         ):
@@ -63,14 +64,21 @@ class TaskManager:
                 continue
 
             # Get the actual object
-            obj = await self.postgres_backend.get_object_by_id(
-                model=self.local_model_definition.DaemonAction,
+            obj = await self.backend.get_object_by_id(
+                model=self.backend.local_models.DaemonAction,
                 id=notification.id,
             )
 
+            if not obj.final_result_id:
+                # No result found, likely erroneous "done" setting
+                LOGGER.warning(
+                    f"Action {obj.id} is done, but has no final result. Skipping"
+                )
+                continue
+
             # Look for the most recent pointer
-            result_obj = await self.postgres_backend.get_object_by_id(
-                model=self.local_model_definition.DaemonActionResult,
+            result_obj = await self.backend.get_object_by_id(
+                model=self.backend.local_models.DaemonActionResult,
                 id=obj.final_result_id,
             )
 

@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel import select
 
 from filzl_daemons.__tests__.conf_models import (
-    LOCAL_MODEL_DEFINITION,
     DaemonWorkflowInstance,
 )
 from filzl_daemons.actions import action
+from filzl_daemons.db import PostgresBackend
 from filzl_daemons.workflow import (
     DaemonClient,
     DaemonRunner,
@@ -80,12 +80,11 @@ async def test_workflow_creates_instance(
 
 @pytest.mark.asyncio
 async def test_workflow_runs_instance(
-    db_engine: AsyncEngine, daemon_client: DaemonClient
+    postgres_backend: PostgresBackend, daemon_client: DaemonClient
 ):
     task_manager = DaemonRunner(
-        model_definitions=LOCAL_MODEL_DEFINITION,
-        engine=db_engine,
         workflows=[ExampleWorkflow],
+        backend=postgres_backend,
     )
 
     result = await daemon_client.queue_new(

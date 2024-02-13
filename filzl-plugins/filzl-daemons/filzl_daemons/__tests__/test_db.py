@@ -4,7 +4,10 @@ from datetime import datetime
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from filzl_daemons.__tests__.conf_models import DaemonWorkflowInstance
+from filzl_daemons.__tests__.conf_models import (
+    LOCAL_MODEL_DEFINITION,
+    DaemonWorkflowInstance,
+)
 from filzl_daemons.db import PostgresBackend
 
 
@@ -18,7 +21,10 @@ from filzl_daemons.db import PostgresBackend
     ],
 )
 async def test_iter_ready_objects(db_engine: AsyncEngine, limit_queues: list[str]):
-    postgres_backend = PostgresBackend(engine=db_engine)
+    postgres_backend = PostgresBackend(
+        engine=db_engine,
+        local_models=LOCAL_MODEL_DEFINITION,
+    )
 
     # Create one object before we run the notification loop to test
     # if we're able to retrieve already-created objects

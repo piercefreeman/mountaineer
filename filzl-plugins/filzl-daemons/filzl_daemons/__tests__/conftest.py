@@ -6,6 +6,7 @@ from sqlmodel import SQLModel
 from filzl_daemons.__tests__.conf_models import (
     LOCAL_MODEL_DEFINITION,
 )
+from filzl_daemons.db import PostgresBackend
 from filzl_daemons.workflow import DaemonClient
 
 
@@ -25,8 +26,15 @@ async def db_engine():
 
 
 @pytest.fixture
-def daemon_client(db_engine: AsyncEngine):
-    yield DaemonClient(
-        model_definitions=LOCAL_MODEL_DEFINITION,
+def postgres_backend(db_engine: AsyncEngine):
+    return PostgresBackend(
         engine=db_engine,
+        local_models=LOCAL_MODEL_DEFINITION,
+    )
+
+
+@pytest.fixture
+def daemon_client(postgres_backend: PostgresBackend):
+    return DaemonClient(
+        backend=postgres_backend,
     )

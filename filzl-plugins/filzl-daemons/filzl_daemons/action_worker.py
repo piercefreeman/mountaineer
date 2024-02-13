@@ -24,7 +24,7 @@ class TaskDefinition:
     action_id: int
 
     registry_id: str
-    input_body: str  # json string
+    input_body: str | None  # json string
     timeouts: list[TimeoutDefinition]
 
 
@@ -333,6 +333,8 @@ class ActionWorkerProcess(multiprocessing.Process):
             if task_model is not None:
                 task_args.append(
                     task_model.model_validate_json(task_definition.input_body)
+                    if task_definition.input_body
+                    else None
                 )
 
             result = await task_fn(*task_args)

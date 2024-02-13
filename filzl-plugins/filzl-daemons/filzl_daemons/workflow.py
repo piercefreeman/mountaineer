@@ -9,13 +9,11 @@ from uuid import UUID
 from filzl.logging import LOGGER
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.future import select
 
 from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
-from filzl_daemons.models import LocalModelDefinition
 from filzl_daemons.parallel import AsyncProcessQueue
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.tasks import TaskManager
@@ -109,10 +107,9 @@ class WorkflowMeta(ABCMeta):
 
 
 class DaemonResponseFuture:
-    def __init__(self, instance_id, session_maker, model_definitions):
+    def __init__(self, instance_id: int, *, backend: PostgresBackend):
         self.instance_id = instance_id
-        self.session_maker = session_maker
-        self.model_definitions = model_definitions
+        self.backend = backend
 
     async def wait(self):
         """
@@ -122,16 +119,24 @@ class DaemonResponseFuture:
 
         """
         while True:
-            async with self.session_maker() as session:
+            async with self.backend.session_maker() as session:
                 instance = await session.get(
-                    self.model_definitions.DaemonWorkflowInstance,
+                    self.backend.local_models.DaemonWorkflowInstance,
                     self.instance_id,
                 )
+                if instance is None:
+                    raise ValueError(f"Workflow instance {self.instance_id} not found")
                 if instance.end_time:
                     workflow_cls = REGISTRY.get_workflow(instance.registry_id)
 
                     # TODO: Also return the exception
-                    return workflow_cls.output_model.model_validate_json(instance.result_body)
+                    return (
+                        workflow_cls.output_model.model_validate_json(
+                            instance.result_body
+                        )
+                        if instance.result_body
+                        else None
+                    )
             await asyncio.sleep(1)
 
 
@@ -139,13 +144,8 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
     input_model: Type[T]
     output_model: Type[BaseModel]
 
-    def __init__(
-        self,
-        model_definitions: LocalModelDefinition,
-        session_maker: async_sessionmaker,
-    ):
-        self.model_definitions = model_definitions
-        self.session_maker = session_maker
+    def __init__(self, backend: PostgresBackend):
+        self.backend = backend
 
     @abstractmethod
     async def run(self, instance: WorkflowInstance[T]) -> BaseModel:
@@ -161,42 +161,48 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
             input_payload = self.input_model.model_validate_json(raw_input)
             result = await self.run(WorkflowInstance(input_payload, task_manager))
 
-            async with self.session_maker() as session:
+            async with self.backend.session_maker() as session:
                 instance = await session.get(
-                    self.model_definitions.DaemonWorkflowInstance,
+                    self.backend.local_models.DaemonWorkflowInstance,
                     instance_id,
                 )
+                if instance is None:
+                    raise ValueError(f"Workflow instance {instance_id} not found")
                 instance.result_body = result.model_dump_json()
                 instance.end_time = datetime.now()
                 await session.commit()
         except Exception as e:
             LOGGER.exception(f"Workflow `{self.__class__.__name__}` failed due to: {e}")
 
-            async with self.session_maker() as session:
+            async with self.backend.session_maker() as session:
                 instance = await session.get(
-                    self.model_definitions.DaemonWorkflowInstance,
+                    self.backend.local_models.DaemonWorkflowInstance,
                     instance_id,
                 )
+                if instance is None:
+                    raise ValueError(f"Workflow instance {instance_id} not found")
                 instance.exception = str(e)
                 instance.exception_stack = format_exc()
                 await session.commit()
 
     async def queue_task(self, task_input: T):
-        db_instance = self.model_definitions.DaemonWorkflowInstance(
-            workflow_name=self.__class__.__name__,
-            registry_id=REGISTRY.get_registry_id_for_workflow(self.__class__),
-            input_body=task_input.model_dump_json(),
-            launch_time=datetime.now(),
-        )
+        async with self.backend.session_maker() as session:
+            db_instance = self.backend.local_models.DaemonWorkflowInstance(
+                workflow_name=self.__class__.__name__,
+                registry_id=REGISTRY.get_registry_id_for_workflow(self.__class__),
+                input_body=task_input.model_dump_json(),
+                launch_time=datetime.now(),
+            )
 
-        async with self.session_maker() as session:
             session.add(db_instance)
             await session.commit()
 
+        if db_instance.id is None:
+            raise ValueError("Failed to get ID for new workflow instance")
+
         return DaemonResponseFuture(
             db_instance.id,
-            self.session_maker,
-            self.model_definitions,
+            backend=self.backend,
         )
 
 
@@ -208,16 +214,12 @@ class DaemonClient:
 
     def __init__(
         self,
-        model_definitions: LocalModelDefinition,
-        engine: AsyncEngine,
+        backend: PostgresBackend,
     ):
         """
         Workflows only need to be provided if the daemon becomes a runner
         """
-        self.model_definitions = model_definitions
-        self.engine = engine
-        self.session_maker = async_sessionmaker(engine, expire_on_commit=False)
-
+        self.backend = backend
         self.workflows: dict[Type[Workflow], Workflow] = {}
 
     async def queue_new(self, workflow: Type[Workflow[T]], payload: T):
@@ -227,8 +229,7 @@ class DaemonClient:
         """
         if workflow not in self.workflows:
             self.workflows[workflow] = workflow(
-                model_definitions=self.model_definitions,
-                session_maker=self.session_maker,
+                backend=self.backend,
             )
         return await self.workflows[workflow].queue_task(payload)
 
@@ -242,8 +243,7 @@ class DaemonRunner:
 
     def __init__(
         self,
-        model_definitions: LocalModelDefinition,
-        engine: AsyncEngine,
+        backend: PostgresBackend,
         workflows: list[Type[Workflow[T]]],
         max_workers: int | None = None,
         threads_per_worker: int = 1,
@@ -256,12 +256,8 @@ class DaemonRunner:
             this number.
 
         """
-        self.model_definitions = model_definitions
-        self.engine = engine
-        self.session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        self.backend = backend
         self.workflows = workflows
-
-        self.postgres_backend = PostgresBackend(engine=self.engine)
 
         self.max_workers = max_workers or multiprocessing.cpu_count()
         self.threads_per_worker = threads_per_worker
@@ -293,11 +289,7 @@ class DaemonRunner:
             maxsize=self.max_workers * self.threads_per_worker
         )
         worker_result_queue: AsyncProcessQueue[tuple[int, Any]] = AsyncProcessQueue()
-
-        task_manager = TaskManager(
-            local_model_definition=self.model_definitions,
-            postgres_backend=self.postgres_backend,
-        )
+        task_manager = TaskManager(backend=self.backend)
 
         def start_new_worker():
             # Start a new worker to replace the one that's draining
@@ -375,9 +367,9 @@ class DaemonRunner:
             action_id, result = await result_queue.aget()
 
             # Save the result to the database
-            async with self.session_maker() as session:
+            async with self.backend.session_maker() as session:
                 # We need to create a new action result
-                action_result_obj = self.model_definitions.DaemonActionResult(
+                action_result_obj = self.backend.local_models.DaemonActionResult(
                     action_id=action_id,
                     result_body=result,
                 )
@@ -385,7 +377,7 @@ class DaemonRunner:
                 await session.commit()
 
                 action_obj = await session.get(
-                    self.model_definitions.DaemonAction,
+                    self.backend.local_models.DaemonAction,
                     action_id,
                 )
                 if not action_obj:
@@ -398,22 +390,22 @@ class DaemonRunner:
                 await session.commit()
 
     async def queue_instance_work(self, task_manager):
-        async for notification in self.postgres_backend.iter_ready_objects(
-            model=self.model_definitions.DaemonWorkflowInstance,
+        async for notification in self.backend.iter_ready_objects(
+            model=self.backend.local_models.DaemonWorkflowInstance,
             queues=[],
         ):
             LOGGER.info(f"Instance queue should handle job: {notification}")
 
             has_exclusive = await self.get_exclusive_access(
-                self.model_definitions.DaemonWorkflowInstance, notification.id
+                self.backend.local_models.DaemonWorkflowInstance, notification.id
             )
             if not has_exclusive:
                 continue
 
             # TODO: Right now we just instantiate a new workflow every time, we should keep
             # this cached in case there is some heavy loading in init
-            instance_definition = await self.postgres_backend.get_object_by_id(
-                self.model_definitions.DaemonWorkflowInstance, notification.id
+            instance_definition = await self.backend.get_object_by_id(
+                self.backend.local_models.DaemonWorkflowInstance, notification.id
             )
 
             if not instance_definition.id:
@@ -421,10 +413,7 @@ class DaemonRunner:
 
             # Get the workflow class from the workflow name
             workflow_cls = REGISTRY.get_workflow(instance_definition.registry_id)
-            workflow = workflow_cls(
-                model_definitions=self.model_definitions,
-                session_maker=self.session_maker,
-            )
+            workflow = workflow_cls(backend=self.backend)
             asyncio.create_task(
                 workflow.run_handler(
                     instance_id=instance_definition.id,
@@ -434,21 +423,21 @@ class DaemonRunner:
             )
 
     async def queue_action_work(self, worker_queue):
-        async for notification in self.postgres_backend.iter_ready_objects(
-            model=self.model_definitions.DaemonAction,
+        async for notification in self.backend.iter_ready_objects(
+            model=self.backend.local_models.DaemonAction,
             queues=[],
         ):
             LOGGER.info(f"Action queue should handle job: {notification}")
 
             has_exclusive = await self.get_exclusive_access(
-                self.model_definitions.DaemonAction, notification.id
+                self.backend.local_models.DaemonAction, notification.id
             )
             if not has_exclusive:
                 continue
 
             # Get the full object from the database
-            action_definition = await self.postgres_backend.get_object_by_id(
-                model=self.model_definitions.DaemonAction,
+            action_definition = await self.backend.get_object_by_id(
+                model=self.backend.local_models.DaemonAction,
                 id=notification.id,
             )
 
@@ -484,7 +473,7 @@ class DaemonRunner:
     async def get_exclusive_access(self, model, id: int):
         has_exclusive_lock = True
 
-        async with self.session_maker() as session:
+        async with self.backend.session_maker() as session:
             try:
                 async with session.begin():
                     # Attempt to lock the specific job by ID with NOWAIT
