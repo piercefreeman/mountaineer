@@ -12,19 +12,22 @@ from typing import (
     Union,
 )
 
-from filzl_daemons.actions import ActionMeta
+from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.logging import LOGGER
+from filzl_daemons.tasks import TaskManager
 
 _T = TypeVar("_T")
 
 
 class CustomRunLoop(asyncio.AbstractEventLoop):
-    def __init__(self):
+    def __init__(self, task_manager: TaskManager):
         self._running: bool = False
         self._immediate: List[asyncio.Handle] = []
         self._scheduled: List[asyncio.TimerHandle] = []
         self._exc: Optional[Exception] = None
         self._time: float = 0
+
+        self._task_manager = task_manager
 
     def run_forever(self) -> None:
         asyncio._set_running_loop(self)
@@ -119,14 +122,16 @@ class CustomRunLoop(asyncio.AbstractEventLoop):
             try:
                 awaitable_result = coro() if callable(coro) else coro
                 result = await awaitable_result
-                if isinstance(result, ActionMeta):
+                if isinstance(result, ActionExecutionStub):
                     # This should be scheduled in a task worker
-                    LOGGER.info(f"ActionMeta received, scheduling task: {result}")
+                    LOGGER.info(
+                        f"ActionExecutionStub received, scheduling task: {result}"
+                    )
                     # See if it's already been queued
-                    task_id, wait_for_completion = await TASK_MANAGER.queue_work(result)
+                    wait_for_completion = await self._task_manager.queue_work(result)
                     # TODO: GET THE RESULT
-                    await wait_for_completion
-                    result = TASK_MANAGER.results[task_id]
+                    result = await wait_for_completion
+                    # result = TASK_MANAGER.results[task_id]
                 return result
             except Exception as e:
                 LOGGER.warning(f"Internal exception: {e}")

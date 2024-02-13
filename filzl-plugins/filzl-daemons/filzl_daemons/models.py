@@ -4,12 +4,15 @@ from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
+
 class QueableItemMixin(SQLModel):
     """
     Mixin for items that can be queued.
     """
+
     workflow_name: str
     status: str = "queued"
+
 
 class DaemonWorkflowInstance(QueableItemMixin, SQLModel):
     """
@@ -17,7 +20,10 @@ class DaemonWorkflowInstance(QueableItemMixin, SQLModel):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    task_input: bytes
+
+    # Will couple with the defined Workflow
+    registry_id: str
+    input_body: str  # json input
 
     # Status metadata
     launch_time: datetime
@@ -56,8 +62,7 @@ class DaemonAction(QueableItemMixin, SQLModel):
     state: str
 
     registry_id: str
-    args: bytes
-    kwargs: bytes
+    input_body: str  # json payload
 
     # Timeout preferences, in seconds
     wall_soft_timeout: int | None = None

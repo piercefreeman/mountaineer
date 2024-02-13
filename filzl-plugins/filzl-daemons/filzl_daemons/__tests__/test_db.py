@@ -1,12 +1,23 @@
-from sqlalchemy.ext.asyncio import AsyncEngine
-from filzl_daemons.db import PostgresBackend
-from filzl_daemons.__tests__.conf_models import DaemonWorkflowInstance
-import pytest
-from datetime import datetime
 import asyncio
+from datetime import datetime
+
+import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from filzl_daemons.__tests__.conf_models import DaemonWorkflowInstance
+from filzl_daemons.db import PostgresBackend
+
 
 @pytest.mark.asyncio
-async def test_iter_ready_objects(db_engine: AsyncEngine):
+@pytest.mark.parametrize(
+    "limit_queues",
+    [
+        # Should work with both isolated filtering and no filtering (global view)
+        (["test_workflow_id"]),
+        ([]),
+    ],
+)
+async def test_iter_ready_objects(db_engine: AsyncEngine, limit_queues: list[str]):
     postgres_backend = PostgresBackend(engine=db_engine)
 
     # Create one object before we run the notification loop to test
@@ -16,7 +27,7 @@ async def test_iter_ready_objects(db_engine: AsyncEngine):
             DaemonWorkflowInstance(
                 id=10,
                 workflow_name="test_workflow_id",
-                task_input="value_1".encode(),
+                input_body="value_1",
                 launch_time=datetime.now(),
             )
         )
@@ -30,7 +41,7 @@ async def test_iter_ready_objects(db_engine: AsyncEngine):
                 DaemonWorkflowInstance(
                     id=20,
                     workflow_name="test_workflow_id",
-                    task_input="value_2".encode(),
+                    input_body="value_2",
                     launch_time=datetime.now(),
                 )
             )
@@ -40,8 +51,8 @@ async def test_iter_ready_objects(db_engine: AsyncEngine):
         items = []
         async for item in postgres_backend.iter_ready_objects(
             model=DaemonWorkflowInstance,
-            queues=["test_workflow_id"],
-            max_items=1,
+            queues=limit_queues,
+            max_items=2,
         ):
             items.append(item)
 

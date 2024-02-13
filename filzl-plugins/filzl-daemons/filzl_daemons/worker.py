@@ -9,16 +9,19 @@ from typing import Callable
 from uuid import UUID, uuid4
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
-from filzl_daemons.actions import REGISTRY
+from filzl_daemons.registry import REGISTRY
 from filzl_daemons.logging import LOGGER
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 
 
 @dataclass
 class TaskDefinition:
+    # Unique identifier for the task, allows callers to resolve it
+    # and cancel it if necessary
+    action_id: int
+
     registry_id: str
-    args: list
-    kwargs: dict
+    input_body: str  # json string
     timeouts: list[TimeoutDefinition]
 
 
@@ -87,6 +90,9 @@ class WorkerProcess(Process):
         self.is_draining_callbacks: list[Callable] = []
         self.process_id = uuid4()
 
+        # Unlike is_alive, captures if we have already started the worker process
+        self.is_started = True
+
         # Assumes we're instantiating the worker process after we've imported all
         # the modules that we want to use into the global namespace, and therfore
         # into the registry.
@@ -99,6 +105,8 @@ class WorkerProcess(Process):
         # Needs to be spawned in the parent process
         is_draining_monitor = Thread(target=self.monitor_is_draining, daemon=True)
         is_draining_monitor.start()
+
+        self.is_started = True
 
         super().start()
 
@@ -311,7 +319,16 @@ class WorkerProcess(Process):
 
         async def run_task():
             task_fn = REGISTRY.get_action(task_definition.registry_id)
-            result = await task_fn(*task_definition.args, **task_definition.kwargs)
+            task_model = REGISTRY.get_action_model(task_definition.registry_id)
+
+            # If the task model is provided, we should try to parse the inputs as the pydantic model
+            task_args = []
+            if task_model is not None:
+                task_args.append(
+                    task_model.model_validate_json(task_definition.input_body)
+                )
+
+            result = await task_fn(*task_args)
 
             # TODO: Upload the result to the results queue
             # print(result)
@@ -348,6 +365,13 @@ class WorkerProcess(Process):
         Notify a client function in the parent process when the pool starts draining.
 
         """
+        # We can't add this instance variable before we start the process, otherwise
+        # we risk copying over non-copyable objects
+        if not self.is_started:
+            raise RuntimeError(
+                "Cannot add is_draining callback before the process has started."
+            )
+
         self.is_draining_callbacks.append(callback)
 
     def monitor_is_draining(self):

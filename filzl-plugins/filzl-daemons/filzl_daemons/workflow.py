@@ -1,29 +1,70 @@
-from abc import ABC, abstractmethod
+import asyncio
+import multiprocessing
+from abc import ABC, ABCMeta, abstractmethod
 from datetime import datetime
-from typing import Any, Awaitable, Generic, Type, TypeVar
+from typing import Any, Awaitable, Generic, Type, TypeVar, get_args, get_origin
+from uuid import UUID
 
+from filzl.logging import LOGGER
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
+from filzl_daemons.db import PostgresBackend
+from filzl_daemons.instance_worker import InstanceTask, InstanceWorker
 from filzl_daemons.models import LocalModelDefinition
-from filzl_daemons.timeouts import TimeoutDefinition
+from filzl_daemons.registry import REGISTRY
+from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
+from filzl_daemons.worker import TaskDefinition, WorkerProcess
 
-T = TypeVar("T")
+T = TypeVar("T", bound=BaseModel)
 
 
 class WorkflowInstance(Generic[T]):
-    def __init__(self, payload: T):
-        self.payload = payload
+    def __init__(self, input_payload: T):
+        self.input_payload = input_payload
 
-    def run_action(
+    async def run_action(
         self,
         action: Awaitable,
         timeouts: list[TimeoutDefinition],
         max_retries: int,
     ):
+        """
+        Main entry point for running an action in the workflow. All calls should
+        flow through your instance's run_action method.
+
+        This method allows us to inject instance-specific metadata into
+        the action.
+
+        """
         pass
 
 
-class Workflow(ABC, Generic[T]):
+class WorkflowMeta(ABCMeta):
+    def __init__(cls, name, bases, dct):
+        super().__init__(name, bases, dct)
+        REGISTRY.register_workflow(cls)
+
+        print("REGISTER CLASS", cls.__name__)
+        # Attempt to sniff the generic type for input_model
+        for base in cls.__orig_bases__:
+            print("BASE", base)
+            if (
+                get_origin(base)
+                and get_origin(base).__name__ == "Workflow"
+                and get_args(base)
+            ):
+                # Make sure it's a BaseModel
+                if not issubclass(get_args(base)[0], BaseModel):
+                    raise Exception(
+                        f"Workflow {cls.__name__} must have a BaseModel as its generic type"
+                    )
+                cls.input_model = get_args(base)[0]
+                print("INPUT MODEL", cls.input_model)
+                break
+
+
+class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
     def __init__(
         self,
         model_definitions: LocalModelDefinition,
@@ -36,26 +77,58 @@ class Workflow(ABC, Generic[T]):
     async def run(self, input_payload: WorkflowInstance[T]) -> Any:
         pass
 
+    async def run_handler(
+        self,
+        instance_id: int,
+        raw_input: str,
+    ):
+        print("RUN HANDLER TRIGGERED")
+        try:
+            input_payload = self.input_model.parse_raw(raw_input)
+            print("PARSED INPUT", input_payload)
+
+            result = await self.run(WorkflowInstance(input_payload))
+
+            async with self.session_maker() as session:
+                instance = await session.get(
+                    self.model_definitions.DaemonWorkflowInstance,
+                    instance_id,
+                )
+                instance.output_body = result.model_dump_json()
+                instance.end_time = datetime.now()
+                await session.commit()
+        except Exception as e:
+            LOGGER.error(f"Workflow {self.__class__.__name__} failed due to: {e}")
+
+            async with self.session_maker() as session:
+                instance = await session.get(
+                    self.model_definitions.DaemonWorkflowInstance,
+                    instance_id,
+                )
+                instance.error = str(e)
+                await session.commit()
+
     async def queue_task(self, task_input: T):
         print(
-            "DB INSTANCE", self.model_definitions.DaemonWorkflowInstance.__tablename__
+            "DB INSTANCE TYPE",
+            self.model_definitions.DaemonWorkflowInstance.__tablename__,
         )
         db_instance = self.model_definitions.DaemonWorkflowInstance(
             workflow_name=self.__class__.__name__,
-            task_input=task_input.model_dump_json().encode(),
+            registry_id=REGISTRY.get_registry_id_for_workflow(self.__class__),
+            input_body=task_input.model_dump_json(),
             launch_time=datetime.now(),
         )
-        print("DB INSTANCE", db_instance)
+        print("DB INSTANCE QUEUED", db_instance)
 
         async with self.session_maker() as session:
             session.add(db_instance)
             await session.commit()
 
 
-class Daemon:
+class DaemonClient:
     """
-    Main local entrypoint to a daemon. Supports multiple workflows
-    running in one daemon.
+    Interacts with a remote daemon pool from client code.
 
     """
 
@@ -63,25 +136,15 @@ class Daemon:
         self,
         model_definitions: LocalModelDefinition,
         engine: AsyncEngine,
-        workflows: list[Type[Workflow[T]]] | None = None,
     ):
         """
         Workflows only need to be provided if the daemon becomes a runner
         """
         self.model_definitions = model_definitions
         self.engine = engine
+        self.session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
-        self.workflows = (
-            {
-                workflow: workflow(
-                    model_definitions=model_definitions,
-                    session_maker=self.session_maker,
-                )
-                for workflow in workflows
-            }
-            if workflows
-            else {}
-        )
+        self.workflows: dict[Type[Workflow], Workflow] = {}
 
     async def queue_new(self, workflow: Type[Workflow[T]], payload: T):
         """
@@ -95,168 +158,188 @@ class Daemon:
             )
         await self.workflows[workflow].queue_task(payload)
 
-    def run(self, workflows: list[Type[Workflow[T]]]):
+
+class DaemonRunner:
+    """
+    Runs the daemon in the current container / machine. Supports multiple workflows
+    running in one DaemonRunner.
+
+    """
+
+    def __init__(
+        self,
+        model_definitions: LocalModelDefinition,
+        engine: AsyncEngine,
+        workflows: list[Type[Workflow[T]]],
+        max_workers: int | None = None,
+        threads_per_worker: int = 1,
+    ):
+        """
+        :param max_workers: If None, we'll use the number of CPUs on the machine
+        :param threads_per_worker: The number of threads to use per worker. If you have
+            heavily CPU-bound tasks, keeping the default of 1 task per process is probably
+            good. Otherwise in the case of more I/O bound tasks, you might want to increase
+            this number.
+
+        """
+        self.model_definitions = model_definitions
+        self.engine = engine
+        self.session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        self.workflows = workflows
+
+        self.postgres_backend = PostgresBackend(engine=self.engine)
+
+        self.max_workers = max_workers or multiprocessing.cpu_count()
+        self.threads_per_worker = threads_per_worker
+
+    def run(self, workflows):
         """
         Runs the selected workflows / actions.
 
         """
-        # Instantiate any of the workflows that are not already instantiated
-        for workflow in workflows:
-            if workflow not in self.workflows:
-                self.workflows[workflow] = workflow(
-                    model_definitions=self.model_definitions,
-                    session_maker=self.session_maker,
+        asyncio.run(self.handle_jobs())
+
+    async def handle_jobs(self):
+        """
+        Main task execution entrypoint. Takes care of:
+            - Setting up isolated worker processes, one per CPU
+            - Healthcheck those isolated worker processes, replace the ones that have issues
+            - Iterate through the instance queue and add the ready workflows to the current
+                async loop for execution
+            - Iterate through the action queue and assign work to the workers
+
+        """
+        # Spawn our worker processes
+        worker_processes: dict[UUID, WorkerProcess] = {}
+        already_drained: set[UUID] = set()
+
+        # Workers only handle actions, so we set up a queue to route all the collected
+        # actions in the format that the workers expect
+        worker_queue: multiprocessing.Queue[TaskDefinition] = multiprocessing.Queue(
+            maxsize=self.max_workers * self.threads_per_worker
+        )
+        instance_queue = multiprocessing.Queue()
+
+        def start_new_worker():
+            # Start a new worker to replace the one that's draining
+            process = WorkerProcess(worker_queue, pool_size=self.threads_per_worker)
+            process.start()
+
+            # Make sure to do after the process is started
+            process.add_is_draining_callback(is_draining_callback)
+
+            return process
+
+        def is_draining_callback(worker: WorkerProcess):
+            # If we're alerted that the process is draining, we should
+            # start a new one. Also handle the case where processes quit
+            # without a draining signal.
+            if worker.process_id in already_drained:
+                return
+            already_drained.add(worker.process_id)
+
+            process = start_new_worker()
+            worker_processes[process.process_id] = process
+
+        async def health_check(self, worker_processes: dict[UUID, WorkerProcess]):
+            # If the process has been terminated without a draining signal,
+            # we should start a new one
+            for process_id, process in list(worker_processes.items()):
+                # Handle potential terminations of the process for other reasons
+                if not process.is_alive():
+                    is_draining_callback(process)
+                del worker_processes[process_id]
+
+            await asyncio.sleep(5)
+
+        # Initial worker process bootstrap
+        # for _ in range(self.max_workers):
+        #    process = start_new_worker()
+        #    worker_processes[process.process_id] = process
+
+        # handle_workflows_thread = Thread(
+        #    target=self.handle_workflows,
+        #    args=(instance_queue,),
+        #    daemon=True,
+        # )
+        handle_workflows = InstanceWorker(
+            instance_queue,
+            self.postgres_backend,
+        )
+        handle_workflows.start()
+
+        # Infinitely blocking
+        await asyncio.gather(
+            self.queue_instance_work(instance_queue),
+            # queue_action_work(),
+            # health_check(),
+        )
+
+    async def queue_instance_work(
+        self, instance_queue: multiprocessing.Queue
+    ):
+        async for notification in self.postgres_backend.iter_ready_objects(
+            model=self.model_definitions.DaemonWorkflowInstance,
+            queues=[],
+        ):
+            LOGGER.info(f"Instance queue should handle job: {notification}")
+
+            # TODO: Right now we just instantiate a new workflow every time, we should keep
+            # this cached in case there is some heavy loading in init
+            instance_definition = await self.postgres_backend.get_object_by_id(
+                self.model_definitions.DaemonWorkflowInstance, notification.id
+            )
+
+            if not instance_definition.id:
+                continue
+
+            task_definition = InstanceTask(
+                registry_id=instance_definition.registry_id,
+                id=instance_definition.id,
+                input_body=instance_definition.input_body,
+            )
+            print("WILL PUT INSTANCE")
+            instance_queue.put(task_definition)
+            print("DID PUT INSTANCE")
+
+    async def queue_action_work(self):
+        async for notification in self.postgres_backend.iter_ready_objects(
+            model=self.model_definitions.DaemonAction,
+            queues=[],
+        ):
+            LOGGER.info(f"Action queue should handle job: {notification}")
+
+            # Get the full object from the database
+            action_definition = await self.postgres_backend.get_object_by_id(
+                model=self.model_definitions.DaemonAction,
+                id=notification.id,
+            )
+
+            field_to_timeout = {
+                "wall_soft_timeout": (TimeoutMeasureType.WALL_TIME, TimeoutType.SOFT),
+                "wall_hard_timeout": (TimeoutMeasureType.WALL_TIME, TimeoutType.HARD),
+                "cpu_soft_timeout": (TimeoutMeasureType.CPU_TIME, TimeoutType.SOFT),
+                "cpu_hard_timeout": (TimeoutMeasureType.CPU_TIME, TimeoutType.HARD),
+            }
+
+            if not action_definition.id:
+                LOGGER.error(
+                    f"Action definition {action_definition} has no ID. Skipping."
                 )
+                continue
 
-        # We want to be alerted to any of these queues being updated
-        # TODO: This is probably a better fit for our task manager than here
-
-
-# from abc import ABC, abstractmethod
-# from hashlib import sha256
-# from typing import Any, Awaitable, Callable, Generic, Optional, TypeVar
-
-# from pydantic import BaseModel
-
-# from filzl_daemons.actions import ActionMetadata
-
-
-# class StateUpdate(BaseModel):
-#     fn_name: str
-#     args: list[Any]
-#     kwargs: dict[str, Any]
-
-
-# class DameonValueUnset(BaseModel):
-#     """
-#     Sentinal value to indicate that the value is not set
-#     """
-
-#     pass
-
-
-# class CurrentState(BaseModel):
-#     """
-#     TODO: Database object
-#     """
-
-#     state: str
-
-#     fn: ActionMetadata
-
-#     previous_state: Optional["CurrentState"] = None
-#     next_state: Optional["CurrentState"] = None
-
-#     # Once the action has completed successfully
-#     resolved_value: Any | None | DameonValueUnset = DameonValueUnset()
-
-
-# class Job(BaseModel):
-#     """
-#     One execution of a workflow run, may have a failure
-#     """
-
-#     # Primary key indexed
-#     id: int
-
-
-# T = TypeVar("T", bound=BaseModel)
-
-# ActionReturn = TypeVar("ActionReturn")
-
-
-# class WorkflowInstance(Generic[T]):
-#     """
-#     Wraps one execution of a workflow run.
-
-#     """
-
-#     current_state: CurrentState
-#     input_payload: T
-
-#     def __init__(self, workflow: "Workflow", input_payload: T):
-#         self.workflow = workflow
-
-#         # Initial state to start the event source chain
-#         self.state = CurrentState(
-#             state=sha256(input_payload.model_dump_json().encode()).hexdigest(),
-#             fn=ActionMetadata(
-#                 fn=None,
-#                 args=[],
-#                 kwargs={},
-#             ),
-#         )
-
-#     async def run_action(
-#         self, fn: Callable[..., Awaitable[ActionReturn]]
-#     ) -> ActionReturn:
-#         # Ensure this function is actually decorated with an @action
-#         # if not hasattr(fn, "metadata"):
-#         #    print(fn.__name__, fn, fn.__dict__)
-#         #    raise ValueError("Function must be decorated with @action")
-
-#         # TODO: Special case for asyncio.sleep
-
-#         # Has the current state, in charge of running the action
-#         # every time this runs it will permute the state in the same
-#         # expected way
-#         # This supports rollup events like gather() since this will permute
-#         # the state for every input
-#         # TODO: Add to another worker
-
-#         # Determine if this task has already been queued, if so we should wait for it
-#         pass
-
-#         return await fn
-
-#     def update_state(self, metadata: ActionMetadata):
-#         # Just use the function's name as the hash value for now
-#         state_update = StateUpdate(
-#             fn_name=metadata.fn.__name__,
-#             args=metadata.args,
-#             kwargs=metadata.kwargs,
-#         )
-
-#         state_hash = state_update.model_dump_json()
-#         current_state = sha256(
-#             (self.current_state.state + state_hash).encode()
-#         ).hexdigest()
-
-#         new_state = CurrentState(
-#             state=current_state,
-#             fn=metadata,
-#             previous_state=self.current_state,
-#         )
-#         self.current_state.next_state = new_state
-#         self.current_state = new_state
-
-#         return self.current_state
-
-
-# class Workflow(ABC):
-#     """
-#     Wraps a full workflow handler. This __init__ will only be called
-#     once per worker spawn. It's expected to handle multiple WorkflowInstances.
-
-#     Metadata is not guaranteed to persist across either Workflow or WorkflowInstance. Any
-#     metadata that needs to persist should be stored in the database as part
-#     of an action query.
-
-#     """
-
-#     def __init__(self):
-#         # In-memory queue, switch to a database queue
-#         self.instance_queue: list[WorkflowInstance] = []
-#         # TODO: Database-backed
-#         # self.dependencies :
-
-#     @abstractmethod
-#     async def run(self, instance: WorkflowInstance[T]):
-#         pass
-
-#     def queue(self, input_value: T):
-#         """
-#         Queue a new value for execution
-#         """
-#         instance = WorkflowInstance(self, input_value)
-#         self.instance_queue.append(instance)
+            task_definition = TaskDefinition(
+                action_id=action_definition.id,
+                registry_id=action_definition.registry_id,
+                input_body=action_definition.input_body,
+                timeouts=[
+                    TimeoutDefinition(
+                        measurement=measure,
+                        timeout_type=timeout_type,
+                        timeout_seconds=getattr(action_definition, timeout_key),
+                    )
+                    for timeout_key, (measure, timeout_type) in field_to_timeout.items()
+                    if getattr(action_definition, timeout_key) is not None
+                ],
+            )
+            worker_queue.put(task_definition)

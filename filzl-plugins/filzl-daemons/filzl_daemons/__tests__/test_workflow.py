@@ -12,16 +12,26 @@ from filzl_daemons.__tests__.conf_models import (
 )
 from filzl_daemons.actions import action
 from filzl_daemons.tasks import TaskManager
-from filzl_daemons.workflow import Daemon, Workflow, WorkflowInstance
+from filzl_daemons.workflow import (
+    DaemonClient,
+    DaemonRunner,
+    Workflow,
+    WorkflowInstance,
+)
+
+
+class VarInput(BaseModel):
+    value: int
 
 
 @action
-async def example_task_1(i: int):
-    return i + 1
+async def example_task_1(payload: VarInput):
+    return payload.value + 1
 
 
-async def example_task_2(i: int):
-    return i * 2
+@action
+async def example_task_2(payload: VarInput):
+    return payload.value * 2
 
 
 class ExampleWorkflowInput(BaseModel):
@@ -31,17 +41,17 @@ class ExampleWorkflowInput(BaseModel):
 class ExampleWorkflow(Workflow[ExampleWorkflowInput]):
     async def run(self, instance: WorkflowInstance[ExampleWorkflowInput]):
         values = await asyncio.gather(
-            example_task_1(1),  # 2
-            example_task_1(2),  # 3
-            example_task_1(3),  # 4
+            example_task_1(VarInput(value=1)),  # 2
+            example_task_1(VarInput(value=2)),  # 3
+            example_task_1(VarInput(value=3)),  # 4
         )
 
         value_sum = sum(values)  # 9
 
-        return await example_task_2(value_sum)  # 18
+        return await example_task_2(VarInput(i=value_sum))  # 18
 
 
-def test_workflow_creates_instance(db_engine: Engine, daemon_client: Daemon):
+def test_workflow_creates_instance(db_engine: Engine, daemon_client: DaemonClient):
     # Test that the call creates the expected instance
     daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
 
@@ -54,45 +64,20 @@ def test_workflow_creates_instance(db_engine: Engine, daemon_client: Daemon):
 
 
 @pytest.mark.asyncio
-async def test_workflow_runs_instance(db_engine: AsyncEngine, daemon_client: Daemon):
+async def test_workflow_runs_instance(
+    db_engine: AsyncEngine, daemon_client: DaemonClient
+):
     print("Provide engine", db_engine)
-    task_manager = TaskManager(
+    task_manager = DaemonRunner(
+        model_definitions=LOCAL_MODEL_DEFINITION,
         engine=db_engine,
-        local_model_definition=LOCAL_MODEL_DEFINITION,
+        workflows=[ExampleWorkflow],
     )
 
-    async def handle_pending_instances():
-        # wait for the first object to be created
-        await asyncio.sleep(1)
-        async for val in task_manager.iter_ready_instances(
-            [
-                ExampleWorkflow.__name__,
-            ]
-        ):
-            print("VAL", val)
+    # Test that the call creates the expected instance
+    await daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
 
-    async def create_instances():
-        # Test that the call creates the expected instance
-        await daemon_client.queue_new(
-            ExampleWorkflow, ExampleWorkflowInput(input_value=1)
-        )
-        print("did create 1")
-
-        await asyncio.sleep(2)
-
-        await daemon_client.queue_new(
-            ExampleWorkflow, ExampleWorkflowInput(input_value=2)
-        )
-        print("did create 2")
-        await asyncio.sleep(2)
-        print("Done")
-
-    await asyncio.gather(
-        handle_pending_instances(),
-        create_instances(),
-    )
-    # We can re-use the same client as our runner
-    # daemon_client.
+    await task_manager.handle_jobs()
 
 
 def test_replay(db_engine: AsyncEngine):

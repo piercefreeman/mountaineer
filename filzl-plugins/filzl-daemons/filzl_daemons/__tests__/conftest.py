@@ -1,14 +1,12 @@
-
 import pytest
 import pytest_asyncio
-from sqlalchemy import Engine
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlmodel import SQLModel
 
 from filzl_daemons.__tests__.conf_models import (
     LOCAL_MODEL_DEFINITION,
 )
-from filzl_daemons.workflow import Daemon
+from filzl_daemons.workflow import DaemonClient
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -27,8 +25,8 @@ async def db_engine():
 
 
 @pytest.fixture
-def daemon_client(db_engine: Engine):
-    yield Daemon(
+def daemon_client(db_engine: AsyncEngine):
+    yield DaemonClient(
         model_definitions=LOCAL_MODEL_DEFINITION,
         engine=db_engine,
     )
