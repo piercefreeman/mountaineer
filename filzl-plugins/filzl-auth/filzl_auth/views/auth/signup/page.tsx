@@ -38,7 +38,7 @@ const SignupPage = () => {
           here.
         </LinkComponent>
       </div>
-      <div className="mt-8 space-y-4 bg-white p-8 shadow">
+      <div className="mt-8 space-y-4 rounded bg-white p-8 shadow">
         {signupError && (
           <ErrorComponent>
             <span>{signupError}</span>
