@@ -20,7 +20,7 @@ from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, Timeou
 from filzl_daemons.worker import TaskDefinition, WorkerProcess
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.tasks import TaskManager
-from filzl_daemons.thread import AlertThread
+from filzl_daemons.thread import AlertThread, AsyncProcessQueue
 from sqlalchemy.future import select
 
 T = TypeVar("T", bound=BaseModel)
@@ -56,7 +56,9 @@ class WorkflowInstance(Generic[T]):
             )
             result = await wait_future
 
+        print("RESULT", result)
         return result
+
 
 class WorkflowMeta(ABCMeta):
     def __init__(cls, name, bases, dct):
@@ -80,6 +82,45 @@ class WorkflowMeta(ABCMeta):
                 cls.input_model = get_args(base)[0]
                 print("INPUT MODEL", cls.input_model)
                 break
+
+        # Sniff the run() method for its return value
+        if "run" in dct:
+            run_method = dct["run"]
+            if not callable(run_method):
+                raise Exception(f"Workflow {cls.__name__} must have a run() method")
+            output_model = run_method.__annotations__.get("return")
+            if not output_model:
+                raise Exception(
+                    f"Workflow {cls.__name__} must have a return type annotation"
+                )
+            cls.output_model = output_model
+            print("OUTPUT MODEL", cls.output_model)
+
+class DaemonResponseFuture:
+    def __init__(self, instance_id, session_maker, model_definitions):
+        self.instance_id = instance_id
+        self.session_maker = session_maker
+        self.model_definitions = model_definitions
+
+    async def wait(self):
+        """
+        Performs a polling-based wait for the result of the workflow instance.
+
+        TODO: Refactor to use notifications instead of polling
+
+        """
+        while True:
+            async with self.session_maker() as session:
+                instance = await session.get(
+                    self.model_definitions.DaemonWorkflowInstance,
+                    self.instance_id,
+                )
+                if instance.end_time:
+                    workflow_cls = REGISTRY.get_workflow(instance.registry_id)
+
+                    # TODO: Also return the exception
+                    return workflow_cls.output_model.parse_raw(instance.result_body)
+            await asyncio.sleep(1)
 
 
 class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
@@ -107,6 +148,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
             print("PARSED INPUT", input_payload)
 
             result = await self.run(WorkflowInstance(input_payload, task_manager))
+            print("FINAL RESULT", result)
 
             async with self.session_maker() as session:
                 instance = await session.get(
@@ -145,6 +187,11 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
             session.add(db_instance)
             await session.commit()
 
+        return DaemonResponseFuture(
+            db_instance.id,
+            self.session_maker,
+            self.model_definitions,
+        )
 
 class DaemonClient:
     """
@@ -176,7 +223,7 @@ class DaemonClient:
                 model_definitions=self.model_definitions,
                 session_maker=self.session_maker,
             )
-        await self.workflows[workflow].queue_task(payload)
+        return await self.workflows[workflow].queue_task(payload)
 
 
 class DaemonRunner:
@@ -238,12 +285,11 @@ class DaemonRunner:
         worker_queue: multiprocessing.Queue[TaskDefinition] = multiprocessing.Queue(
             maxsize=self.max_workers * self.threads_per_worker
         )
-        worker_result_queue: multiprocessing.Queue[
-            tuple[int, str]
-        ] = multiprocessing.Queue()
+        #worker_result_queue: multiprocessing.Queue[
+        #    tuple[int, str]
+        #] = multiprocessing.Queue()
+        worker_result_queue = AsyncProcessQueue()
         instance_queue = multiprocessing.Queue()
-
-        local_result_queue = asyncio.Queue()
 
         task_manager = TaskManager(
             local_model_definition=self.model_definitions,
@@ -280,7 +326,7 @@ class DaemonRunner:
                     # Handle potential terminations of the process for other reasons
                     if not process.is_alive():
                         is_draining_callback(process)
-                    del worker_processes[process_id]
+                        del worker_processes[process_id]
 
                 await asyncio.sleep(5)
 
@@ -288,44 +334,46 @@ class DaemonRunner:
         for _ in range(self.max_workers):
             process = start_new_worker()
             worker_processes[process.process_id] = process
-
-        result_handler_thread = AlertThread(
-            target=self.consume_action_results,
-            args=(worker_result_queue,local_result_queue),
-            daemon=True,
-        )
-        result_handler_thread.start()
-        print("Did start result handler thread")
+            LOGGER.debug(f"Spawned: {process.process_id}")
 
         # Infinitely blocking
-        await asyncio.gather(
-            # Bulk execute the instance behavior in this main process, for now
-            self.queue_instance_work(instance_queue, task_manager),
+        try:
+            await asyncio.gather(
+                # Bulk execute the instance behavior in this main process, for now
+                self.queue_instance_work(instance_queue, task_manager),
 
-            # We will consume database actions here and delegate to our other processes
-            self.queue_action_work(worker_queue),
+                # We will consume database actions here and delegate to our other processes
+                self.queue_action_work(worker_queue),
 
-            # Consume action results and persist them to the database
-            self.consume_actions_results_local(
-                local_result_queue,
-            ),
+                # Consume action results and persist them to the database
+                self.consume_actions_results_local(
+                    worker_result_queue,
+                ),
 
-            health_check(),
+                health_check(),
 
-            # Required to wake up our sleeping instance workers
-            # when we are done processing an action
-            task_manager.delegate_done_actions(),
-        )
+                # Required to wake up our sleeping instance workers
+                # when we are done processing an action
+                task_manager.delegate_done_actions(),
+            )
+        except asyncio.CancelledError:
+            LOGGER.debug(f"DaemonRunner was cancelled, cleaning up {len(worker_processes)} worker processes")
+            for process in worker_processes.values():
+                process.terminate()
+            for process in worker_processes.values():
+                process.join()
+            LOGGER.debug("Worker processes cleaned up")
 
     async def consume_actions_results_local(
         self,
-        local_result_queue,
+        result_queue: multiprocessing.Queue,
     ):
         while True:
             print("WILL WAIT TO CONSUME")
             # TODO: WHY DO WE NEED THIS?
-            await asyncio.sleep(0.1)
-            action_id, result = await local_result_queue.get()
+            #await asyncio.sleep(0.1)
+            #action_id, result = await async_queue_get(result_queue)
+            action_id, result = await result_queue.aget()
             print("Got local result", result)
             # Save the result to the database
             async with self.session_maker() as session:
@@ -345,26 +393,6 @@ class DaemonRunner:
                 action_obj.status = "done"
                 await session.commit()
                 print("DID COMMIT")
-
-    def consume_action_results(
-        self,
-        result_queue: multiprocessing.Queue,
-        local_queue: asyncio.Queue,
-    ):
-        """
-        Small handler function to consume the results of the worker processes
-        (in a multiprocessing safe queue) and route them to our database. We use
-        this thread as a simple process->asyncio bridge.
-
-        """
-        print("Launched consume_action_results thread")
-        async def handler():
-            while True:
-                action_id, result = result_queue.get()
-                LOGGER.info(f"Got result from worker: {action_id} {result}")
-                await local_queue.put((action_id, result))
-                print("ROUTED LOCAL")
-        asyncio.run(handler())
 
     async def queue_instance_work(
         self,

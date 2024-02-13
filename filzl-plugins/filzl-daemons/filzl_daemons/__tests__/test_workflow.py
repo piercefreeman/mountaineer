@@ -41,7 +41,7 @@ class ExampleWorkflowInput(BaseModel):
 
 
 class ExampleWorkflow(Workflow[ExampleWorkflowInput]):
-    async def run(self, instance: WorkflowInstance[ExampleWorkflowInput]):
+    async def run(self, instance: WorkflowInstance[ExampleWorkflowInput]) -> VarInput:
         values = await asyncio.gather(
             instance.run_action(
                 example_task_1(VarInput(value=1)), # 2
@@ -77,18 +77,35 @@ def test_workflow_creates_instance(db_engine: Engine, daemon_client: DaemonClien
 async def test_workflow_runs_instance(
     db_engine: AsyncEngine, daemon_client: DaemonClient
 ):
-    print("Provide engine", db_engine)
     task_manager = DaemonRunner(
         model_definitions=LOCAL_MODEL_DEFINITION,
         engine=db_engine,
         workflows=[ExampleWorkflow],
     )
 
-    # Test that the call creates the expected instance
-    await daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
+    result = await daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
 
-    await task_manager.handle_jobs()
+    timeout_task = asyncio.create_task(asyncio.sleep(5))
+    wait_task = asyncio.create_task(result.wait())
+    handle_jobs_task = asyncio.create_task(task_manager.handle_jobs())
 
+    # Wait 5 seconds or until everything is done
+    done, pending = await asyncio.wait(
+        (
+            timeout_task, wait_task, handle_jobs_task
+        ),
+        return_when=asyncio.FIRST_COMPLETED
+    )
+
+    # Terminate all pending tasks - this should shutdown the task manager
+    for task in pending:
+        task.cancel()
+
+    assert wait_task in done
+    assert timeout_task not in done
+
+    print("DONE", done, pending)
+    assert wait_task.result() == VarInput(value=18)
 
 def test_replay(db_engine: AsyncEngine):
     # Session interrutped halfway through and we need to start again
