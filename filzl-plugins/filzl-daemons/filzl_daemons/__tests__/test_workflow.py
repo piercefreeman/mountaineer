@@ -26,12 +26,14 @@ class VarInput(BaseModel):
 
 @action
 async def example_task_1(payload: VarInput):
-    return payload.value + 1
+    print("WILL RUN 1")
+    return VarInput(value=payload.value + 1)
 
 
 @action
 async def example_task_2(payload: VarInput):
-    return payload.value * 2
+    print("WILL RUN 2")
+    return VarInput(value=payload.value * 2)
 
 
 class ExampleWorkflowInput(BaseModel):
@@ -41,14 +43,22 @@ class ExampleWorkflowInput(BaseModel):
 class ExampleWorkflow(Workflow[ExampleWorkflowInput]):
     async def run(self, instance: WorkflowInstance[ExampleWorkflowInput]):
         values = await asyncio.gather(
-            example_task_1(VarInput(value=1)),  # 2
-            example_task_1(VarInput(value=2)),  # 3
-            example_task_1(VarInput(value=3)),  # 4
+            instance.run_action(
+                example_task_1(VarInput(value=1)), # 2
+            ),
+            instance.run_action(
+                example_task_1(VarInput(value=2)), # 3
+            ),
+            instance.run_action(
+                example_task_1(VarInput(value=3)), # 4
+            ),
         )
 
-        value_sum = sum(values)  # 9
+        value_sum = sum([item.value for item in values])  # 9
 
-        return await example_task_2(VarInput(i=value_sum))  # 18
+        return await instance.run_action(
+            example_task_2(VarInput(value=value_sum))  # 18
+        )
 
 
 def test_workflow_creates_instance(db_engine: Engine, daemon_client: DaemonClient):

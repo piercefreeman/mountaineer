@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 import multiprocessing
 from abc import ABC, ABCMeta, abstractmethod
 from datetime import datetime
@@ -8,27 +9,34 @@ from uuid import UUID
 from filzl.logging import LOGGER
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from traceback import format_exc
+from threading import Thread
+from sqlalchemy.exc import SQLAlchemyError
 
 from filzl_daemons.db import PostgresBackend
-from filzl_daemons.instance_worker import InstanceTask, InstanceWorker
 from filzl_daemons.models import LocalModelDefinition
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 from filzl_daemons.worker import TaskDefinition, WorkerProcess
+from filzl_daemons.actions import ActionExecutionStub
+from filzl_daemons.tasks import TaskManager
+from filzl_daemons.thread import AlertThread
+from sqlalchemy.future import select
 
 T = TypeVar("T", bound=BaseModel)
 
 
 class WorkflowInstance(Generic[T]):
-    def __init__(self, input_payload: T):
+    def __init__(self, input_payload: T, task_manager: TaskManager):
         self.input_payload = input_payload
+        self.task_manager = task_manager
 
     async def run_action(
         self,
-        action: Awaitable,
-        timeouts: list[TimeoutDefinition],
-        max_retries: int,
-    ):
+        action: Awaitable[T],
+        timeouts: list[TimeoutDefinition] | None = None,
+        max_retries: int = 0,
+    ) -> T:
         """
         Main entry point for running an action in the workflow. All calls should
         flow through your instance's run_action method.
@@ -37,8 +45,18 @@ class WorkflowInstance(Generic[T]):
         the action.
 
         """
-        pass
+        # Execute the awaitable. If we receive a promise, we should queue it in
+        # the backend
+        result = await action
 
+        if isinstance(result, ActionExecutionStub):
+            # Queue the action
+            wait_future = await self.task_manager.queue_work(
+                result
+            )
+            result = await wait_future
+
+        return result
 
 class WorkflowMeta(ABCMeta):
     def __init__(cls, name, bases, dct):
@@ -81,31 +99,33 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
         self,
         instance_id: int,
         raw_input: str,
+        task_manager,
     ):
         print("RUN HANDLER TRIGGERED")
         try:
             input_payload = self.input_model.parse_raw(raw_input)
             print("PARSED INPUT", input_payload)
 
-            result = await self.run(WorkflowInstance(input_payload))
+            result = await self.run(WorkflowInstance(input_payload, task_manager))
 
             async with self.session_maker() as session:
                 instance = await session.get(
                     self.model_definitions.DaemonWorkflowInstance,
                     instance_id,
                 )
-                instance.output_body = result.model_dump_json()
+                instance.result_body = result.model_dump_json()
                 instance.end_time = datetime.now()
                 await session.commit()
         except Exception as e:
-            LOGGER.error(f"Workflow {self.__class__.__name__} failed due to: {e}")
+            LOGGER.exception(f"Workflow {self.__class__.__name__} failed due to: {e}")
 
             async with self.session_maker() as session:
                 instance = await session.get(
                     self.model_definitions.DaemonWorkflowInstance,
                     instance_id,
                 )
-                instance.error = str(e)
+                instance.exception = str(e)
+                instance.exception_stack = format_exc()
                 await session.commit()
 
     async def queue_task(self, task_input: T):
@@ -218,11 +238,21 @@ class DaemonRunner:
         worker_queue: multiprocessing.Queue[TaskDefinition] = multiprocessing.Queue(
             maxsize=self.max_workers * self.threads_per_worker
         )
+        worker_result_queue: multiprocessing.Queue[
+            tuple[int, str]
+        ] = multiprocessing.Queue()
         instance_queue = multiprocessing.Queue()
+
+        local_result_queue = asyncio.Queue()
+
+        task_manager = TaskManager(
+            local_model_definition=self.model_definitions,
+            postgres_backend=self.postgres_backend,
+        )
 
         def start_new_worker():
             # Start a new worker to replace the one that's draining
-            process = WorkerProcess(worker_queue, pool_size=self.threads_per_worker)
+            process = WorkerProcess(worker_queue, worker_result_queue, pool_size=self.threads_per_worker)
             process.start()
 
             # Make sure to do after the process is started
@@ -241,48 +271,121 @@ class DaemonRunner:
             process = start_new_worker()
             worker_processes[process.process_id] = process
 
-        async def health_check(self, worker_processes: dict[UUID, WorkerProcess]):
-            # If the process has been terminated without a draining signal,
-            # we should start a new one
-            for process_id, process in list(worker_processes.items()):
-                # Handle potential terminations of the process for other reasons
-                if not process.is_alive():
-                    is_draining_callback(process)
-                del worker_processes[process_id]
+        async def health_check():
+            while True:
+                LOGGER.debug("Running health check")
+                # If the process has been terminated without a draining signal,
+                # we should start a new one
+                for process_id, process in list(worker_processes.items()):
+                    # Handle potential terminations of the process for other reasons
+                    if not process.is_alive():
+                        is_draining_callback(process)
+                    del worker_processes[process_id]
 
-            await asyncio.sleep(5)
+                await asyncio.sleep(5)
 
-        # Initial worker process bootstrap
-        # for _ in range(self.max_workers):
-        #    process = start_new_worker()
-        #    worker_processes[process.process_id] = process
+        # Initial worker process bootstrap for action handlers
+        for _ in range(self.max_workers):
+            process = start_new_worker()
+            worker_processes[process.process_id] = process
 
-        # handle_workflows_thread = Thread(
-        #    target=self.handle_workflows,
-        #    args=(instance_queue,),
-        #    daemon=True,
-        # )
-        handle_workflows = InstanceWorker(
-            instance_queue,
-            self.postgres_backend,
+        result_handler_thread = AlertThread(
+            target=self.consume_action_results,
+            args=(worker_result_queue,local_result_queue),
+            daemon=True,
         )
-        handle_workflows.start()
+        result_handler_thread.start()
+        print("Did start result handler thread")
 
         # Infinitely blocking
         await asyncio.gather(
-            self.queue_instance_work(instance_queue),
-            # queue_action_work(),
-            # health_check(),
+            # Bulk execute the instance behavior in this main process, for now
+            self.queue_instance_work(instance_queue, task_manager),
+
+            # We will consume database actions here and delegate to our other processes
+            self.queue_action_work(worker_queue),
+
+            # Consume action results and persist them to the database
+            self.consume_actions_results_local(
+                local_result_queue,
+            ),
+
+            health_check(),
+
+            # Required to wake up our sleeping instance workers
+            # when we are done processing an action
+            task_manager.delegate_done_actions(),
         )
 
+    async def consume_actions_results_local(
+        self,
+        local_result_queue,
+    ):
+        while True:
+            print("WILL WAIT TO CONSUME")
+            # TODO: WHY DO WE NEED THIS?
+            await asyncio.sleep(0.1)
+            action_id, result = await local_result_queue.get()
+            print("Got local result", result)
+            # Save the result to the database
+            async with self.session_maker() as session:
+                # We need to create a new action result
+                action_result_obj = self.model_definitions.DaemonActionResult(
+                    action_id=action_id,
+                    result_body=result,
+                )
+                session.add(action_result_obj)
+                await session.commit()
+
+                action_obj = await session.get(
+                    self.model_definitions.DaemonAction,
+                    action_id,
+                )
+                action_obj.final_result_id = action_result_obj.id
+                action_obj.status = "done"
+                await session.commit()
+                print("DID COMMIT")
+
+    def consume_action_results(
+        self,
+        result_queue: multiprocessing.Queue,
+        local_queue: asyncio.Queue,
+    ):
+        """
+        Small handler function to consume the results of the worker processes
+        (in a multiprocessing safe queue) and route them to our database. We use
+        this thread as a simple process->asyncio bridge.
+
+        """
+        print("Launched consume_action_results thread")
+        async def handler():
+            while True:
+                action_id, result = result_queue.get()
+                LOGGER.info(f"Got result from worker: {action_id} {result}")
+                await local_queue.put((action_id, result))
+                print("ROUTED LOCAL")
+        asyncio.run(handler())
+
     async def queue_instance_work(
-        self, instance_queue: multiprocessing.Queue
+        self,
+        instance_queue: multiprocessing.Queue,
+        task_manager
     ):
         async for notification in self.postgres_backend.iter_ready_objects(
             model=self.model_definitions.DaemonWorkflowInstance,
             queues=[],
         ):
             LOGGER.info(f"Instance queue should handle job: {notification}")
+
+            has_exclusive = await self.get_exclusive_access(
+                self.model_definitions.DaemonWorkflowInstance,
+                notification.id
+            )
+            if not has_exclusive:
+                print("NO EXCLUSIVE")
+                continue
+
+            print("GOT EXCLUSIVE")
 
             # TODO: Right now we just instantiate a new workflow every time, we should keep
             # this cached in case there is some heavy loading in init
@@ -293,21 +396,36 @@ class DaemonRunner:
             if not instance_definition.id:
                 continue
 
-            task_definition = InstanceTask(
-                registry_id=instance_definition.registry_id,
-                id=instance_definition.id,
-                input_body=instance_definition.input_body,
+            # Get the workflow class from the workflow name
+            workflow_cls = REGISTRY.get_workflow(instance_definition.registry_id)
+            workflow = workflow_cls(
+                model_definitions=self.model_definitions,
+                session_maker=self.session_maker,
             )
-            print("WILL PUT INSTANCE")
-            instance_queue.put(task_definition)
-            print("DID PUT INSTANCE")
+            asyncio.create_task(
+                workflow.run_handler(
+                    instance_id=instance_definition.id,
+                    raw_input=instance_definition.input_body,
+                    task_manager=task_manager,
+                )
+            )
 
-    async def queue_action_work(self):
+    async def queue_action_work(self, worker_queue):
         async for notification in self.postgres_backend.iter_ready_objects(
             model=self.model_definitions.DaemonAction,
             queues=[],
         ):
             LOGGER.info(f"Action queue should handle job: {notification}")
+
+            has_exclusive = await self.get_exclusive_access(
+                self.model_definitions.DaemonAction,
+                notification.id
+            )
+            if not has_exclusive:
+                print("NO EXCLUSIVE")
+                continue
+
+            print("GOT EXCLUSIVE")
 
             # Get the full object from the database
             action_definition = await self.postgres_backend.get_object_by_id(
@@ -343,3 +461,31 @@ class DaemonRunner:
                 ],
             )
             worker_queue.put(task_definition)
+
+    async def get_exclusive_access(self, model, id: int):
+        has_exclusive_lock = True
+
+        async with self.session_maker() as session:
+            try:
+                async with session.begin():
+                    # Attempt to lock the specific job by ID with NOWAIT
+                    stmt = select(model).where(model.id == id).with_for_update(nowait=True)
+                    result = await session.execute(stmt)
+                    job = result.scalar_one_or_none()
+
+                    if job:
+                        print(f"Job {job.id} locked for processing.")
+                        # Process the job here (dummy processing shown as a print statement)
+                        print(f"Processing job {job.id}...")
+
+                        # After processing, you might want to update the job's status or mark it as processed
+                        job.status = 'processed'  # Assuming the model has a 'status' attribute
+                        await session.commit()  # Commit the transaction to save changes
+                        has_exclusive_lock = True
+
+            except SQLAlchemyError as e:
+                # Handle the case where locking the job fails because it's already locked
+                await session.rollback()  # Rollback the transaction if any error occurs
+                print(f"Failed to lock job {id}: {e}")
+
+        return has_exclusive_lock

@@ -33,7 +33,7 @@ class DaemonWorkflowInstance(QueableItemMixin, SQLModel):
     # Exit status
     exception: str | None = None
     exception_stack: str | None = None
-    result: bytes | None = None
+    result_body: str | None = None
 
 
 class WorkerStatus(SQLModel):
@@ -64,6 +64,10 @@ class DaemonAction(QueableItemMixin, SQLModel):
     registry_id: str
     input_body: str  # json payload
 
+    # The most recent DaemonActionResult. If there is an exit condition, this
+    # will be the final result.
+    final_result_id: int | None = None
+
     # Timeout preferences, in seconds
     wall_soft_timeout: int | None = None
     wall_hard_timeout: int | None = None
@@ -85,7 +89,7 @@ class DaemonActionResult(SQLModel):
     # Exit status
     exception: str | None = None
     exception_stack: str | None = None
-    result: bytes | None = None
+    result_body: str | None = None
 
 
 DaemonWorkflowInstanceType = TypeVar(

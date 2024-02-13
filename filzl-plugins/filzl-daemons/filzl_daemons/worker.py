@@ -70,6 +70,7 @@ class WorkerProcess(Process):
     def __init__(
         self,
         task_queue: "Queue[TaskDefinition]",
+        result_queue: "Queue[tuple[int, str]]",
         *,
         pool_size: int,
         tasks_before_recycle: int | None = None,
@@ -85,6 +86,7 @@ class WorkerProcess(Process):
 
         # Initialized by the parent process
         self.task_queue = task_queue
+        self.result_queue = result_queue
         self.pool_size = pool_size
         self.tasks_before_recycle = tasks_before_recycle
         self.is_draining_callbacks: list[Callable] = []
@@ -333,6 +335,17 @@ class WorkerProcess(Process):
             # TODO: Upload the result to the results queue
             # print(result)
             LOGGER.info(f"Process result: {result}")
+
+            # TODO: Consider writing this directly to the database, but this requires all our worker
+            # processes and threads to have access to a db pool, which might overload even pretty
+            # large pool sizes
+            self.result_queue.put(
+                (
+                    task_definition.action_id,
+                    # TODO: Support None return values as well
+                    result.model_dump_json(),
+                )
+            )
 
             LOGGER.debug(f"Thread {thread_definition.thread_id} has finished its task.")
             worker_event_loop.stop()

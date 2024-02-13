@@ -2,6 +2,7 @@ import asyncio
 
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.registry import REGISTRY
 
 
 class TaskManager:
@@ -11,9 +12,11 @@ class TaskManager:
 
     def __init__(
         self,
+        local_model_definition,
         postgres_backend: PostgresBackend,
     ):
         self.postgres_backend = postgres_backend
+        self.local_model_definition = local_model_definition
 
         # In-memory waits that are part of the current event loop
         # Mapping of task ID to signal
@@ -32,10 +35,8 @@ class TaskManager:
             del self.wait_signals[task_id]
 
     async def queue_work(self, task: ActionExecutionStub):
-        # TODO: Figure out better way to pass local_model_definition
-        from filzl_daemons.__tests__.conf_models import DaemonAction
         async with self.postgres_backend.session_maker() as session:
-            action_task = DaemonAction(
+            action_task = self.local_model_definition.DaemonAction(
                 workflow_name="todo",
                 instance_id=-1,
                 state="todo",
@@ -62,13 +63,36 @@ class TaskManager:
             queues=[],
             status="done",
         ):
+            print("delegate_done_actions Got a notification", notification.id)
+
+            # If we have no waiting futures, there's no use doing the additional roundtrips
+            # to the database
+            waiting_futures = self.wait_signals.get(notification.id)
+            if waiting_futures is None:
+                continue
+
             # Get the actual object
             obj = await self.postgres_backend.get_object_by_id(
                 model=self.local_model_definition.DaemonAction,
                 id=notification.id,
             )
 
-            waiting_futures = self.wait_signals.get(notification.id)
-            if waiting_futures:
-                # TODO: Get the most recent result value
-                waiting_futures.set_result("TODO GET VALUE")
+            # Look for the most recent pointer
+            result_obj = await self.postgres_backend.get_object_by_id(
+                model=self.local_model_definition.DaemonActionResult,
+                id=obj.final_result_id,
+            )
+
+            if result_obj.result_body:
+                print("Got a result", result_obj.result_body)
+                action_model = REGISTRY.get_action_model(obj.registry_id)
+                waiting_futures.set_result(
+                    action_model.model_validate_json(result_obj.result_body)
+                )
+            elif result_obj.exception:
+                print("Got an exception", result_obj.exception)
+                waiting_futures.set_exception(
+                    Exception(
+                        f"Action failed with error: {result_obj.exception} {result_obj.exception_stack}"
+                    )
+                )

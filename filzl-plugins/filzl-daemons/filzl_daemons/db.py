@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from hashlib import sha256
 from typing import Type, TypeVar
 
 import asyncpg
@@ -163,14 +164,22 @@ class PostgresBackend:
         )
         create_function_filter = f"({queue_filters})" if queues else "TRUE"
 
+        unique_notifier = sha256(
+            "_".join([
+                table_name,
+                status,
+                *sorted(queues)
+            ]).encode()
+        ).hexdigest()[:10]
+
         # TODO: Hash inputs of this listen for unique function names
         create_function_sql = f"""
-        CREATE OR REPLACE FUNCTION notify_instance_change()
+        CREATE OR REPLACE FUNCTION notify_instance_change_{unique_notifier}()
         RETURNS TRIGGER AS $$
         BEGIN
             IF ({create_function_filter} AND NEW.status = '{status}') THEN
                 PERFORM pg_notify(
-                    'instance_updates',
+                    'instance_updates_{unique_notifier}',
                     json_build_object(
                         'id', NEW.id,
                         'workflow_name', NEW.workflow_name,
@@ -184,10 +193,10 @@ class PostgresBackend:
         """
 
         create_trigger_sql = f"""
-        CREATE TRIGGER instance_update_trigger
+        CREATE TRIGGER instance_update_trigger_{unique_notifier}
         AFTER INSERT OR UPDATE ON {table_name}
         FOR EACH ROW
-        EXECUTE FUNCTION notify_instance_change();
+        EXECUTE FUNCTION notify_instance_change_{unique_notifier}();
         """
 
         LOGGER.debug(f"Creating function: {create_function_sql}")
@@ -221,7 +230,7 @@ class PostgresBackend:
                     raise
 
             # Listen for the custom notification
-            await conn.add_listener("instance_updates", handle_notification)
+            await conn.add_listener(f"instance_updates_{unique_notifier}", handle_notification)
 
         while True:
             print("WAITING FOR NOTIFICATION")
