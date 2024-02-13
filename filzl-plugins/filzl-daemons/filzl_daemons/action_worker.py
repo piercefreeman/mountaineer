@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import asyncio
+import multiprocessing
 from dataclasses import dataclass, field
 from datetime import datetime
-from multiprocessing import Process, Queue
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
 from time import sleep
@@ -9,8 +11,9 @@ from typing import Callable
 from uuid import UUID, uuid4
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
-from filzl_daemons.registry import REGISTRY
 from filzl_daemons.logging import LOGGER
+from filzl_daemons.parallel import AsyncProcessQueue
+from filzl_daemons.registry import REGISTRY
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 
 
@@ -37,7 +40,7 @@ class ThreadDefinition:
     timed_out_causes: set[TimeoutType] = field(default_factory=set)
 
 
-class WorkerProcess(Process):
+class ActionWorkerProcess(multiprocessing.Process):
     """
     We support setting a max time for each task. This max time measures
     the amount of time that the task has actually been executing by
@@ -69,8 +72,8 @@ class WorkerProcess(Process):
 
     def __init__(
         self,
-        task_queue: "Queue[TaskDefinition]",
-        result_queue: "Queue[tuple[int, str]]",
+        task_queue: multiprocessing.Queue[TaskDefinition],
+        result_queue: AsyncProcessQueue[tuple[int, str]],
         *,
         pool_size: int,
         tasks_before_recycle: int | None = None,
@@ -101,7 +104,9 @@ class WorkerProcess(Process):
         self.action_modules = REGISTRY.get_modules_in_registry()
 
         # Allows listeners to get alerted when the worker process is draining
-        self.is_draining_event = Queue(maxsize=1)
+        self.is_draining_event: multiprocessing.Queue[bool] = multiprocessing.Queue(
+            maxsize=1
+        )
 
     def start(self):
         # Needs to be spawned in the parent process

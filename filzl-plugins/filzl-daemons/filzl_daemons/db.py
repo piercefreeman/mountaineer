@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from hashlib import sha256
-from typing import Type, TypeVar
+from typing import Callable, Type, TypeVar
 
 import asyncpg
 from filzl.logging import LOGGER
@@ -45,7 +45,7 @@ class PostgresBackend:
 
         # Async jobs are waiting for these notifications
         # Mapping of { action_id: Future }
-        self.pending_notifications = {}
+        self.pending_notifications: dict[int, asyncio.Future] = {}
 
     def __getstate__(self):
         # Return state to be pickled, focusing on database connection info
@@ -74,7 +74,10 @@ class PostgresBackend:
 
     async def get_object_by_id(self, model: Type[T], id: int) -> T:
         async with self.session_maker() as session:
-            return await session.get(model, id)
+            obj = await session.get(model, id)
+            if obj is None:
+                raise ValueError(f"Object with id {id} not found")
+            return obj
 
     async def iter_ready_objects(
         self,
@@ -93,9 +96,8 @@ class PostgresBackend:
         """
         retrieved_items = 0
 
-        print("---- READY NOW ----")
         async for value in self.get_ready_instances(
-            queues, table_name=model.__tablename__, status=status
+            queues, table_name=self.get_table_name(model), status=status
         ):
             LOGGER.debug(f"Got ready instance: {value}")
             yield value
@@ -104,9 +106,8 @@ class PostgresBackend:
             if max_items and retrieved_items >= max_items:
                 return
 
-        print("---- READY FUTURE ----")
         async for value in self.get_instances_notification(
-            queues, table_name=model.__tablename__, status=status
+            queues, table_name=self.get_table_name(model), status=status
         ):
             LOGGER.debug(f"Got instance notification: {value}")
             yield value
@@ -165,11 +166,7 @@ class PostgresBackend:
         create_function_filter = f"({queue_filters})" if queues else "TRUE"
 
         unique_notifier = sha256(
-            "_".join([
-                table_name,
-                status,
-                *sorted(queues)
-            ]).encode()
+            "_".join([table_name, status, *sorted(queues)]).encode()
         ).hexdigest()[:10]
 
         # TODO: Hash inputs of this listen for unique function names
@@ -206,13 +203,8 @@ class PostgresBackend:
 
         # Replace these values with your actual database connection details
         async with self.get_asyncpg_connection_from_engine(self.engine) as conn:
-            print("CONN", conn)
-
             await conn.execute(create_function_sql)
-            print("Trigger function created successfully.")
-
             await conn.execute(create_trigger_sql)
-            print("Trigger created successfully.")
 
             async def handle_notification(
                 connection: asyncpg.Connection,
@@ -221,20 +213,26 @@ class PostgresBackend:
                 payload: str,
             ):
                 try:
-                    print("HANDLE NOTIFICATION", payload)
                     await ready_queue.put(
                         WorkflowInstanceNotification.model_validate_json(payload)
                     )
                 except Exception as e:
-                    LOGGER.exception(f"ERROR: {e}")
+                    LOGGER.exception(f"Notification parser error: {e}")
                     raise
 
             # Listen for the custom notification
-            await conn.add_listener(f"instance_updates_{unique_notifier}", handle_notification)
+            await conn.add_listener(
+                f"instance_updates_{unique_notifier}", handle_notification
+            )
 
         while True:
-            print("WAITING FOR NOTIFICATION")
             yield await ready_queue.get()
+
+    def get_table_name(self, model: SQLModel) -> str:
+        table_name = model.__tablename__
+        if not isinstance(table_name, str):
+            raise ValueError(f"Table name is expected to be a string, received: {table_name}")
+        return table_name
 
     @asynccontextmanager
     async def get_asyncpg_connection_from_engine(

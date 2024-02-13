@@ -1,23 +1,29 @@
+import asyncio
 import multiprocessing
+from concurrent.futures import ThreadPoolExecutor
 from threading import Thread
+from typing import Generic, TypeVar
 
 from filzl.logging import LOGGER
-import asyncio
 
-import multiprocessing
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from multiprocessing.managers import SyncManager
+T = TypeVar("T")
 
 
+class ShutdownTask:
+    pass
 
-class AsyncProcessQueue:
+
+class AsyncProcessQueue(Generic[T]):
     """
     A wrapper around a multiprocessing.Queue that allows for async operations.
     Original logic: https://stackoverflow.com/a/24704950
     """
+
     def __init__(self, maxsize: int = 0):
-        self._queue = multiprocessing.Queue(maxsize=maxsize)
-        self._real_executor = None
+        self._queue: multiprocessing.Queue[T | ShutdownTask] = multiprocessing.Queue(
+            maxsize=maxsize
+        )
+        self._real_executor: ThreadPoolExecutor | None = None
 
     @property
     def _executor(self):
@@ -27,14 +33,25 @@ class AsyncProcessQueue:
 
     def __getstate__(self):
         self_dict = self.__dict__.copy()
-        self_dict['_real_executor'] = None
+        self_dict["_real_executor"] = None
         return self_dict
 
     def __getattr__(self, name):
-        if name in ['qsize', 'empty', 'full', 'put', 'put_nowait', 'get', 'get_nowait', 'close']:
+        if name in [
+            "qsize",
+            "empty",
+            "full",
+            "put",
+            "put_nowait",
+            "get",
+            "get_nowait",
+            "close",
+        ]:
             return getattr(self._queue, name)
         else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+            raise AttributeError(
+                f"'{self.__class__.__name__}' object has no attribute '{name}'"
+            )
 
     async def aput(self, item):
         loop = asyncio.get_running_loop()
@@ -53,7 +70,7 @@ class AsyncProcessQueue:
             await asyncio.wait({wait_task}, return_when=asyncio.FIRST_COMPLETED)
         except asyncio.CancelledError:
             # Put something into the queue to unblock the get operation
-            self._queue.put(None)
+            self._queue.put(ShutdownTask())
             raise
         return wait_task.result()
 
@@ -68,10 +85,12 @@ class AlertThread(Thread):
     logs the exception first.
 
     """
+
     def run(self):
         try:
             # Call the original run method
             super().run()
         except Exception as e:
             # Log the exception or handle it
-            LOGGER.exception("Error in thread {self.name}: {e}")
+            LOGGER.exception(f"Error in thread {self.name}: {e}")
+            raise

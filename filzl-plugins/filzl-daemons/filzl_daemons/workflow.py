@@ -1,29 +1,28 @@
 import asyncio
-from contextlib import asynccontextmanager
 import multiprocessing
 from abc import ABC, ABCMeta, abstractmethod
 from datetime import datetime
+from traceback import format_exc
 from typing import Any, Awaitable, Generic, Type, TypeVar, get_args, get_origin
 from uuid import UUID
 
 from filzl.logging import LOGGER
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
-from traceback import format_exc
-from threading import Thread
 from sqlalchemy.exc import SQLAlchemyError
-
-from filzl_daemons.db import PostgresBackend
-from filzl_daemons.models import LocalModelDefinition
-from filzl_daemons.registry import REGISTRY
-from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
-from filzl_daemons.worker import TaskDefinition, WorkerProcess
-from filzl_daemons.actions import ActionExecutionStub
-from filzl_daemons.tasks import TaskManager
-from filzl_daemons.thread import AlertThread, AsyncProcessQueue
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlalchemy.future import select
 
+from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
+from filzl_daemons.actions import ActionExecutionStub
+from filzl_daemons.db import PostgresBackend
+from filzl_daemons.models import LocalModelDefinition
+from filzl_daemons.parallel import AsyncProcessQueue
+from filzl_daemons.registry import REGISTRY
+from filzl_daemons.tasks import TaskManager
+from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
+
 T = TypeVar("T", bound=BaseModel)
+K = TypeVar("K", bound=BaseModel)
 
 
 class WorkflowInstance(Generic[T]):
@@ -33,10 +32,10 @@ class WorkflowInstance(Generic[T]):
 
     async def run_action(
         self,
-        action: Awaitable[T],
+        action: Awaitable[K],
         timeouts: list[TimeoutDefinition] | None = None,
         max_retries: int = 0,
-    ) -> T:
+    ) -> K:
         """
         Main entry point for running an action in the workflow. All calls should
         flow through your instance's run_action method.
@@ -51,24 +50,26 @@ class WorkflowInstance(Generic[T]):
 
         if isinstance(result, ActionExecutionStub):
             # Queue the action
-            wait_future = await self.task_manager.queue_work(
-                result
-            )
+            wait_future = await self.task_manager.queue_work(result)
             result = await wait_future
 
-        print("RESULT", result)
         return result
 
 
 class WorkflowMeta(ABCMeta):
     def __init__(cls, name, bases, dct):
         super().__init__(name, bases, dct)
-        REGISTRY.register_workflow(cls)
+        REGISTRY.register_workflow(cls)  # type: ignore
 
-        print("REGISTER CLASS", cls.__name__)
+        input_model: Type[BaseModel] | None = None
+        output_model: Type[BaseModel] | None = None
+
+        # We should only validate Workflow subclasses, not the Workflow class itself
+        if cls.__name__ == "Workflow":
+            return
+
         # Attempt to sniff the generic type for input_model
-        for base in cls.__orig_bases__:
-            print("BASE", base)
+        for base in cls.__orig_bases__:  # type: ignore
             if (
                 get_origin(base)
                 and get_origin(base).__name__ == "Workflow"
@@ -76,25 +77,36 @@ class WorkflowMeta(ABCMeta):
             ):
                 # Make sure it's a BaseModel
                 if not issubclass(get_args(base)[0], BaseModel):
-                    raise Exception(
-                        f"Workflow {cls.__name__} must have a BaseModel as its generic type"
+                    raise TypeError(
+                        f"Workflow `{cls.__name__}` must have a BaseModel as its generic type"
                     )
-                cls.input_model = get_args(base)[0]
-                print("INPUT MODEL", cls.input_model)
+                input_model = get_args(base)[0]
                 break
 
         # Sniff the run() method for its return value
         if "run" in dct:
             run_method = dct["run"]
             if not callable(run_method):
-                raise Exception(f"Workflow {cls.__name__} must have a run() method")
+                raise TypeError(f"Workflow `{cls.__name__}` must have a run() method")
             output_model = run_method.__annotations__.get("return")
-            if not output_model:
-                raise Exception(
-                    f"Workflow {cls.__name__} must have a return type annotation"
+
+            if output_model and not issubclass(output_model, BaseModel):
+                raise TypeError(
+                    f"Workflow `{cls.__name__}` must have a BaseModel as its return type annotation"
                 )
-            cls.output_model = output_model
-            print("OUTPUT MODEL", cls.output_model)
+
+        if input_model is None:
+            raise TypeError(
+                f"Workflow `{cls.__name__}` must have a generic type annotation"
+            )
+        if output_model is None:
+            raise TypeError(
+                f"Workflow `{cls.__name__}` must have a return type annotation"
+            )
+
+        cls.input_model = input_model
+        cls.output_model = output_model
+
 
 class DaemonResponseFuture:
     def __init__(self, instance_id, session_maker, model_definitions):
@@ -119,11 +131,14 @@ class DaemonResponseFuture:
                     workflow_cls = REGISTRY.get_workflow(instance.registry_id)
 
                     # TODO: Also return the exception
-                    return workflow_cls.output_model.parse_raw(instance.result_body)
+                    return workflow_cls.output_model.model_validate_json(instance.result_body)
             await asyncio.sleep(1)
 
 
 class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
+    input_model: Type[T]
+    output_model: Type[BaseModel]
+
     def __init__(
         self,
         model_definitions: LocalModelDefinition,
@@ -133,7 +148,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
         self.session_maker = session_maker
 
     @abstractmethod
-    async def run(self, input_payload: WorkflowInstance[T]) -> Any:
+    async def run(self, instance: WorkflowInstance[T]) -> BaseModel:
         pass
 
     async def run_handler(
@@ -142,13 +157,9 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
         raw_input: str,
         task_manager,
     ):
-        print("RUN HANDLER TRIGGERED")
         try:
-            input_payload = self.input_model.parse_raw(raw_input)
-            print("PARSED INPUT", input_payload)
-
+            input_payload = self.input_model.model_validate_json(raw_input)
             result = await self.run(WorkflowInstance(input_payload, task_manager))
-            print("FINAL RESULT", result)
 
             async with self.session_maker() as session:
                 instance = await session.get(
@@ -159,7 +170,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
                 instance.end_time = datetime.now()
                 await session.commit()
         except Exception as e:
-            LOGGER.exception(f"Workflow {self.__class__.__name__} failed due to: {e}")
+            LOGGER.exception(f"Workflow `{self.__class__.__name__}` failed due to: {e}")
 
             async with self.session_maker() as session:
                 instance = await session.get(
@@ -171,17 +182,12 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
                 await session.commit()
 
     async def queue_task(self, task_input: T):
-        print(
-            "DB INSTANCE TYPE",
-            self.model_definitions.DaemonWorkflowInstance.__tablename__,
-        )
         db_instance = self.model_definitions.DaemonWorkflowInstance(
             workflow_name=self.__class__.__name__,
             registry_id=REGISTRY.get_registry_id_for_workflow(self.__class__),
             input_body=task_input.model_dump_json(),
             launch_time=datetime.now(),
         )
-        print("DB INSTANCE QUEUED", db_instance)
 
         async with self.session_maker() as session:
             session.add(db_instance)
@@ -192,6 +198,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
             self.session_maker,
             self.model_definitions,
         )
+
 
 class DaemonClient:
     """
@@ -277,7 +284,7 @@ class DaemonRunner:
 
         """
         # Spawn our worker processes
-        worker_processes: dict[UUID, WorkerProcess] = {}
+        worker_processes: dict[UUID, ActionWorkerProcess] = {}
         already_drained: set[UUID] = set()
 
         # Workers only handle actions, so we set up a queue to route all the collected
@@ -285,11 +292,7 @@ class DaemonRunner:
         worker_queue: multiprocessing.Queue[TaskDefinition] = multiprocessing.Queue(
             maxsize=self.max_workers * self.threads_per_worker
         )
-        #worker_result_queue: multiprocessing.Queue[
-        #    tuple[int, str]
-        #] = multiprocessing.Queue()
-        worker_result_queue = AsyncProcessQueue()
-        instance_queue = multiprocessing.Queue()
+        worker_result_queue: AsyncProcessQueue[tuple[int, Any]] = AsyncProcessQueue()
 
         task_manager = TaskManager(
             local_model_definition=self.model_definitions,
@@ -298,7 +301,9 @@ class DaemonRunner:
 
         def start_new_worker():
             # Start a new worker to replace the one that's draining
-            process = WorkerProcess(worker_queue, worker_result_queue, pool_size=self.threads_per_worker)
+            process = ActionWorkerProcess(
+                worker_queue, worker_result_queue, pool_size=self.threads_per_worker
+            )
             process.start()
 
             # Make sure to do after the process is started
@@ -306,7 +311,7 @@ class DaemonRunner:
 
             return process
 
-        def is_draining_callback(worker: WorkerProcess):
+        def is_draining_callback(worker: ActionWorkerProcess):
             # If we're alerted that the process is draining, we should
             # start a new one. Also handle the case where processes quit
             # without a draining signal.
@@ -340,24 +345,22 @@ class DaemonRunner:
         try:
             await asyncio.gather(
                 # Bulk execute the instance behavior in this main process, for now
-                self.queue_instance_work(instance_queue, task_manager),
-
+                self.queue_instance_work(task_manager),
                 # We will consume database actions here and delegate to our other processes
                 self.queue_action_work(worker_queue),
-
                 # Consume action results and persist them to the database
                 self.consume_actions_results_local(
                     worker_result_queue,
                 ),
-
                 health_check(),
-
                 # Required to wake up our sleeping instance workers
                 # when we are done processing an action
                 task_manager.delegate_done_actions(),
             )
         except asyncio.CancelledError:
-            LOGGER.debug(f"DaemonRunner was cancelled, cleaning up {len(worker_processes)} worker processes")
+            LOGGER.debug(
+                f"DaemonRunner was cancelled, cleaning up {len(worker_processes)} worker processes"
+            )
             for process in worker_processes.values():
                 process.terminate()
             for process in worker_processes.values():
@@ -366,15 +369,11 @@ class DaemonRunner:
 
     async def consume_actions_results_local(
         self,
-        result_queue: multiprocessing.Queue,
+        result_queue: AsyncProcessQueue,
     ):
         while True:
-            print("WILL WAIT TO CONSUME")
-            # TODO: WHY DO WE NEED THIS?
-            #await asyncio.sleep(0.1)
-            #action_id, result = await async_queue_get(result_queue)
             action_id, result = await result_queue.aget()
-            print("Got local result", result)
+
             # Save the result to the database
             async with self.session_maker() as session:
                 # We need to create a new action result
@@ -389,16 +388,16 @@ class DaemonRunner:
                     self.model_definitions.DaemonAction,
                     action_id,
                 )
+                if not action_obj:
+                    LOGGER.error(
+                        f"Action with id {action_id} was not found in the database"
+                    )
+                    continue
                 action_obj.final_result_id = action_result_obj.id
                 action_obj.status = "done"
                 await session.commit()
-                print("DID COMMIT")
 
-    async def queue_instance_work(
-        self,
-        instance_queue: multiprocessing.Queue,
-        task_manager
-    ):
+    async def queue_instance_work(self, task_manager):
         async for notification in self.postgres_backend.iter_ready_objects(
             model=self.model_definitions.DaemonWorkflowInstance,
             queues=[],
@@ -406,14 +405,10 @@ class DaemonRunner:
             LOGGER.info(f"Instance queue should handle job: {notification}")
 
             has_exclusive = await self.get_exclusive_access(
-                self.model_definitions.DaemonWorkflowInstance,
-                notification.id
+                self.model_definitions.DaemonWorkflowInstance, notification.id
             )
             if not has_exclusive:
-                print("NO EXCLUSIVE")
                 continue
-
-            print("GOT EXCLUSIVE")
 
             # TODO: Right now we just instantiate a new workflow every time, we should keep
             # this cached in case there is some heavy loading in init
@@ -446,14 +441,10 @@ class DaemonRunner:
             LOGGER.info(f"Action queue should handle job: {notification}")
 
             has_exclusive = await self.get_exclusive_access(
-                self.model_definitions.DaemonAction,
-                notification.id
+                self.model_definitions.DaemonAction, notification.id
             )
             if not has_exclusive:
-                print("NO EXCLUSIVE")
                 continue
-
-            print("GOT EXCLUSIVE")
 
             # Get the full object from the database
             action_definition = await self.postgres_backend.get_object_by_id(
@@ -497,23 +488,20 @@ class DaemonRunner:
             try:
                 async with session.begin():
                     # Attempt to lock the specific job by ID with NOWAIT
-                    stmt = select(model).where(model.id == id).with_for_update(nowait=True)
+                    stmt = (
+                        select(model).where(model.id == id).with_for_update(nowait=True)
+                    )
                     result = await session.execute(stmt)
                     job = result.scalar_one_or_none()
 
                     if job:
-                        print(f"Job {job.id} locked for processing.")
-                        # Process the job here (dummy processing shown as a print statement)
-                        print(f"Processing job {job.id}...")
-
-                        # After processing, you might want to update the job's status or mark it as processed
-                        job.status = 'processed'  # Assuming the model has a 'status' attribute
-                        await session.commit()  # Commit the transaction to save changes
+                        job.status = "processed"
+                        await session.commit()
                         has_exclusive_lock = True
 
             except SQLAlchemyError as e:
                 # Handle the case where locking the job fails because it's already locked
-                await session.rollback()  # Rollback the transaction if any error occurs
-                print(f"Failed to lock job {id}: {e}")
+                await session.rollback()
+                LOGGER.debug(f"Failed to lock job {id}: {e}")
 
         return has_exclusive_lock

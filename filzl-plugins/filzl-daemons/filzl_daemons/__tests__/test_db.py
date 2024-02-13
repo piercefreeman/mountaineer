@@ -27,6 +27,7 @@ async def test_iter_ready_objects(db_engine: AsyncEngine, limit_queues: list[str
             DaemonWorkflowInstance(
                 id=10,
                 workflow_name="test_workflow_id",
+                registry_id="test_registry_id",
                 input_body="value_1",
                 launch_time=datetime.now(),
             )
@@ -41,6 +42,7 @@ async def test_iter_ready_objects(db_engine: AsyncEngine, limit_queues: list[str
                 DaemonWorkflowInstance(
                     id=20,
                     workflow_name="test_workflow_id",
+                    registry_id="test_registry_id",
                     input_body="value_2",
                     launch_time=datetime.now(),
                 )

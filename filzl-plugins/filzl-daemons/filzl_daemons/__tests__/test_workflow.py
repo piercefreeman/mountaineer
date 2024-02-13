@@ -1,17 +1,16 @@
 import asyncio
 
 import pytest
+from filzl.logging import LOGGER
 from pydantic import BaseModel
-from sqlalchemy import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlmodel import Session, select
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlmodel import select
 
 from filzl_daemons.__tests__.conf_models import (
     LOCAL_MODEL_DEFINITION,
     DaemonWorkflowInstance,
 )
 from filzl_daemons.actions import action
-from filzl_daemons.tasks import TaskManager
 from filzl_daemons.workflow import (
     DaemonClient,
     DaemonRunner,
@@ -26,13 +25,13 @@ class VarInput(BaseModel):
 
 @action
 async def example_task_1(payload: VarInput):
-    print("WILL RUN 1")
+    LOGGER.info(f"example_task_1: {payload.value}")
     return VarInput(value=payload.value + 1)
 
 
 @action
 async def example_task_2(payload: VarInput):
-    print("WILL RUN 2")
+    LOGGER.info(f"example_task_2: {payload.value}")
     return VarInput(value=payload.value * 2)
 
 
@@ -44,13 +43,13 @@ class ExampleWorkflow(Workflow[ExampleWorkflowInput]):
     async def run(self, instance: WorkflowInstance[ExampleWorkflowInput]) -> VarInput:
         values = await asyncio.gather(
             instance.run_action(
-                example_task_1(VarInput(value=1)), # 2
+                example_task_1(VarInput(value=1)),  # 2
             ),
             instance.run_action(
-                example_task_1(VarInput(value=2)), # 3
+                example_task_1(VarInput(value=2)),  # 3
             ),
             instance.run_action(
-                example_task_1(VarInput(value=3)), # 4
+                example_task_1(VarInput(value=3)),  # 4
             ),
         )
 
@@ -61,14 +60,20 @@ class ExampleWorkflow(Workflow[ExampleWorkflowInput]):
         )
 
 
-def test_workflow_creates_instance(db_engine: Engine, daemon_client: DaemonClient):
+@pytest.mark.asyncio
+async def test_workflow_creates_instance(
+    db_engine: AsyncEngine, daemon_client: DaemonClient
+):
     # Test that the call creates the expected instance
-    daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
+    await daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
+
+    session_maker = async_sessionmaker(db_engine, expire_on_commit=False)
 
     # Test that there is one task record per each call
-    with Session(db_engine) as session:
+    async with session_maker() as session:
         statement = select(DaemonWorkflowInstance)
-        results = list(session.exec(statement))
+        result = await session.execute(statement)
+        results = result.scalars().all()
         assert len(results) == 1
         assert results[0].workflow_name == "ExampleWorkflow"
 
@@ -83,7 +88,9 @@ async def test_workflow_runs_instance(
         workflows=[ExampleWorkflow],
     )
 
-    result = await daemon_client.queue_new(ExampleWorkflow, ExampleWorkflowInput(input_value=1))
+    result = await daemon_client.queue_new(
+        ExampleWorkflow, ExampleWorkflowInput(input_value=1)
+    )
 
     timeout_task = asyncio.create_task(asyncio.sleep(5))
     wait_task = asyncio.create_task(result.wait())
@@ -91,10 +98,7 @@ async def test_workflow_runs_instance(
 
     # Wait 5 seconds or until everything is done
     done, pending = await asyncio.wait(
-        (
-            timeout_task, wait_task, handle_jobs_task
-        ),
-        return_when=asyncio.FIRST_COMPLETED
+        (timeout_task, wait_task, handle_jobs_task), return_when=asyncio.FIRST_COMPLETED
     )
 
     # Terminate all pending tasks - this should shutdown the task manager
@@ -104,8 +108,54 @@ async def test_workflow_runs_instance(
     assert wait_task in done
     assert timeout_task not in done
 
-    print("DONE", done, pending)
     assert wait_task.result() == VarInput(value=18)
+
+
+def test_parse_workflow_meta():
+    """
+    Ensure that our metaclass can take the typehints of a workflow definition and
+    parse them into the model base.
+
+    """
+
+    class InputItem(BaseModel):
+        input_value: int
+
+    class OutputItem(BaseModel):
+        output_value: int
+
+    class WorkflowWithTypehints(Workflow[InputItem]):
+        async def run(self, instance: WorkflowInstance[InputItem]) -> OutputItem:
+            return OutputItem(output_value=1)
+
+    assert WorkflowWithTypehints.input_model == InputItem
+    assert WorkflowWithTypehints.output_model == OutputItem
+
+
+def test_parse_workflow_missing_meta():
+    """
+    Test errors flagged when exceptions are mis-identified.
+
+    """
+
+    class InputItem(BaseModel):
+        input_value: int
+
+    class OutputItem(BaseModel):
+        output_value: int
+
+    with pytest.raises(TypeError):
+
+        class WorkflowWithTypehints1(Workflow):
+            async def run(self, instance: WorkflowInstance) -> OutputItem:
+                return OutputItem(output_value=1)
+
+    with pytest.raises(TypeError):
+
+        class WorkflowWithTypehints2(Workflow[InputItem]):
+            async def run(self, instance: WorkflowInstance[InputItem]):
+                return OutputItem(output_value=1)
+
 
 def test_replay(db_engine: AsyncEngine):
     # Session interrutped halfway through and we need to start again

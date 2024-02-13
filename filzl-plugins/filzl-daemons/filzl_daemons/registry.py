@@ -1,24 +1,28 @@
 import sys
+from dataclasses import dataclass
 from importlib import import_module
-from itertools import chain
 from typing import TYPE_CHECKING, Callable, Type
 
 from pydantic import BaseModel
+
+from filzl_daemons.logging import LOGGER
 
 if TYPE_CHECKING:
     from filzl_daemons.workflow import Workflow
 
 
-class FunctionMetadata(BaseModel):
+@dataclass
+class FunctionMetadata:
     function_name: str
     func: Callable
     module: str
-    input_model: Type[BaseModel] | None
+    input_model: Type[BaseModel]
 
 
-class WorkflowMetadata(BaseModel):
+@dataclass
+class WorkflowMetadata:
     workflow_name: str
-    workflow: Callable
+    workflow: Type["Workflow"]
     module: str
 
 
@@ -39,12 +43,10 @@ class ActionRegistry:
         Can be mounted to another processes' registry by calling import_modules.
         """
         return list(
-            {
-                action_meta.module
-                for action_meta in chain(
-                    self.action_registry.values(),
-                    self.workflow_registry.values(),
-                )
+            {action_meta.module for action_meta in self.action_registry.values()}
+            | {
+                workflow_meta.module
+                for workflow_meta in self.workflow_registry.values()
             }
         )
 
@@ -66,7 +68,7 @@ class ActionRegistry:
         """
         return self.action_registry[registry_id].func
 
-    def get_action_model(self, registry_id: str) -> Type[BaseModel] | None:
+    def get_action_model(self, registry_id: str) -> Type[BaseModel]:
         """
         Given the output of `get_registry_id_for_action`, returns the
         input model if registered within the current registry.
@@ -79,15 +81,16 @@ class ActionRegistry:
         Returns the workflow (the class itself) for the given registry_id.
 
         """
-        print("REGISTRY", self.workflow_registry)
         return self.workflow_registry[registry_id].workflow
 
-    def register_action(self, action: Callable, input_model: Type[BaseModel] | None):
+    def register_action(self, action: Callable, input_model: Type[BaseModel]):
         """
         Registers a new action into the registry and responds with a unique
         identifier to retrieve the full action definition from the registry.
 
         """
+        LOGGER.debug(f"Adding to registry: {action.__name__} ({input_model})")
+
         registry_id = self.get_registry_id_for_action(action)
 
         if registry_id in self.action_registry:
@@ -105,7 +108,8 @@ class ActionRegistry:
         return registry_id
 
     def register_workflow(self, workflow: Type["Workflow"]):
-        print("SHOULD REGISTER WORKFLOW", workflow)
+        LOGGER.debug(f"Adding to registry: {workflow.__name__}")
+
         registry_id = self.get_registry_id_for_workflow(workflow)
 
         if registry_id in self.workflow_registry:

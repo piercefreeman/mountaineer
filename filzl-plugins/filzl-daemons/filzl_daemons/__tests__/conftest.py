@@ -13,15 +13,15 @@ from filzl_daemons.workflow import DaemonClient
 async def db_engine():
     test_database_url = "postgresql+asyncpg://filzl_daemons:mysecretpassword@localhost:5434/filzl_daemons_test_db"
     engine = create_async_engine(test_database_url, echo=False)
-    print("Creating engine", engine)
 
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
 
-    yield engine
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
+    try:
+        yield engine
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(SQLModel.metadata.drop_all)
 
 
 @pytest.fixture

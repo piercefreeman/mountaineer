@@ -3,7 +3,6 @@ from inspect import iscoroutinefunction, signature
 
 from pydantic import BaseModel
 
-from filzl_daemons.logging import LOGGER
 from filzl_daemons.registry import REGISTRY
 
 
@@ -13,11 +12,9 @@ class ActionExecutionStub(BaseModel):
 
 
 def action(f):
-    global REGISTRY
-
     # Require the function to be async
     if not iscoroutinefunction(f):
-        raise Exception(
+        raise ValueError(
             f"Function {f.__name__} is not a coroutine function. Use async def instead of def."
         )
 
@@ -39,7 +36,6 @@ def action(f):
             f"The first argument of {f.__name__} must be a Pydantic model or there should be no arguments."
         )
 
-    LOGGER.debug(f"Adding to registry: {f.__name__} ({action_model})")
     registry_id = REGISTRY.register_action(f, action_model)
 
     @wraps(f)
@@ -49,7 +45,6 @@ def action(f):
         # into create_task, so they can't be delegated to other processes
         # We don't expect to actually have any args/kwargs here, but we ignore them
         # if they're provided
-        print("Try to create ActionExecutionStub", registry_id, input_body)
         return ActionExecutionStub(
             registry_id=registry_id,
             input_body=input_body,
