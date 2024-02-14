@@ -25,6 +25,9 @@ build-backend = "poetry.core.masonry.api"
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
 
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
 {# VENV #}
 {% else %}
 
@@ -55,5 +58,8 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
 
 {% endif %}

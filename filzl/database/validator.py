@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import cast
+from typing import Type, cast
 
 from pydantic import BaseModel
 from sqlalchemy import (
@@ -38,7 +38,7 @@ class DatabaseValidator:
     def __init__(self, engine):
         self.engine = engine
 
-    def validate_database_alignment(self, models: list[SQLModel]):
+    def validate_database_alignment(self, models: list[Type[SQLModel]]):
         """
         Returns the discrepancies between the current database schema and the expected schema, if any.
 
@@ -51,7 +51,9 @@ class DatabaseValidator:
             for table_key, found_issues in discrepancies.items()
         }
 
-    def parse_model_definitions(self, models: list[SQLModel]) -> dict[str, TableSchema]:
+    def parse_model_definitions(
+        self, models: list[Type[SQLModel]]
+    ) -> dict[str, TableSchema]:
         """
         Parse the Python model for the current definitions
         """

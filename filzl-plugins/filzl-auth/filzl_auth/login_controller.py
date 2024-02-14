@@ -1,6 +1,4 @@
-from datetime import datetime, timedelta
 from typing import Type
-from uuid import UUID, uuid4
 
 from fastapi import Depends, Request, status
 from fastapi.responses import JSONResponse
@@ -11,10 +9,11 @@ from filzl.dependencies import CoreDependencies, get_function_dependencies
 from filzl.exceptions import APIException
 from filzl.paths import ManagedViewPath
 from filzl.render import Metadata, RedirectStatus, RenderBase
-from jose import jwt
 from pydantic import BaseModel, EmailStr
-from sqlmodel import Session, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
+from filzl_auth.authorize import authorize_response
 from filzl_auth.config import AuthConfig
 from filzl_auth.dependencies import AuthDependencies
 from filzl_auth.user_model import User
@@ -24,6 +23,10 @@ from filzl_auth.views import get_auth_view_path
 class LoginRequest(BaseModel):
     username: EmailStr
     password: str
+
+
+class LoginSuccessResponse(BaseModel):
+    redirect_url: str
 
 
 class LoginInvalid(APIException):
@@ -77,54 +80,41 @@ class LoginController(ControllerBase):
             )
 
         # Otherwise continue to load the initial page
-        return RenderBase()
+        return RenderBase(
+            metadata=Metadata(
+                title="Login",
+            )
+        )
 
-    @passthrough(exception_models=[LoginInvalid])
-    def login(
+    @passthrough(exception_models=[LoginInvalid], response_model=LoginSuccessResponse)
+    async def login(
         self,
         login_payload: LoginRequest,
         auth_config: AuthConfig = Depends(
             CoreDependencies.get_config_with_type(AuthConfig)
         ),
-        session: Session = Depends(DatabaseDependencies.get_db_session),
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session),
     ):
         matched_users = select(self.user_model).where(
             self.user_model.email == login_payload.username
         )
-        user = session.exec(matched_users).first()
+        results = await session.execute(matched_users)
+        user = results.scalars().first()
         if user is None:
             raise LoginInvalid(invalid_reason="User not found.")
         if not user.verify_password(login_payload.password):
             raise LoginInvalid(invalid_reason="Invalid password.")
 
-        access_token = self.authorize_user(user.id, auth_config)
-        response = JSONResponse(content=None, status_code=status.HTTP_200_OK)
+        payload = LoginSuccessResponse(redirect_url=self.post_login_redirect)
 
-        response.set_cookie(
-            key=AuthDependencies.access_token_cookie_key(),
-            value=f"Bearer {access_token}",
-            httponly=True,
-            # secure=True,  # Set to False if you're testing locally without HTTPS
-            secure=False,
-            samesite="lax",  # Helps with CSRF protection
+        response = JSONResponse(
+            content=payload.model_dump_json(), status_code=status.HTTP_200_OK
+        )
+        response = authorize_response(
+            response,
+            user_id=user.id,
+            auth_config=auth_config,
+            token_expiration_minutes=self.token_expiration_minutes,
         )
 
         return response
-
-    def authorize_user(self, user_id: UUID, auth_config: AuthConfig):
-        """
-        Generates the user a new temporary API key
-
-        """
-        # Randomly seed with a uuid4, then encrypt with our secret key to add
-        # more entropy to the tokens and make it harder to brute-force the raw token ID
-        raw_token = str(uuid4())
-        expire = datetime.utcnow() + timedelta(minutes=self.token_expiration_minutes)
-        to_encode = {"sub": str(raw_token), "user_id": str(user_id), "exp": expire}
-        encoded_token = jwt.encode(
-            to_encode,
-            auth_config.API_SECRET_KEY,
-            algorithm=auth_config.API_KEY_ALGORITHM,
-        )
-
-        return encoded_token

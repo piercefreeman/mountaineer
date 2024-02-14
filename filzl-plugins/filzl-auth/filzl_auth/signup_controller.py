@@ -1,6 +1,7 @@
 from typing import Type
 
-from fastapi import Depends
+from fastapi import Depends, status
+from fastapi.responses import JSONResponse
 from filzl.actions import passthrough
 from filzl.controller import ControllerBase
 from filzl.database.dependencies import DatabaseDependencies
@@ -9,8 +10,10 @@ from filzl.exceptions import APIException
 from filzl.paths import ManagedViewPath
 from filzl.render import Metadata, RenderBase
 from pydantic import BaseModel, EmailStr
-from sqlmodel import Session, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
 
+from filzl_auth.authorize import authorize_response
 from filzl_auth.config import AuthConfig
 from filzl_auth.user_model import User
 from filzl_auth.views import get_auth_view_path
@@ -27,6 +30,10 @@ class SignupRequest(BaseModel):
     recapcha_key: str | None
 
 
+class SignupSuccessResponse(BaseModel):
+    redirect_url: str
+
+
 class SignupInvalid(APIException):
     status_code = 401
     invalid_reason: str
@@ -39,9 +46,13 @@ class SignupController(ControllerBase):
         / "auth/signup/page.tsx"
     )
 
-    def __init__(self, user_model: Type[User] = User):
+    # Defaults to 24 hours
+    token_expiration_minutes: int = 60 * 24
+
+    def __init__(self, post_signup_redirect: str, user_model: Type[User] = User):
         super().__init__()
         self.user_model = user_model
+        self.post_signup_redirect = post_signup_redirect
 
     def render(
         self,
@@ -56,13 +67,13 @@ class SignupController(ControllerBase):
         )
 
     @passthrough(exception_models=[SignupInvalid])
-    def signup(
+    async def signup(
         self,
         signup_payload: SignupRequest,
         auth_config: AuthConfig = Depends(
             CoreDependencies.get_config_with_type(AuthConfig)
         ),
-        session: Session = Depends(DatabaseDependencies.get_db_session),
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session),
     ):
         # If recapcha is enabled, we require the key
         if auth_config.RECAPTCHA_ENABLED and signup_payload.recapcha_key is None:
@@ -71,7 +82,8 @@ class SignupController(ControllerBase):
         matched_users = select(self.user_model).where(
             self.user_model.email == signup_payload.username
         )
-        user = session.exec(matched_users).first()
+        result = await session.execute(matched_users)
+        user = result.scalars().first()
         if user is not None:
             raise SignupInvalid(invalid_reason="User already exists with this email.")
 
@@ -82,7 +94,18 @@ class SignupController(ControllerBase):
             email=signup_payload.username, hashed_password=hashed_password
         )
         session.add(new_user)
-        session.commit()
+        await session.commit()
 
-        # Successful login
-        raise SignupInvalid(invalid_reason="Signup successful!")
+        payload = SignupSuccessResponse(redirect_url=self.post_signup_redirect)
+
+        response = JSONResponse(
+            content=payload.model_dump_json(), status_code=status.HTTP_200_OK
+        )
+        response = authorize_response(
+            response,
+            user_id=new_user.id,
+            auth_config=auth_config,
+            token_expiration_minutes=self.token_expiration_minutes,
+        )
+
+        return response
