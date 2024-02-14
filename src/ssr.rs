@@ -72,6 +72,7 @@ impl<'a> Ssr<'a> {
          * an entry point (ie. function name to execute) and returns the result of the execution as
          * a string.
          */
+        // let isolate_params = v8::CreateParams::default().heap_limits(0, 2000 * 1024 * 1024);
         let isolate = &mut v8::Isolate::new(Default::default());
         let handle_scope = &mut v8::HandleScope::new(isolate);
         let context = v8::Context::new(handle_scope);

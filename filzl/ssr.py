@@ -1,10 +1,10 @@
-from functools import lru_cache
 from re import finditer as re_finditer
 from typing import cast
 
 from pydantic import BaseModel
 
 from filzl import filzl as filzl_rs  # type: ignore
+from filzl.cache import extended_lru_cache
 from filzl.static import get_static_path
 
 
@@ -37,8 +37,7 @@ def fix_exception_lines(*, exception: str, injected_script: str):
     return exception
 
 
-# TODO: Use a size-based cache instead of a slot-based cache
-@lru_cache(maxsize=128)
+@extended_lru_cache(maxsize=128, max_size_mb=5)
 def render_ssr(
     script: str, render_data: BaseModel, hard_timeout: int | float | None = None
 ) -> str:
