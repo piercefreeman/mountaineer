@@ -22,6 +22,10 @@ T = TypeVar("T", bound=BaseModel)
 K = TypeVar("K", bound=BaseModel)
 
 
+class TaskException(Exception):
+    pass
+
+
 class WorkflowInstance(Generic[T]):
     def __init__(self, input_payload: T, task_manager: TaskManager):
         self.input_payload = input_payload
@@ -112,7 +116,8 @@ class DaemonResponseFuture:
 
     async def wait(self):
         """
-        Performs a polling-based wait for the result of the workflow instance.
+        Performs a polling-based wait for the result of the workflow instance. Either returns
+        the result or raises a TaskException if the workflow failed.
 
         TODO: Refactor to use notifications instead of polling
 
@@ -128,14 +133,15 @@ class DaemonResponseFuture:
                 if instance.end_time:
                     workflow_cls = REGISTRY.get_workflow(instance.registry_id)
 
-                    # TODO: Also return the exception
-                    return (
-                        workflow_cls.output_model.model_validate_json(
+                    if instance.result_body is not None:
+                        return workflow_cls.output_model.model_validate_json(
                             instance.result_body
                         )
-                        if instance.result_body
-                        else None
-                    )
+                    else:
+                        raise TaskException(
+                            f"Workflow failed: {instance.exception}: {instance.exception_stack}"
+                        )
+
             await asyncio.sleep(1)
 
 
@@ -432,6 +438,8 @@ class DaemonRunner:
                     if getattr(action_definition, timeout_key) is not None
                 ],
             )
+            LOGGER.info(f"Will queue: {task_definition} {action_definition}")
+
             worker_queue.put(task_definition)
 
     async def get_exclusive_access(self, model, id: int):

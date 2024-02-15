@@ -71,8 +71,20 @@ class DaemonAction(QueableItemMixin, SQLModel):
     registry_id: str
     input_body: str | None  # json payload
 
-    # The most recent DaemonActionResult. If there is an exit condition, this
-    # will be the final result.
+    # When the latest execution of this action was started
+    started_datetime: datetime | None = None
+    assigned_worker_internal_id: UUID | None = None
+    ended_datetime: datetime | None = None
+
+    # Retry metadata, must be set in the instantiation of each action
+    retry_current_attempt: int = 0
+    retry_max_attempts: int | None = None
+    retry_backoff_seconds: int
+    retry_backoff_factor: float
+    retry_jitter: float
+
+    # The most recent DaemonActionResult. If there is an exit condition like retry_max_attempts,
+    # this will be the final result.
     final_result_id: int | None = None
 
     # Timeout preferences, in seconds

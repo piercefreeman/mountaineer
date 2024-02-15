@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from hashlib import sha256
-from typing import Type, TypeVar
+from typing import Type, TypeVar, cast
 
 import asyncpg
 from filzl.logging import LOGGER
@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
+    AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
@@ -42,7 +43,10 @@ class PostgresBackend:
         self.engine = engine
 
         # Users typically want to keep objects in scope after the session commits
-        self.session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        # Session makers are only safe within a particular asyncio event loop
+        self.session_makers: dict[
+            asyncio.AbstractEventLoop, async_sessionmaker[AsyncSession]
+        ] = {}
 
         # Async jobs are waiting for these notifications
         # Mapping of { action_id: Future }
@@ -74,17 +78,28 @@ class PostgresBackend:
         )
         # Recreate the AsyncEngine with the original connection parameters
         self.engine = create_async_engine(url)
-        self.session_maker = async_sessionmaker(self.engine, expire_on_commit=False)
+        self.session_makers = {}
 
         self.local_models = LocalModelDefinition.__new__(LocalModelDefinition)
         self.local_models.__setstate__(state["local_models"])
+
+    @property
+    def session_maker(self):
+        # Session makers are only safe within a particular asyncio event loop
+        loop = asyncio.get_event_loop()
+        if loop not in self.session_makers:
+            engine = create_async_engine(self.engine.url)
+            self.session_makers[loop] = async_sessionmaker(
+                engine, expire_on_commit=False
+            )
+        return self.session_makers[loop]
 
     async def get_object_by_id(self, model: Type[T], id: int) -> T:
         async with self.session_maker() as session:
             obj = await session.get(model, id)
             if obj is None:
                 raise ValueError(f"Object with id {id} not found")
-            return obj
+            return cast(T, obj)
 
     async def iter_ready_objects(
         self,
@@ -102,26 +117,63 @@ class PostgresBackend:
 
         """
         retrieved_items = 0
+        seen_ids = set()
 
+        # Immediately subscribe to notifications
+        notifications = self.get_instances_notification(
+            queues, table_name=self.get_table_name(model), status=status
+        )
+
+        # Create a task for notifications to ensure it starts immediately
+        # and doesn't block getting the backlog
+        notification_task = asyncio.create_task(notifications.__anext__())
+
+        # Process backlog
         async for value in self.get_ready_instances(
             queues, table_name=self.get_table_name(model), status=status
         ):
+            obj_id = value.id
+            if obj_id in seen_ids:
+                continue
+            seen_ids.add(obj_id)
+
             LOGGER.debug(f"Got ready instance: {value}")
             yield value
 
             retrieved_items += 1
             if max_items and retrieved_items >= max_items:
+                # Ensure to cancel the notification task if max_items reached
+                notification_task.cancel()
                 return
 
-        async for value in self.get_instances_notification(
-            queues, table_name=self.get_table_name(model), status=status
-        ):
-            LOGGER.debug(f"Got instance notification: {value}")
-            yield value
+        # Start consuming new notifications
+        while True:
+            try:
+                # Wait for next notification
+                value = await asyncio.wait_for(
+                    asyncio.shield(notification_task), timeout=None
+                )
+                notification_task = asyncio.create_task(
+                    notifications.__anext__()
+                )  # Prepare for the next
 
-            retrieved_items += 1
-            if max_items and retrieved_items >= max_items:
-                return
+                obj_id = value.id
+                if obj_id in seen_ids:
+                    continue
+                seen_ids.add(obj_id)
+
+                LOGGER.debug(f"Got instance notification: {value}")
+                yield value
+
+                retrieved_items += 1
+                if max_items and retrieved_items >= max_items:
+                    break
+            except asyncio.CancelledError:
+                # Handle cancellation properly
+                break
+            except StopAsyncIteration:
+                # No more notifications
+                break
 
     async def get_ready_instances(
         self,

@@ -5,8 +5,10 @@ from multiprocessing import Queue
 from time import time
 
 import pytest
+import pytest_asyncio
 from sqlmodel import select
 
+from filzl_daemons.__tests__.conf_models import DaemonAction, DaemonActionResult
 from filzl_daemons.action_worker import (
     ActionWorkerProcess,
     TaskDefinition,
@@ -55,8 +57,31 @@ async def example_crash():
     raise ValueError("This is a crash")
 
 
-def test_soft_timeout(capfd, postgres_backend: PostgresBackend):
+@pytest_asyncio.fixture
+async def stub_db_action(postgres_backend: PostgresBackend):
+    # Mock an action already being in the database
+    async with postgres_backend.session_maker() as session:
+        action = DaemonAction(
+            id=1,
+            workflow_name="test_workflow",
+            instance_id=1,
+            state="",
+            registry_id="",
+            input_body="",
+            retry_backoff_seconds=0,
+            retry_backoff_factor=0,
+            retry_jitter=0,
+        )
+        session.add(action)
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_soft_timeout(
+    capfd, postgres_backend: PostgresBackend, stub_db_action: DaemonAction
+):
     task_queue: Queue[TaskDefinition] = Queue()
+    task_start = datetime.now()
     isolation_process = ActionWorkerProcess(
         task_queue,
         postgres_backend,
@@ -92,13 +117,30 @@ def test_soft_timeout(capfd, postgres_backend: PostgresBackend):
     assert "MIDDLE" in captured.out
     assert "END" not in captured.out
 
+    # Ensure that the db action object was updated with the correct state
+    updated_action = await postgres_backend.get_object_by_id(DaemonAction, 1)
+    assert updated_action.status == "queued"
+    assert updated_action.schedule_after
+    assert updated_action.final_result_id
+    assert updated_action.schedule_after > task_start
 
-def test_hard_timeout_and_shutdown(postgres_backend: PostgresBackend):
+    action_result = await postgres_backend.get_object_by_id(
+        DaemonActionResult, updated_action.final_result_id
+    )
+    assert action_result.result_body is None
+    assert action_result.exception == "Task soft-timed out."
+
+
+@pytest.mark.asyncio
+async def test_hard_timeout_and_shutdown(
+    postgres_backend: PostgresBackend, stub_db_action: DaemonAction
+):
     """
     Ensure that our hard timeout works on a CPU bound action that won't quit otherwise,
     and that we close the worker process after the hard timeout.
 
     """
+    task_start = datetime.now()
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
 
@@ -131,6 +173,19 @@ def test_hard_timeout_and_shutdown(postgres_backend: PostgresBackend):
     assert elapsed_time >= 3
     # Can take a bit longer to fully quit and join
     assert elapsed_time < 7
+
+    # Ensure that the db action object was updated with the correct state
+    updated_action = await postgres_backend.get_object_by_id(DaemonAction, 1)
+    assert updated_action.status == "queued"
+    assert updated_action.schedule_after
+    assert updated_action.final_result_id
+    assert updated_action.schedule_after > task_start
+
+    action_result = await postgres_backend.get_object_by_id(
+        DaemonActionResult, updated_action.final_result_id
+    )
+    assert action_result.result_body is None
+    assert action_result.exception == "Task hard-timed out."
 
 
 @pytest.mark.asyncio
@@ -182,9 +237,7 @@ async def test_handle_exception(postgres_backend: PostgresBackend):
     isolation_process.join()
 
     async with postgres_backend.session_maker() as session:
-        task_query = select(postgres_backend.local_models.DaemonActionResult).where(
-            postgres_backend.local_models.DaemonActionResult.action_id == 1
-        )
+        task_query = select(DaemonActionResult).where(DaemonActionResult.action_id == 1)
         task_result = await session.execute(task_query)
         task_obj = task_result.scalars().first()
         assert task_obj

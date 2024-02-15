@@ -31,6 +31,9 @@ class TaskManager:
                 input_body=(
                     task.input_body.model_dump_json() if task.input_body else None
                 ),
+                retry_backoff_seconds=1,
+                retry_backoff_factor=1,
+                retry_jitter=1,
             )
             session.add(action_task)
             await session.commit()

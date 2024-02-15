@@ -4,11 +4,12 @@ import asyncio
 import multiprocessing
 from dataclasses import dataclass, field
 from datetime import datetime
+from functools import wraps
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
 from time import sleep
 from traceback import format_exc
-from typing import Awaitable, Callable, TypeVar
+from typing import Callable
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel
@@ -17,6 +18,7 @@ from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.logging import LOGGER
 from filzl_daemons.registry import REGISTRY
+from filzl_daemons.retry import calculate_retry, retry_is_allowed
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 
 
@@ -35,6 +37,7 @@ class TaskDefinition:
 class ThreadDefinition:
     thread_id: UUID
     thread: Thread | None
+    task: TaskDefinition
     started_wall: datetime
     timeouts: list[TimeoutDefinition]
 
@@ -43,15 +46,16 @@ class ThreadDefinition:
     timed_out_causes: set[TimeoutType] = field(default_factory=set)
 
 
-T = TypeVar("T")
+def safe_task(fn):
+    @wraps(fn)
+    async def inner(*args, **kwargs):
+        try:
+            return await fn(*args, **kwargs)
+        except Exception as e:
+            LOGGER.error("Unhandled exception in task", exc_info=True)
+            raise e
 
-
-async def safe_task(coro: Awaitable[T]) -> T:
-    try:
-        return await coro
-    except Exception as e:
-        LOGGER.error("Unhandled exception in task", exc_info=True)
-        raise e
+    return inner
 
 
 class ActionWorkerProcess(multiprocessing.Process):
@@ -140,6 +144,8 @@ class ActionWorkerProcess(multiprocessing.Process):
         self.pool_threads_lock = Lock()
         self.pool_threads: dict[UUID, ThreadDefinition] = {}
 
+        self.handled_tasks = 0
+
         # Load back the modules into the new process's registry
         REGISTRY.load_modules(self.action_modules)
 
@@ -153,7 +159,7 @@ class ActionWorkerProcess(multiprocessing.Process):
         watcher_thread.start()
 
         # Only tracked if tasks_before_recycle is set
-        handled_tasks = 0
+        queued_tasks = 0
 
         while not self.is_draining:
             # Get access to a free slot before we try to dequeue a task
@@ -174,20 +180,44 @@ class ActionWorkerProcess(multiprocessing.Process):
             LOGGER.debug(f"Received task: {task}")
             self.execute_task(task)
 
-            # If we have exhausted the number of tasks we can process, we
-            # should start draining the pool
+            # If we have exhausted the number of tasks we can process we shouldn't add any more
+            # The success/failure handlers will determine when to start draining based
+            # upon completed tasks
             if self.tasks_before_recycle is not None:
-                handled_tasks += 1
-                if handled_tasks >= self.tasks_before_recycle:
-                    self.flag_is_draining()
+                queued_tasks += 1
+                if queued_tasks >= self.tasks_before_recycle:
+                    break
 
         # If this triggered we must be draining
         # The watch thread will process until this process is safe to kill
-        LOGGER.debug("Joining on watcher thread.")
+        LOGGER.debug("Joining on watch/ping threads.")
         watcher_thread.join()
         ping_thread.join()
 
+        # Our final task, right before we exit the process, is to mark all outstanding
+        # timed out tasks as true failures. We delay this until the end of the process
+        # because there's still a chance they could complete in this interval.
+        async def cleanup_hard_timeouts():
+            hard_timeouts = [
+                thread_definition
+                for thread_definition in self.pool_threads.values()
+                if TimeoutType.HARD in thread_definition.timed_out_causes
+            ]
+            await asyncio.gather(
+                *[
+                    safe_task(self.report_failure)(
+                        thread_definition.task, "Task hard-timed out."
+                    )
+                    for thread_definition in hard_timeouts
+                ]
+            )
+
+        asyncio.run(cleanup_hard_timeouts())
+
     def ping(self, ping_interval: int = 30):
+        """
+        Report health of this worker process to the backend.
+        """
         worker_id: int | None = None
 
         async def run_single_ping():
@@ -211,7 +241,11 @@ class ActionWorkerProcess(multiprocessing.Process):
                     )
 
         async def shutdown_on_drain():
-            await self.is_draining_in_worker_event.get()
+            while True:
+                await asyncio.sleep(1)
+                if self.is_draining:
+                    break
+
             # Final shutdown
             await run_single_ping()
 
@@ -241,14 +275,21 @@ class ActionWorkerProcess(multiprocessing.Process):
         loop.run_until_complete(
             asyncio.wait(
                 [
-                    loop.create_task(safe_task(run_ping())),
-                    loop.create_task(safe_task(shutdown_on_drain())),
+                    loop.create_task(safe_task(run_ping)()),
+                    loop.create_task(safe_task(shutdown_on_drain)()),
                 ],
                 return_when=asyncio.FIRST_COMPLETED,
             )
         )
 
     def watch(self):
+        """
+        Watch all the threads in the pool and manage their lifecycle.
+        Handles:
+            - Soft timeouts
+            - Hard timeouts
+
+        """
         initialized_watch = False
 
         # During a drain, run() will stop executing new tasks
@@ -340,12 +381,20 @@ class ActionWorkerProcess(multiprocessing.Process):
         return None
 
     def trigger_hard_timeout(self, thread_definition: ThreadDefinition):
+        """
+        Trigger a hard timeout on the given thread. Because we can't actually terminate
+        these running threads for fear of memory corruption, we instead indicate that the current
+        pool has started draining. It should accept no more tasks, and once only hard-timeout threads
+        are remaining will force-terminate itself, which will destroy the blocking threads as well.
+
+        """
         self.flag_is_draining()
 
     def execute_task(self, task_definition: TaskDefinition):
         # Stub definition
         thread_definition = ThreadDefinition(
             thread_id=uuid4(),
+            task=task_definition,
             thread=None,
             started_wall=datetime.now(),
             timeouts=task_definition.timeouts,
@@ -368,41 +417,38 @@ class ActionWorkerProcess(multiprocessing.Process):
     def task_thread(
         self, task_definition: TaskDefinition, thread_definition: ThreadDefinition
     ):
-        LOGGER.info(f"Thread {thread_definition.thread_id} is starting...")
+        LOGGER.info(
+            f"Thread {thread_definition.thread_id} is starting for {task_definition}..."
+        )
         worker_event_loop = asyncio.new_event_loop()
         task_runner: asyncio.Task
+
+        # We won't need to check this value until we hit at least one of time
+        # timeout intervals, so we do an initial sleep until the earliest point
+        # we need to check for a timeout
+        soft_timeouts = [
+            timeout.timeout_seconds
+            for timeout in thread_definition.timeouts
+            if timeout.timeout_type == TimeoutType.SOFT
+        ]
 
         async def soft_timeout():
             nonlocal worker_event_loop
             nonlocal task_runner
 
-            # We won't need to check this value until we hit at least one of time
-            # timeout intervals, so we do an initial sleep until the earliest point
-            # we need to check for a timeout
-            all_timeouts = [
-                timeout.timeout_seconds
-                for timeout in thread_definition.timeouts
-                if timeout.timeout_type == TimeoutType.SOFT
-            ]
-
-            if not all_timeouts:
-                # User must be running with hard timeouts so we have nothing to do
-                return
-
-            min_timeout = min(all_timeouts)
+            min_timeout = min(soft_timeouts)
             await asyncio.sleep(min_timeout)
 
-            # After this, we check status every second to see if our watchdog flagged
+            # After this, we check status every half second to see if our watchdog flagged
             # us for a timeout
             while True:
                 if thread_definition.timed_out_causes:
                     LOGGER.info("Thread timed out, trying a soft cancel...")
                     # Try to cancel the task
                     task_runner.cancel()
-                    worker_event_loop.stop()
                     LOGGER.debug("Asyncio task cancelled, now returning...")
                     return
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
 
         async def run_task():
             task_fn = REGISTRY.get_action(task_definition.registry_id)
@@ -422,15 +468,33 @@ class ActionWorkerProcess(multiprocessing.Process):
                 LOGGER.info(f"Process result: {result}")
                 await self.report_success(task_definition, result)
             except Exception as e:
-                LOGGER.error(f"Task {task_definition.registry_id} failed: {e}")
+                LOGGER.error(
+                    f"Task {task_definition.registry_id} failed: {e}, reporting failure..."
+                )
                 await self.report_failure(task_definition, str(e), format_exc())
 
             LOGGER.debug(f"Thread {thread_definition.thread_id} has finished its task.")
-            worker_event_loop.stop()
 
-        task_runner = worker_event_loop.create_task(safe_task(run_task()))
-        worker_event_loop.create_task(safe_task(soft_timeout()))
-        worker_event_loop.run_forever()
+        tasks: list[asyncio.Task] = []
+        task_runner = worker_event_loop.create_task(safe_task(run_task)())
+        tasks.append(task_runner)
+
+        if soft_timeouts:
+            soft_timeout_runner = worker_event_loop.create_task(
+                safe_task(soft_timeout)()
+            )
+            tasks.append(soft_timeout_runner)
+
+        worker_event_loop.run_until_complete(
+            asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        )
+
+        # The thread exited because of a timeout
+        if TimeoutType.SOFT in thread_definition.timed_out_causes:
+            LOGGER.debug(
+                f"Reporting soft timeout for task {task_definition.action_id}..."
+            )
+            asyncio.run(self.report_failure(task_definition, "Task soft-timed out."))
 
         # Remove this ID from the pool
         self.remove_thread_from_pool(thread_definition.thread_id)
@@ -456,15 +520,21 @@ class ActionWorkerProcess(multiprocessing.Process):
                 action_obj.final_result_id = action_result_obj.id
                 action_obj.status = "done"
                 await session.commit()
+                LOGGER.debug(
+                    f"Reported success for action `{task_definition.action_id}`"
+                )
             else:
                 LOGGER.error(
-                    f"Action with id {task_definition.action_id} was not found in the database"
+                    f"Report success: Action with id {task_definition.action_id} was not found in the database"
                 )
 
-            LOGGER.debug(f"Reported success for action `{task_definition.action_id}`")
+        self.report_finished_common_handler()
 
     async def report_failure(
-        self, task_definition: TaskDefinition, exception: str, exception_stack: str
+        self,
+        task_definition: TaskDefinition,
+        exception: str,
+        exception_stack: str | None = None,
     ):
         async with self.backend.session_maker() as session:
             action_result_obj = self.backend.local_models.DaemonActionResult(
@@ -474,7 +544,40 @@ class ActionWorkerProcess(multiprocessing.Process):
             )
             session.add(action_result_obj)
             await session.commit()
-            LOGGER.debug(f"Reported error for action `{task_definition.action_id}`")
+
+            action_obj = await session.get(
+                self.backend.local_models.DaemonAction,
+                task_definition.action_id,
+            )
+            if action_obj:
+                action_obj.final_result_id = action_result_obj.id
+                action_obj.retry_current_attempt += 1
+
+                should_reschedule = retry_is_allowed(action_obj)
+                if should_reschedule:
+                    # Place back in the queue
+                    action_obj.status = "queued"
+                    action_obj.schedule_after = calculate_retry(action_obj)
+                else:
+                    action_obj.status = "done"
+                await session.commit()
+                LOGGER.debug(f"Reported error for action `{task_definition.action_id}`")
+            else:
+                LOGGER.error(
+                    f"Report failure: Action with id {task_definition.action_id} was not found in the database"
+                )
+
+        self.report_finished_common_handler()
+
+    def report_finished_common_handler(self):
+        """
+        Function that both success and failure handlers call to perform common cleanup logic.
+
+        """
+        if self.tasks_before_recycle:
+            self.handled_tasks += 1
+            if self.handled_tasks >= self.tasks_before_recycle:
+                self.flag_is_draining()
 
     @property
     def valid_pool_threads(self):
@@ -530,12 +633,7 @@ class ActionWorkerProcess(multiprocessing.Process):
                 "Cross-process draining event queue is full, cannot put is_draining event."
             )
 
-        try:
-            asyncio.run(self.is_draining_in_worker_event.put(True))
-        except Full:
-            LOGGER.warning(
-                "In-worker draining event queue is full, cannot put is_draining event."
-            )
+        LOGGER.debug("Flagged draining event completed")
 
     def remove_thread_from_pool(self, thread_id: UUID):
         with self.pool_threads_lock:
