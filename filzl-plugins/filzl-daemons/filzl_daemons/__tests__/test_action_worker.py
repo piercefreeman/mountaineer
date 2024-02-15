@@ -158,3 +158,37 @@ async def test_ping(postgres_backend: PostgresBackend):
 
     isolation_process.terminate()
     isolation_process.join()
+
+
+@pytest.mark.asyncio
+async def test_handle_exception(postgres_backend: PostgresBackend):
+    task_queue: Queue[TaskDefinition] = Queue()
+    isolation_process = ActionWorkerProcess(
+        task_queue,
+        postgres_backend,
+        pool_size=5,
+        tasks_before_recycle=1,
+    )
+
+    task = TaskDefinition(
+        action_id=1,
+        registry_id=REGISTRY.get_registry_id_for_action(example_crash),
+        input_body="",
+        timeouts=[],
+    )
+    task_queue.put(task)
+
+    isolation_process.start()
+    isolation_process.join()
+
+    async with postgres_backend.session_maker() as session:
+        task_query = select(postgres_backend.local_models.DaemonActionResult).where(
+            postgres_backend.local_models.DaemonActionResult.action_id == 1
+        )
+        task_result = await session.execute(task_query)
+        task_obj = task_result.scalars().first()
+        assert task_obj
+        assert task_obj.exception == "This is a crash"
+        assert task_obj.exception_stack
+        assert "example_crash" in task_obj.exception_stack
+        assert "__tests__/test_action_worker.py" in task_obj.exception_stack

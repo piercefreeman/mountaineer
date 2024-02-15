@@ -7,8 +7,11 @@ from datetime import datetime
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
 from time import sleep
-from typing import Callable
+from traceback import format_exc
+from typing import Awaitable, Callable, TypeVar
 from uuid import UUID, uuid4
+
+from pydantic import BaseModel
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
 from filzl_daemons.db import PostgresBackend
@@ -38,6 +41,17 @@ class ThreadDefinition:
     # Flagged when any timeout is triggered, allows internal handlers to try
     # and clean up gracefully
     timed_out_causes: set[TimeoutType] = field(default_factory=set)
+
+
+T = TypeVar("T")
+
+
+async def safe_task(coro: Awaitable[T]) -> T:
+    try:
+        return await coro
+    except Exception as e:
+        LOGGER.error("Unhandled exception in task", exc_info=True)
+        raise e
 
 
 class ActionWorkerProcess(multiprocessing.Process):
@@ -179,7 +193,7 @@ class ActionWorkerProcess(multiprocessing.Process):
         async def run_single_ping():
             nonlocal worker_id
             if worker_id is None:
-                LOGGER.debug("Worker ID not set during update...")
+                LOGGER.warning("Worker ID not set during update...")
                 return
 
             LOGGER.debug(f"Pinging update for worker {worker_id}")
@@ -227,8 +241,8 @@ class ActionWorkerProcess(multiprocessing.Process):
         loop.run_until_complete(
             asyncio.wait(
                 [
-                    loop.create_task(run_ping()),
-                    loop.create_task(shutdown_on_drain()),
+                    loop.create_task(safe_task(run_ping())),
+                    loop.create_task(safe_task(shutdown_on_drain())),
                 ],
                 return_when=asyncio.FIRST_COMPLETED,
             )
@@ -356,9 +370,11 @@ class ActionWorkerProcess(multiprocessing.Process):
     ):
         LOGGER.info(f"Thread {thread_definition.thread_id} is starting...")
         worker_event_loop = asyncio.new_event_loop()
+        task_runner: asyncio.Task
 
         async def soft_timeout():
             nonlocal worker_event_loop
+            nonlocal task_runner
 
             # We won't need to check this value until we hit at least one of time
             # timeout intervals, so we do an initial sleep until the earliest point
@@ -401,45 +417,64 @@ class ActionWorkerProcess(multiprocessing.Process):
                     else None
                 )
 
-            result = await task_fn(*task_args)
-
-            LOGGER.info(f"Process result: {result}")
-
-            # For now we write this over a new connection to the database. This will always assume
-            # we have some intermediary load handler (like pgbouncer). We can also likely optimize
-            # our behavior further by keeping a connection pool open for the duration of the worker
-            # process, but for now we'll just keep it simple.
-            async with self.backend.session_maker() as session:
-                # TODO: Support exception values as well
-                action_result_obj = self.backend.local_models.DaemonActionResult(
-                    action_id=task_definition.action_id,
-                    result_body=result.model_dump_json(),
-                )
-                session.add(action_result_obj)
-                await session.commit()
-
-                action_obj = await session.get(
-                    self.backend.local_models.DaemonAction,
-                    task_definition.action_id,
-                )
-                if action_obj:
-                    action_obj.final_result_id = action_result_obj.id
-                    action_obj.status = "done"
-                    await session.commit()
-                else:
-                    LOGGER.error(
-                        f"Action with id {task_definition.action_id} was not found in the database"
-                    )
+            try:
+                result = await task_fn(*task_args)
+                LOGGER.info(f"Process result: {result}")
+                await self.report_success(task_definition, result)
+            except Exception as e:
+                LOGGER.error(f"Task {task_definition.registry_id} failed: {e}")
+                await self.report_failure(task_definition, str(e), format_exc())
 
             LOGGER.debug(f"Thread {thread_definition.thread_id} has finished its task.")
             worker_event_loop.stop()
 
-        task_runner = worker_event_loop.create_task(run_task())
-        worker_event_loop.create_task(soft_timeout())
+        task_runner = worker_event_loop.create_task(safe_task(run_task()))
+        worker_event_loop.create_task(safe_task(soft_timeout()))
         worker_event_loop.run_forever()
 
         # Remove this ID from the pool
         self.remove_thread_from_pool(thread_definition.thread_id)
+
+    async def report_success(self, task_definition: TaskDefinition, result: BaseModel):
+        # For now we write this over a new connection to the database. This will always assume
+        # we have some intermediary load handler (like pgbouncer). We can also likely optimize
+        # our behavior further by keeping a connection pool open for the duration of the worker
+        # process, but for now we'll just keep it simple.
+        async with self.backend.session_maker() as session:
+            action_result_obj = self.backend.local_models.DaemonActionResult(
+                action_id=task_definition.action_id,
+                result_body=result.model_dump_json(),
+            )
+            session.add(action_result_obj)
+            await session.commit()
+
+            action_obj = await session.get(
+                self.backend.local_models.DaemonAction,
+                task_definition.action_id,
+            )
+            if action_obj:
+                action_obj.final_result_id = action_result_obj.id
+                action_obj.status = "done"
+                await session.commit()
+            else:
+                LOGGER.error(
+                    f"Action with id {task_definition.action_id} was not found in the database"
+                )
+
+            LOGGER.debug(f"Reported success for action `{task_definition.action_id}`")
+
+    async def report_failure(
+        self, task_definition: TaskDefinition, exception: str, exception_stack: str
+    ):
+        async with self.backend.session_maker() as session:
+            action_result_obj = self.backend.local_models.DaemonActionResult(
+                action_id=task_definition.action_id,
+                exception=exception,
+                exception_stack=exception_stack,
+            )
+            session.add(action_result_obj)
+            await session.commit()
+            LOGGER.debug(f"Reported error for action `{task_definition.action_id}`")
 
     @property
     def valid_pool_threads(self):
