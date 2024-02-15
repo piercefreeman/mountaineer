@@ -1,4 +1,5 @@
 from typing import TYPE_CHECKING, Any, Type
+from fastapi import Response
 
 from pydantic import BaseModel, field_validator, model_validator
 from pydantic._internal._model_construction import ModelMetaclass
@@ -79,18 +80,6 @@ class LinkAttribute(BaseModel):
     optional_attributes: dict[str, str] = {}
 
 
-class RedirectStatus(BaseModel):
-    status_code: int
-    url: str
-
-    @field_validator("status_code")
-    def validate_status_code(cls, value):
-        # Workaround to Literals not being parsed properly as pydantic typehints in 3.12
-        if value not in {301, 302, 303, 307, 308}:
-            raise ValueError("Status code must be valid 3xx")
-        return value
-
-
 class Metadata(BaseModel):
     """
     Metadata lets the client specify the different metadata definitions that should
@@ -103,10 +92,15 @@ class Metadata(BaseModel):
 
     metas: list[MetaAttribute] = []
     links: list[LinkAttribute] = []
-    redirect: RedirectStatus | None = None
+
+    # Allows the client to specify a different response type
+    # that should occur on initial render
+    # Useful for redirects, adding cookies, etc.
+    explicit_response: Response | None = None
 
     model_config = {
         "extra": "forbid",
+        "arbitrary_types_allowed": True,
     }
 
 

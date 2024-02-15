@@ -1,14 +1,18 @@
 from typing import Type
 
 from fastapi import Depends, Request, status
-from fastapi.responses import JSONResponse
-from filzl.actions import passthrough
-from filzl.controller import ControllerBase
-from filzl.database.dependencies import DatabaseDependencies
-from filzl.dependencies import CoreDependencies, get_function_dependencies
-from filzl.exceptions import APIException
-from filzl.paths import ManagedViewPath
-from filzl.render import Metadata, RedirectStatus, RenderBase
+from fastapi.responses import JSONResponse, RedirectResponse
+from filzl import (
+    APIException,
+    ControllerBase,
+    CoreDependencies,
+    ManagedViewPath,
+    Metadata,
+    RenderBase,
+    passthrough,
+)
+from filzl.database import DatabaseDependencies
+from filzl.dependencies import get_function_dependencies
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -62,6 +66,7 @@ class LoginController(ControllerBase):
         request: Request,
     ) -> RenderBase:
         # Workaround to provide user-defined models into the dependency layer
+        # since instance variables can't be specified in the Depends() kwarg
         get_dependencies_fn = AuthDependencies.peek_user(self.user_model)
         async with get_function_dependencies(
             callable=get_dependencies_fn, url=self.url, request=request
@@ -72,7 +77,7 @@ class LoginController(ControllerBase):
             # return RedirectResponse(url=self.post_login_redirect, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
             return RenderBase(
                 metadata=Metadata(
-                    redirect=RedirectStatus(
+                    explicit_response=RedirectResponse(
                         status_code=status.HTTP_307_TEMPORARY_REDIRECT,
                         url=self.post_login_redirect,
                     )

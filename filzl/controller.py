@@ -100,11 +100,8 @@ class ControllerBase(ABC):
 
         # If we got back metadata that includes a redirect, we should short-circuit the rest of the
         # render process and return a redirect response
-        if server_data.metadata and server_data.metadata.redirect:
-            return RedirectResponse(
-                status_code=server_data.metadata.redirect.status_code,
-                url=server_data.metadata.redirect.url,
-            )
+        if server_data.metadata and server_data.metadata.explicit_response:
+            return server_data.metadata.explicit_response
 
         metadatas: list[Metadata] = []
         if server_data.metadata:
