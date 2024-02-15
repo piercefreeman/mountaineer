@@ -5,7 +5,7 @@ from re import compile as re_compile
 from time import time
 from typing import Any, Callable, Coroutine, Iterable
 
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from inflection import underscore
 
 from filzl.actions import (

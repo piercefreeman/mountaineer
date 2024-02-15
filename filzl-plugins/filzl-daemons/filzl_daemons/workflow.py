@@ -3,7 +3,7 @@ import multiprocessing
 from abc import ABC, ABCMeta, abstractmethod
 from datetime import datetime
 from traceback import format_exc
-from typing import Any, Awaitable, Generic, Type, TypeVar, get_args, get_origin
+from typing import Awaitable, Generic, Type, TypeVar, get_args, get_origin
 from uuid import UUID
 
 from filzl.logging import LOGGER
@@ -14,7 +14,6 @@ from sqlalchemy.future import select
 from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
-from filzl_daemons.parallel import AsyncProcessQueue
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.tasks import TaskManager
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
@@ -288,13 +287,12 @@ class DaemonRunner:
         worker_queue: multiprocessing.Queue[TaskDefinition] = multiprocessing.Queue(
             maxsize=self.max_workers * self.threads_per_worker
         )
-        worker_result_queue: AsyncProcessQueue[tuple[int, Any]] = AsyncProcessQueue()
         task_manager = TaskManager(backend=self.backend)
 
         def start_new_worker():
             # Start a new worker to replace the one that's draining
             process = ActionWorkerProcess(
-                worker_queue, worker_result_queue, pool_size=self.threads_per_worker
+                worker_queue, self.backend, pool_size=self.threads_per_worker
             )
             process.start()
 
@@ -340,10 +338,6 @@ class DaemonRunner:
                 self.queue_instance_work(task_manager),
                 # We will consume database actions here and delegate to our other processes
                 self.queue_action_work(worker_queue),
-                # Consume action results and persist them to the database
-                self.consume_actions_results_local(
-                    worker_result_queue,
-                ),
                 health_check(),
                 # Required to wake up our sleeping instance workers
                 # when we are done processing an action
@@ -358,36 +352,6 @@ class DaemonRunner:
             for process in worker_processes.values():
                 process.join()
             LOGGER.debug("Worker processes cleaned up")
-
-    async def consume_actions_results_local(
-        self,
-        result_queue: AsyncProcessQueue,
-    ):
-        while True:
-            action_id, result = await result_queue.aget()
-
-            # Save the result to the database
-            async with self.backend.session_maker() as session:
-                # We need to create a new action result
-                action_result_obj = self.backend.local_models.DaemonActionResult(
-                    action_id=action_id,
-                    result_body=result,
-                )
-                session.add(action_result_obj)
-                await session.commit()
-
-                action_obj = await session.get(
-                    self.backend.local_models.DaemonAction,
-                    action_id,
-                )
-                if not action_obj:
-                    LOGGER.error(
-                        f"Action with id {action_id} was not found in the database"
-                    )
-                    continue
-                action_obj.final_result_id = action_result_obj.id
-                action_obj.status = "done"
-                await session.commit()
 
     async def queue_instance_work(self, task_manager):
         async for notification in self.backend.iter_ready_objects(

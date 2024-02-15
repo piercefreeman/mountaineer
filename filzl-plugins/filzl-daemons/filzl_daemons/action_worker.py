@@ -11,8 +11,8 @@ from typing import Callable
 from uuid import UUID, uuid4
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
+from filzl_daemons.db import PostgresBackend
 from filzl_daemons.logging import LOGGER
-from filzl_daemons.parallel import AsyncProcessQueue
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 
@@ -73,7 +73,7 @@ class ActionWorkerProcess(multiprocessing.Process):
     def __init__(
         self,
         task_queue: multiprocessing.Queue[TaskDefinition],
-        result_queue: AsyncProcessQueue[tuple[int, str]],
+        backend: PostgresBackend,
         *,
         pool_size: int,
         tasks_before_recycle: int | None = None,
@@ -89,7 +89,7 @@ class ActionWorkerProcess(multiprocessing.Process):
 
         # Initialized by the parent process
         self.task_queue = task_queue
-        self.result_queue = result_queue
+        self.backend = backend
         self.pool_size = pool_size
         self.tasks_before_recycle = tasks_before_recycle
         self.is_draining_callbacks: list[Callable] = []
@@ -103,7 +103,8 @@ class ActionWorkerProcess(multiprocessing.Process):
         # into the registry.
         self.action_modules = REGISTRY.get_modules_in_registry()
 
-        # Allows listeners to get alerted when the worker process is draining
+        # Allows main process listeners to get alerted when the worker
+        # process is draining
         self.is_draining_event: multiprocessing.Queue[bool] = multiprocessing.Queue(
             maxsize=1
         )
@@ -121,6 +122,7 @@ class ActionWorkerProcess(multiprocessing.Process):
         # Usable within the worker process
         self.pool_semaphore = Semaphore(self.pool_size)
         self.is_draining = False
+        self.is_draining_in_worker_event: asyncio.Queue[bool] = asyncio.Queue()
         self.pool_threads_lock = Lock()
         self.pool_threads: dict[UUID, ThreadDefinition] = {}
 
@@ -130,8 +132,8 @@ class ActionWorkerProcess(multiprocessing.Process):
     def run(self):
         self.worker_init()
 
-        # ping_thread = Thread(target=self.ping, daemon=True)
-        # ping_thread.start()
+        ping_thread = Thread(target=self.ping, daemon=True)
+        ping_thread.start()
 
         watcher_thread = Thread(target=self.watch, daemon=True)
         watcher_thread.start()
@@ -169,6 +171,68 @@ class ActionWorkerProcess(multiprocessing.Process):
         # The watch thread will process until this process is safe to kill
         LOGGER.debug("Joining on watcher thread.")
         watcher_thread.join()
+        ping_thread.join()
+
+    def ping(self, ping_interval: int = 30):
+        worker_id: int | None = None
+
+        async def run_single_ping():
+            nonlocal worker_id
+            if worker_id is None:
+                LOGGER.debug("Worker ID not set during update...")
+                return
+
+            LOGGER.debug(f"Pinging update for worker {worker_id}")
+            async with self.backend.session_maker() as session:
+                worker = await session.get(
+                    self.backend.local_models.WorkerStatus, worker_id
+                )
+                if worker is not None:
+                    worker.last_ping = datetime.utcnow()
+                    worker.is_draining = self.is_draining
+                    await session.commit()
+                else:
+                    LOGGER.error(
+                        f"WorkerStatus object {worker_id} was not found in the database."
+                    )
+
+        async def shutdown_on_drain():
+            await self.is_draining_in_worker_event.get()
+            # Final shutdown
+            await run_single_ping()
+
+        async def run_ping():
+            nonlocal worker_id
+
+            # Initialize the object that tracks this worker
+            async with self.backend.session_maker() as session:
+                worker = self.backend.local_models.WorkerStatus(
+                    internal_process_id=self.process_id,
+                    is_action_worker=True,
+                    is_draining=self.is_draining,
+                    last_ping=datetime.utcnow(),
+                    launch_time=datetime.utcnow(),
+                )
+                session.add(worker)
+                await session.commit()
+
+            worker_id = worker.id
+
+            # Then update it periodically
+            while True:
+                await run_single_ping()
+                await asyncio.sleep(ping_interval)
+
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(
+            asyncio.wait(
+                [
+                    loop.create_task(run_ping()),
+                    loop.create_task(shutdown_on_drain()),
+                ],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        )
 
     def watch(self):
         initialized_watch = False
@@ -339,20 +403,33 @@ class ActionWorkerProcess(multiprocessing.Process):
 
             result = await task_fn(*task_args)
 
-            # TODO: Upload the result to the results queue
-            # print(result)
             LOGGER.info(f"Process result: {result}")
 
-            # TODO: Consider writing this directly to the database, but this requires all our worker
-            # processes and threads to have access to a db pool, which might overload even pretty
-            # large pool sizes
-            self.result_queue.put(
-                (
-                    task_definition.action_id,
-                    # TODO: Support None return values as well
-                    result.model_dump_json(),
+            # For now we write this over a new connection to the database. This will always assume
+            # we have some intermediary load handler (like pgbouncer). We can also likely optimize
+            # our behavior further by keeping a connection pool open for the duration of the worker
+            # process, but for now we'll just keep it simple.
+            async with self.backend.session_maker() as session:
+                # TODO: Support exception values as well
+                action_result_obj = self.backend.local_models.DaemonActionResult(
+                    action_id=task_definition.action_id,
+                    result_body=result.model_dump_json(),
                 )
-            )
+                session.add(action_result_obj)
+                await session.commit()
+
+                action_obj = await session.get(
+                    self.backend.local_models.DaemonAction,
+                    task_definition.action_id,
+                )
+                if action_obj:
+                    action_obj.final_result_id = action_result_obj.id
+                    action_obj.status = "done"
+                    await session.commit()
+                else:
+                    LOGGER.error(
+                        f"Action with id {task_definition.action_id} was not found in the database"
+                    )
 
             LOGGER.debug(f"Thread {thread_definition.thread_id} has finished its task.")
             worker_event_loop.stop()
@@ -409,14 +486,21 @@ class ActionWorkerProcess(multiprocessing.Process):
             return
 
         self.is_draining = True
+
         try:
             self.is_draining_event.put_nowait(True)
         except Full:
             # Shouldn't happen because we should only send one is_draining event per process
             LOGGER.warning(
-                "Draining event queue is full, cannot put is_draining event."
+                "Cross-process draining event queue is full, cannot put is_draining event."
             )
-            return
+
+        try:
+            asyncio.run(self.is_draining_in_worker_event.put(True))
+        except Full:
+            LOGGER.warning(
+                "In-worker draining event queue is full, cannot put is_draining event."
+            )
 
     def remove_thread_from_pool(self, thread_id: UUID):
         with self.pool_threads_lock:

@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Any, Type
-from fastapi import Response
 
-from pydantic import BaseModel, field_validator, model_validator
+from fastapi import Response
+from pydantic import BaseModel, model_validator
 from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import Field, FieldInfo
 from typing_extensions import dataclass_transform

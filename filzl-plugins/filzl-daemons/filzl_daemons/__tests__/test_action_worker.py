@@ -1,14 +1,18 @@
 import asyncio
 import sys
+from datetime import datetime
 from multiprocessing import Queue
 from time import time
+
+import pytest
+from sqlmodel import select
 
 from filzl_daemons.action_worker import (
     ActionWorkerProcess,
     TaskDefinition,
 )
 from filzl_daemons.actions import REGISTRY, action
-from filzl_daemons.parallel import AsyncProcessQueue
+from filzl_daemons.db import PostgresBackend
 from filzl_daemons.timeouts import (
     TimeoutDefinition,
     TimeoutMeasureType,
@@ -51,13 +55,11 @@ async def example_crash():
     raise ValueError("This is a crash")
 
 
-def test_soft_timeout(capfd):
+def test_soft_timeout(capfd, postgres_backend: PostgresBackend):
     task_queue: Queue[TaskDefinition] = Queue()
-    result_queue: AsyncProcessQueue[tuple[int, str]] = AsyncProcessQueue()
-
     isolation_process = ActionWorkerProcess(
         task_queue,
-        result_queue,
+        postgres_backend,
         pool_size=5,
         # By default we won't recycle the worker after a soft crash, so we
         # cap the amount of tasks that can be executed before recycling.
@@ -91,16 +93,14 @@ def test_soft_timeout(capfd):
     assert "END" not in captured.out
 
 
-def test_hard_timeout_and_shutdown():
+def test_hard_timeout_and_shutdown(postgres_backend: PostgresBackend):
     """
     Ensure that our hard timeout works on a CPU bound action that won't quit otherwise,
     and that we close the worker process after the hard timeout.
 
     """
     task_queue: Queue[TaskDefinition] = Queue()
-    result_queue: AsyncProcessQueue[tuple[int, str]] = AsyncProcessQueue()
-
-    isolation_process = ActionWorkerProcess(task_queue, result_queue, pool_size=5)
+    isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
 
     task = TaskDefinition(
         action_id=1,
@@ -131,3 +131,30 @@ def test_hard_timeout_and_shutdown():
     assert elapsed_time >= 3
     # Can take a bit longer to fully quit and join
     assert elapsed_time < 7
+
+
+@pytest.mark.asyncio
+async def test_ping(postgres_backend: PostgresBackend):
+    start_time = datetime.now()
+
+    task_queue: Queue[TaskDefinition] = Queue()
+    isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
+    isolation_process.start()
+
+    await asyncio.sleep(1)
+
+    # Look up the ping
+    async with postgres_backend.session_maker() as session:
+        worker_query = select(postgres_backend.local_models.WorkerStatus).where(
+            postgres_backend.local_models.WorkerStatus.internal_process_id
+            == isolation_process.process_id
+        )
+        worker_result = await session.execute(worker_query)
+        worker_obj = worker_result.scalars().first()
+        assert worker_obj
+        assert worker_obj.is_action_worker
+        assert worker_obj.last_ping > start_time
+        assert worker_obj.launch_time > start_time
+
+    isolation_process.terminate()
+    isolation_process.join()
