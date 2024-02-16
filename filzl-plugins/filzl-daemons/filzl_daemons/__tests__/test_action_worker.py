@@ -8,13 +8,18 @@ import pytest
 import pytest_asyncio
 from sqlmodel import select
 
-from filzl_daemons.__tests__.conf_models import DaemonAction, DaemonActionResult
+from filzl_daemons.__tests__.conf_models import (
+    DaemonAction,
+    DaemonActionResult,
+    WorkerStatus,
+)
 from filzl_daemons.action_worker import (
     ActionWorkerProcess,
     TaskDefinition,
 )
 from filzl_daemons.actions import REGISTRY, action
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.models import QueableStatus
 from filzl_daemons.timeouts import (
     TimeoutDefinition,
     TimeoutMeasureType,
@@ -119,7 +124,7 @@ async def test_soft_timeout(
 
     # Ensure that the db action object was updated with the correct state
     updated_action = await postgres_backend.get_object_by_id(DaemonAction, 1)
-    assert updated_action.status == "queued"
+    assert updated_action.status == QueableStatus.SCHEDULED
     assert updated_action.schedule_after
     assert updated_action.final_result_id
     assert updated_action.schedule_after > task_start
@@ -176,7 +181,7 @@ async def test_hard_timeout_and_shutdown(
 
     # Ensure that the db action object was updated with the correct state
     updated_action = await postgres_backend.get_object_by_id(DaemonAction, 1)
-    assert updated_action.status == "queued"
+    assert updated_action.status == QueableStatus.SCHEDULED
     assert updated_action.schedule_after
     assert updated_action.final_result_id
     assert updated_action.schedule_after > task_start
@@ -200,9 +205,8 @@ async def test_ping(postgres_backend: PostgresBackend):
 
     # Look up the ping
     async with postgres_backend.session_maker() as session:
-        worker_query = select(postgres_backend.local_models.WorkerStatus).where(
-            postgres_backend.local_models.WorkerStatus.internal_process_id
-            == isolation_process.process_id
+        worker_query = select(WorkerStatus).where(
+            WorkerStatus.internal_process_id == isolation_process.process_id
         )
         worker_result = await session.execute(worker_query)
         worker_obj = worker_result.scalars().first()

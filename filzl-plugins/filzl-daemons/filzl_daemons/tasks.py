@@ -3,7 +3,9 @@ import asyncio
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.logging import LOGGER
+from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
+from filzl_daemons.retry import RetryPolicy
 
 
 class TaskManager:
@@ -21,7 +23,11 @@ class TaskManager:
         # Mapping of task ID to signal
         self.wait_signals: dict[int, asyncio.Future] = {}
 
-    async def queue_work(self, task: ActionExecutionStub):
+    async def queue_work(
+        self,
+        task: ActionExecutionStub,
+        retry: RetryPolicy,
+    ):
         async with self.backend.session_maker() as session:
             action_task = self.backend.local_models.DaemonAction(
                 workflow_name="todo",
@@ -56,7 +62,7 @@ class TaskManager:
         async for notification in self.backend.iter_ready_objects(
             model=self.backend.local_models.DaemonAction,
             queues=[],
-            status="done",
+            status=QueableStatus.DONE,
         ):
             LOGGER.debug(f"Delegate done action: {notification.id}")
 

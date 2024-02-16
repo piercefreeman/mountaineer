@@ -4,7 +4,6 @@ import asyncio
 import multiprocessing
 from dataclasses import dataclass, field
 from datetime import datetime
-from functools import wraps
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
 from time import sleep
@@ -16,7 +15,9 @@ from pydantic import BaseModel
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.io import safe_task
 from filzl_daemons.logging import LOGGER
+from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.retry import calculate_retry, retry_is_allowed
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
@@ -44,18 +45,6 @@ class ThreadDefinition:
     # Flagged when any timeout is triggered, allows internal handlers to try
     # and clean up gracefully
     timed_out_causes: set[TimeoutType] = field(default_factory=set)
-
-
-def safe_task(fn):
-    @wraps(fn)
-    async def inner(*args, **kwargs):
-        try:
-            return await fn(*args, **kwargs)
-        except Exception as e:
-            LOGGER.error("Unhandled exception in task", exc_info=True)
-            raise e
-
-    return inner
 
 
 class ActionWorkerProcess(multiprocessing.Process):
@@ -518,7 +507,7 @@ class ActionWorkerProcess(multiprocessing.Process):
             )
             if action_obj:
                 action_obj.final_result_id = action_result_obj.id
-                action_obj.status = "done"
+                action_obj.status = QueableStatus.DONE
                 await session.commit()
                 LOGGER.debug(
                     f"Reported success for action `{task_definition.action_id}`"
@@ -556,10 +545,10 @@ class ActionWorkerProcess(multiprocessing.Process):
                 should_reschedule = retry_is_allowed(action_obj)
                 if should_reschedule:
                     # Place back in the queue
-                    action_obj.status = "queued"
+                    action_obj.status = QueableStatus.SCHEDULED
                     action_obj.schedule_after = calculate_retry(action_obj)
                 else:
-                    action_obj.status = "done"
+                    action_obj.status = QueableStatus.DONE
                 await session.commit()
                 LOGGER.debug(f"Reported error for action `{task_definition.action_id}`")
             else:

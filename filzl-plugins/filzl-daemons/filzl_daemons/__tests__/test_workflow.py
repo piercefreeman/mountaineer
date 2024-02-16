@@ -11,6 +11,7 @@ from filzl_daemons.__tests__.conf_models import (
 )
 from filzl_daemons.actions import action
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.retry import RetryPolicy
 from filzl_daemons.workflow import (
     DaemonClient,
     DaemonRunner,
@@ -44,19 +45,23 @@ class ExampleWorkflow(Workflow[ExampleWorkflowInput]):
         values = await asyncio.gather(
             instance.run_action(
                 example_task_1(VarInput(value=1)),  # 2
+                retry=RetryPolicy(),
             ),
             instance.run_action(
                 example_task_1(VarInput(value=2)),  # 3
+                retry=RetryPolicy(),
             ),
             instance.run_action(
                 example_task_1(VarInput(value=3)),  # 4
+                retry=RetryPolicy(),
             ),
         )
 
         value_sum = sum([item.value for item in values])  # 9
 
         return await instance.run_action(
-            example_task_2(VarInput(value=value_sum))  # 18
+            example_task_2(VarInput(value=value_sum)),  # 18
+            retry=RetryPolicy(),
         )
 
 

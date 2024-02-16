@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlmodel import SQLModel
 
-from filzl_daemons.models import LocalModelDefinition, QueableItemMixin
+from filzl_daemons.models import LocalModelDefinition, QueableItemMixin, QueableStatus
 
 
 class WorkflowInstanceNotification(BaseModel):
@@ -106,7 +106,7 @@ class PostgresBackend:
         model: Type[QueableItemMixin],
         queues: list[str],
         max_items: int | None = None,
-        status: str = "queued",
+        status: QueableStatus = QueableStatus.QUEUED,
     ):
         """
         Blocking call that will iterate over all instances as they
@@ -179,7 +179,7 @@ class PostgresBackend:
         self,
         queues: list[str],
         table_name: str,
-        status: str,
+        status: QueableStatus,
     ):
         """
         Get the databases instances that are already ready.
@@ -190,7 +190,7 @@ class PostgresBackend:
         DECLARE cur CURSOR FOR
         SELECT id, workflow_name, status
         FROM {table_name}
-        WHERE {optional_queue_filter} AND status = 'queued'
+        WHERE {optional_queue_filter} AND status = '{status.name}'
         """
         LOGGER.debug(f"Running query: {query}")
 

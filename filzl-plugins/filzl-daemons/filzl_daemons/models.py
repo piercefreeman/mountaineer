@@ -1,5 +1,6 @@
 import sys
 from datetime import datetime
+from enum import StrEnum
 from importlib import import_module
 from inspect import isclass
 from typing import Type, TypeVar
@@ -8,13 +9,22 @@ from uuid import UUID
 from sqlmodel import Field, SQLModel
 
 
+class QueableStatus(StrEnum):
+    # Ensure keys and values are mirrored in value / case, since some of our sqlalchemy integration
+    # implicitly uses the key and others use the value.
+    QUEUED = "QUEUED"
+    IN_PROGRESS = "IN_PROGRESS"
+    DONE = "DONE"
+    SCHEDULED = "SCHEDULED"
+
+
 class QueableItemMixin(SQLModel):
     """
     Mixin for items that can be queued.
     """
 
     workflow_name: str
-    status: str = "queued"
+    status: QueableStatus = QueableStatus.QUEUED
 
 
 class DaemonWorkflowInstance(QueableItemMixin, SQLModel):

@@ -8,13 +8,17 @@ from uuid import UUID
 
 from filzl.logging import LOGGER
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 
 from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.io import safe_task
+from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
+from filzl_daemons.retry import RetryPolicy
 from filzl_daemons.tasks import TaskManager
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 
@@ -34,6 +38,7 @@ class WorkflowInstance(Generic[T]):
     async def run_action(
         self,
         action: Awaitable[K],
+        retry: RetryPolicy,
         timeouts: list[TimeoutDefinition] | None = None,
         max_retries: int = 0,
     ) -> K:
@@ -51,7 +56,7 @@ class WorkflowInstance(Generic[T]):
 
         if isinstance(result, ActionExecutionStub):
             # Queue the action
-            wait_future = await self.task_manager.queue_work(result)
+            wait_future = await self.task_manager.queue_work(result, retry)
             result = await wait_future
 
         return result
@@ -341,13 +346,16 @@ class DaemonRunner:
         try:
             await asyncio.gather(
                 # Bulk execute the instance behavior in this main process, for now
-                self.queue_instance_work(task_manager),
+                safe_task(self.queue_instance_work)(task_manager),
                 # We will consume database actions here and delegate to our other processes
-                self.queue_action_work(worker_queue),
-                health_check(),
+                safe_task(self.queue_action_work)(worker_queue),
+                # Update the DB-level actions that are now ready to be re-queued
+                safe_task(self.update_scheduled_actions)(),
+                # Determine the health of our worker processes
+                safe_task(health_check)(),
                 # Required to wake up our sleeping instance workers
                 # when we are done processing an action
-                task_manager.delegate_done_actions(),
+                safe_task(task_manager.delegate_done_actions)(),
             )
         except asyncio.CancelledError:
             LOGGER.debug(
@@ -358,6 +366,23 @@ class DaemonRunner:
             for process in worker_processes.values():
                 process.join()
             LOGGER.debug("Worker processes cleaned up")
+
+    async def update_scheduled_actions(self, refresh_interval=30):
+        while True:
+            async with self.backend.session_maker() as session:
+                result = await session.execute(
+                    text(
+                        f"UPDATE {self.backend.local_models.DaemonAction.__tablename__} SET status = :queued_status WHERE status = :scheduled_status AND schedule_after < now()"
+                    ),
+                    {
+                        "queued_status": QueableStatus.QUEUED,
+                        "scheduled_status": QueableStatus.SCHEDULED,
+                    },
+                )
+                await session.commit()
+                affected_rows = result.rowcount
+                LOGGER.debug(f"Updated {affected_rows} scheduled rows")
+            await asyncio.sleep(refresh_interval)
 
     async def queue_instance_work(self, task_manager):
         async for notification in self.backend.iter_ready_objects(
@@ -456,7 +481,7 @@ class DaemonRunner:
                     job = result.scalar_one_or_none()
 
                     if job:
-                        job.status = "processed"
+                        job.status = QueableStatus.IN_PROGRESS
                         await session.commit()
                         has_exclusive_lock = True
 
