@@ -38,7 +38,7 @@ const SignupPage = () => {
           here.
         </LinkComponent>
       </div>
-      <div className="mt-8 space-y-4 rounded bg-white p-8 shadow">
+      <form className="mt-8 space-y-4 rounded bg-white p-8 shadow">
         {signupError && (
           <ErrorComponent>
             <span>{signupError}</span>
@@ -65,6 +65,7 @@ const SignupPage = () => {
           value={confirmPassword}
         />
         <ButtonComponent
+          type="submit"
           disabled={isLoadingSubmit}
           onClick={async () => {
             // Local validation
@@ -76,7 +77,7 @@ const SignupPage = () => {
             setIsLoadingSubmit(true);
 
             try {
-              await serverState.signup({
+              const signupResponse = await serverState.signup({
                 requestBody: {
                   username: email,
                   password: password,
@@ -84,6 +85,7 @@ const SignupPage = () => {
                 },
               });
               setSignupError(undefined);
+              window.location.href = signupResponse.passthrough.redirect_url;
             } catch (e) {
               if (e instanceof SignupInvalidException) {
                 setSignupError(e.body?.invalid_reason);
@@ -99,7 +101,7 @@ const SignupPage = () => {
         >
           Register
         </ButtonComponent>
-      </div>
+      </form>
       {serverState.recapcha_enabled && (
         <div className="mt-4 px-4 text-xs text-gray-400">
           User registration is protected by reCAPTCHA. Google's{" "}

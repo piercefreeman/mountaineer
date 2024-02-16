@@ -69,7 +69,7 @@ class SignupController(ControllerBase):
             metadata=Metadata(title="Signup"),
         )
 
-    @passthrough(exception_models=[SignupInvalid])
+    @passthrough(response_model=SignupSuccessResponse, exception_models=[SignupInvalid])
     async def signup(
         self,
         signup_payload: SignupRequest,
@@ -102,7 +102,7 @@ class SignupController(ControllerBase):
         payload = SignupSuccessResponse(redirect_url=self.post_signup_redirect)
 
         response = JSONResponse(
-            content=payload.model_dump_json(), status_code=status.HTTP_200_OK
+            content=payload.model_dump(), status_code=status.HTTP_200_OK
         )
         response = authorize_response(
             response,

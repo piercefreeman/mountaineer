@@ -31,7 +31,7 @@ const LoginPage = () => {
           here.
         </LinkComponent>
       </div>
-      <div className="mt-8 space-y-4 rounded bg-white p-8 shadow">
+      <form className="mt-8 space-y-4 rounded bg-white p-8 shadow">
         {loginError && (
           <ErrorComponent>
             <span>{loginError}</span>
@@ -52,6 +52,7 @@ const LoginPage = () => {
           value={password}
         />
         <ButtonComponent
+          type="submit"
           disabled={isLoadingSubmit}
           onClick={async () => {
             setIsLoadingSubmit(true);
@@ -79,7 +80,7 @@ const LoginPage = () => {
         >
           Login
         </ButtonComponent>
-      </div>
+      </form>
     </div>
   );
 };

@@ -51,12 +51,26 @@ class AuthDependencies:
         return internal
 
     @staticmethod
+    def require_admin(
+        user_model: Type[T],
+    ):
+        def internal(
+            user: T = Depends(AuthDependencies.require_valid_user(user_model)),
+        ) -> T:
+            if not user.is_admin:
+                raise UnauthorizedError()
+
+            return user
+
+        return internal
+
+    @staticmethod
     def require_valid_user(
         user_model: Type[T],
     ):
         def internal(
             peeked_user: T | None = Depends(AuthDependencies.peek_user(user_model)),
-        ) -> User:
+        ) -> T:
             if peeked_user is None:
                 raise UnauthorizedError()
 

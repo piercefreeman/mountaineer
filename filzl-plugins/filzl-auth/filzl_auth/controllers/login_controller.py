@@ -71,7 +71,7 @@ class LoginController(ControllerBase):
         async with get_function_dependencies(
             callable=get_dependencies_fn, url=self.url, request=request
         ) as values:
-            user = get_dependencies_fn(**values)
+            user = await get_dependencies_fn(**values)
 
         if user is not None:
             # return RedirectResponse(url=self.post_login_redirect, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
@@ -113,7 +113,7 @@ class LoginController(ControllerBase):
         payload = LoginSuccessResponse(redirect_url=self.post_login_redirect)
 
         response = JSONResponse(
-            content=payload.model_dump_json(), status_code=status.HTTP_200_OK
+            content=payload.model_dump(), status_code=status.HTTP_200_OK
         )
         response = authorize_response(
             response,

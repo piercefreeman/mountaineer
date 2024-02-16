@@ -19,6 +19,7 @@ class User(SQLModel):
     email: str
     hashed_password: str
     is_verified: bool = False
+    is_admin: bool = False
 
     def verify_password(self, plain_password: str) -> bool:
         return verify_password(plain_password, self.hashed_password)
