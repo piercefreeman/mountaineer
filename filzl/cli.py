@@ -291,7 +291,9 @@ def build_common_watchdog(
     """
     return PackageWatchdog(
         client_package,
-        dependent_packages=["filzl"] if subscribe_to_fizl else [],
+        dependent_packages=["filzl", "filzl_auth", "filzl_daemons"]
+        if subscribe_to_fizl
+        else [],
         callbacks=[
             CallbackDefinition(
                 CallbackType.CREATED | CallbackType.MODIFIED,

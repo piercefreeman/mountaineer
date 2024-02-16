@@ -3,7 +3,7 @@ from inspect import isclass, signature
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +19,7 @@ from filzl.actions import (
 )
 from filzl.annotation_helpers import FilzlUnsetValue
 from filzl.controller import ControllerBase
-from filzl.exceptions import APIException
+from filzl.exceptions import APIException, APIExceptionInternalModelBase
 from filzl.js_compiler.base import ClientBuilderBase
 from filzl.js_compiler.bundler import JavascriptBundler
 from filzl.logging import LOGGER
@@ -127,12 +127,14 @@ class AppController:
                 return await controller._generate_html(
                     *args, global_metadata=self.global_metadata, **kwargs
                 )
-            except Exception:
-                # Forward along the exception, just modify it to include
-                # the controller name for additional context
-                LOGGER.error(
-                    f"Exception encountered in {controller.__class__.__name__} rendering"
-                )
+            except Exception as e:
+                # If a user explicitly is raising an APIException, we don't want to log it
+                if not isinstance(e, (APIExceptionInternalModelBase, HTTPException)):
+                    # Forward along the exception, just modify it to include
+                    # the controller name for additional context
+                    LOGGER.error(
+                        f"Exception encountered in {controller.__class__.__name__} rendering"
+                    )
                 raise
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
