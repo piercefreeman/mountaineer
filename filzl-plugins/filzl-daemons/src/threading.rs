@@ -57,7 +57,7 @@ pub mod platform {
 
 #[cfg(target_os = "linux")]
 pub mod platform {
-    pub unsafe fn get_thread_cpu_usage(thread_id: libc::pthread_t) {
+    pub unsafe fn get_thread_cpu_usage(thread_id: libc::pthread_t) -> Result<f64, String> {
         let mut clock_id: libc::clockid_t = 0;
         let mut ts = libc::timespec {
             tv_sec: 0,
@@ -71,7 +71,7 @@ pub mod platform {
             "CPU Time: {} seconds, {} nanoseconds",
             ts.tv_sec, ts.tv_nsec
         );
-        Ok(ts.tv_sec + (ts.tv_nsec / 1_000_000_000f64))
+        Ok(ts.tv_sec as f64 + (ts.tv_nsec as f64 / 1_000_000_000f64))
     }
 }
 #[cfg(test)]
@@ -79,10 +79,8 @@ mod tests {
     extern crate libc;
     use super::*;
     use std::sync::mpsc;
-
-    extern "C" {
-        fn pthread_self() -> libc::pthread_t;
-    }
+    use std::thread;
+    use std::time::Duration;
 
     fn full_cpu_utilization() {
         // Heavy computation task

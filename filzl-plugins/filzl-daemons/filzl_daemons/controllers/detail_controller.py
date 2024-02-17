@@ -1,16 +1,17 @@
 from collections import defaultdict
+from datetime import datetime
+
 from fastapi import Depends, Request
-from sqlalchemy import text
-from filzl import ManagedViewPath, LinkAttribute, Metadata, RenderBase
+from filzl import LinkAttribute, ManagedViewPath, Metadata, RenderBase
 from filzl.database import DatabaseDependencies
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from filzl_daemons.controllers.base_controller import DaemonControllerBase
-from filzl_daemons.views import get_daemons_view_path
-from datetime import datetime
 from filzl_daemons.models import QueableStatus
+from filzl_daemons.views import get_daemons_view_path
+
 
 class ActionResult(BaseModel):
     id: int
@@ -29,11 +30,13 @@ class Action(BaseModel):
 
     started_datetime: datetime | None
     ended_datetime: datetime | None
+    created_at: datetime
 
     retry_current_attempt: int
     retry_max_attempts: int | None
 
     results: list[ActionResult]
+
 
 class DaemonDetailRender(RenderBase):
     input_body: str
@@ -62,29 +65,70 @@ class DaemonDetailController(DaemonControllerBase):
     ) -> DaemonDetailRender:
         await self.require_admin(request)
 
-        instance_query = select(self.local_model_definition.DaemonWorkflowInstance).where(
-            self.local_model_definition.DaemonWorkflowInstance.id == instance_id
-        )
-        result = await db.execute(instance_query)
-        instance = result.scalars().first()
+        instance_query = select(
+            self.local_model_definition.DaemonWorkflowInstance
+        ).where(self.local_model_definition.DaemonWorkflowInstance.id == instance_id)
+        instance_raw = await db.execute(instance_query)
+        instance = instance_raw.scalars().first()
         if instance is None:
             raise ValueError(f"Instance with id {instance_id} not found")
 
-        actions_query = select(self.local_model_definition.DaemonAction).where(
-            self.local_model_definition.DaemonAction.instance_id == instance_id
+        actions_query = (
+            select(self.local_model_definition.DaemonAction)
+            .where(self.local_model_definition.DaemonAction.instance_id == instance_id)
+            .order_by(col(self.local_model_definition.DaemonAction.created_at).desc())
         )
-        result = await db.execute(actions_query)
-        actions = result.scalars().all()
+        actions_raw = await db.execute(actions_query)
+        actions = actions_raw.scalars().all()
 
-        action_results_query = select(self.local_model_definition.DaemonActionResult).where(
-            self.local_model_definition.DaemonActionResult.instance_id == instance_id
+        action_results_query = (
+            select(self.local_model_definition.DaemonActionResult)
+            .where(
+                self.local_model_definition.DaemonActionResult.instance_id
+                == instance_id
+            )
+            .order_by(
+                col(self.local_model_definition.DaemonActionResult.attempt_num).desc()
+            )
         )
-        result = await db.execute(action_results_query)
-        action_results = result.scalars().all()
+        action_results_raw = await db.execute(action_results_query)
+        action_results = action_results_raw.scalars().all()
 
         action_results_by_action = defaultdict(list)
         for action_result in action_results:
             action_results_by_action[action_result.action_id].append(action_result)
+
+        parsed_actions: list[Action] = []
+        for action in actions:
+            assert action.id
+            parsed_results: list[ActionResult] = []
+            for result in action_results_by_action[action.id]:
+                assert result.id
+                parsed_results.append(
+                    ActionResult(
+                        id=result.id,
+                        attempt_num=result.attempt_num,
+                        finished_at=result.finished_at,
+                        exception=result.exception,
+                        exception_stack=result.exception_stack,
+                        result_body=result.result_body,
+                    )
+                )
+
+            parsed_actions.append(
+                Action(
+                    id=action.id,
+                    created_at=action.created_at,
+                    input_body=action.input_body,
+                    registry_id=action.registry_id,
+                    status=action.status,
+                    started_datetime=action.started_datetime,
+                    ended_datetime=action.ended_datetime,
+                    retry_current_attempt=action.retry_current_attempt,
+                    retry_max_attempts=action.retry_max_attempts,
+                    results=parsed_results,
+                )
+            )
 
         return DaemonDetailRender(
             input_body=instance.input_body,
@@ -93,34 +137,12 @@ class DaemonDetailController(DaemonControllerBase):
             exception_stack=instance.exception_stack,
             launch_time=instance.launch_time,
             end_time=instance.end_time,
-            actions=[
-                Action(
-                    id=action.id,
-                    input_body=action.input_body,
-                    registry_id=action.registry_id,
-                    status=action.status,
-                    started_datetime=action.started_datetime,
-                    ended_datetime=action.ended_datetime,
-                    retry_current_attempt=action.retry_current_attempt,
-                    retry_max_attempts=action.retry_max_attempts,
-                    results=[
-                        ActionResult(
-                            id=result.id,
-                            #attempt_num=result.attempt_num,
-                            #finished_at=result.finished_at,
-                            exception=result.exception,
-                            exception_stack=result.exception_stack,
-                            result_body=result.result_body,
-                        )
-                        for result in action_results_by_action[action.id]
-                    ],
-                )
-                for action in actions
-            ],
+            actions=parsed_actions,
             metadata=Metadata(
                 title="Daemons | Detail",
                 links=[
-                    LinkAttribute(rel="stylesheet", href="/static/daemon_main.css"),
-                ]
-            )
+                    LinkAttribute(rel="stylesheet", href="/static/daemons_main.css"),
+                ],
+                ignore_global_metadata=True,
+            ),
         )

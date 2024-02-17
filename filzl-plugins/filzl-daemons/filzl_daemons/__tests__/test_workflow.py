@@ -25,13 +25,13 @@ class VarInput(BaseModel):
 
 
 @action
-async def example_task_1(payload: VarInput):
+async def example_task_1(payload: VarInput) -> VarInput:
     LOGGER.info(f"example_task_1: {payload.value}")
     return VarInput(value=payload.value + 1)
 
 
 @action
-async def example_task_2(payload: VarInput):
+async def example_task_2(payload: VarInput) -> VarInput:
     LOGGER.info(f"example_task_2: {payload.value}")
     return VarInput(value=payload.value * 2)
 

@@ -6,31 +6,33 @@ const Home = () => {
 
   return (
     <div>
-      <div className="mt-4 rounded border border-gray-300 shadow">
-        <div className="flex">
-          <div className="divide-y divide-gray-200 border-r border-gray-200">
-            {serverState.stats.map((stat) => {
-              return (
-                <div key={stat.workflow_name} className="p-4">
-                  <div className="font-medium">{stat.workflow_name}</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="divide-y divide-gray-200 overflow-x-auto">
-            {serverState.stats.map((stat) => {
-              return (
-                <div
-                  key={stat.workflow_name}
-                  className="flex whitespace-nowrap p-4 text-blue-500"
-                >
-                  {"█ ".repeat(stat.count * 2000)}
-                </div>
-              );
-            })}
+      {serverState.stats.length > 0 && (
+        <div className="mt-4 rounded border border-gray-300">
+          <div className="flex">
+            <div className="divide-y divide-gray-200 border-r border-gray-200">
+              {serverState.stats.map((stat) => {
+                return (
+                  <div key={stat.workflow_name} className="p-4">
+                    <div className="font-medium">{stat.workflow_name}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="divide-y divide-gray-200 overflow-x-auto">
+              {serverState.stats.map((stat) => {
+                return (
+                  <div
+                    key={stat.workflow_name}
+                    className="flex whitespace-nowrap p-4 text-blue-500"
+                  >
+                    {"█ ".repeat(stat.count)}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
+      )}
       <div className="mt-4 text-2xl">Instances</div>
       <div className="mt-8 flow-root">
         <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">

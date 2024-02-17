@@ -1,5 +1,5 @@
 from functools import wraps
-from inspect import iscoroutinefunction, signature
+from inspect import isclass, iscoroutinefunction, signature
 
 from pydantic import BaseModel
 
@@ -36,7 +36,20 @@ def action(f):
             f"The first argument of {f.__name__} must be a Pydantic model or there should be no arguments."
         )
 
-    registry_id = REGISTRY.register_action(f, action_model)
+    if "return" not in f.__annotations__:
+        raise TypeError(f"Function {f.__name__} must have a return typehint.")
+
+    return_model = f.__annotations__["return"]
+
+    if not (
+        return_model is None
+        or (isclass(return_model) and issubclass(return_model, BaseModel))
+    ):
+        raise TypeError(
+            f"Function {f.__name__} return typehint must be None or a BaseModel."
+        )
+
+    registry_id = REGISTRY.register_action(f, action_model, return_model)
 
     @wraps(f)
     async def wrapper(input_body: BaseModel | None = None, *args, **kwargs):

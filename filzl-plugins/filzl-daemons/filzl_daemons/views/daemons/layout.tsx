@@ -2,8 +2,8 @@ import React, { ReactNode } from "react";
 
 const Layout = ({ children }: { children: ReactNode }) => {
   return (
-    <div className="h-auto min-h-screen w-full bg-white">
-      <div className="mx-auto max-w-3xl pt-4">
+    <div>
+      <div className="mx-auto max-w-3xl p-4">
         <div className="border-b-4 border-blue-400 text-4xl font-medium">
           Admin / Daemons
         </div>

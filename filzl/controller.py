@@ -106,7 +106,10 @@ class ControllerBase(ABC):
         metadatas: list[Metadata] = []
         if server_data.metadata:
             metadatas.append(server_data.metadata)
-        if global_metadata:
+        if global_metadata and (
+            server_data.metadata is None
+            or not server_data.metadata.ignore_global_metadata
+        ):
             metadatas.append(global_metadata)
 
         header_str = "\n".join(self.build_header(self.merge_metadatas(metadatas)))

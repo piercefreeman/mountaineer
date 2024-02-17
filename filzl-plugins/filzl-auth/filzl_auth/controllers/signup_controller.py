@@ -6,11 +6,11 @@ from filzl import (
     APIException,
     ControllerBase,
     CoreDependencies,
+    LinkAttribute,
     ManagedViewPath,
     Metadata,
     RenderBase,
     passthrough,
-    LinkAttribute
 )
 from filzl.database import DatabaseDependencies
 from pydantic import BaseModel, EmailStr
@@ -24,6 +24,7 @@ from filzl_auth.views import get_auth_view_path
 
 
 class SignupRender(RenderBase):
+    post_signup_redirect: str
     recapcha_enabled: bool
     recapcha_client_key: str | None
 
@@ -32,10 +33,6 @@ class SignupRequest(BaseModel):
     username: EmailStr
     password: str
     recapcha_key: str | None
-
-
-class SignupSuccessResponse(BaseModel):
-    redirect_url: str
 
 
 class SignupInvalid(APIException):
@@ -65,17 +62,19 @@ class SignupController(ControllerBase):
         ),
     ) -> SignupRender:
         return SignupRender(
+            post_signup_redirect=self.post_signup_redirect,
             recapcha_enabled=auth_config.RECAPTCHA_ENABLED,
             recapcha_client_key=auth_config.RECAPTCHA_GCP_CLIENT_KEY,
             metadata=Metadata(
                 title="Signup",
                 links=[
                     LinkAttribute(rel="stylesheet", href="/static/auth_main.css"),
-                ]
+                ],
+                ignore_global_metadata=True,
             ),
         )
 
-    @passthrough(response_model=SignupSuccessResponse, exception_models=[SignupInvalid])
+    @passthrough(exception_models=[SignupInvalid])
     async def signup(
         self,
         signup_payload: SignupRequest,
@@ -105,11 +104,7 @@ class SignupController(ControllerBase):
         session.add(new_user)
         await session.commit()
 
-        payload = SignupSuccessResponse(redirect_url=self.post_signup_redirect)
-
-        response = JSONResponse(
-            content=payload.model_dump(), status_code=status.HTTP_200_OK
-        )
+        response = JSONResponse(content=[], status_code=status.HTTP_200_OK)
         response = authorize_response(
             response,
             user_id=new_user.id,

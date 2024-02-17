@@ -8,19 +8,18 @@ from threading import Thread
 from time import sleep, time
 from traceback import format_exception
 from typing import Callable
-from fastapi import Request
-from fastapi.responses import HTMLResponse
 
 from click import secho
+from fastapi import Request
 from pydantic.main import BaseModel
-from filzl.app import AppController
 
+from filzl.app import AppController
 from filzl.client_builder.builder import ClientBuilder
+from filzl.controllers.exception_controller import ExceptionController
 from filzl.logging import LOGGER
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
 from filzl.watch_server import WatcherWebservice
 from filzl.webservice import UvicornThread
-from filzl.controllers.exception_controller import ExceptionController
 
 
 class IsolatedRunserverConfig(BaseModel):
@@ -164,11 +163,11 @@ class IsolatedEnvProcess(Process):
             self.terminate()
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
-       return await self.exception_controller._generate_html(
-           global_metadata=None,
-           exception=str(exc),
-           stack="".join(format_exception(exc))
-       )
+        return await self.exception_controller._generate_html(
+            global_metadata=None,
+            exception=str(exc),
+            stack="".join(format_exception(exc)),
+        )
 
 
 def handle_watch(

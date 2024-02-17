@@ -65,6 +65,7 @@ const LoginPage = () => {
                 },
               });
               setLoginError(undefined);
+              window.location.href = serverState.post_login_redirect;
             } catch (e) {
               if (e instanceof LoginInvalidException) {
                 setLoginError(e.body?.invalid_reason);

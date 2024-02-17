@@ -28,7 +28,7 @@ from filzl_daemons.timeouts import (
 
 
 @action
-async def example_cpu_bound():
+async def example_cpu_bound() -> None:
     """
     CPU bound action that will take ~5min to complete.
     """
@@ -45,11 +45,10 @@ async def example_cpu_bound():
                 break
         if prime:
             primes_found += 1
-    return primes_found
 
 
 @action
-async def example_async_chains():
+async def example_async_chains() -> None:
     sys.stdout.write("START")
     await asyncio.sleep(2)
     sys.stdout.write("MIDDLE")
@@ -58,7 +57,7 @@ async def example_async_chains():
 
 
 @action
-async def example_crash():
+async def example_crash() -> None:
     raise ValueError("This is a crash")
 
 
@@ -224,7 +223,9 @@ async def test_ping(postgres_backend: PostgresBackend):
 
 
 @pytest.mark.asyncio
-async def test_handle_exception(postgres_backend: PostgresBackend, stub_db_action: DaemonAction):
+async def test_handle_exception(
+    postgres_backend: PostgresBackend, stub_db_action: DaemonAction
+):
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(
         task_queue,

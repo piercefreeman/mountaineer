@@ -16,7 +16,8 @@ class FunctionMetadata:
     function_name: str
     func: Callable
     module: str
-    input_model: Type[BaseModel]
+    input_model: Type[BaseModel] | None
+    output_model: Type[BaseModel] | None
 
 
 @dataclass
@@ -68,13 +69,11 @@ class ActionRegistry:
         """
         return self.action_registry[registry_id].func
 
-    def get_action_model(self, registry_id: str) -> Type[BaseModel]:
-        """
-        Given the output of `get_registry_id_for_action`, returns the
-        input model if registered within the current registry.
-
-        """
+    def get_action_model(self, registry_id: str) -> Type[BaseModel] | None:
         return self.action_registry[registry_id].input_model
+
+    def get_action_output(self, registry_id: str) -> Type[BaseModel] | None:
+        return self.action_registry[registry_id].output_model
 
     def get_workflow(self, registry_id: str) -> Type["Workflow"]:
         """
@@ -83,7 +82,12 @@ class ActionRegistry:
         """
         return self.workflow_registry[registry_id].workflow
 
-    def register_action(self, action: Callable, input_model: Type[BaseModel]):
+    def register_action(
+        self,
+        action: Callable,
+        input_model: Type[BaseModel] | None,
+        output_model: Type[BaseModel] | None,
+    ):
         """
         Registers a new action into the registry and responds with a unique
         identifier to retrieve the full action definition from the registry.
@@ -103,6 +107,7 @@ class ActionRegistry:
             func=action,
             module=action.__module__,
             input_model=input_model,
+            output_model=output_model,
         )
 
         return registry_id

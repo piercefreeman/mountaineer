@@ -98,6 +98,10 @@ class Metadata(BaseModel):
     # Useful for redirects, adding cookies, etc.
     explicit_response: Response | None = None
 
+    # If enabled, we won't attempt to use the global metadata for this route
+    # Helpful for plugins or otherwise for nested routes that should escape the container
+    ignore_global_metadata: bool = False
+
     model_config = {
         "extra": "forbid",
         "arbitrary_types_allowed": True,

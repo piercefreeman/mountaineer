@@ -6,11 +6,11 @@ from filzl import (
     APIException,
     ControllerBase,
     CoreDependencies,
+    LinkAttribute,
     ManagedViewPath,
     Metadata,
     RenderBase,
     passthrough,
-    LinkAttribute,
 )
 from filzl.database import DatabaseDependencies
 from filzl.dependencies import get_function_dependencies
@@ -30,13 +30,13 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class LoginSuccessResponse(BaseModel):
-    redirect_url: str
-
-
 class LoginInvalid(APIException):
     status_code = 401
     invalid_reason: str
+
+
+class LoginRender(RenderBase):
+    post_login_redirect: str
 
 
 class LoginController(ControllerBase):
@@ -65,7 +65,8 @@ class LoginController(ControllerBase):
     async def render(
         self,
         request: Request,
-    ) -> RenderBase:
+        after_login: str | None = None,
+    ) -> LoginRender:
         # Workaround to provide user-defined models into the dependency layer
         # since instance variables can't be specified in the Depends() kwarg
         get_dependencies_fn = AuthDependencies.peek_user(self.user_model)
@@ -76,26 +77,29 @@ class LoginController(ControllerBase):
 
         if user is not None:
             # return RedirectResponse(url=self.post_login_redirect, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
-            return RenderBase(
+            return LoginRender(
+                post_login_redirect="",
                 metadata=Metadata(
                     explicit_response=RedirectResponse(
                         status_code=status.HTTP_307_TEMPORARY_REDIRECT,
-                        url=self.post_login_redirect,
+                        url=after_login or self.post_login_redirect,
                     )
-                )
+                ),
             )
 
         # Otherwise continue to load the initial page
-        return RenderBase(
+        return LoginRender(
+            post_login_redirect=after_login or self.post_login_redirect,
             metadata=Metadata(
                 title="Login",
                 links=[
                     LinkAttribute(rel="stylesheet", href="/static/auth_main.css"),
-                ]
-            )
+                ],
+                ignore_global_metadata=True,
+            ),
         )
 
-    @passthrough(exception_models=[LoginInvalid], response_model=LoginSuccessResponse)
+    @passthrough(exception_models=[LoginInvalid])
     async def login(
         self,
         login_payload: LoginRequest,
@@ -114,11 +118,7 @@ class LoginController(ControllerBase):
         if not user.verify_password(login_payload.password):
             raise LoginInvalid(invalid_reason="Invalid password.")
 
-        payload = LoginSuccessResponse(redirect_url=self.post_login_redirect)
-
-        response = JSONResponse(
-            content=payload.model_dump(), status_code=status.HTTP_200_OK
-        )
+        response = JSONResponse(content=[], status_code=status.HTTP_200_OK)
         response = authorize_response(
             response,
             user_id=user.id,

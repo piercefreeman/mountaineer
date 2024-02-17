@@ -1,12 +1,13 @@
 from filzl.controller import ControllerBase
 from filzl.paths import ManagedViewPath
-from filzl.render import Metadata, RenderBase, LinkAttribute
+from filzl.render import LinkAttribute, Metadata, RenderBase
 from filzl.views import get_core_view_path
-from traceback import format_exception
+
 
 class ExceptionRender(RenderBase):
     exception: str
     stack: str | None
+
 
 class ExceptionController(ControllerBase):
     """
@@ -14,6 +15,7 @@ class ExceptionController(ControllerBase):
     to render exceptions in the browser and leverage our SSR-injected live reloading.
 
     """
+
     url = "/_exception"
     view_path = (
         ManagedViewPath.from_view_root(get_core_view_path(""), package_root_link=None)
@@ -29,5 +31,6 @@ class ExceptionController(ControllerBase):
             metadata=Metadata(
                 title=f"Exception: {exception}",
                 links=[LinkAttribute(rel="stylesheet", href="/static/core_main.css")],
-            )
+                ignore_global_metadata=True,
+            ),
         )

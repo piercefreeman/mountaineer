@@ -7,8 +7,9 @@ import { classNames } from "../utilities";
 const ActionPanel = ({ action }: { action: Action }) => {
   const [showAction, setShowAction] = useState(false);
 
-  const mostRecentResult = action.results?.[0];
-  const conditionalColorScheme = mostRecentResult.exception
+  const mostRecentResult =
+    action.results.length > 0 ? action.results[0] : undefined;
+  const conditionalColorScheme = mostRecentResult?.exception
     ? "bg-red-800"
     : "bg-slate-800";
 
@@ -32,22 +33,23 @@ const ActionPanel = ({ action }: { action: Action }) => {
           {/* Main content */}
           <div className="ml-4">
             <div>{action.input_body || "No Input"}</div>
-            <div className="mt-4">
+            <div className="mt-4 space-y-4">
               {action.results.map((result) => {
                 return (
                   <div key={result.id}>
-                    <div>
-                      Attempt {result.attempt_num} @ {result.finished_at}
+                    <div className="rounded border border-slate-800 p-4">
+                      Attempt {result.attempt_num + 1} @ {result.finished_at}
                     </div>
-                    <div>{result.result_body}</div>
-                    <div>
-                      {result.exception && (
-                        <Error
-                          title={result.exception}
-                          stack={result.exception_stack}
-                        />
-                      )}
-                    </div>
+                    {!result.exception && (
+                      <div className="mt-4">{result.result_body || "None"}</div>
+                    )}
+                    {result.exception && (
+                      <Error
+                        className="mt-4"
+                        title={result.exception}
+                        stack={result.exception_stack}
+                      />
+                    )}
                   </div>
                 );
               })}

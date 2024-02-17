@@ -16,9 +16,10 @@ from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.io import safe_task
-from filzl_daemons.models import QueableStatus, DaemonWorkflowInstance
+from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.retry import RetryPolicy
+from filzl_daemons.state import init_state, update_state
 from filzl_daemons.tasks import TaskManager
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
 
@@ -33,13 +34,17 @@ class TaskException(Exception):
 class WorkflowInstance(Generic[T]):
     def __init__(
         self,
+        *,
         input_payload: T,
         instance_id: int,
-        task_manager: TaskManager
+        instance_queue: str,
+        task_manager: TaskManager,
     ):
         self.input_payload = input_payload
         self.instance_id = instance_id
+        self.instance_queue = instance_queue
         self.task_manager = task_manager
+        self.state = init_state(input_payload)
 
     async def run_action(
         self,
@@ -62,8 +67,17 @@ class WorkflowInstance(Generic[T]):
         result = await action
 
         if isinstance(result, ActionExecutionStub):
+            new_state = update_state(self.state, result)
+            self.state = new_state
+
             # Queue the action
-            wait_future = await self.task_manager.queue_work(task=result, instance_id=self.instance_id, retry=retry)
+            wait_future = await self.task_manager.queue_work(
+                task=result,
+                instance_id=self.instance_id,
+                queue_name=self.instance_queue,
+                state=new_state,
+                retry=retry,
+            )
             result = await wait_future
         else:
             raise ValueError(
@@ -175,12 +189,20 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
     async def run_handler(
         self,
         instance_id: int,
+        instance_queue: str,
         raw_input: str,
         task_manager,
     ):
         try:
             input_payload = self.input_model.model_validate_json(raw_input)
-            result = await self.run(WorkflowInstance(input_payload, instance_id, task_manager))
+            result = await self.run(
+                WorkflowInstance(
+                    input_payload=input_payload,
+                    instance_id=instance_id,
+                    instance_queue=instance_queue,
+                    task_manager=task_manager,
+                )
+            )
 
             async with self.backend.session_maker() as session:
                 instance = await session.get(
@@ -427,6 +449,7 @@ class DaemonRunner:
             asyncio.create_task(
                 workflow.run_handler(
                     instance_id=instance_definition.id,
+                    instance_queue=instance_definition.workflow_name,
                     raw_input=instance_definition.input_body,
                     task_manager=task_manager,
                 )

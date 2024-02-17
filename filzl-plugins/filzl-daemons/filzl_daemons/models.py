@@ -73,6 +73,8 @@ class DaemonAction(QueableItemMixin, SQLModel):
     """
 
     id: int | None = Field(default=None, primary_key=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+
     instance_id: int
 
     # Event-sourced state identifier, will be mirrored across multiple instance runs if necessary

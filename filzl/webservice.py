@@ -1,11 +1,10 @@
 import asyncio
 from threading import Thread
 
+from fastapi import FastAPI
 from uvicorn import Config
 from uvicorn.server import Server
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
-from traceback import format_exception
+
 
 class UvicornThread(Thread):
     def __init__(self, *, app: FastAPI, port: int, log_level: str = "info"):

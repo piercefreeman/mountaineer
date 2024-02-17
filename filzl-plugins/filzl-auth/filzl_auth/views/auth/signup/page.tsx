@@ -85,7 +85,7 @@ const SignupPage = () => {
                 },
               });
               setSignupError(undefined);
-              window.location.href = signupResponse.passthrough.redirect_url;
+              window.location.href = serverState.post_signup_redirect;
             } catch (e) {
               if (e instanceof SignupInvalidException) {
                 setSignupError(e.body?.invalid_reason);

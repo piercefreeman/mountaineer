@@ -499,14 +499,16 @@ class ActionWorkerProcess(multiprocessing.Process):
                 task_definition.action_id,
             )
             if not action_obj:
-                raise ValueError(f"No action obj matching {task_definition.action_id} was found")
+                raise ValueError(
+                    f"No action obj matching {task_definition.action_id} was found"
+                )
 
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
                 instance_id=action_obj.instance_id,
                 attempt_num=action_obj.retry_current_attempt,
                 finished_at=datetime.now(),
-                result_body=result.model_dump_json(),
+                result_body=result.model_dump_json() if result is not None else result,
             )
             session.add(action_result_obj)
             await session.commit()
@@ -514,9 +516,7 @@ class ActionWorkerProcess(multiprocessing.Process):
             action_obj.final_result_id = action_result_obj.id
             action_obj.status = QueableStatus.DONE
             await session.commit()
-            LOGGER.debug(
-                f"Reported success for action `{task_definition.action_id}`"
-            )
+            LOGGER.debug(f"Reported success for action `{task_definition.action_id}`")
 
         self.report_finished_common_handler()
 
@@ -532,7 +532,9 @@ class ActionWorkerProcess(multiprocessing.Process):
                 task_definition.action_id,
             )
             if not action_obj:
-                raise ValueError(f"No action obj matching {task_definition.action_id} was found")
+                raise ValueError(
+                    f"No action obj matching {task_definition.action_id} was found"
+                )
 
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,

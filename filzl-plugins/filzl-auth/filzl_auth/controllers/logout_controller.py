@@ -1,10 +1,10 @@
 from fastapi import Depends, status
 from filzl import (
     ControllerBase,
+    LinkAttribute,
     ManagedViewPath,
     Metadata,
     RenderBase,
-    LinkAttribute,
 )
 from starlette.responses import RedirectResponse
 
@@ -43,6 +43,7 @@ class LogoutController(ControllerBase):
                 explicit_response=response,
                 links=[
                     LinkAttribute(rel="stylesheet", href="/static/auth_main.css"),
-                ]
+                ],
+                ignore_global_metadata=True,
             )
         )

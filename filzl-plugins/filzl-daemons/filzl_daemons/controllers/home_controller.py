@@ -1,15 +1,16 @@
+from datetime import datetime
+
 from fastapi import Depends, Request
-from sqlalchemy import text
-from filzl import ManagedViewPath, Metadata, RenderBase, LinkAttribute
+from filzl import LinkAttribute, ManagedViewPath, Metadata, RenderBase
 from filzl.database import DatabaseDependencies
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import col, select
 
 from filzl_daemons.controllers.base_controller import DaemonControllerBase
-from filzl_daemons.views import get_daemons_view_path
-from datetime import datetime
 from filzl_daemons.models import QueableStatus
+from filzl_daemons.views import get_daemons_view_path
 
 
 class InstanceStatus(BaseModel):
@@ -25,9 +26,11 @@ class InstanceStatus(BaseModel):
         "from_attributes": True,
     }
 
+
 class QueueStat(BaseModel):
     workflow_name: str
     count: int
+
 
 class DaemonHomeRender(RenderBase):
     instances: list[InstanceStatus]
@@ -50,7 +53,15 @@ class DaemonHomeController(DaemonControllerBase):
     ) -> DaemonHomeRender:
         await self.require_admin(request)
 
-        query = select(self.local_model_definition.DaemonWorkflowInstance).limit(100)
+        query = (
+            select(self.local_model_definition.DaemonWorkflowInstance)
+            .limit(100)
+            .order_by(
+                col(
+                    self.local_model_definition.DaemonWorkflowInstance.launch_time
+                ).desc()
+            )
+        )
         result = await db.execute(query)
         instances = result.scalars().all()
 
@@ -60,10 +71,9 @@ class DaemonHomeController(DaemonControllerBase):
             ),
             {
                 "status": QueableStatus.QUEUED,
-            }
+            },
         )
         counts = result.all()
-        print(counts)
 
         return DaemonHomeRender(
             instances=[
@@ -79,7 +89,8 @@ class DaemonHomeController(DaemonControllerBase):
             metadata=Metadata(
                 title="Daemons | Home",
                 links=[
-                    LinkAttribute(rel="stylesheet", href="/static/daemon_main.css"),
-                ]
-            )
+                    LinkAttribute(rel="stylesheet", href="/static/daemons_main.css"),
+                ],
+                ignore_global_metadata=True,
+            ),
         )
