@@ -213,7 +213,7 @@ class PostgresBackend:
     ):
         """
         Will keep looping until we have no more instances that are
-        queued in the database. At this point we should subscribe/ block for a NOTIFY
+        queued in the database. At this point we should subscribe/block for a NOTIFY
         signal that indicates a new task has been added to the database.
 
         """
@@ -249,7 +249,7 @@ class PostgresBackend:
         """
 
         create_trigger_sql = f"""
-        CREATE TRIGGER instance_update_trigger_{unique_notifier}
+        CREATE OR REPLACE TRIGGER instance_update_trigger_{unique_notifier}
         AFTER INSERT OR UPDATE ON {table_name}
         FOR EACH ROW
         EXECUTE FUNCTION notify_instance_change_{unique_notifier}();

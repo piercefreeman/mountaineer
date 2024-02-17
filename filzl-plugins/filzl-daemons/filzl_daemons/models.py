@@ -114,6 +114,7 @@ class DaemonActionResult(SQLModel):
 
     id: int | None = Field(default=None, primary_key=True)
     action_id: int
+    instance_id: int
 
     # Exit status
     exception: str | None = None

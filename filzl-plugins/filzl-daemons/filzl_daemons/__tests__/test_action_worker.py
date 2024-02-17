@@ -98,6 +98,7 @@ async def test_soft_timeout(
 
     task = TaskDefinition(
         action_id=1,
+        instance_id=1,
         registry_id=REGISTRY.get_registry_id_for_action(example_async_chains),
         input_body="",
         timeouts=[
@@ -151,6 +152,7 @@ async def test_hard_timeout_and_shutdown(
 
     task = TaskDefinition(
         action_id=1,
+        instance_id=1,
         registry_id=REGISTRY.get_registry_id_for_action(example_cpu_bound),
         input_body="",
         timeouts=[
@@ -231,6 +233,7 @@ async def test_handle_exception(postgres_backend: PostgresBackend):
 
     task = TaskDefinition(
         action_id=1,
+        instance_id=1,
         registry_id=REGISTRY.get_registry_id_for_action(example_crash),
         input_body="",
         timeouts=[],

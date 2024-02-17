@@ -6,6 +6,10 @@ from filzl_daemons.logging import LOGGER
 from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.retry import RetryPolicy
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from filzl_daemons.workflow import WorkflowInstance
 
 
 class TaskManager:
@@ -25,13 +29,15 @@ class TaskManager:
 
     async def queue_work(
         self,
+        *,
         task: ActionExecutionStub,
+        instance_id: int,
         retry: RetryPolicy,
     ):
         async with self.backend.session_maker() as session:
             action_task = self.backend.local_models.DaemonAction(
-                workflow_name="todo",
-                instance_id=-1,
+                workflow_name="todo", # Might be unnecessary
+                instance_id=instance_id,
                 state="todo",
                 registry_id=task.registry_id,
                 input_body=(

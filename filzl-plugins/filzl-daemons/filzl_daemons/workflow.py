@@ -16,7 +16,7 @@ from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.io import safe_task
-from filzl_daemons.models import QueableStatus
+from filzl_daemons.models import QueableStatus, DaemonWorkflowInstance
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.retry import RetryPolicy
 from filzl_daemons.tasks import TaskManager
@@ -31,13 +31,20 @@ class TaskException(Exception):
 
 
 class WorkflowInstance(Generic[T]):
-    def __init__(self, input_payload: T, task_manager: TaskManager):
+    def __init__(
+        self,
+        input_payload: T,
+        instance_id: int,
+        task_manager: TaskManager
+    ):
         self.input_payload = input_payload
+        self.instance_id = instance_id
         self.task_manager = task_manager
 
     async def run_action(
         self,
         action: Awaitable[K],
+        *,
         retry: RetryPolicy,
         timeouts: list[TimeoutDefinition] | None = None,
         max_retries: int = 0,
@@ -56,8 +63,12 @@ class WorkflowInstance(Generic[T]):
 
         if isinstance(result, ActionExecutionStub):
             # Queue the action
-            wait_future = await self.task_manager.queue_work(result, retry)
+            wait_future = await self.task_manager.queue_work(task=result, instance_id=self.instance_id, retry=retry)
             result = await wait_future
+        else:
+            raise ValueError(
+                f"Actions must be wrapped in @action, incorrect future: {action}"
+            )
 
         return result
 
@@ -107,7 +118,7 @@ class WorkflowMeta(ABCMeta):
             )
         if output_model is None:
             raise TypeError(
-                f"Workflow `{cls.__name__}` must have a return type annotation"
+                f"Workflow `{cls.__name__}` run() must have a return type annotation"
             )
 
         cls.input_model = input_model
@@ -169,7 +180,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
     ):
         try:
             input_payload = self.input_model.model_validate_json(raw_input)
-            result = await self.run(WorkflowInstance(input_payload, task_manager))
+            result = await self.run(WorkflowInstance(input_payload, instance_id, task_manager))
 
             async with self.backend.session_maker() as session:
                 instance = await session.get(
@@ -178,6 +189,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
                 )
                 if instance is None:
                     raise ValueError(f"Workflow instance {instance_id} not found")
+                instance.status = QueableStatus.DONE
                 instance.result_body = result.model_dump_json()
                 instance.end_time = datetime.now()
                 await session.commit()
@@ -191,6 +203,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
                 )
                 if instance is None:
                     raise ValueError(f"Workflow instance {instance_id} not found")
+                instance.status = QueableStatus.DONE
                 instance.exception = str(e)
                 instance.exception_stack = format_exc()
                 await session.commit()
@@ -367,6 +380,8 @@ class DaemonRunner:
                 process.join()
             LOGGER.debug("Worker processes cleaned up")
 
+        LOGGER.debug("DaemonRunner finished")
+
     async def update_scheduled_actions(self, refresh_interval=30):
         while True:
             async with self.backend.session_maker() as session:
@@ -451,6 +466,7 @@ class DaemonRunner:
 
             task_definition = TaskDefinition(
                 action_id=action_definition.id,
+                instance_id=action_definition.instance_id,
                 registry_id=action_definition.registry_id,
                 input_body=action_definition.input_body,
                 timeouts=[

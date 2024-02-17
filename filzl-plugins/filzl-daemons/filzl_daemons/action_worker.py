@@ -29,6 +29,8 @@ class TaskDefinition:
     # and cancel it if necessary
     action_id: int
 
+    instance_id: int
+
     registry_id: str
     input_body: str | None  # json string
     timeouts: list[TimeoutDefinition]
@@ -496,6 +498,7 @@ class ActionWorkerProcess(multiprocessing.Process):
         async with self.backend.session_maker() as session:
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
+                instance_id=task_definition.instance_id,
                 result_body=result.model_dump_json(),
             )
             session.add(action_result_obj)
@@ -528,6 +531,7 @@ class ActionWorkerProcess(multiprocessing.Process):
         async with self.backend.session_maker() as session:
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
+                instance_id=task_definition.instance_id,
                 exception=exception,
                 exception_stack=exception_stack,
             )
