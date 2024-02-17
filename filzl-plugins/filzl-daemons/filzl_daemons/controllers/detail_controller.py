@@ -1,9 +1,8 @@
 from collections import defaultdict
 from fastapi import Depends, Request
 from sqlalchemy import text
-from filzl import ManagedViewPath
+from filzl import ManagedViewPath, LinkAttribute, Metadata, RenderBase
 from filzl.database import DatabaseDependencies
-from filzl.render import Metadata, RenderBase
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -14,12 +13,17 @@ from datetime import datetime
 from filzl_daemons.models import QueableStatus
 
 class ActionResult(BaseModel):
+    id: int
+    attempt_num: int
+    finished_at: datetime
     exception: str | None
     exception_stack: str | None
     result_body: str | None
 
 
 class Action(BaseModel):
+    id: int
+    registry_id: str
     input_body: str | None
     status: QueableStatus
 
@@ -36,6 +40,8 @@ class DaemonDetailRender(RenderBase):
     result_body: str | None
     exception: str | None
     exception_stack: str | None
+    launch_time: datetime
+    end_time: datetime | None
     actions: list[Action]
 
 
@@ -85,9 +91,13 @@ class DaemonDetailController(DaemonControllerBase):
             result_body=instance.result_body,
             exception=instance.exception,
             exception_stack=instance.exception_stack,
+            launch_time=instance.launch_time,
+            end_time=instance.end_time,
             actions=[
                 Action(
+                    id=action.id,
                     input_body=action.input_body,
+                    registry_id=action.registry_id,
                     status=action.status,
                     started_datetime=action.started_datetime,
                     ended_datetime=action.ended_datetime,
@@ -95,6 +105,9 @@ class DaemonDetailController(DaemonControllerBase):
                     retry_max_attempts=action.retry_max_attempts,
                     results=[
                         ActionResult(
+                            id=result.id,
+                            #attempt_num=result.attempt_num,
+                            #finished_at=result.finished_at,
                             exception=result.exception,
                             exception_stack=result.exception_stack,
                             result_body=result.result_body,
@@ -103,5 +116,11 @@ class DaemonDetailController(DaemonControllerBase):
                     ],
                 )
                 for action in actions
-            ]
+            ],
+            metadata=Metadata(
+                title="Daemons | Detail",
+                links=[
+                    LinkAttribute(rel="stylesheet", href="/static/daemon_main.css"),
+                ]
+            )
         )

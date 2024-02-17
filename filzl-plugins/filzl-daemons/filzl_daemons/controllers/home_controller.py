@@ -1,8 +1,7 @@
 from fastapi import Depends, Request
 from sqlalchemy import text
-from filzl import ManagedViewPath
+from filzl import ManagedViewPath, Metadata, RenderBase, LinkAttribute
 from filzl.database import DatabaseDependencies
-from filzl.render import Metadata, RenderBase
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
@@ -77,5 +76,10 @@ class DaemonHomeController(DaemonControllerBase):
                 )
                 for stat in counts
             ],
-            metadata=Metadata(title="Daemons | Home")
+            metadata=Metadata(
+                title="Daemons | Home",
+                links=[
+                    LinkAttribute(rel="stylesheet", href="/static/daemon_main.css"),
+                ]
+            )
         )

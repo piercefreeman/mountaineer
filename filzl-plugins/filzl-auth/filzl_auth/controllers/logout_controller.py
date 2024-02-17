@@ -4,6 +4,7 @@ from filzl import (
     ManagedViewPath,
     Metadata,
     RenderBase,
+    LinkAttribute,
 )
 from starlette.responses import RedirectResponse
 
@@ -40,5 +41,8 @@ class LogoutController(ControllerBase):
             metadata=Metadata(
                 title="Logout",
                 explicit_response=response,
+                links=[
+                    LinkAttribute(rel="stylesheet", href="/static/auth_main.css"),
+                ]
             )
         )

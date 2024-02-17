@@ -3,12 +3,14 @@ from threading import Thread
 
 from uvicorn import Config
 from uvicorn.server import Server
-
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse
+from traceback import format_exception
 
 class UvicornThread(Thread):
-    def __init__(self, entrypoint: str, port: int, log_level: str = "info"):
+    def __init__(self, *, app: FastAPI, port: int, log_level: str = "info"):
         super().__init__(daemon=True)
-        self.entrypoint = entrypoint
+        self.app = app
         self.port = port
         self.log_level = log_level
         self.server: Server | None = None
@@ -16,7 +18,7 @@ class UvicornThread(Thread):
     def run(self):
         loop = asyncio.new_event_loop()
         config = Config(
-            self.entrypoint,
+            app=self.app,
             port=self.port,
             reload=False,
             access_log=False,

@@ -466,7 +466,6 @@ class DaemonRunner:
 
             task_definition = TaskDefinition(
                 action_id=action_definition.id,
-                instance_id=action_definition.instance_id,
                 registry_id=action_definition.registry_id,
                 input_body=action_definition.input_body,
                 timeouts=[

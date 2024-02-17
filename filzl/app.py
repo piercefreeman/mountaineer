@@ -5,12 +5,13 @@ from typing import Any, Callable
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
 from pydantic_settings import BaseSettings
 from starlette.routing import BaseRoute
+from traceback import format_exception
 
 from filzl.actions import (
     FunctionActionType,

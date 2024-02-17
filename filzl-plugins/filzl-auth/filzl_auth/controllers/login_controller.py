@@ -10,6 +10,7 @@ from filzl import (
     Metadata,
     RenderBase,
     passthrough,
+    LinkAttribute,
 )
 from filzl.database import DatabaseDependencies
 from filzl.dependencies import get_function_dependencies
@@ -88,6 +89,9 @@ class LoginController(ControllerBase):
         return RenderBase(
             metadata=Metadata(
                 title="Login",
+                links=[
+                    LinkAttribute(rel="stylesheet", href="/static/auth_main.css"),
+                ]
             )
         )
 

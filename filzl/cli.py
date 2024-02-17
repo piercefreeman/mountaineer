@@ -6,16 +6,21 @@ from multiprocessing.queues import Queue
 from signal import SIGINT, signal
 from threading import Thread
 from time import sleep, time
+from traceback import format_exception
 from typing import Callable
+from fastapi import Request
+from fastapi.responses import HTMLResponse
 
 from click import secho
 from pydantic.main import BaseModel
+from filzl.app import AppController
 
 from filzl.client_builder.builder import ClientBuilder
 from filzl.logging import LOGGER
 from filzl.watch import CallbackDefinition, CallbackType, PackageWatchdog
-from filzl.watch_server import get_watcher_webservice
+from filzl.watch_server import WatcherWebservice
 from filzl.webservice import UvicornThread
+from filzl.controllers.exception_controller import ExceptionController
 
 
 class IsolatedRunserverConfig(BaseModel):
@@ -37,8 +42,8 @@ class IsolatedEnvProcess(Process):
 
     def __init__(
         self,
+        watch_config: IsolatedWatchConfig,
         runserver_config: IsolatedRunserverConfig | None = None,
-        watch_config: IsolatedWatchConfig | None = None,
         build_notification_channel: Queue | None = None,
     ):
         super().__init__()
@@ -52,13 +57,26 @@ class IsolatedEnvProcess(Process):
         self.build_notification_channel = build_notification_channel
 
     def run(self):
+        app_controller = import_from_string(self.watch_config.webcontroller)
+        if not isinstance(app_controller, AppController):
+            raise ValueError(
+                f"Expected {self.watch_config.webcontroller} to be an instance of AppController"
+            )
+
+        # Mount our exceptions controller, since we'll need these artifacts built
+        # as part of the JS build phase
+        self.exception_controller = ExceptionController()
+        app_controller.register(self.exception_controller)
+        app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+
         # Finish the build before we start the server since the server launch is going to sniff
         # for the built artifacts
         if self.watch_config is not None:
             secho("Starting build...", fg="yellow")
             start = time()
+
             js_compiler = ClientBuilder(
-                import_from_string(self.watch_config.webcontroller),
+                app_controller,
                 live_reload_port=(
                     self.runserver_config.live_reload_port
                     if self.runserver_config
@@ -72,7 +90,8 @@ class IsolatedEnvProcess(Process):
 
         if self.runserver_config is not None:
             thread = UvicornThread(
-                self.runserver_config.entrypoint, self.runserver_config.port
+                app=app_controller.app,
+                port=self.runserver_config.port,
             )
             thread.start()
             try:
@@ -144,6 +163,13 @@ class IsolatedEnvProcess(Process):
         if self.is_alive():
             self.terminate()
 
+    async def handle_dev_exception(self, request: Request, exc: Exception):
+       return await self.exception_controller._generate_html(
+           global_metadata=None,
+           exception=str(exc),
+           stack="".join(format_exception(exc))
+       )
+
 
 def handle_watch(
     *,
@@ -201,7 +227,7 @@ def handle_runserver(
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
-    watcher_webservice = get_watcher_webservice()
+    watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
 
     def update_webservice():

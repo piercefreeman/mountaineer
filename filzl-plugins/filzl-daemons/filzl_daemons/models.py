@@ -116,6 +116,9 @@ class DaemonActionResult(SQLModel):
     action_id: int
     instance_id: int
 
+    attempt_num: int
+    finished_at: datetime
+
     # Exit status
     exception: str | None = None
     exception_stack: str | None = None

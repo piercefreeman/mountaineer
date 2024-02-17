@@ -64,7 +64,6 @@ async def example_crash():
 
 @pytest_asyncio.fixture
 async def stub_db_action(postgres_backend: PostgresBackend):
-    # Mock an action already being in the database
     async with postgres_backend.session_maker() as session:
         action = DaemonAction(
             id=1,
@@ -79,6 +78,7 @@ async def stub_db_action(postgres_backend: PostgresBackend):
         )
         session.add(action)
         await session.commit()
+    yield action
 
 
 @pytest.mark.asyncio
@@ -96,9 +96,10 @@ async def test_soft_timeout(
         tasks_before_recycle=1,
     )
 
+    assert stub_db_action.id
+
     task = TaskDefinition(
-        action_id=1,
-        instance_id=1,
+        action_id=stub_db_action.id,
         registry_id=REGISTRY.get_registry_id_for_action(example_async_chains),
         input_body="",
         timeouts=[
@@ -150,9 +151,10 @@ async def test_hard_timeout_and_shutdown(
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
 
+    assert stub_db_action.id
+
     task = TaskDefinition(
-        action_id=1,
-        instance_id=1,
+        action_id=stub_db_action.id,
         registry_id=REGISTRY.get_registry_id_for_action(example_cpu_bound),
         input_body="",
         timeouts=[
@@ -222,7 +224,7 @@ async def test_ping(postgres_backend: PostgresBackend):
 
 
 @pytest.mark.asyncio
-async def test_handle_exception(postgres_backend: PostgresBackend):
+async def test_handle_exception(postgres_backend: PostgresBackend, stub_db_action: DaemonAction):
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(
         task_queue,
@@ -231,9 +233,10 @@ async def test_handle_exception(postgres_backend: PostgresBackend):
         tasks_before_recycle=1,
     )
 
+    assert stub_db_action.id
+
     task = TaskDefinition(
-        action_id=1,
-        instance_id=1,
+        action_id=stub_db_action.id,
         registry_id=REGISTRY.get_registry_id_for_action(example_crash),
         input_body="",
         timeouts=[],

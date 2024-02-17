@@ -10,6 +10,7 @@ from filzl import (
     Metadata,
     RenderBase,
     passthrough,
+    LinkAttribute
 )
 from filzl.database import DatabaseDependencies
 from pydantic import BaseModel, EmailStr
@@ -66,7 +67,12 @@ class SignupController(ControllerBase):
         return SignupRender(
             recapcha_enabled=auth_config.RECAPTCHA_ENABLED,
             recapcha_client_key=auth_config.RECAPTCHA_GCP_CLIENT_KEY,
-            metadata=Metadata(title="Signup"),
+            metadata=Metadata(
+                title="Signup",
+                links=[
+                    LinkAttribute(rel="stylesheet", href="/static/auth_main.css"),
+                ]
+            ),
         )
 
     @passthrough(response_model=SignupSuccessResponse, exception_models=[SignupInvalid])

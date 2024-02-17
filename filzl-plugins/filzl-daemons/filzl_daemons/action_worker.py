@@ -29,8 +29,6 @@ class TaskDefinition:
     # and cancel it if necessary
     action_id: int
 
-    instance_id: int
-
     registry_id: str
     input_body: str | None  # json string
     timeouts: list[TimeoutDefinition]
@@ -496,29 +494,29 @@ class ActionWorkerProcess(multiprocessing.Process):
         # our behavior further by keeping a connection pool open for the duration of the worker
         # process, but for now we'll just keep it simple.
         async with self.backend.session_maker() as session:
+            action_obj = await session.get(
+                self.backend.local_models.DaemonAction,
+                task_definition.action_id,
+            )
+            if not action_obj:
+                raise ValueError(f"No action obj matching {task_definition.action_id} was found")
+
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
-                instance_id=task_definition.instance_id,
+                instance_id=action_obj.instance_id,
+                attempt_num=action_obj.retry_current_attempt,
+                finished_at=datetime.now(),
                 result_body=result.model_dump_json(),
             )
             session.add(action_result_obj)
             await session.commit()
 
-            action_obj = await session.get(
-                self.backend.local_models.DaemonAction,
-                task_definition.action_id,
+            action_obj.final_result_id = action_result_obj.id
+            action_obj.status = QueableStatus.DONE
+            await session.commit()
+            LOGGER.debug(
+                f"Reported success for action `{task_definition.action_id}`"
             )
-            if action_obj:
-                action_obj.final_result_id = action_result_obj.id
-                action_obj.status = QueableStatus.DONE
-                await session.commit()
-                LOGGER.debug(
-                    f"Reported success for action `{task_definition.action_id}`"
-                )
-            else:
-                LOGGER.error(
-                    f"Report success: Action with id {task_definition.action_id} was not found in the database"
-                )
 
         self.report_finished_common_handler()
 
@@ -529,36 +527,36 @@ class ActionWorkerProcess(multiprocessing.Process):
         exception_stack: str | None = None,
     ):
         async with self.backend.session_maker() as session:
+            action_obj = await session.get(
+                self.backend.local_models.DaemonAction,
+                task_definition.action_id,
+            )
+            if not action_obj:
+                raise ValueError(f"No action obj matching {task_definition.action_id} was found")
+
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
-                instance_id=task_definition.instance_id,
+                instance_id=action_obj.instance_id,
+                attempt_num=action_obj.retry_current_attempt,
+                finished_at=datetime.now(),
                 exception=exception,
                 exception_stack=exception_stack,
             )
             session.add(action_result_obj)
             await session.commit()
 
-            action_obj = await session.get(
-                self.backend.local_models.DaemonAction,
-                task_definition.action_id,
-            )
-            if action_obj:
-                action_obj.final_result_id = action_result_obj.id
-                action_obj.retry_current_attempt += 1
+            action_obj.final_result_id = action_result_obj.id
+            action_obj.retry_current_attempt += 1
 
-                should_reschedule = retry_is_allowed(action_obj)
-                if should_reschedule:
-                    # Place back in the queue
-                    action_obj.status = QueableStatus.SCHEDULED
-                    action_obj.schedule_after = calculate_retry(action_obj)
-                else:
-                    action_obj.status = QueableStatus.DONE
-                await session.commit()
-                LOGGER.debug(f"Reported error for action `{task_definition.action_id}`")
+            should_reschedule = retry_is_allowed(action_obj)
+            if should_reschedule:
+                # Place back in the queue
+                action_obj.status = QueableStatus.SCHEDULED
+                action_obj.schedule_after = calculate_retry(action_obj)
             else:
-                LOGGER.error(
-                    f"Report failure: Action with id {task_definition.action_id} was not found in the database"
-                )
+                action_obj.status = QueableStatus.DONE
+            await session.commit()
+            LOGGER.debug(f"Reported error for action `{task_definition.action_id}`")
 
         self.report_finished_common_handler()
 
