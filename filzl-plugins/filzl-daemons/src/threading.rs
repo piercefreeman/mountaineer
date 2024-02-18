@@ -25,7 +25,9 @@ pub mod platform {
         ) -> libc::kern_return_t;
     }
 
-    pub unsafe fn get_thread_cpu_usage(thread_id: libc::pthread_t) -> Result<f64, String> {
+    pub unsafe fn get_thread_cpu_usage(thread_id_raw: usize) -> Result<f64, String> {
+        let thread_id: libc::pthread_t = thread_id_raw as libc::pthread_t;
+
         let thread_port = pthread_mach_thread_np(thread_id);
         let mut info = std::mem::zeroed::<ThreadBasicInfo>();
         let mut count = std::mem::size_of::<ThreadBasicInfo>() as libc::mach_msg_type_number_t
@@ -57,7 +59,9 @@ pub mod platform {
 
 #[cfg(target_os = "linux")]
 pub mod platform {
-    pub unsafe fn get_thread_cpu_usage(thread_id: libc::pthread_t) -> Result<f64, String> {
+    pub unsafe fn get_thread_cpu_usage(thread_id_raw: usize) -> Result<f64, String> {
+        let thread_id: libc::pthread_t = thread_id_raw as u64 as libc::pthread_t;
+
         let mut clock_id: libc::clockid_t = 0;
         let mut ts = libc::timespec {
             tv_sec: 0,
@@ -119,7 +123,7 @@ mod tests {
 
         // Measure the thread; it should really be near zero but because of race conditions / CPU load
         // we just enforce it to be less than 0.1
-        let cpu_usage = unsafe { platform::get_thread_cpu_usage(thread_id) };
+        let cpu_usage = unsafe { platform::get_thread_cpu_usage(thread_id.try_into().unwrap()) };
         assert!(
             cpu_usage.is_ok(),
             "Expected CPU usage to be successfully measured"
@@ -136,7 +140,7 @@ mod tests {
         thread::sleep(Duration::from_secs(3));
 
         // Measure the thread; it should be near 3 seconds
-        let cpu_usage = unsafe { platform::get_thread_cpu_usage(thread_id) };
+        let cpu_usage = unsafe { platform::get_thread_cpu_usage(thread_id.try_into().unwrap()) };
         assert!(
             cpu_usage.is_ok(),
             "Expected CPU usage to be successfully measured"

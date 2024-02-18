@@ -54,6 +54,7 @@ COPY src src
 COPY create_filzl_app create_filzl_app
 COPY README.md .
 COPY Makefile .
+COPY my_website my_website
 COPY filzl-plugins filzl-plugins
 
 # Sometimes this may have to be executed manually after
