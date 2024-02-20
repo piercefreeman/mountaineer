@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import datetime
 from hashlib import sha256
 from typing import Type, TypeVar, cast
 
@@ -22,6 +23,7 @@ class WorkflowInstanceNotification(BaseModel):
     id: int
     workflow_name: str
     status: str
+    updated_at: datetime
 
 
 T = TypeVar("T", bound=SQLModel)
@@ -118,7 +120,8 @@ class PostgresBackend:
 
         """
         retrieved_items = 0
-        seen_ids = set()
+        # There should only be one unique notification for each (id, updated_at)
+        seen_ids: set[tuple[int, datetime]] = set()
 
         # Immediately subscribe to notifications
         notifications = self.get_instances_notification(
@@ -133,7 +136,7 @@ class PostgresBackend:
         async for value in self.get_ready_instances(
             queues, table_name=self.get_table_name(model), status=status
         ):
-            obj_id = value.id
+            obj_id = (value.id, value.updated_at)
             if obj_id in seen_ids:
                 continue
             seen_ids.add(obj_id)
@@ -158,7 +161,7 @@ class PostgresBackend:
                     notifications.__anext__()
                 )  # Prepare for the next
 
-                obj_id = value.id
+                obj_id = (value.id, value.updated_at)
                 if obj_id in seen_ids:
                     continue
                 seen_ids.add(obj_id)
@@ -171,9 +174,11 @@ class PostgresBackend:
                     break
             except asyncio.CancelledError:
                 # Handle cancellation properly
+                LOGGER.debug("Notification task cancelled")
                 break
             except StopAsyncIteration:
                 # No more notifications
+                LOGGER.debug("Notification task ended")
                 break
 
     async def get_ready_instances(
@@ -189,7 +194,7 @@ class PostgresBackend:
         optional_queue_filter = "workflow_name = ANY($1)" if queues else "TRUE"
         query = f"""
         DECLARE cur CURSOR FOR
-        SELECT id, workflow_name, status
+        SELECT id, workflow_name, status, updated_at
         FROM {table_name}
         WHERE {optional_queue_filter} AND status = '{status.name}'
         """
@@ -240,7 +245,8 @@ class PostgresBackend:
                     json_build_object(
                         'id', NEW.id,
                         'workflow_name', NEW.workflow_name,
-                        'status', NEW.status
+                        'status', NEW.status,
+                        'updated_at', NEW.updated_at
                     )::text
                 );
             END IF;

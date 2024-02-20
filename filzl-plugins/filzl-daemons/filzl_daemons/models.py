@@ -26,6 +26,10 @@ class QueableItemMixin(SQLModel):
     workflow_name: str
     status: QueableStatus = QueableStatus.QUEUED
 
+    updated_at: datetime = Field(
+        sa_column_kwargs={"default": datetime.now, "onupdate": datetime.now}
+    )
+
 
 class DaemonWorkflowInstance(QueableItemMixin, SQLModel):
     """

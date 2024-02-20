@@ -283,6 +283,8 @@ class DaemonRunner:
         workflows: list[Type[Workflow[T]]],
         max_workers: int | None = None,
         threads_per_worker: int = 1,
+        update_scheduled_refresh: int = 30,
+        update_timed_out_workers_refresh: int = 30,
     ):
         """
         :param max_workers: If None, we'll use the number of CPUs on the machine
@@ -290,6 +292,10 @@ class DaemonRunner:
             heavily CPU-bound tasks, keeping the default of 1 task per process is probably
             good. Otherwise in the case of more I/O bound tasks, you might want to increase
             this number.
+        :param update_scheduled_refresh: Seconds between bringing the scheduled task queue
+            into the main queue.
+        :param update_timed_out_workers_refresh: Seconds between checking for timed out
+            workers and requeuing their items.
 
         """
         self.backend = backend
@@ -297,6 +303,9 @@ class DaemonRunner:
 
         self.max_workers = max_workers or multiprocessing.cpu_count()
         self.threads_per_worker = threads_per_worker
+
+        self.update_scheduled_refresh = update_scheduled_refresh
+        self.update_timed_out_workers_refresh = update_timed_out_workers_refresh
 
     def run(self, workflows):
         """
@@ -399,7 +408,12 @@ class DaemonRunner:
 
         LOGGER.debug("DaemonRunner finished")
 
-    async def update_scheduled_actions(self, refresh_interval=30):
+    async def update_scheduled_actions(self):
+        """
+        Determine the actions that have been scheduled in the future and are now ready
+        to be executed by the action workers.
+
+        """
         while True:
             async with self.backend.session_maker() as session:
                 result = await session.execute(
@@ -414,14 +428,17 @@ class DaemonRunner:
                 await session.commit()
                 affected_rows = result.rowcount
                 LOGGER.debug(f"Updated {affected_rows} scheduled rows")
-            await asyncio.sleep(refresh_interval)
+            await asyncio.sleep(self.update_scheduled_refresh)
 
-    async def update_timed_out_workers(
-        self, refresh_interval=30, worker_timeouts=5 * 60
-    ):
+    async def update_timed_out_workers(self, worker_timeouts=5 * 60):
+        """
+        Determine the workers that have timed out and re-queue their actions
+        and instances.
+
+        """
         while True:
             await self._update_timed_out_workers_single(worker_timeouts)
-            await asyncio.sleep(refresh_interval)
+            await asyncio.sleep(self.update_timed_out_workers_refresh)
 
     async def _update_timed_out_workers_single(self, worker_timeouts: int):
         async with self.backend.session_maker() as session:
@@ -529,6 +546,11 @@ class DaemonRunner:
             )
 
     async def queue_action_work(self, worker_queue):
+        """
+        Listen to database changes for actions that are now ready to be executed and place
+        them into the multiprocess queue for the system wide workers.
+
+        """
         async for notification in self.backend.iter_ready_objects(
             model=self.backend.local_models.DaemonAction,
             queues=[],

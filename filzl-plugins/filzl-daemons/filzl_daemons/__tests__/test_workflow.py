@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+from random import random
 from uuid import uuid4
 
 import pytest
@@ -36,6 +37,14 @@ async def example_task_1(payload: VarInput) -> VarInput:
 @action
 async def example_task_2(payload: VarInput) -> VarInput:
     LOGGER.info(f"example_task_2: {payload.value}")
+    return VarInput(value=payload.value * 2)
+
+
+@action
+async def example_random_exception(payload: VarInput) -> VarInput:
+    LOGGER.info(f"example_random_exception: {payload.value}")
+    if random() < 0.5:
+        raise ValueError("Random exception")
     return VarInput(value=payload.value * 2)
 
 
@@ -220,6 +229,56 @@ async def test_update_timed_out_tasks(
         assert worker_status.cleaned_up
         assert action.status == QueableStatus.QUEUED
         assert instance.status == QueableStatus.QUEUED
+
+
+class ExampleRandomCrashes(Workflow[ExampleWorkflowInput]):
+    async def run(self, instance: WorkflowInstance[ExampleWorkflowInput]) -> VarInput:
+        tasks = []
+        # On expectation half of these will fail on the first time
+        for i in range(10):
+            tasks.append(
+                instance.run_action(
+                    example_random_exception(VarInput(value=i)),
+                    retry=RetryPolicy(),
+                )
+            )
+
+        values = await asyncio.gather(*tasks)
+        return VarInput(value=sum([item.value for item in values]))
+
+
+@pytest.mark.asyncio
+async def test_requeue_task_exceptions(
+    postgres_backend: PostgresBackend, daemon_client: DaemonClient
+):
+    task_manager = DaemonRunner(
+        workflows=[ExampleRandomCrashes],
+        backend=postgres_backend,
+        update_scheduled_refresh=1,
+        update_timed_out_workers_refresh=1,
+    )
+
+    result = await daemon_client.queue_new(
+        ExampleRandomCrashes, ExampleWorkflowInput(input_value=1)
+    )
+
+    timeout_task = asyncio.create_task(asyncio.sleep(10))
+    wait_task = asyncio.create_task(result.wait())
+    handle_jobs_task = asyncio.create_task(task_manager.handle_jobs())
+
+    # Wait 10 seconds or until everything is done
+    done, pending = await asyncio.wait(
+        (timeout_task, wait_task, handle_jobs_task), return_when=asyncio.FIRST_COMPLETED
+    )
+
+    # Terminate all pending tasks - this should shutdown the task manager
+    for task in pending:
+        task.cancel()
+
+    assert wait_task in done
+    assert timeout_task not in done
+
+    assert wait_task.result() == VarInput(value=18)
 
 
 def test_replay(db_engine: AsyncEngine):
