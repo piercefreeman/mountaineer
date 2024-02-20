@@ -81,6 +81,17 @@ async def stub_db_action(postgres_backend: PostgresBackend):
 
 
 @pytest.mark.asyncio
+async def test_assign_worker_id(
+    postgres_backend: PostgresBackend, stub_db_action: DaemonAction
+):
+    task_queue: Queue[TaskDefinition] = Queue()
+    isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
+    await isolation_process.start()
+
+    assert isolation_process.worker_id is not None
+
+
+@pytest.mark.asyncio
 async def test_soft_timeout(
     capfd, postgres_backend: PostgresBackend, stub_db_action: DaemonAction
 ):
@@ -133,6 +144,7 @@ async def test_soft_timeout(
     assert updated_action.schedule_after
     assert updated_action.final_result_id
     assert updated_action.schedule_after > task_start
+    assert updated_action.assigned_worker_status_id == isolation_process.worker_id
 
     async with postgres_backend.get_object_by_id(
         DaemonActionResult, updated_action.final_result_id
@@ -197,6 +209,7 @@ async def test_hard_timeout_and_shutdown(
     assert updated_action.schedule_after
     assert updated_action.final_result_id
     assert updated_action.schedule_after > task_start
+    assert updated_action.assigned_worker_status_id == isolation_process.worker_id
 
     async with postgres_backend.get_object_by_id(
         DaemonActionResult, updated_action.final_result_id

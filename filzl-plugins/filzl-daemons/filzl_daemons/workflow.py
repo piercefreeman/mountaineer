@@ -1,7 +1,7 @@
 import asyncio
 import multiprocessing
 from abc import ABC, ABCMeta, abstractmethod
-from datetime import datetime
+from datetime import datetime, timedelta
 from traceback import format_exc
 from typing import Awaitable, Generic, Type, TypeVar, get_args, get_origin
 from uuid import UUID
@@ -377,6 +377,10 @@ class DaemonRunner:
                 safe_task(self.queue_action_work)(worker_queue),
                 # Update the DB-level actions that are now ready to be re-queued
                 safe_task(self.update_scheduled_actions)(),
+                # Update the DB-level actions/instance values if their workers have timed out
+                # Workers themselves will handle the requeue of the actions if they time out within
+                # the active runloop
+                safe_task(self.update_timed_out_workers)(),
                 # Determine the health of our worker processes
                 safe_task(health_check)(),
                 # Required to wake up our sleeping instance workers
@@ -411,6 +415,83 @@ class DaemonRunner:
                 affected_rows = result.rowcount
                 LOGGER.debug(f"Updated {affected_rows} scheduled rows")
             await asyncio.sleep(refresh_interval)
+
+    async def update_timed_out_workers(
+        self, refresh_interval=30, worker_timeouts=5 * 60
+    ):
+        while True:
+            await self._update_timed_out_workers_single(worker_timeouts)
+            await asyncio.sleep(refresh_interval)
+
+    async def _update_timed_out_workers_single(self, worker_timeouts: int):
+        async with self.backend.session_maker() as session:
+            # Get all the workers that have timed out and haven't yet been cleaned up
+            # We recognize that this can introduce a race condition, but because the actions here are idempotent
+            # we can execute the SQL updates multiple times
+            current_time = datetime.now()
+            timeout_threshold = current_time - timedelta(seconds=worker_timeouts)
+
+            timed_out_workers_query = text(
+                f"""
+                SELECT id FROM {self.backend.local_models.WorkerStatus.__tablename__}
+                WHERE last_ping < :timeout_threshold AND cleaned_up = FALSE
+            """
+            )
+            timed_out_workers_result = await session.execute(
+                timed_out_workers_query, {"timeout_threshold": timeout_threshold}
+            )
+            timed_out_worker_ids = [row[0] for row in timed_out_workers_result]
+
+            if not timed_out_worker_ids:
+                return
+
+            # Right now we requeue action failures immediately if they happened because of a disconnected
+            # worker, versus a worker that has timed out.
+            result = await session.execute(
+                text(
+                    f"UPDATE {self.backend.local_models.DaemonAction.__tablename__} SET status = :new_status WHERE status = :old_status AND assigned_worker_status_id = ANY(:timed_out_worker_ids)"
+                ),
+                {
+                    "new_status": QueableStatus.QUEUED,
+                    "old_status": QueableStatus.IN_PROGRESS,
+                    "timed_out_worker_ids": timed_out_worker_ids,
+                },
+            )
+            await session.commit()
+            affected_rows = result.rowcount
+            LOGGER.debug(
+                f"update_timed_out_workers: Updated {affected_rows} action rows"
+            )
+
+            # Run the same logic for the instance table
+            result = await session.execute(
+                text(
+                    f"UPDATE {self.backend.local_models.DaemonWorkflowInstance.__tablename__} SET status = :new_status WHERE status = :old_status AND assigned_worker_status_id = ANY(:timed_out_worker_ids)"
+                ),
+                {
+                    "new_status": QueableStatus.QUEUED,
+                    "old_status": QueableStatus.IN_PROGRESS,
+                    "timed_out_worker_ids": timed_out_worker_ids,
+                },
+            )
+            affected_rows = result.rowcount
+            LOGGER.debug(
+                f"update_timed_out_workers: Updated {affected_rows} instance rows"
+            )
+
+            # Mark the workers as cleaned up
+            cleanup_workers_query = text(
+                f"""
+                UPDATE {self.backend.local_models.WorkerStatus.__tablename__}
+                SET cleaned_up = TRUE
+                WHERE id = ANY(:timed_out_worker_ids)
+            """
+            )
+            await session.execute(
+                cleanup_workers_query, {"timed_out_worker_ids": timed_out_worker_ids}
+            )
+
+            await session.commit()
 
     async def queue_instance_work(self, task_manager):
         async for notification in self.backend.iter_ready_objects(

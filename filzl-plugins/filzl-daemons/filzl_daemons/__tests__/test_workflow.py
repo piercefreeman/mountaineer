@@ -1,4 +1,6 @@
 import asyncio
+from datetime import datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from filzl.logging import LOGGER
@@ -11,6 +13,7 @@ from filzl_daemons.__tests__.conf_models import (
 )
 from filzl_daemons.actions import action
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.models import QueableStatus
 from filzl_daemons.retry import RetryPolicy
 from filzl_daemons.workflow import (
     DaemonClient,
@@ -159,6 +162,64 @@ def test_parse_workflow_missing_meta():
         class WorkflowWithTypehints2(Workflow[InputItem]):
             async def run(self, instance: WorkflowInstance[InputItem]):
                 return OutputItem(output_value=1)
+
+
+@pytest.mark.asyncio
+async def test_update_timed_out_tasks(
+    postgres_backend: PostgresBackend,
+):
+    # Set up: a timed out worker, a timed out action, and a timed out instance
+    # In practice actions and instances will be handled by different workers, but there's
+    # nothing at the DB or logic level that requires this to be true
+    async with postgres_backend.session_maker() as session:
+        worker_status = postgres_backend.local_models.WorkerStatus(
+            internal_process_id=uuid4(),
+            launch_time=datetime.now() - timedelta(minutes=20),
+            last_ping=datetime.now() - timedelta(minutes=10),
+        )
+        session.add(worker_status)
+        await session.commit()
+
+        action = postgres_backend.local_models.DaemonAction(
+            workflow_name="ExampleWorkflow",
+            instance_id=1,
+            state="",
+            status=QueableStatus.IN_PROGRESS,
+            registry_id="",
+            input_body="",
+            retry_backoff_seconds=0,
+            retry_backoff_factor=0,
+            retry_jitter=0,
+            assigned_worker_status_id=worker_status.id,
+        )
+        session.add(action)
+
+        instance = postgres_backend.local_models.DaemonWorkflowInstance(
+            workflow_name="ExampleWorkflow",
+            registry_id="",
+            input_body="",
+            launch_time=datetime.now(),
+            assigned_worker_status_id=worker_status.id,
+        )
+        session.add(instance)
+
+        await session.commit()
+
+        task_manager = DaemonRunner(
+            workflows=[ExampleWorkflow],
+            backend=postgres_backend,
+        )
+
+        await task_manager._update_timed_out_workers_single(5)
+
+        # Update the worker status to be recent
+        await session.refresh(worker_status)
+        await session.refresh(action)
+        await session.refresh(instance)
+
+        assert worker_status.cleaned_up
+        assert action.status == QueableStatus.QUEUED
+        assert instance.status == QueableStatus.QUEUED
 
 
 def test_replay(db_engine: AsyncEngine):

@@ -41,7 +41,7 @@ class DaemonWorkflowInstance(QueableItemMixin, SQLModel):
     # Status metadata
     launch_time: datetime
     end_time: datetime | None = None
-    current_worker_status_id: int | None = None
+    assigned_worker_status_id: int | None = None
 
     # Exit status
     exception: str | None = None
@@ -65,6 +65,10 @@ class WorkerStatus(SQLModel):
 
     launch_time: datetime
     last_ping: datetime
+
+    # If the worker exits, our supervisor should clean up dependent actions. If this
+    # value is set, this indicates that a supervisor has already completed the cleanup.
+    cleaned_up: bool = False
 
 
 class DaemonAction(QueableItemMixin, SQLModel):
