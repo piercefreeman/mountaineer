@@ -85,7 +85,7 @@ class DaemonAction(QueableItemMixin, SQLModel):
 
     # When the latest execution of this action was started
     started_datetime: datetime | None = None
-    assigned_worker_internal_id: UUID | None = None
+    assigned_worker_status_id: int | None = None
     ended_datetime: datetime | None = None
 
     # Retry metadata, must be set in the instantiation of each action

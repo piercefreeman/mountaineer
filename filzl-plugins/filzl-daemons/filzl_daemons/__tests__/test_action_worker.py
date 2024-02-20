@@ -114,7 +114,7 @@ async def test_soft_timeout(
     )
     task_queue.put(task)
 
-    isolation_process.start()
+    await isolation_process.start()
     isolation_process.join()
 
     # Assert that the stdout is as expected
@@ -124,15 +124,20 @@ async def test_soft_timeout(
     assert "END" not in captured.out
 
     # Ensure that the db action object was updated with the correct state
-    updated_action = await postgres_backend.get_object_by_id(DaemonAction, 1)
+    async with postgres_backend.get_object_by_id(DaemonAction, 1) as (
+        updated_action,
+        _,
+    ):
+        pass
     assert updated_action.status == QueableStatus.SCHEDULED
     assert updated_action.schedule_after
     assert updated_action.final_result_id
     assert updated_action.schedule_after > task_start
 
-    action_result = await postgres_backend.get_object_by_id(
+    async with postgres_backend.get_object_by_id(
         DaemonActionResult, updated_action.final_result_id
-    )
+    ) as (action_result, _):
+        pass
     assert action_result.result_body is None
     assert action_result.exception == "Task soft-timed out."
 
@@ -172,7 +177,7 @@ async def test_hard_timeout_and_shutdown(
 
     start = time()
 
-    isolation_process.start()
+    await isolation_process.start()
     task_queue.put(task)
     isolation_process.join()
 
@@ -183,15 +188,20 @@ async def test_hard_timeout_and_shutdown(
     assert elapsed_time < 7
 
     # Ensure that the db action object was updated with the correct state
-    updated_action = await postgres_backend.get_object_by_id(DaemonAction, 1)
+    async with postgres_backend.get_object_by_id(DaemonAction, 1) as (
+        updated_action,
+        _,
+    ):
+        pass
     assert updated_action.status == QueableStatus.SCHEDULED
     assert updated_action.schedule_after
     assert updated_action.final_result_id
     assert updated_action.schedule_after > task_start
 
-    action_result = await postgres_backend.get_object_by_id(
+    async with postgres_backend.get_object_by_id(
         DaemonActionResult, updated_action.final_result_id
-    )
+    ) as (action_result, _):
+        pass
     assert action_result.result_body is None
     assert action_result.exception == "Task hard-timed out."
 
@@ -202,7 +212,7 @@ async def test_ping(postgres_backend: PostgresBackend):
 
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
-    isolation_process.start()
+    await isolation_process.start()
 
     await asyncio.sleep(1)
 
@@ -244,7 +254,7 @@ async def test_handle_exception(
     )
     task_queue.put(task)
 
-    isolation_process.start()
+    await isolation_process.start()
     isolation_process.join()
 
     async with postgres_backend.session_maker() as session:

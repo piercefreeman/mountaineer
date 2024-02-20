@@ -153,13 +153,10 @@ class DaemonResponseFuture:
 
         """
         while True:
-            async with self.backend.session_maker() as session:
-                instance = await session.get(
-                    self.backend.local_models.DaemonWorkflowInstance,
-                    self.instance_id,
-                )
-                if instance is None:
-                    raise ValueError(f"Workflow instance {self.instance_id} not found")
+            async with self.backend.get_object_by_id(
+                self.backend.local_models.DaemonWorkflowInstance,
+                self.instance_id,
+            ) as (instance, session):
                 if instance.end_time:
                     workflow_cls = REGISTRY.get_workflow(instance.registry_id)
 
@@ -204,13 +201,10 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
                 )
             )
 
-            async with self.backend.session_maker() as session:
-                instance = await session.get(
-                    self.backend.local_models.DaemonWorkflowInstance,
-                    instance_id,
-                )
-                if instance is None:
-                    raise ValueError(f"Workflow instance {instance_id} not found")
+            async with self.backend.get_object_by_id(
+                self.backend.local_models.DaemonWorkflowInstance,
+                instance_id,
+            ) as (instance, session):
                 instance.status = QueableStatus.DONE
                 instance.result_body = result.model_dump_json()
                 instance.end_time = datetime.now()
@@ -218,13 +212,10 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
         except Exception as e:
             LOGGER.exception(f"Workflow `{self.__class__.__name__}` failed due to: {e}")
 
-            async with self.backend.session_maker() as session:
-                instance = await session.get(
-                    self.backend.local_models.DaemonWorkflowInstance,
-                    instance_id,
-                )
-                if instance is None:
-                    raise ValueError(f"Workflow instance {instance_id} not found")
+            async with self.backend.get_object_by_id(
+                self.backend.local_models.DaemonWorkflowInstance,
+                instance_id,
+            ) as (instance, session):
                 instance.status = QueableStatus.DONE
                 instance.exception = str(e)
                 instance.exception_stack = format_exc()
@@ -335,19 +326,19 @@ class DaemonRunner:
         )
         task_manager = TaskManager(backend=self.backend)
 
-        def start_new_worker():
+        async def start_new_worker():
             # Start a new worker to replace the one that's draining
             process = ActionWorkerProcess(
                 worker_queue, self.backend, pool_size=self.threads_per_worker
             )
-            process.start()
+            await process.start()
 
             # Make sure to do after the process is started
             process.add_is_draining_callback(is_draining_callback)
 
             return process
 
-        def is_draining_callback(worker: ActionWorkerProcess):
+        async def is_draining_callback(worker: ActionWorkerProcess):
             # If we're alerted that the process is draining, we should
             # start a new one. Also handle the case where processes quit
             # without a draining signal.
@@ -355,7 +346,7 @@ class DaemonRunner:
                 return
             already_drained.add(worker.process_id)
 
-            process = start_new_worker()
+            process = await start_new_worker()
             worker_processes[process.process_id] = process
 
         async def health_check():
@@ -366,14 +357,14 @@ class DaemonRunner:
                 for process_id, process in list(worker_processes.items()):
                     # Handle potential terminations of the process for other reasons
                     if not process.is_alive():
-                        is_draining_callback(process)
+                        await is_draining_callback(process)
                         del worker_processes[process_id]
 
                 await asyncio.sleep(5)
 
         # Initial worker process bootstrap for action handlers
         for _ in range(self.max_workers):
-            process = start_new_worker()
+            process = await start_new_worker()
             worker_processes[process.process_id] = process
             LOGGER.debug(f"Spawned: {process.process_id}")
 
@@ -436,9 +427,10 @@ class DaemonRunner:
 
             # TODO: Right now we just instantiate a new workflow every time, we should keep
             # this cached in case there is some heavy loading in init
-            instance_definition = await self.backend.get_object_by_id(
+            async with self.backend.get_object_by_id(
                 self.backend.local_models.DaemonWorkflowInstance, notification.id
-            )
+            ) as (instance_definition, _):
+                pass
 
             if not instance_definition.id:
                 continue
@@ -469,10 +461,11 @@ class DaemonRunner:
                 continue
 
             # Get the full object from the database
-            action_definition = await self.backend.get_object_by_id(
+            async with self.backend.get_object_by_id(
                 model=self.backend.local_models.DaemonAction,
                 id=notification.id,
-            )
+            ) as (action_definition, _):
+                pass
 
             field_to_timeout = {
                 "wall_soft_timeout": (TimeoutMeasureType.WALL_TIME, TimeoutType.SOFT),

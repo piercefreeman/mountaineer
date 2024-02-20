@@ -116,14 +116,18 @@ class ActionWorkerProcess(multiprocessing.Process):
             maxsize=1
         )
 
-    def start(self):
+    async def start(self):
+        await self.start_async()
+        super().start()
+
+    async def start_async(self):
         # Needs to be spawned in the parent process
         is_draining_monitor = Thread(target=self.monitor_is_draining, daemon=True)
         is_draining_monitor.start()
 
         self.is_started = True
 
-        super().start()
+        self.worker_id = await self.init_worker_db()
 
     def worker_init(self):
         # Usable within the worker process
@@ -139,6 +143,9 @@ class ActionWorkerProcess(multiprocessing.Process):
         REGISTRY.load_modules(self.action_modules)
 
     def run(self):
+        asyncio.run(self.run_async())
+
+    async def run_async(self):
         self.worker_init()
 
         ping_thread = Thread(target=self.ping, daemon=True)
@@ -167,7 +174,7 @@ class ActionWorkerProcess(multiprocessing.Process):
                 break
 
             LOGGER.debug(f"Received task: {task}")
-            self.execute_task(task)
+            await self.spawn_execute_task(task)
 
             # If we have exhausted the number of tasks we can process we shouldn't add any more
             # The success/failure handlers will determine when to start draining based
@@ -186,48 +193,55 @@ class ActionWorkerProcess(multiprocessing.Process):
         # Our final task, right before we exit the process, is to mark all outstanding
         # timed out tasks as true failures. We delay this until the end of the process
         # because there's still a chance they could complete in this interval.
-        async def cleanup_hard_timeouts():
-            hard_timeouts = [
-                thread_definition
-                for thread_definition in self.pool_threads.values()
-                if TimeoutType.HARD in thread_definition.timed_out_causes
+        hard_timeouts = [
+            thread_definition
+            for thread_definition in self.pool_threads.values()
+            if TimeoutType.HARD in thread_definition.timed_out_causes
+        ]
+        await asyncio.gather(
+            *[
+                safe_task(self.report_failure)(
+                    thread_definition.task, "Task hard-timed out."
+                )
+                for thread_definition in hard_timeouts
             ]
-            await asyncio.gather(
-                *[
-                    safe_task(self.report_failure)(
-                        thread_definition.task, "Task hard-timed out."
-                    )
-                    for thread_definition in hard_timeouts
-                ]
-            )
+        )
 
-        asyncio.run(cleanup_hard_timeouts())
+    async def init_worker_db(self):
+        """
+        Create a new tracking object for this worker in the database.
+        """
+        # Initialize the object that tracks this worker
+        async with self.backend.session_maker() as session:
+            worker = self.backend.local_models.WorkerStatus(
+                internal_process_id=self.process_id,
+                is_action_worker=True,
+                is_draining=False,
+                last_ping=datetime.utcnow(),
+                launch_time=datetime.utcnow(),
+            )
+            session.add(worker)
+            await session.commit()
+
+        return worker.id
 
     def ping(self, ping_interval: int = 30):
         """
         Report health of this worker process to the backend.
         """
-        worker_id: int | None = None
 
         async def run_single_ping():
-            nonlocal worker_id
-            if worker_id is None:
+            if self.worker_id is None:
                 LOGGER.warning("Worker ID not set during update...")
                 return
 
-            LOGGER.debug(f"Pinging update for worker {worker_id}")
-            async with self.backend.session_maker() as session:
-                worker = await session.get(
-                    self.backend.local_models.WorkerStatus, worker_id
-                )
-                if worker is not None:
-                    worker.last_ping = datetime.utcnow()
-                    worker.is_draining = self.is_draining
-                    await session.commit()
-                else:
-                    LOGGER.error(
-                        f"WorkerStatus object {worker_id} was not found in the database."
-                    )
+            LOGGER.debug(f"Pinging update for worker {self.worker_id}")
+            async with self.backend.get_object_by_id(
+                self.backend.local_models.WorkerStatus, self.worker_id
+            ) as (worker, session):
+                worker.last_ping = datetime.utcnow()
+                worker.is_draining = self.is_draining
+                await session.commit()
 
         async def shutdown_on_drain():
             while True:
@@ -239,22 +253,6 @@ class ActionWorkerProcess(multiprocessing.Process):
             await run_single_ping()
 
         async def run_ping():
-            nonlocal worker_id
-
-            # Initialize the object that tracks this worker
-            async with self.backend.session_maker() as session:
-                worker = self.backend.local_models.WorkerStatus(
-                    internal_process_id=self.process_id,
-                    is_action_worker=True,
-                    is_draining=self.is_draining,
-                    last_ping=datetime.utcnow(),
-                    launch_time=datetime.utcnow(),
-                )
-                session.add(worker)
-                await session.commit()
-
-            worker_id = worker.id
-
             # Then update it periodically
             while True:
                 await run_single_ping()
@@ -379,7 +377,10 @@ class ActionWorkerProcess(multiprocessing.Process):
         """
         self.flag_is_draining()
 
-    def execute_task(self, task_definition: TaskDefinition):
+    async def spawn_execute_task(self, task_definition: TaskDefinition):
+        # Assign this action to this particular worker
+        await self.claim_task(task_definition)
+
         # Stub definition
         thread_definition = ThreadDefinition(
             thread_id=uuid4(),
@@ -402,6 +403,14 @@ class ActionWorkerProcess(multiprocessing.Process):
             self.pool_threads[thread_definition.thread_id] = thread_definition
 
         thread.start()
+
+    async def claim_task(self, task_definition: TaskDefinition):
+        async with self.backend.get_object_by_id(
+            self.backend.local_models.DaemonAction,
+            task_definition.action_id,
+        ) as (action, session):
+            action.assigned_worker_status_id = self.worker_id
+            await session.commit()
 
     def task_thread(
         self, task_definition: TaskDefinition, thread_definition: ThreadDefinition
@@ -493,16 +502,10 @@ class ActionWorkerProcess(multiprocessing.Process):
         # we have some intermediary load handler (like pgbouncer). We can also likely optimize
         # our behavior further by keeping a connection pool open for the duration of the worker
         # process, but for now we'll just keep it simple.
-        async with self.backend.session_maker() as session:
-            action_obj = await session.get(
-                self.backend.local_models.DaemonAction,
-                task_definition.action_id,
-            )
-            if not action_obj:
-                raise ValueError(
-                    f"No action obj matching {task_definition.action_id} was found"
-                )
-
+        async with self.backend.get_object_by_id(
+            self.backend.local_models.DaemonAction,
+            task_definition.action_id,
+        ) as (action_obj, session):
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
                 instance_id=action_obj.instance_id,
@@ -526,16 +529,10 @@ class ActionWorkerProcess(multiprocessing.Process):
         exception: str,
         exception_stack: str | None = None,
     ):
-        async with self.backend.session_maker() as session:
-            action_obj = await session.get(
-                self.backend.local_models.DaemonAction,
-                task_definition.action_id,
-            )
-            if not action_obj:
-                raise ValueError(
-                    f"No action obj matching {task_definition.action_id} was found"
-                )
-
+        async with self.backend.get_object_by_id(
+            self.backend.local_models.DaemonAction,
+            task_definition.action_id,
+        ) as (action_obj, session):
             action_result_obj = self.backend.local_models.DaemonActionResult(
                 action_id=task_definition.action_id,
                 instance_id=action_obj.instance_id,

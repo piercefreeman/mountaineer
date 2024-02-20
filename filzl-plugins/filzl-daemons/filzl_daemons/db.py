@@ -94,12 +94,13 @@ class PostgresBackend:
             )
         return self.session_makers[loop]
 
-    async def get_object_by_id(self, model: Type[T], id: int) -> T:
+    @asynccontextmanager
+    async def get_object_by_id(self, model: Type[T], id: int):
         async with self.session_maker() as session:
             obj = await session.get(model, id)
             if obj is None:
                 raise ValueError(f"Object with id {id} not found")
-            return cast(T, obj)
+            yield cast(T, obj), session
 
     async def iter_ready_objects(
         self,

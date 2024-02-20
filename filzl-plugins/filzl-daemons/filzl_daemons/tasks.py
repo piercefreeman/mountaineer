@@ -134,10 +134,11 @@ class TaskManager:
                 continue
 
             # Get the actual object
-            obj = await self.backend.get_object_by_id(
+            async with self.backend.get_object_by_id(
                 model=self.backend.local_models.DaemonAction,
                 id=notification.id,
-            )
+            ) as (obj, _):
+                pass
 
             if not obj.final_result_id:
                 # No result found, likely erroneous "done" setting
@@ -147,10 +148,11 @@ class TaskManager:
                 continue
 
             # Look for the most recent pointer
-            result_obj = await self.backend.get_object_by_id(
+            async with self.backend.get_object_by_id(
                 model=self.backend.local_models.DaemonActionResult,
                 id=obj.final_result_id,
-            )
+            ) as (result_obj, _):
+                pass
 
             if result_obj.exception:
                 LOGGER.debug(f"Got an exception: {result_obj.exception}")
