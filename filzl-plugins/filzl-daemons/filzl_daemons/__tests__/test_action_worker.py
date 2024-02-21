@@ -52,7 +52,7 @@ async def example_async_chains() -> None:
     sys.stdout.write("START")
     await asyncio.sleep(2)
     sys.stdout.write("MIDDLE")
-    await asyncio.sleep(2)
+    await asyncio.sleep(3)
     sys.stdout.write("END")
 
 
@@ -86,9 +86,15 @@ async def test_assign_worker_id(
 ):
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
+
+    # The worker id generation is kicked off by the start method, so we actually
+    # have to start the process
     await isolation_process.start()
 
     assert isolation_process.worker_id is not None
+
+    isolation_process.terminate()
+    isolation_process.join()
 
 
 @pytest.mark.asyncio

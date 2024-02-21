@@ -27,7 +27,8 @@ class QueableItemMixin(SQLModel):
     status: QueableStatus = QueableStatus.QUEUED
 
     updated_at: datetime = Field(
-        sa_column_kwargs={"default": datetime.now, "onupdate": datetime.now}
+        default_factory=datetime.now,
+        sa_column_kwargs={"default": datetime.now, "onupdate": datetime.now},
     )
 
 

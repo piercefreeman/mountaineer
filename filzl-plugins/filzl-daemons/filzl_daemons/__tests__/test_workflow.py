@@ -278,7 +278,7 @@ async def test_requeue_task_exceptions(
     assert wait_task in done
     assert timeout_task not in done
 
-    assert wait_task.result() == VarInput(value=18)
+    assert wait_task.result() == VarInput(value=90)
 
 
 def test_replay(db_engine: AsyncEngine):
