@@ -175,6 +175,7 @@ class PostgresBackend:
 
                 retrieved_items += 1
                 if max_items and retrieved_items >= max_items:
+                    notification_task.cancel()
                     break
             except asyncio.CancelledError:
                 # Handle cancellation properly

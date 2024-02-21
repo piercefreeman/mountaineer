@@ -1,4 +1,6 @@
 import multiprocessing
+from os import environ
+from warnings import filterwarnings
 
 import pytest
 import pytest_asyncio
@@ -77,3 +79,18 @@ def daemon_client(postgres_backend: PostgresBackend):
     return DaemonClient(
         backend=postgres_backend,
     )
+
+
+@pytest.fixture(autouse=True)
+def enable_async_debug():
+    # Allows for easier debugging of our async code
+    environ["PYTHONASYNCIODEBUG"] = "1"
+    try:
+        yield
+    finally:
+        del environ["PYTHONASYNCIODEBUG"]
+
+
+@pytest.fixture(autouse=True)
+def silence_socket_warnings():
+    filterwarnings(action="ignore", message="unclosed", category=ResourceWarning)

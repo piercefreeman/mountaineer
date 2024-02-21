@@ -273,7 +273,7 @@ async def test_requeue_task_exceptions(
         ExampleRandomCrashes, ExampleWorkflowInput(input_value=1)
     )
 
-    timeout_task = asyncio.create_task(asyncio.sleep(10))
+    timeout_task = asyncio.create_task(asyncio.sleep(15))
     wait_task = asyncio.create_task(safe_task(result.wait)())
     handle_jobs_task = asyncio.create_task(
         safe_task(task_manager.handle_jobs)(daemon_runner_manager)

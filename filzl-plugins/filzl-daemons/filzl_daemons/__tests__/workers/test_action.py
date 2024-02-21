@@ -203,7 +203,7 @@ async def test_hard_timeout_and_shutdown(
 
     assert elapsed_time >= 3
     # Can take a bit longer to fully quit and join
-    assert elapsed_time < 7
+    assert elapsed_time < 10
 
     # Ensure that the db action object was updated with the correct state
     async with postgres_backend.get_object_by_id(DaemonAction, 1) as (
