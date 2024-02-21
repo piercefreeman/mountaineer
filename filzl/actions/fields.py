@@ -1,8 +1,10 @@
 from enum import Enum
 from inspect import ismethod
-from typing import Callable, Optional, Type
+from json import loads as json_loads
+from typing import Any, Callable, Optional, Type
 
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
@@ -202,3 +204,37 @@ def fuse_metadata_to_response_typehint(
         **base_response_params,  # type: ignore
     )
     return model
+
+
+def handle_explicit_responses(
+    dict_payload: dict[str, Any],
+):
+    """
+    Wrapper to allow actions to respond with an explicit Response, or a dictionary. If it returns
+    with a Response, we will manipulate the output to validate to our expected output schema.
+    """
+    responses = [
+        (key, response)
+        for key, response in dict_payload.items()
+        if isinstance(response, JSONResponse)
+    ]
+
+    if len(responses) > 1:
+        raise ValueError("Multiple conflicting responses returned")
+
+    if len(responses) == 0:
+        return dict_payload
+
+    response_key, response = responses[0]
+    dict_payload[response_key] = json_loads(response.body)
+
+    # Now inject the newly formatted response into the response object
+    return JSONResponse(
+        content=dict_payload,
+        status_code=response.status_code,
+        headers={
+            key: value
+            for key, value in response.headers.items()
+            if key not in {"content-length", "content-type"}
+        },
+    )

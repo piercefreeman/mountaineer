@@ -1,6 +1,5 @@
 from fastapi import Depends
-from sqlalchemy.engine import Engine
-from sqlmodel import Session, create_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from filzl.database.config import DatabaseConfig
 from filzl.dependencies import CoreDependencies
@@ -21,11 +20,12 @@ class DatabaseDependencies:
         if not config.SQLALCHEMY_DATABASE_URI:
             raise RuntimeError("No SQLALCHEMY_DATABASE_URI set")
 
-        return create_engine(str(config.SQLALCHEMY_DATABASE_URI))
+        return create_async_engine(str(config.SQLALCHEMY_DATABASE_URI))
 
     @staticmethod
-    def get_db_session(
-        engine: Engine = Depends(get_db),
+    async def get_db_session(
+        engine: AsyncEngine = Depends(get_db),
     ):
-        with Session(engine) as session:
+        session_maker = async_sessionmaker(engine, expire_on_commit=False)
+        async with session_maker() as session:
             yield session

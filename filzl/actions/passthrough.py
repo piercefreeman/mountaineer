@@ -4,7 +4,11 @@ from typing import TYPE_CHECKING, Callable, Type, overload
 
 from pydantic import BaseModel
 
-from filzl.actions.fields import FunctionActionType, init_function_metadata
+from filzl.actions.fields import (
+    FunctionActionType,
+    handle_explicit_responses,
+    init_function_metadata,
+)
 from filzl.exceptions import APIException
 
 if TYPE_CHECKING:
@@ -45,7 +49,7 @@ def passthrough(*args, **kwargs):
                 response = func(self, *func_args, **func_kwargs)
                 if isawaitable(response):
                     response = await response
-                return response
+                return handle_explicit_responses(dict(passthrough=response))
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = response_model

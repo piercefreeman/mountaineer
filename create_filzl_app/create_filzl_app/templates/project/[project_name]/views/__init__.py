@@ -1,7 +1,7 @@
-from importlib.resources import path
+from importlib.resources import as_file, files
 from pathlib import Path
 
 
 def get_view_path(asset_name: str) -> Path:
-    with path(__name__, "") as asset_path:
-        return Path(asset_path) / asset_name.lstrip("/")
+    with as_file(files(__name__).joinpath(asset_name)) as path:
+        return Path(path)

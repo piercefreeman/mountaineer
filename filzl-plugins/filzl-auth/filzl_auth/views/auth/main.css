@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.grecaptcha-badge {
+    /* Instead of a floating badge, we use a text badge under the login window */
+    visibility: hidden;
+}

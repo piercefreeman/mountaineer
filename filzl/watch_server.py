@@ -72,8 +72,8 @@ class WatcherWebservice:
             raise Exception("WatcherWebservice has already started")
 
         self.webservice_thread = UvicornThread(
-            "filzl.watch_server:WATCHER_WEBSERVICE.app",
-            self.port,
+            app=self.app,
+            port=self.port,
             log_level="warning",
         )
 
@@ -93,15 +93,3 @@ class WatcherWebservice:
             self.notification_queue.put(None)
             self.monitor_build_thread.join()
         LOGGER.info("WatcherWebservice has stopped")
-
-
-# One global variable to use for the uvicorn entrypoint
-# Make sure you call `get_watcher_webservice` to get the instance
-WATCHER_WEBSERVICE: WatcherWebservice | None = None
-
-
-def get_watcher_webservice():
-    global WATCHER_WEBSERVICE
-    if WATCHER_WEBSERVICE is None:
-        WATCHER_WEBSERVICE = WatcherWebservice()
-    return WATCHER_WEBSERVICE

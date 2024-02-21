@@ -36,7 +36,9 @@ def unregister_config():
 def get_config() -> ConfigBase:
     if APP_CONFIG is None:
         raise ValueError(
-            "Configuration not registered; call register_config() with your BaseSettings class"
+            "Configuration not registered. Either:\n"
+            "1. Call register_config() with your BaseSettings class\n"
+            "2. Make sure your BaseSettings is imported so the ConfigMeta can auto-register"
         )
 
     return APP_CONFIG

@@ -16,7 +16,7 @@ class DatabaseConfig(BaseSettings):
     def build_db_connection(cls, values: Any) -> Any:
         if not values.get("SQLALCHEMY_DATABASE_URI"):
             values["SQLALCHEMY_DATABASE_URI"] = PostgresDsn.build(
-                scheme="postgresql",
+                scheme="postgresql+asyncpg",
                 username=values["POSTGRES_USER"],
                 password=values["POSTGRES_PASSWORD"],
                 host=values["POSTGRES_HOST"],

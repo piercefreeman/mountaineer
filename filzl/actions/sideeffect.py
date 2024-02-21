@@ -11,6 +11,7 @@ from starlette.routing import Match
 from filzl.actions.fields import (
     FunctionActionType,
     get_function_metadata,
+    handle_explicit_responses,
     init_function_metadata,
 )
 from filzl.dependencies import get_function_dependencies
@@ -87,9 +88,11 @@ def sideeffect(*args, **kwargs):
                     if isawaitable(server_data):
                         server_data = await server_data
 
-                    return dict(
-                        sideeffect=server_data,
-                        passthrough=passthrough_values,
+                    return handle_explicit_responses(
+                        dict(
+                            sideeffect=server_data,
+                            passthrough=passthrough_values,
+                        )
                     )
 
             # Update the signature of 'inner' to include 'request: Request'
