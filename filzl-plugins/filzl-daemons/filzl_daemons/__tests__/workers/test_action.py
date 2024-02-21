@@ -1,6 +1,6 @@
 import asyncio
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from multiprocessing import Queue
 from time import time
 
@@ -102,7 +102,7 @@ async def test_soft_timeout(
     capfd, postgres_backend: PostgresBackend, stub_db_action: DaemonAction
 ):
     task_queue: Queue[TaskDefinition] = Queue()
-    task_start = datetime.now()
+    task_start = datetime.now(timezone.utc)
     isolation_process = ActionWorkerProcess(
         task_queue,
         postgres_backend,
@@ -169,7 +169,7 @@ async def test_hard_timeout_and_shutdown(
     and that we close the worker process after the hard timeout.
 
     """
-    task_start = datetime.now()
+    task_start = datetime.now(timezone.utc)
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)
 
@@ -227,7 +227,7 @@ async def test_hard_timeout_and_shutdown(
 
 @pytest.mark.asyncio
 async def test_ping(postgres_backend: PostgresBackend):
-    start_time = datetime.now()
+    start_time = datetime.now(timezone.utc)
 
     task_queue: Queue[TaskDefinition] = Queue()
     isolation_process = ActionWorkerProcess(task_queue, postgres_backend, pool_size=5)

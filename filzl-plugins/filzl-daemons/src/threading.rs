@@ -147,7 +147,7 @@ mod tests {
         );
         if let Ok(usage) = cpu_usage {
             assert!(
-                usage > 2,
+                usage > 2.0,
                 "Expected CPU usage to be greater than 2s of full computation"
             );
         }

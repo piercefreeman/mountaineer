@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from random import random
 
 from pydantic import BaseModel
@@ -41,7 +41,7 @@ def calculate_retry(
     datetime at which the next retry should be attempted.
 
     """
-    ended_datetime = daemon_action.ended_datetime or datetime.now()
+    ended_datetime = daemon_action.ended_datetime or datetime.now(timezone.utc)
 
     # Calculate the backoff delay
     backoff_seconds = daemon_action.retry_backoff_seconds

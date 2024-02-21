@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from queue import Empty, Full
 from threading import Lock, Semaphore, Thread
 from time import sleep
@@ -281,7 +281,7 @@ class ActionWorkerProcess(WorkerBase):
         if not definition.thread:
             return None
 
-        wall_elapsed = datetime.now() - definition.started_wall
+        wall_elapsed = datetime.now(timezone.utc) - definition.started_wall
         cpu_elapsed = filzl_daemons_rs.get_thread_cpu_time(definition.thread.ident)
 
         # Process hard timeouts first, since if these violate we should take
@@ -323,7 +323,7 @@ class ActionWorkerProcess(WorkerBase):
             thread_id=uuid4(),
             task=task_definition,
             thread=None,
-            started_wall=datetime.now(),
+            started_wall=datetime.now(timezone.utc),
             timeouts=task_definition.timeouts,
         )
 
@@ -447,7 +447,7 @@ class ActionWorkerProcess(WorkerBase):
                 action_id=task_definition.action_id,
                 instance_id=action_obj.instance_id,
                 attempt_num=action_obj.retry_current_attempt,
-                finished_at=datetime.now(),
+                finished_at=datetime.now(timezone.utc),
                 result_body=result.model_dump_json() if result is not None else result,
             )
             session.add(action_result_obj)
@@ -474,7 +474,7 @@ class ActionWorkerProcess(WorkerBase):
                 action_id=task_definition.action_id,
                 instance_id=action_obj.instance_id,
                 attempt_num=action_obj.retry_current_attempt,
-                finished_at=datetime.now(),
+                finished_at=datetime.now(timezone.utc),
                 exception=exception,
                 exception_stack=exception_stack,
             )

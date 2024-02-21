@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import multiprocessing
 from abc import ABC, ABCMeta, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from itertools import chain
 from multiprocessing.managers import SyncManager
 from traceback import format_exc
@@ -221,7 +221,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
             ) as (instance, session):
                 instance.status = QueableStatus.DONE
                 instance.result_body = result.model_dump_json()
-                instance.end_time = datetime.now()
+                instance.end_time = datetime.now(timezone.utc)
                 await session.commit()
         except Exception as e:
             LOGGER.exception(f"Workflow `{self.__class__.__name__}` failed due to: {e}")
@@ -241,7 +241,7 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
                 workflow_name=self.__class__.__name__,
                 registry_id=REGISTRY.get_registry_id_for_workflow(self.__class__),
                 input_body=task_input.model_dump_json(),
-                launch_time=datetime.now(),
+                launch_time=datetime.now(timezone.utc),
             )
 
             session.add(db_instance)
@@ -499,7 +499,7 @@ class DaemonRunner:
             # Get all the workers that have timed out and haven't yet been cleaned up
             # We recognize that this can introduce a race condition, but because the actions here are idempotent
             # we can execute the SQL updates multiple times
-            current_time = datetime.now()
+            current_time = datetime.now(timezone.utc)
             timeout_threshold = current_time - timedelta(seconds=worker_timeouts)
 
             timed_out_workers_query = text(

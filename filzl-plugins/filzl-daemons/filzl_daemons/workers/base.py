@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -27,8 +27,8 @@ class WorkerBase(multiprocessing.Process):
             worker = self.backend.local_models.WorkerStatus(
                 internal_process_id=self.process_id,
                 is_draining=False,
-                last_ping=datetime.utcnow(),
-                launch_time=datetime.utcnow(),
+                last_ping=datetime.now(timezone.utc),
+                launch_time=datetime.now(timezone.utc),
                 **self.custom_worker_args,
             )
             session.add(worker)
@@ -60,7 +60,7 @@ class WorkerBase(multiprocessing.Process):
             async with self.backend.get_object_by_id(
                 self.backend.local_models.WorkerStatus, self.worker_id
             ) as (worker, session):
-                worker.last_ping = datetime.utcnow()
+                worker.last_ping = datetime.now(timezone.utc)
                 worker.is_draining = self.is_draining
                 await session.commit()
 

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -41,7 +41,7 @@ async def test_iter_ready_objects(db_engine: AsyncEngine, limit_queues: list[str
                 workflow_name="test_workflow_id",
                 registry_id="test_registry_id",
                 input_body="value_1",
-                launch_time=datetime.now(),
+                launch_time=datetime.now(timezone.utc),
                 status=QueableStatus.QUEUED,
             )
         )
@@ -57,7 +57,7 @@ async def test_iter_ready_objects(db_engine: AsyncEngine, limit_queues: list[str
                     workflow_name="test_workflow_id",
                     registry_id="test_registry_id",
                     input_body="value_2",
-                    launch_time=datetime.now(),
+                    launch_time=datetime.now(timezone.utc),
                     status=QueableStatus.QUEUED,
                 )
             )
@@ -98,7 +98,7 @@ async def test_object_switch_status(db_engine: AsyncEngine):
             workflow_name="test_workflow_id",
             registry_id="test_registry_id",
             input_body="value_1",
-            launch_time=datetime.now(),
+            launch_time=datetime.now(timezone.utc),
         )
         session.add(workflow_instance)
         await session.commit()

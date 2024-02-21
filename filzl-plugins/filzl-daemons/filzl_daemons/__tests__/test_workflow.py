@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from multiprocessing.managers import SyncManager
 from random import random
 from uuid import uuid4
@@ -190,8 +190,8 @@ async def test_update_timed_out_tasks(
     async with postgres_backend.session_maker() as session:
         worker_status = postgres_backend.local_models.WorkerStatus(
             internal_process_id=uuid4(),
-            launch_time=datetime.now() - timedelta(minutes=20),
-            last_ping=datetime.now() - timedelta(minutes=10),
+            launch_time=datetime.now(timezone.utc) - timedelta(minutes=20),
+            last_ping=datetime.now(timezone.utc) - timedelta(minutes=10),
         )
         session.add(worker_status)
         await session.commit()
@@ -214,7 +214,7 @@ async def test_update_timed_out_tasks(
             workflow_name="ExampleWorkflow",
             registry_id="",
             input_body="",
-            launch_time=datetime.now(),
+            launch_time=datetime.now(timezone.utc),
             assigned_worker_status_id=worker_status.id,
         )
         session.add(instance)

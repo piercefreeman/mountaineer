@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
@@ -26,7 +26,7 @@ def test_determine_retry_without_jitter(
         registry_id="",
         input_body="",
         retry_current_attempt=current_attempt,
-        ended_datetime=datetime.now(),
+        ended_datetime=datetime.now(timezone.utc),
         retry_backoff_seconds=backoff_seconds,
         retry_backoff_factor=backoff_factor,
         retry_jitter=0,
@@ -56,7 +56,7 @@ def test_determine_retry_with_jitter(
         registry_id="",
         input_body="",
         retry_current_attempt=current_attempt,
-        ended_datetime=datetime.now(),
+        ended_datetime=datetime.now(timezone.utc),
         retry_backoff_seconds=backoff_seconds,
         retry_backoff_factor=backoff_factor,
         retry_jitter=jitter,

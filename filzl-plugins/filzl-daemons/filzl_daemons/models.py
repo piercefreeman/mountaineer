@@ -1,12 +1,15 @@
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import StrEnum
 from importlib import import_module
 from inspect import isclass
 from typing import Type, TypeVar
 from uuid import UUID
 
-from sqlmodel import Field, SQLModel
+from sqlalchemy import DateTime
+from sqlmodel import SQLModel
+
+from filzl_daemons.sqlmodel import Field
 
 
 class QueableStatus(StrEnum):
@@ -18,6 +21,10 @@ class QueableStatus(StrEnum):
     SCHEDULED = "SCHEDULED"
 
 
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
 class QueableItemMixin(SQLModel):
     """
     Mixin for items that can be queued.
@@ -27,8 +34,9 @@ class QueableItemMixin(SQLModel):
     status: QueableStatus = QueableStatus.QUEUED
 
     updated_at: datetime = Field(
-        default_factory=datetime.now,
-        sa_column_kwargs={"default": datetime.now, "onupdate": datetime.now},
+        default_factory=utc_now,
+        sa_type=DateTime(timezone=True),
+        sa_column_kwargs={"default": utc_now, "onupdate": utc_now},
     )
 
 
@@ -44,8 +52,13 @@ class DaemonWorkflowInstance(QueableItemMixin, SQLModel):
     input_body: str  # json input
 
     # Status metadata
-    launch_time: datetime
-    end_time: datetime | None = None
+    launch_time: datetime = Field(
+        sa_type=DateTime(timezone=True),
+    )
+    end_time: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+    )
     assigned_worker_status_id: int | None = None
 
     # Exit status
@@ -68,8 +81,8 @@ class WorkerStatus(SQLModel):
     is_instance_worker: bool = False
     is_draining: bool = False
 
-    launch_time: datetime
-    last_ping: datetime
+    launch_time: datetime = Field(sa_type=DateTime(timezone=True))
+    last_ping: datetime = Field(sa_type=DateTime(timezone=True))
 
     # If the worker exits, our supervisor should clean up dependent actions. If this
     # value is set, this indicates that a supervisor has already completed the cleanup.
@@ -82,7 +95,9 @@ class DaemonAction(QueableItemMixin, SQLModel):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    created_at: datetime = Field(default_factory=datetime.now)
+    created_at: datetime = Field(
+        sa_type=DateTime(timezone=True), default_factory=utc_now
+    )
 
     instance_id: int
 
@@ -93,9 +108,15 @@ class DaemonAction(QueableItemMixin, SQLModel):
     input_body: str | None  # json payload
 
     # When the latest execution of this action was started
-    started_datetime: datetime | None = None
+    started_datetime: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+    )
     assigned_worker_status_id: int | None = None
-    ended_datetime: datetime | None = None
+    ended_datetime: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+    )
 
     # Retry metadata, must be set in the instantiation of each action
     retry_current_attempt: int = 0
@@ -115,7 +136,10 @@ class DaemonAction(QueableItemMixin, SQLModel):
     cpu_hard_timeout: int | None = None
 
     # Don't schedule before this time interval
-    schedule_after: datetime | None = None
+    schedule_after: datetime | None = Field(
+        default=None,
+        sa_type=DateTime(timezone=True),
+    )
 
 
 class DaemonActionResult(SQLModel):
@@ -128,7 +152,9 @@ class DaemonActionResult(SQLModel):
     instance_id: int
 
     attempt_num: int
-    finished_at: datetime
+    finished_at: datetime = Field(
+        sa_type=DateTime(timezone=True),
+    )
 
     # Exit status
     exception: str | None = None
