@@ -99,8 +99,12 @@ test-create-filzl-app-integrations:
 test-plugin-auth:
 	$(call test-common,$(PLUGIN_FIZL_AUTH_DIR),$(PLUGIN_FIZL_AUTH_NAME))
 test-plugin-daemons:
-	$(call test-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
-	$(call test-rust-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME))
+	(cd $(PLUGIN_FIZL_DAEMONS_DIR) && docker-compose up -d)
+	@$(call wait-for-postgres,30,5434)
+	@set -e; \
+	$(call test-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME)) ;\
+	$(call test-rust-common,$(PLUGIN_FIZL_DAEMONS_DIR),$(PLUGIN_FIZL_DAEMONS_NAME)) ;\
+	(cd $(PLUGIN_FIZL_DAEMONS_DIR) && docker-compose down)
 
 #
 # Common helper functions
@@ -134,4 +138,20 @@ define lint-validation-common
 	@(cd $(1) && poetry run ruff format --check $(2))
 	@(cd $(1) && poetry run ruff check $(2))
 	@(cd $(1) && poetry run mypy $(2))
+endef
+
+# Function to wait for PostgreSQL to be ready
+define wait-for-postgres
+	@echo "Waiting for PostgreSQL to be ready..."
+	@timeout=$(1); \
+	while ! nc -z localhost $(2) >/dev/null 2>&1; do \
+		timeout=$$((timeout-1)); \
+		if [ $$timeout -le 0 ]; then \
+			echo "Timed out waiting for PostgreSQL to start on port $(2)"; \
+			exit 1; \
+		fi; \
+		echo "Waiting for PostgreSQL to start..."; \
+		sleep 1; \
+	done; \
+	echo "PostgreSQL is ready on port $(2)."
 endef

@@ -40,6 +40,13 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
 
+    services:
+      docker:
+        image: docker:24.0.2
+        options: --privileged
+        ports:
+          # postgres test port
+          - 5434:5434
     env:
       PYTHON: ${{ matrix.python-version }}
 
