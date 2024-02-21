@@ -1,3 +1,5 @@
+import multiprocessing
+
 import pytest
 import pytest_asyncio
 from sqlalchemy import text
@@ -62,6 +64,12 @@ def postgres_backend(db_engine: AsyncEngine):
         engine=db_engine,
         local_models=LOCAL_MODEL_DEFINITION,
     )
+
+
+@pytest.fixture
+def daemon_runner_manager():
+    with multiprocessing.Manager() as manager:
+        yield manager
 
 
 @pytest.fixture

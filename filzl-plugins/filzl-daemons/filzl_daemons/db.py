@@ -65,6 +65,7 @@ class PostgresBackend:
             "database": self.engine.url.database,
             "host": self.engine.url.host,
             "port": self.engine.url.port,
+            "pool_size": self.engine.pool.size(),  # type: ignore
             "local_models": self.local_models.__getstate__(),
         }
 
@@ -79,7 +80,7 @@ class PostgresBackend:
             port=state["port"],
         )
         # Recreate the AsyncEngine with the original connection parameters
-        self.engine = create_async_engine(url)
+        self.engine = create_async_engine(url, pool_size=state["pool_size"])
         self.session_makers = {}
 
         self.local_models = LocalModelDefinition.__new__(LocalModelDefinition)
@@ -90,7 +91,10 @@ class PostgresBackend:
         # Session makers are only safe within a particular asyncio event loop
         loop = asyncio.get_event_loop()
         if loop not in self.session_makers:
-            engine = create_async_engine(self.engine.url)
+            engine = create_async_engine(
+                self.engine.url,
+                pool_size=self.engine.pool.size(),  # type: ignore
+            )
             self.session_makers[loop] = async_sessionmaker(
                 engine, expire_on_commit=False
             )

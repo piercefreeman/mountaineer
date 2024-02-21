@@ -1,7 +1,12 @@
+# Support generic Queue[Obj] syntax
+from __future__ import annotations
+
 import asyncio
 import multiprocessing
 from abc import ABC, ABCMeta, abstractmethod
 from datetime import datetime, timedelta
+from itertools import chain
+from multiprocessing.managers import SyncManager
 from traceback import format_exc
 from typing import Awaitable, Generic, Type, TypeVar, get_args, get_origin
 from uuid import UUID
@@ -12,16 +17,17 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.future import select
 
-from filzl_daemons.action_worker import ActionWorkerProcess, TaskDefinition
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
-from filzl_daemons.io import safe_task
+from filzl_daemons.io import AsyncMultiprocessingQueue, safe_task
 from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.retry import RetryPolicy
 from filzl_daemons.state import init_state, update_state
 from filzl_daemons.tasks import TaskManager
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
+from filzl_daemons.workers.action import ActionWorkerProcess, TaskDefinition
+from filzl_daemons.workers.instance import InstanceTaskDefinition, InstanceWorkerProcess
 
 T = TypeVar("T", bound=BaseModel)
 K = TypeVar("K", bound=BaseModel)
@@ -39,11 +45,14 @@ class WorkflowInstance(Generic[T]):
         instance_id: int,
         instance_queue: str,
         task_manager: TaskManager,
+        instance_process_id: UUID,
     ):
         self.input_payload = input_payload
         self.instance_id = instance_id
         self.instance_queue = instance_queue
         self.task_manager = task_manager
+        self.instance_process_id = instance_process_id
+
         self.state = init_state(input_payload)
 
     async def run_action(
@@ -62,7 +71,7 @@ class WorkflowInstance(Generic[T]):
         the action.
 
         """
-        # Execute the awaitable. If we receive a promise, we should queue it in
+        # Execute the awaitable. If we receive a execution stub, we should queue it in
         # the backend
         result = await action
 
@@ -77,6 +86,7 @@ class WorkflowInstance(Generic[T]):
                 queue_name=self.instance_queue,
                 state=new_state,
                 retry=retry,
+                instance_process_id=self.instance_process_id,
             )
             result = await wait_future
         else:
@@ -188,16 +198,20 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
         instance_id: int,
         instance_queue: str,
         raw_input: str,
-        task_manager,
+        task_manager: TaskManager,
+        instance_process_id: UUID,
     ):
         try:
             input_payload = self.input_model.model_validate_json(raw_input)
+
+            # Call the client workflow logic
             result = await self.run(
                 WorkflowInstance(
                     input_payload=input_payload,
                     instance_id=instance_id,
                     instance_queue=instance_queue,
                     task_manager=task_manager,
+                    instance_process_id=instance_process_id,
                 )
             )
 
@@ -283,6 +297,8 @@ class DaemonRunner:
         workflows: list[Type[Workflow[T]]],
         max_workers: int | None = None,
         threads_per_worker: int = 1,
+        max_instance_workers: int = 1,
+        max_instances_per_worker: int = 1000,
         update_scheduled_refresh: int = 30,
         update_timed_out_workers_refresh: int = 30,
     ):
@@ -303,6 +319,8 @@ class DaemonRunner:
 
         self.max_workers = max_workers or multiprocessing.cpu_count()
         self.threads_per_worker = threads_per_worker
+        self.max_instance_workers = max_instance_workers
+        self.max_instances_per_worker = max_instances_per_worker
 
         self.update_scheduled_refresh = update_scheduled_refresh
         self.update_timed_out_workers_refresh = update_timed_out_workers_refresh
@@ -312,9 +330,10 @@ class DaemonRunner:
         Runs the selected workflows / actions.
 
         """
-        asyncio.run(self.handle_jobs())
+        with multiprocessing.Manager() as manager:
+            asyncio.run(self.handle_jobs(manager))
 
-    async def handle_jobs(self):
+    async def handle_jobs(self, multiprocessing_manager: SyncManager):
         """
         Main task execution entrypoint. Takes care of:
             - Setting up isolated worker processes, one per CPU
@@ -326,6 +345,7 @@ class DaemonRunner:
         """
         # Spawn our worker processes
         worker_processes: dict[UUID, ActionWorkerProcess] = {}
+        instance_worker_processes: dict[UUID, InstanceWorkerProcess] = {}
         already_drained: set[UUID] = set()
 
         # Workers only handle actions, so we set up a queue to route all the collected
@@ -333,7 +353,13 @@ class DaemonRunner:
         worker_queue: multiprocessing.Queue[TaskDefinition] = multiprocessing.Queue(
             maxsize=self.max_workers * self.threads_per_worker
         )
-        task_manager = TaskManager(backend=self.backend)
+        instance_queue: AsyncMultiprocessingQueue[
+            InstanceTaskDefinition
+        ] = AsyncMultiprocessingQueue(
+            maxsize=self.max_instance_workers * self.max_instances_per_worker
+        )
+
+        task_manager = TaskManager(self.backend, manager=multiprocessing_manager)
 
         async def start_new_worker():
             # Start a new worker to replace the one that's draining
@@ -345,6 +371,22 @@ class DaemonRunner:
             # Make sure to do after the process is started
             process.add_is_draining_callback(is_draining_callback)
 
+            worker_processes[process.process_id] = process
+
+            return process
+
+        async def start_new_instance_worker():
+            process = InstanceWorkerProcess(
+                instance_queue,
+                self.backend,
+                pool_size=self.max_instances_per_worker,
+                task_manager=task_manager,
+            )
+            task_manager.worker_register(process.process_id)
+
+            await process.start()
+            instance_worker_processes[process.process_id] = process
+
             return process
 
         async def is_draining_callback(worker: ActionWorkerProcess):
@@ -355,33 +397,41 @@ class DaemonRunner:
                 return
             already_drained.add(worker.process_id)
 
-            process = await start_new_worker()
-            worker_processes[process.process_id] = process
+            await start_new_worker()
 
         async def health_check():
             while True:
                 LOGGER.debug("Running health check")
                 # If the process has been terminated without a draining signal,
                 # we should start a new one
-                for process_id, process in list(worker_processes.items()):
+                for process_id, worker_process in list(worker_processes.items()):
                     # Handle potential terminations of the process for other reasons
-                    if not process.is_alive():
-                        await is_draining_callback(process)
+                    if not worker_process.is_alive():
+                        await is_draining_callback(worker_process)
                         del worker_processes[process_id]
+                for process_id, instance_process in list(
+                    instance_worker_processes.items()
+                ):
+                    if not instance_process.is_alive():
+                        await start_new_instance_worker()
+                        del instance_worker_processes[process_id]
 
                 await asyncio.sleep(5)
 
         # Initial worker process bootstrap for action handlers
         for _ in range(self.max_workers):
             process = await start_new_worker()
-            worker_processes[process.process_id] = process
+            LOGGER.debug(f"Spawned: {process.process_id}")
+
+        for _ in range(self.max_instance_workers):
+            process = await start_new_instance_worker()
             LOGGER.debug(f"Spawned: {process.process_id}")
 
         # Infinitely blocking
         try:
             await asyncio.gather(
                 # Bulk execute the instance behavior in this main process, for now
-                safe_task(self.queue_instance_work)(task_manager),
+                safe_task(self.queue_instance_work)(instance_queue),
                 # We will consume database actions here and delegate to our other processes
                 safe_task(self.queue_action_work)(worker_queue),
                 # Update the DB-level actions that are now ready to be re-queued
@@ -390,19 +440,23 @@ class DaemonRunner:
                 # Workers themselves will handle the requeue of the actions if they time out within
                 # the active runloop
                 safe_task(self.update_timed_out_workers)(),
-                # Determine the health of our worker processes
-                safe_task(health_check)(),
                 # Required to wake up our sleeping instance workers
                 # when we are done processing an action
-                safe_task(task_manager.delegate_done_actions)(),
+                safe_task(task_manager.main_delegate_done_actions)(),
+                # Determine the health of our worker processes
+                safe_task(health_check)(),
             )
         except asyncio.CancelledError:
             LOGGER.debug(
                 f"DaemonRunner was cancelled, cleaning up {len(worker_processes)} worker processes"
             )
-            for process in worker_processes.values():
+            for process in chain(
+                worker_processes.values(), instance_worker_processes.values()
+            ):
                 process.terminate()
-            for process in worker_processes.values():
+            for process in chain(
+                worker_processes.values(), instance_worker_processes.values()
+            ):
                 process.join()
             LOGGER.debug("Worker processes cleaned up")
 
@@ -510,7 +564,9 @@ class DaemonRunner:
 
             await session.commit()
 
-    async def queue_instance_work(self, task_manager):
+    async def queue_instance_work(
+        self, instance_queue: AsyncMultiprocessingQueue[InstanceTaskDefinition]
+    ):
         async for notification in self.backend.iter_ready_objects(
             model=self.backend.local_models.DaemonWorkflowInstance,
             queues=[],
@@ -523,8 +579,6 @@ class DaemonRunner:
             if not has_exclusive:
                 continue
 
-            # TODO: Right now we just instantiate a new workflow every time, we should keep
-            # this cached in case there is some heavy loading in init
             async with self.backend.get_object_by_id(
                 self.backend.local_models.DaemonWorkflowInstance, notification.id
             ) as (instance_definition, _):
@@ -533,19 +587,20 @@ class DaemonRunner:
             if not instance_definition.id:
                 continue
 
-            # Get the workflow class from the workflow name
-            workflow_cls = REGISTRY.get_workflow(instance_definition.registry_id)
-            workflow = workflow_cls(backend=self.backend)
-            asyncio.create_task(
-                workflow.run_handler(
-                    instance_id=instance_definition.id,
-                    instance_queue=instance_definition.workflow_name,
-                    raw_input=instance_definition.input_body,
-                    task_manager=task_manager,
-                )
+            # Queue up this instance for processing
+            task = InstanceTaskDefinition(
+                instance_id=instance_definition.id,
+                registry_id=instance_definition.registry_id,
+                queue_name=instance_definition.workflow_name,
+                raw_input=instance_definition.input_body,
             )
+            LOGGER.info(f"Queueing instance task: {task} {instance_definition}")
 
-    async def queue_action_work(self, worker_queue):
+            await instance_queue.async_put(task)
+
+    async def queue_action_work(
+        self, worker_queue: multiprocessing.Queue[TaskDefinition]
+    ):
         """
         Listen to database changes for actions that are now ready to be executed and place
         them into the multiprocess queue for the system wide workers.

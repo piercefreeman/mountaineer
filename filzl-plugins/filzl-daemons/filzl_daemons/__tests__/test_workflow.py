@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+from multiprocessing.managers import SyncManager
 from random import random
 from uuid import uuid4
 
@@ -14,6 +15,7 @@ from filzl_daemons.__tests__.conf_models import (
 )
 from filzl_daemons.actions import action
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.io import safe_task
 from filzl_daemons.models import QueableStatus
 from filzl_daemons.retry import RetryPolicy
 from filzl_daemons.workflow import (
@@ -97,11 +99,14 @@ async def test_workflow_creates_instance(
 
 @pytest.mark.asyncio
 async def test_workflow_runs_instance(
-    postgres_backend: PostgresBackend, daemon_client: DaemonClient
+    postgres_backend: PostgresBackend,
+    daemon_client: DaemonClient,
+    daemon_runner_manager: SyncManager,
 ):
     task_manager = DaemonRunner(
         workflows=[ExampleWorkflow],
         backend=postgres_backend,
+        max_workers=1,
     )
 
     result = await daemon_client.queue_new(
@@ -109,8 +114,10 @@ async def test_workflow_runs_instance(
     )
 
     timeout_task = asyncio.create_task(asyncio.sleep(5))
-    wait_task = asyncio.create_task(result.wait())
-    handle_jobs_task = asyncio.create_task(task_manager.handle_jobs())
+    wait_task = asyncio.create_task(safe_task(result.wait)())
+    handle_jobs_task = asyncio.create_task(
+        safe_task(task_manager.handle_jobs)(daemon_runner_manager)
+    )
 
     # Wait 5 seconds or until everything is done
     done, pending = await asyncio.wait(
@@ -217,6 +224,7 @@ async def test_update_timed_out_tasks(
         task_manager = DaemonRunner(
             workflows=[ExampleWorkflow],
             backend=postgres_backend,
+            max_workers=1,
         )
 
         await task_manager._update_timed_out_workers_single(5)
@@ -249,11 +257,14 @@ class ExampleRandomCrashes(Workflow[ExampleWorkflowInput]):
 
 @pytest.mark.asyncio
 async def test_requeue_task_exceptions(
-    postgres_backend: PostgresBackend, daemon_client: DaemonClient
+    postgres_backend: PostgresBackend,
+    daemon_client: DaemonClient,
+    daemon_runner_manager: SyncManager,
 ):
     task_manager = DaemonRunner(
         workflows=[ExampleRandomCrashes],
         backend=postgres_backend,
+        max_workers=1,
         update_scheduled_refresh=1,
         update_timed_out_workers_refresh=1,
     )
@@ -263,8 +274,10 @@ async def test_requeue_task_exceptions(
     )
 
     timeout_task = asyncio.create_task(asyncio.sleep(10))
-    wait_task = asyncio.create_task(result.wait())
-    handle_jobs_task = asyncio.create_task(task_manager.handle_jobs())
+    wait_task = asyncio.create_task(safe_task(result.wait)())
+    handle_jobs_task = asyncio.create_task(
+        safe_task(task_manager.handle_jobs)(daemon_runner_manager)
+    )
 
     # Wait 10 seconds or until everything is done
     done, pending = await asyncio.wait(

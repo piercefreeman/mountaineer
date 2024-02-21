@@ -21,6 +21,7 @@ from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
 from filzl_daemons.retry import calculate_retry, retry_is_allowed
 from filzl_daemons.timeouts import TimeoutDefinition, TimeoutMeasureType, TimeoutType
+from filzl_daemons.workers.base import WorkerBase
 
 
 @dataclass
@@ -47,7 +48,7 @@ class ThreadDefinition:
     timed_out_causes: set[TimeoutType] = field(default_factory=set)
 
 
-class ActionWorkerProcess(multiprocessing.Process):
+class ActionWorkerProcess(WorkerBase):
     """
     We support setting a max time for each task. This max time measures
     the amount of time that the task has actually been executing by
@@ -92,7 +93,7 @@ class ActionWorkerProcess(multiprocessing.Process):
             will continue to accept tasks until another termination event occurs.
 
         """
-        super().__init__()
+        super().__init__(backend=backend)
 
         # Initialized by the parent process
         self.task_queue = task_queue
@@ -101,6 +102,8 @@ class ActionWorkerProcess(multiprocessing.Process):
         self.tasks_before_recycle = tasks_before_recycle
         self.is_draining_callbacks: list[Callable] = []
         self.process_id = uuid4()
+
+        self.custom_worker_args["is_action_worker"] = True
 
         # Unlike is_alive, captures if we have already started the worker process
         self.is_started = True
@@ -117,22 +120,18 @@ class ActionWorkerProcess(multiprocessing.Process):
         )
 
     async def start(self):
-        await self.start_async()
-        super().start()
-
-    async def start_async(self):
         # Needs to be spawned in the parent process
         is_draining_monitor = Thread(target=self.monitor_is_draining, daemon=True)
         is_draining_monitor.start()
 
         self.is_started = True
 
-        self.worker_id = await self.init_worker_db()
+        await super().start()
 
     def worker_init(self):
         # Usable within the worker process
+        super().worker_init()
         self.pool_semaphore = Semaphore(self.pool_size)
-        self.is_draining = False
         self.is_draining_in_worker_event: asyncio.Queue[bool] = asyncio.Queue()
         self.pool_threads_lock = Lock()
         self.pool_threads: dict[UUID, ThreadDefinition] = {}
@@ -205,68 +204,6 @@ class ActionWorkerProcess(multiprocessing.Process):
                 )
                 for thread_definition in hard_timeouts
             ]
-        )
-
-    async def init_worker_db(self):
-        """
-        Create a new tracking object for this worker in the database.
-        """
-        # Initialize the object that tracks this worker
-        async with self.backend.session_maker() as session:
-            worker = self.backend.local_models.WorkerStatus(
-                internal_process_id=self.process_id,
-                is_action_worker=True,
-                is_draining=False,
-                last_ping=datetime.utcnow(),
-                launch_time=datetime.utcnow(),
-            )
-            session.add(worker)
-            await session.commit()
-
-        return worker.id
-
-    def ping(self, ping_interval: int = 30):
-        """
-        Report health of this worker process to the backend.
-        """
-
-        async def run_single_ping():
-            if self.worker_id is None:
-                LOGGER.warning("Worker ID not set during update...")
-                return
-
-            LOGGER.debug(f"Pinging update for worker {self.worker_id}")
-            async with self.backend.get_object_by_id(
-                self.backend.local_models.WorkerStatus, self.worker_id
-            ) as (worker, session):
-                worker.last_ping = datetime.utcnow()
-                worker.is_draining = self.is_draining
-                await session.commit()
-
-        async def shutdown_on_drain():
-            while True:
-                await asyncio.sleep(1)
-                if self.is_draining:
-                    break
-
-            # Final shutdown
-            await run_single_ping()
-
-        async def run_ping():
-            # Then update it periodically
-            while True:
-                await run_single_ping()
-                await asyncio.sleep(ping_interval)
-
-        loop = asyncio.new_event_loop()
-        loop.run_until_complete(
-            asyncio.wait(
-                [
-                    loop.create_task(safe_task(run_ping)()),
-                    loop.create_task(safe_task(shutdown_on_drain)()),
-                ],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
         )
 
     def watch(self):

@@ -13,10 +13,6 @@ from filzl_daemons.__tests__.conf_models import (
     DaemonActionResult,
     WorkerStatus,
 )
-from filzl_daemons.action_worker import (
-    ActionWorkerProcess,
-    TaskDefinition,
-)
 from filzl_daemons.actions import REGISTRY, action
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.models import QueableStatus
@@ -24,6 +20,10 @@ from filzl_daemons.timeouts import (
     TimeoutDefinition,
     TimeoutMeasureType,
     TimeoutType,
+)
+from filzl_daemons.workers.action import (
+    ActionWorkerProcess,
+    TaskDefinition,
 )
 
 
@@ -280,8 +280,12 @@ async def test_handle_exception(
         task_query = select(DaemonActionResult).where(DaemonActionResult.action_id == 1)
         task_result = await session.execute(task_query)
         task_obj = task_result.scalars().first()
+
         assert task_obj
         assert task_obj.exception == "This is a crash"
         assert task_obj.exception_stack
         assert "example_crash" in task_obj.exception_stack
-        assert "__tests__/test_action_worker.py" in task_obj.exception_stack
+        assert (
+            __name__.lstrip("filzl_daemons.").replace(".", "/")
+            in task_obj.exception_stack
+        )

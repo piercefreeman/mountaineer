@@ -2,6 +2,8 @@ version: "3.8"
 
 services:
   postgres:
+    # Users can also place behind a database load balancer
+    command: -c 'max_connections=200'
     image: postgres:latest
     environment:
       POSTGRES_USER: filzl_daemons

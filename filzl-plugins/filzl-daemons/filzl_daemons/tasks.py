@@ -1,5 +1,7 @@
 import asyncio
+from multiprocessing.managers import SyncManager
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,6 +9,7 @@ from sqlmodel import select
 
 from filzl_daemons.actions import ActionExecutionStub
 from filzl_daemons.db import PostgresBackend
+from filzl_daemons.io import AsyncMultiprocessingQueue
 from filzl_daemons.logging import LOGGER
 from filzl_daemons.models import DaemonAction, DaemonActionResult, QueableStatus
 from filzl_daemons.registry import REGISTRY
@@ -28,12 +31,35 @@ class TaskManager:
     def __init__(
         self,
         backend: PostgresBackend,
+        manager: SyncManager,
     ):
         self.backend = backend
 
         # In-memory waits that are part of the current event loop
-        # Mapping of task ID to signal
+        # Mapping of action ID to signal
+        # These will be localized to each subprocess
         self.wait_signals: dict[int, asyncio.Future] = {}
+
+        # Mapping of { action_id: current_process_id }
+        self.registered_actions = manager.dict()
+        self.done_queues: dict[UUID, AsyncMultiprocessingQueue[int]] = {}
+
+    def __getstate__(self):
+        return {
+            "registered_actions": self.registered_actions,
+            "done_queues": self.done_queues,
+            "backend": self.backend.__getstate__(),
+        }
+
+    def __setstate__(self, state):
+        # Recreate the AsyncEngine with the original connection parameters
+        self.wait_signals = {}
+
+        self.registered_actions = state["registered_actions"]
+        self.done_queues = state["done_queues"]
+
+        self.backend = PostgresBackend.__new__(PostgresBackend)
+        self.backend.__setstate__(state["backend"])
 
     async def queue_work(
         self,
@@ -43,6 +69,7 @@ class TaskManager:
         instance_id: int,
         queue_name: str,
         retry: RetryPolicy,
+        instance_process_id: UUID,
     ):
         async with self.backend.session_maker() as session:
             # Determine if we've already queued
@@ -79,6 +106,9 @@ class TaskManager:
             )
             return immediate_future
 
+        # Register action
+        self.worker_register_action(instance_process_id, existing_action.id)
+
         # Queue work
         # We should be notified once it's completed
         # Return a signal that we can wait on
@@ -114,10 +144,11 @@ class TaskManager:
 
         return existing_action, existing_result
 
-    async def delegate_done_actions(self):
+    async def main_delegate_done_actions(self):
         """
         We have waiting futures. Make sure this is running somewhere
-        in the current runloop.
+        in the main runloop. We will then delegate to the subprocess queues
+        to notify them.
 
         """
         async for notification in self.backend.iter_ready_objects(
@@ -125,18 +156,31 @@ class TaskManager:
             queues=[],
             status=QueableStatus.DONE,
         ):
+            process_id = self.registered_actions[notification.id]
+            await self.done_queues[process_id].async_put(notification.id)
+
+    def worker_register_action(self, process_id: UUID, action_id: int):
+        self.registered_actions[action_id] = process_id
+
+    def worker_register(self, process_id: UUID):
+        # Has to occur in the main process, as it's a shared resource
+        self.done_queues[process_id] = AsyncMultiprocessingQueue()
+
+    async def worker_receive_done_action(self, process_id: UUID):
+        while True:
+            action_id = await self.done_queues[process_id].async_get()
+
             # If we have no waiting futures, there's no use doing the additional roundtrips
             # to the database
-            waiting_futures = self.wait_signals.get(notification.id)
-            LOGGER.debug(f"Delegate done action: {notification.id}: {waiting_futures}")
+            waiting_futures = self.wait_signals.get(action_id)
+            LOGGER.debug(f"Delegate done action: {action_id}: {waiting_futures}")
 
             if waiting_futures is None:
                 continue
 
-            # Get the actual object
             async with self.backend.get_object_by_id(
                 model=self.backend.local_models.DaemonAction,
-                id=notification.id,
+                id=action_id,
             ) as (obj, _):
                 pass
 
@@ -148,6 +192,12 @@ class TaskManager:
                 continue
 
             # Look for the most recent pointer
+            if obj.id not in self.registered_actions:
+                LOGGER.debug(f"Action {obj.id} is not registered locally")
+                continue
+
+            # When objects are added to this queue, they have been determined as
+            # done by the main delegator
             async with self.backend.get_object_by_id(
                 model=self.backend.local_models.DaemonActionResult,
                 id=obj.final_result_id,
