@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel
 
 from filzl_daemons import filzl_daemons as filzl_daemons_rs  # type: ignore
+from filzl_daemons.actions import call_action
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.io import safe_task
 from filzl_daemons.logging import LOGGER
@@ -206,6 +207,36 @@ class ActionWorkerProcess(WorkerBase):
             ]
         )
 
+    async def spawn_execute_task(self, task_definition: TaskDefinition):
+        """
+        Spawns the given task definition in a new thread.
+        """
+        # Assign this action to this particular worker
+        await self.claim_task(task_definition)
+
+        # Stub definition
+        thread_definition = ThreadDefinition(
+            thread_id=uuid4(),
+            task=task_definition,
+            thread=None,
+            started_wall=datetime.now(timezone.utc),
+            timeouts=task_definition.timeouts,
+        )
+
+        # We launch each thread pool as a daemon so they will be killed by the OS when we let our
+        # process terminate, which is true after the draining has completed
+        thread = Thread(
+            target=self.task_thread,
+            args=(task_definition, thread_definition),
+            daemon=True,
+        )
+        thread_definition.thread = thread
+
+        with self.pool_threads_lock:
+            self.pool_threads[thread_definition.thread_id] = thread_definition
+
+        thread.start()
+
     def watch(self):
         """
         Watch all the threads in the pool and manage their lifecycle.
@@ -314,33 +345,6 @@ class ActionWorkerProcess(WorkerBase):
         """
         self.flag_is_draining()
 
-    async def spawn_execute_task(self, task_definition: TaskDefinition):
-        # Assign this action to this particular worker
-        await self.claim_task(task_definition)
-
-        # Stub definition
-        thread_definition = ThreadDefinition(
-            thread_id=uuid4(),
-            task=task_definition,
-            thread=None,
-            started_wall=datetime.now(timezone.utc),
-            timeouts=task_definition.timeouts,
-        )
-
-        # We launch each thread pool as a daemon so they will be killed by the OS when we let our
-        # process terminate, which is true after the draining has completed
-        thread = Thread(
-            target=self.task_thread,
-            args=(task_definition, thread_definition),
-            daemon=True,
-        )
-        thread_definition.thread = thread
-
-        with self.pool_threads_lock:
-            self.pool_threads[thread_definition.thread_id] = thread_definition
-
-        thread.start()
-
     async def claim_task(self, task_definition: TaskDefinition):
         async with self.backend.get_object_by_id(
             self.backend.local_models.DaemonAction,
@@ -386,20 +390,11 @@ class ActionWorkerProcess(WorkerBase):
                 await asyncio.sleep(0.5)
 
         async def run_task():
-            task_fn = REGISTRY.get_action(task_definition.registry_id)
-            task_model = REGISTRY.get_action_model(task_definition.registry_id)
-
-            # If the task model is provided, we should try to parse the inputs as the pydantic model
-            task_args = []
-            if task_model is not None:
-                task_args.append(
-                    task_model.model_validate_json(task_definition.input_body)
-                    if task_definition.input_body
-                    else None
-                )
-
             try:
-                result = await task_fn(*task_args)
+                result = await call_action(
+                    task_definition.registry_id,
+                    task_definition.input_body,
+                )
                 LOGGER.info(f"Process result: {result}")
                 await self.report_success(task_definition, result)
             except Exception as e:

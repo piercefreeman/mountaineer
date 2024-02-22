@@ -11,7 +11,7 @@ from uuid import UUID
 from filzl.logging import LOGGER
 from pydantic import BaseModel
 
-from filzl_daemons.actions import ActionExecutionStub
+from filzl_daemons.actions import ActionExecutionStub, call_action
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.models import QueableStatus
 from filzl_daemons.registry import REGISTRY
@@ -32,21 +32,21 @@ class WorkflowInstance(Generic[T]):
     def __init__(
         self,
         *,
-        input_payload: T,
+        request: T,
         instance_id: int,
         instance_queue: str,
         task_manager: TaskManager,
         instance_process_id: UUID,
         is_testing: bool,
     ):
-        self.input_payload = input_payload
+        self.request = request
         self.instance_id = instance_id
         self.instance_queue = instance_queue
         self.task_manager = task_manager
         self.instance_process_id = instance_process_id
         self.is_testing = is_testing
 
-        self.state = init_state(input_payload)
+        self.state = init_state(request)
 
     async def run_action(
         self,
@@ -100,13 +100,7 @@ class WorkflowInstance(Generic[T]):
         new_state = update_state(self.state, action)
         self.state = new_state
 
-        # Queue the action
-        action_fn = REGISTRY.get_action(action.registry_id)
-        action_input_model = REGISTRY.get_action_model(action.registry_id)
-
-        return await action_fn(
-            *([action.input_body] if action_input_model else []),
-        )
+        return await call_action(action.registry_id, action.input_body)
 
 
 class WorkflowMeta(ABCMeta):
@@ -215,12 +209,12 @@ class Workflow(ABC, Generic[T], metaclass=WorkflowMeta):
         is_testing: bool,
     ):
         try:
-            input_payload = self.input_model.model_validate_json(raw_input)
+            request = self.input_model.model_validate_json(raw_input)
 
             # Call the client workflow logic
             result = await self.run(
                 WorkflowInstance(
-                    input_payload=input_payload,
+                    request=request,
                     instance_id=instance_id,
                     instance_queue=instance_queue,
                     task_manager=task_manager,
