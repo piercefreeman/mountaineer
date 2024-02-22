@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlmodel import SQLModel
+from filzl.sqlmodel import SQLModel
 
 from filzl_daemons.models import LocalModelDefinition, QueableItemMixin, QueableStatus
 

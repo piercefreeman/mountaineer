@@ -1,7 +1,7 @@
 from uuid import UUID, uuid4
 
 import bcrypt
-from sqlmodel import Field, SQLModel
+from filzl.sqlmodel import Field, SQLModel
 
 
 def hash_password(password: str) -> str:

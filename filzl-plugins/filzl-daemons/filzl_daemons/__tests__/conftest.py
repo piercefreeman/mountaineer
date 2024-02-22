@@ -7,7 +7,7 @@ import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlmodel import SQLModel
+from filzl.sqlmodel import SQLModel
 
 from filzl_daemons.__tests__.conf_models import (
     LOCAL_MODEL_DEFINITION,

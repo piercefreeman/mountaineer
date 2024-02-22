@@ -7,7 +7,7 @@ from typing import Type, TypeVar
 from uuid import UUID
 
 from sqlalchemy import DateTime
-from sqlmodel import SQLModel
+from filzl.sqlmodel import SQLModel
 
 from filzl.sqlmodel import Field
 
