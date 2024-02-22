@@ -6,6 +6,7 @@ from typing import Type, TypeVar, cast
 
 import asyncpg
 from filzl.logging import LOGGER
+from filzl.sqlmodel import SQLModel
 from pydantic import BaseModel
 from sqlalchemy.engine.url import URL
 from sqlalchemy.ext.asyncio import (
@@ -14,7 +15,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from filzl.sqlmodel import SQLModel
 
 from filzl_daemons.models import LocalModelDefinition, QueableItemMixin, QueableStatus
 

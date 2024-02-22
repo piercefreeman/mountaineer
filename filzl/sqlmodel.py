@@ -138,6 +138,26 @@ class GenericSQLModelMetaclass(SQLModelMetaclassBase):
         if we try to naively inspect the type annotations.
 
         """
+        # SQLModel by default won't inherit FieldInfo definitions from parent classes, which is
+        # unideal since we want to set it once in a parent class and pass through these values
+        # into the children
+        # Traverse the base classes to find their Field definitions. We can't grab these
+        # directly from the pydantic model, since we want the raw SQLModel attributes
+        # instead of the regular pydantic Fields
+        parent_field_infos: dict[str, FieldInfo] = {}
+        for base in reversed(bases):  # Reverse to ensure correct order of precedence
+            if hasattr(base, "_explicit_fieldinfo"):
+                parent_field_infos = {**parent_field_infos, **base._explicit_fieldinfo}
+
+        self_field_infos = {
+            key: value for key, value in class_dict.items() if not key.startswith("__")
+        }
+
+        class_dict = {
+            **parent_field_infos,
+            **class_dict,
+        }
+
         pydantic_model = cls._validate_pydantic_model(name, bases, class_dict, **kwargs)
         pydantic_annotations = {
             key: field.annotation for key, field in pydantic_model.model_fields.items()
@@ -153,6 +173,10 @@ class GenericSQLModelMetaclass(SQLModelMetaclassBase):
         cls = super().__new__(cls, name, bases, class_dict, **kwargs)
 
         cls._original_model = pydantic_model
+        cls._explicit_fieldinfo = {
+            **parent_field_infos,
+            **self_field_infos,
+        }
 
         return cls
 

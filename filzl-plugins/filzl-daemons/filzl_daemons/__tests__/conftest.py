@@ -4,10 +4,10 @@ from warnings import filterwarnings
 
 import pytest
 import pytest_asyncio
+from filzl.sqlmodel import SQLModel
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from filzl.sqlmodel import SQLModel
 
 from filzl_daemons.__tests__.conf_models import (
     LOCAL_MODEL_DEFINITION,

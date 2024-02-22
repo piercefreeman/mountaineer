@@ -8,9 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from filzl_auth.config import AuthConfig
 from filzl_auth.exceptions import UnauthorizedError
-from filzl_auth.user_model import User
+from filzl_auth.models import UserAuthMixin
 
-T = TypeVar("T", bound=User)
+T = TypeVar("T", bound=UserAuthMixin)
 
 
 class AuthDependencies:

@@ -6,10 +6,8 @@ from inspect import isclass
 from typing import Type, TypeVar
 from uuid import UUID
 
+from filzl.sqlmodel import Field, SQLModel
 from sqlalchemy import DateTime
-from filzl.sqlmodel import SQLModel
-
-from filzl.sqlmodel import Field
 
 
 class QueableStatus(StrEnum):
