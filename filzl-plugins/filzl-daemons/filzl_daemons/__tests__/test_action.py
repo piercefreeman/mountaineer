@@ -1,12 +1,14 @@
+from typing import cast
+
 import pytest
 from fastapi import Depends
 from pydantic import BaseModel
 
-from filzl_daemons.actions import action
+from filzl_daemons.actions import ActionExecutionStub, action, call_action
 
 
 class ExampleModel(BaseModel):
-    pass
+    value: str | None = None
 
 
 def test_requires_async():
@@ -37,13 +39,21 @@ def test_requires_zero_or_one_argument():
             pass
 
 
-def test_allows_dependencies():
+@pytest.mark.asyncio
+async def test_allows_dependencies():
     def example_dependency():
         yield "example_dependency"
 
     @action
     async def test_dependencies(
-        payload: BaseModel,
-        user_model: str = Depends(example_dependency),
-    ) -> None:
-        pass
+        payload: ExampleModel,
+        resolved_dependency: str = Depends(example_dependency),
+    ) -> ExampleModel:
+        return ExampleModel(value=resolved_dependency)
+
+    action_result = cast(
+        ActionExecutionStub,
+        await test_dependencies(ExampleModel()),
+    )
+    result = await call_action(action_result.registry_id, action_result.input_body)
+    assert result.value == "example_dependency"

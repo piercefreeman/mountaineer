@@ -1,7 +1,8 @@
 from functools import wraps
 from inspect import isclass, iscoroutinefunction, signature
+from typing import Any, Callable
 
-from fastapi.params import Depends
+from fastapi import params as fastapi_params
 from filzl.dependencies import get_function_dependencies
 from pydantic import BaseModel
 
@@ -27,7 +28,9 @@ def action(f):
     params = list(sig.parameters.values())
 
     standard_params = [
-        param for param in params if not isinstance(param.default, Depends)
+        param
+        for param in params
+        if not isinstance(param.default, fastapi_params.Depends)
     ]
 
     if len(standard_params) > 1:
@@ -91,5 +94,32 @@ async def call_action(
         elif isinstance(input_body, BaseModel):
             task_args.append(input_body)
 
-    async with get_function_dependencies(callable=task_fn) as dependency_injection_args:
+    async with get_function_dependencies(
+        callable=isolate_dependency_only_function(task_fn)
+    ) as dependency_injection_args:
         return await task_fn(*task_args, **dependency_injection_args)
+
+
+def isolate_dependency_only_function(original_fn: Callable):
+    """
+    Create and return a mocked function that only includes the Depends parameters
+    from the original function. This allows fastapi to resolve dependencies that are
+    specified while allowing our logic to provide other non-dependency injected args.
+
+    """
+    sig = signature(original_fn)
+    parameters = sig.parameters
+
+    dependency_params = {
+        name: param
+        for name, param in parameters.items()
+        if isinstance(param.default, fastapi_params.Depends)
+    }
+
+    # Construct a new function dynamically accepting only the dependencies
+    async def mock_fn(**deps: Any) -> Any:
+        pass
+
+    mock_fn.__signature__ = sig.replace(parameters=dependency_params.values())  # type: ignore
+
+    return mock_fn

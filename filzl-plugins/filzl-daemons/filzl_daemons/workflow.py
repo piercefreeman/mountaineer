@@ -21,7 +21,7 @@ from filzl_daemons.tasks import TaskManager
 from filzl_daemons.timeouts import TimeoutDefinition
 
 T = TypeVar("T", bound=BaseModel)
-K = TypeVar("K", bound=BaseModel)
+K = TypeVar("K", bound=BaseModel | None)
 
 
 class TaskException(Exception):
@@ -73,7 +73,7 @@ class WorkflowInstance(Generic[T]):
             self.state = new_state
 
             if self.is_testing:
-                resolved_result = await self.run_inline(result)
+                resolved_result = await self._run_inline(result)
                 return cast(K, resolved_result)
 
             # Queue the action
@@ -93,7 +93,7 @@ class WorkflowInstance(Generic[T]):
 
         return result
 
-    async def run_inline(self, action: ActionExecutionStub):
+    async def _run_inline(self, action: ActionExecutionStub):
         """
         Run this action immediately in the main event loop; used for testing
         """
