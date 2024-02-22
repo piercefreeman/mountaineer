@@ -1,5 +1,7 @@
 # filzl-plugins
 
+**Plugins are not yet ready for production use. Their API is subject to change frequently.**
+
 Our plugins are still in active development. We're working on a few different plugins to help you get started with your filzl project. Here's a list of what we're working on:
 
 - [filzl-auth](./filzl-auth)

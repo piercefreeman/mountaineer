@@ -2,9 +2,9 @@ from fastapi import Depends
 from filzl.database import DatabaseDependencies
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from filzl_daemons.client import DaemonClient
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.models import LocalModelDefinition
-from filzl_daemons.workflow import DaemonClient
 
 
 class DaemonDependencies:

@@ -14,13 +14,13 @@ from filzl_daemons.__tests__.conf_models import (
     DaemonWorkflowInstance,
 )
 from filzl_daemons.actions import action
+from filzl_daemons.client import DaemonClient
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.io import safe_task
 from filzl_daemons.models import QueableStatus
 from filzl_daemons.retry import RetryPolicy
+from filzl_daemons.workers.main import DaemonRunner
 from filzl_daemons.workflow import (
-    DaemonClient,
-    DaemonRunner,
     Workflow,
     WorkflowInstance,
 )
