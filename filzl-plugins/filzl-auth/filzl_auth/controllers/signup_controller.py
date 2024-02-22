@@ -19,7 +19,7 @@ from sqlmodel import select
 
 from filzl_auth.authorize import authorize_response
 from filzl_auth.config import AuthConfig
-from filzl_auth.user_model import User
+from filzl_auth.models import UserAuthMixin
 from filzl_auth.views import get_auth_view_path
 
 
@@ -50,7 +50,7 @@ class SignupController(ControllerBase):
     # Defaults to 24 hours
     token_expiration_minutes: int = 60 * 24
 
-    def __init__(self, post_signup_redirect: str, user_model: Type[User] = User):
+    def __init__(self, post_signup_redirect: str, user_model: Type[UserAuthMixin]):
         super().__init__()
         self.user_model = user_model
         self.post_signup_redirect = post_signup_redirect

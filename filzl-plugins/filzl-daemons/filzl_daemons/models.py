@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy import DateTime
 from sqlmodel import SQLModel
 
-from filzl_daemons.sqlmodel import Field
+from filzl.sqlmodel import Field
 
 
 class QueableStatus(StrEnum):

@@ -6,16 +6,28 @@ from typing import (
     Optional,
     Sequence,
     Type,
+    TypeVar,
     Union,
+    cast,
 )
 
+from pydantic import BaseModel
+from pydantic._internal._model_construction import ModelMetaclass
 from sqlmodel.main import (
     Column,
     FieldInfo,
     NoArgAnyCallable,
     Undefined,
     UndefinedType,
+    finish_init,
     post_init_field_info,
+    sqlmodel_init,
+)
+from sqlmodel.main import (
+    SQLModel as SQLModelBase,
+)
+from sqlmodel.main import (
+    SQLModelMetaclass as SQLModelMetaclassBase,
 )
 
 
@@ -58,7 +70,7 @@ def Field(
     sa_column: Union[Column, UndefinedType] = Undefined,  # type: ignore
     sa_column_args: Union[Sequence[Any], UndefinedType] = Undefined,
     sa_column_kwargs: Union[Mapping[str, Any], UndefinedType] = Undefined,
-    schema_extra: Optional[Dict[str, Any]] = None,
+    schema_extra: Optional[dict[str, Any]] = None,
 ) -> Any:
     """
     Allow instantiated `sa_type` to be used. This permits DateTime(timezone=True) instead
@@ -109,3 +121,89 @@ def Field(
     )
     post_init_field_info(field_info)
     return field_info
+
+
+class GenericSQLModelMetaclass(SQLModelMetaclassBase):
+    def __new__(
+        cls,
+        name: str,
+        bases: tuple[Type[Any], ...],
+        class_dict: Dict[str, Any],
+        **kwargs: Any,
+    ) -> Any:
+        """
+        Unlike the base SQLModel metaclass, we first fully instantiate the pydantic
+        model before transfering the fields to SQLAlchemy. Pydantic V2 has helpful hooks
+        within metadata construction that fullfill generic definitions that will be missed
+        if we try to naively inspect the type annotations.
+
+        """
+        pydantic_model = cls._validate_pydantic_model(name, bases, class_dict, **kwargs)
+        pydantic_annotations = {
+            key: field.annotation for key, field in pydantic_model.model_fields.items()
+        }
+
+        # Override with the parsed annotations that are extracted from Pydantic
+        # This helps typehint the SQLModel class with the correct, resolved types
+        class_dict["__annotations__"] = {
+            **class_dict.get("__annotations__", {}),
+            **pydantic_annotations,
+        }
+
+        cls = super().__new__(cls, name, bases, class_dict, **kwargs)
+
+        cls._original_model = pydantic_model
+
+        return cls
+
+    @classmethod
+    def _validate_pydantic_model(
+        cls,
+        name: str,
+        bases: tuple[Type[Any], ...],
+        class_dict: dict[str, Any],
+        **kwargs,
+    ):
+        """
+        Given this class declaration, build up a Pydantic model with the type annotation hierarchy
+        from base classes. This will resolve the TypeVars and other generic types that are not
+        otherwise handled by SQLModel.
+
+        """
+        pydantic_bases = [
+            base._original_model for base in bases if hasattr(base, "_original_model")
+        ]
+        parent_resolved_fields = {
+            key: value.annotation
+            for model in pydantic_bases
+            for key, value in model.model_fields.items()
+            # Don't pass through TypeVars, we only want to pass concrete types
+            if not isinstance(value, TypeVar)
+        }
+        pydantic_class_dict = {
+            **class_dict,
+            "__annotations__": {
+                **parent_resolved_fields,
+                # Allow overrides for this subclass
+                **class_dict.get("__annotations__", {}),
+            },
+        }
+
+        return cast(
+            BaseModel,
+            ModelMetaclass.__new__(
+                ModelMetaclass,
+                name,
+                (tuple(pydantic_bases) or (BaseModel,)),
+                pydantic_class_dict,
+                **{key: value for key, value in kwargs.items() if key not in {"table"}},
+            ),
+        )
+
+
+class SQLModel(SQLModelBase, metaclass=GenericSQLModelMetaclass):
+    def __init__(self, **data: Any):
+        if hasattr(self, "_original_model"):
+            self._original_model(**data)
+        if finish_init.get():
+            sqlmodel_init(self=self, data=data)

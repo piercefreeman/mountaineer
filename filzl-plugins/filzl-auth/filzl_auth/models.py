@@ -14,7 +14,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     )
 
 
-class User(SQLModel):
+class UserAuthMixin(SQLModel):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     email: str
     hashed_password: str
