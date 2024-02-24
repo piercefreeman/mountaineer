@@ -19,7 +19,7 @@ poetry run maturin develop --release
 
 You can also run maturin just with `poetry run maturin develop`, which will be much faster to compile, but rust execution will be notably slower.
 
-You'll also need a system-wide installation of esbuild. If you don't have one when you run the build pipline it will install one for you within `~/.cache/filzl/esbuild`.
+You'll also need a system-wide installation of esbuild. If you don't have one when you run the build pipline it will install one for you within `~/.cache/mountaineer/esbuild`.
 
 ## Development Utilities
 
@@ -46,8 +46,8 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
     At the moment, our main CI testing flows run on Linux/x86-64 architectures. We've observed some behavior there that isn't reproducable locally. To test locally on OS X you'll need build a representative docker image and then test within it:
 
     ```bash
-    $ docker build -t filzl .
-    $ docker run -it filzl
+    $ docker build -t mountaineer .
+    $ docker run -it mountaineer
     $ make install-deps
     $ make test-integrations
     ```

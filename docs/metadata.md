@@ -1,6 +1,6 @@
 # Page Metadata
 
-Pages will have metadata associated with them: page title, description, tags, stylesheets, etc. Filzl specifies this metadata in the Python layer, during the initial render.
+Pages will have metadata associated with them: page title, description, tags, stylesheets, etc. Mountaineer specifies this metadata in the Python layer, during the initial render.
 
 Each `RenderBase` schema implements a `metadata` attribute. This metadata lets you customize the different fields that are injected in your html <head> tag:
 

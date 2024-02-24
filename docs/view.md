@@ -1,6 +1,6 @@
 # Views
 
-Your React app should be initialized in the `/views` folder of your filzl project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger filzl project.
+Your React app should be initialized in the `/views` folder of your mountaineer project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger mountaineer project.
 
 We expect that all controller views will be labeled as a `page.tsx`, so they'll typically sit in a folder with themselves and other tightly connected React components. These views should have one default export, which is your page constructor:
 
@@ -86,7 +86,7 @@ When rendering `dashboard/home/page.tsx`, the view will be wrapped in the `app/d
 
 ## Typescript Configuration
 
-If you want to customize how filzl builds your view files into raw client-side javascript, add a `tsconfig.json` file. The Typescript website includes a [full list](https://www.typescriptlang.org/tsconfig) of the available options here. A good place to start is:
+If you want to customize how mountaineer builds your view files into raw client-side javascript, add a `tsconfig.json` file. The Typescript website includes a [full list](https://www.typescriptlang.org/tsconfig) of the available options here. A good place to start is:
 
 ```json
 {

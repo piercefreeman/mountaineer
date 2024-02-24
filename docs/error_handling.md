@@ -2,7 +2,7 @@
 
 Errors are a fundamental part of computer science, but nowhere is that more evident than when building websites. There are so many factors you don't have control over: client latency, malformed payloads, spiky server load, resource contention for the same user. The list goes on. Any one can bring a user experience to its knees.
 
-All that to say - it's not a question of _if_ you'll see errors but _when_. filzl provides some handy utilities that make it a bit easier to handle the errors you may encounter in production.
+All that to say - it's not a question of _if_ you'll see errors but _when_. mountaineer provides some handy utilities that make it a bit easier to handle the errors you may encounter in production.
 
 ## Client->Server exceptions
 
@@ -59,7 +59,7 @@ import { HTTPValidationErrorException } from "./_server/actions";
 </button>
 ```
 
-filzl will convert the error into a custom error class and expose it in `_server/actions` for you to import. This class helps you switch logic depending on the type of error that was raised. Using a class here also has the benefit of typeguarding your error handling, so you'll see IDE recommendations specific to that ValidationError.
+mountaineer will convert the error into a custom error class and expose it in `_server/actions` for you to import. This class helps you switch logic depending on the type of error that was raised. Using a class here also has the benefit of typeguarding your error handling, so you'll see IDE recommendations specific to that ValidationError.
 
 You can find the error payload itself within `error.body`, which will be typehinted with all the metadata (if any) that the server is expected to return as part of this error code. In the above example, that looks like this:
 
@@ -81,7 +81,7 @@ class HTTPValidationErrorException extends FetchErrorBase<HTTPValidationError> {
 A 422 ValidationError is a special error that is included in every action, because your function signature is verified every time a client sends a new payload to your server. To implement a custom error that is specific to your application, you can subclass `APIException`:
 
 ```python
-from filzl.exceptions import APIException
+from mountaineer.exceptions import APIException
 
 class LoginInvalid(APIException):
     status_code = 401
@@ -97,7 +97,7 @@ class LoginController(ControllerBase):
 
 Provide all the exceptions that your function may throw to `@passthrough(exception_models=[])`. The `@sideeffect` decorator accepts the same argument.
 
-When specified like this, filzl turns your exception into a client-side exception just like `HTTPValidationErrorException`. You can now use it in the same way.
+When specified like this, mountaineer turns your exception into a client-side exception just like `HTTPValidationErrorException`. You can now use it in the same way.
 
 ## SSR timeouts
 
@@ -113,22 +113,22 @@ These SSR requests can potentially take a long time. At the extreme, they could 
 
 ## SSR exceptions
 
-Alongside timeouts, it's possible your view's Javascript actually gets into an unrecoverable state and throws an exception during rendering. To help you debug this on the server side, we'll raise this error as a `filzl.ssr.V8RuntimeError` and log the stack trace that comes back from the V8 engine.
+Alongside timeouts, it's possible your view's Javascript actually gets into an unrecoverable state and throws an exception during rendering. To help you debug this on the server side, we'll raise this error as a `mountaineer.ssr.V8RuntimeError` and log the stack trace that comes back from the V8 engine.
 
 The paths reported in the stack trace are found from the sourcemap that's created alongside the compiled SSR files. These should point to the files in your view directory that have produced that exception.
 
 ```bash
-{"level": "ERROR", "name": "filzl.logging", "message": "Exception encountered in ComplexController rendering"}
+{"level": "ERROR", "name": "mountaineer.logging", "message": "Exception encountered in ComplexController rendering"}
 ERROR:    Exception in ASGI application
 Traceback (most recent call last):
-  File "/Users/piercefreeman/projects/filzl/filzl/ssr.py", line 37, in render_ssr
-    render_result = filzl_rs.render_ssr(
+  File "/Users/piercefreeman/projects/mountaineer/mountaineer/ssr.py", line 37, in render_ssr
+    render_result = mountaineer_rs.render_ssr(
                     ^^^^^^^^^^^^^^^^^^^^
 ...
 
- File "/Users/piercefreeman/projects/filzl/filzl/ssr.py", line 43, in render_ssr
+ File "/Users/piercefreeman/projects/mountaineer/mountaineer/ssr.py", line 43, in render_ssr
    raise V8RuntimeError(e)
-filzl.ssr.V8RuntimeError: Error calling function 'Index': Error: Example client error
+mountaineer.ssr.V8RuntimeError: Error calling function 'Index': Error: Example client error
 Stack: Error: Example client error
     at Page (./my_website/views/app/complex/page.tsx:41:10)
     at renderWithHooks (./my_website/views/node_modules/react-dom/cjs/react-dom-server-legacy.browser.development.js:5660:15)

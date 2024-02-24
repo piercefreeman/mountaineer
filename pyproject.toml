@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "filzl"
+name = "mountaineer"
 version = "0.1.0"
 description = ""
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
@@ -56,7 +56,7 @@ select = ["E4", "E7", "E9", "F", "I001", "T201"]
 [project]
 # Maintaned just for local installation / testing purposes with venvironments
 # since these can't pick up poetry's data definitions
-name = "filzl"
+name = "mountaineer"
 dependencies = [
     "pydantic",
     "fastapi",

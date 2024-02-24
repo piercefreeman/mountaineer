@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::fs::File;
 use std::io::Read;
 
-use filzl::Ssr;
+use mountaineer::Ssr;
 
 fn build_composite_file(paths: &[&str]) -> String {
     // Assume we're being called from the project root, where the Cargo.toml is located

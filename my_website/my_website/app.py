@@ -1,6 +1,6 @@
-from filzl.app import AppController
-from filzl.js_compiler.postcss import PostCSSBundler
-from filzl.render import LinkAttribute, Metadata
+from mountaineer.app import AppController
+from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.render import LinkAttribute, Metadata
 
 from my_website.controllers.complex import ComplexController
 from my_website.controllers.detail import DetailController

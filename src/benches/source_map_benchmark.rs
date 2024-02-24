@@ -2,11 +2,11 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use std::fs::File;
 use std::io::Read;
 
-use filzl::{SourceMapParser, VLQDecoder};
+use mountaineer::{SourceMapParser, VLQDecoder};
 
 fn fresh_parse_mapping(
     contents: String,
-) -> std::collections::HashMap<(i32, i32), filzl::MapMetadata> {
+) -> std::collections::HashMap<(i32, i32), mountaineer::MapMetadata> {
     let mut parser = SourceMapParser::new(VLQDecoder::new());
     let result = parser.parse_mapping(&contents).unwrap();
 

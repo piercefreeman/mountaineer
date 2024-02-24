@@ -1,5 +1,5 @@
 from click import command
-from filzl.cli import handle_runserver, handle_watch
+from mountaineer.cli import handle_runserver, handle_watch
 
 
 @command()

@@ -6,7 +6,7 @@
 
 In a typical webapp, you'll have a lot of links. Most will be internal to your site: detail pages, settings, profiles, etc. Traditionally, developers format these links manually and hope they don't break over time as routes update.
 
-In filzl, generating links is baked into the client side routes. For every controller you define, we'll generate a link interface that defines the parameters that controller accepts. This interface will update as your route declarations do, so you're guaranteed to always generate the latest links to successfully resolve that controller.
+In mountaineer, generating links is baked into the client side routes. For every controller you define, we'll generate a link interface that defines the parameters that controller accepts. This interface will update as your route declarations do, so you're guaranteed to always generate the latest links to successfully resolve that controller.
 
 Controllers set the parameters that they need to render their views by configuring the `render()` function with the required parameters:
 
@@ -18,7 +18,7 @@ class DetailController:
         ...
 ```
 
-Alongside generating the appropriate API and router files, filzl will detect this render signature and produce a link generator.
+Alongside generating the appropriate API and router files, mountaineer will detect this render signature and produce a link generator.
 
 This particular generator will require a `detail_id` and support an optional `checking_out` boolean. The `detail_id` is required because it's a part of the controller url. `checking_out` on the other hand is optional, since it has a default keyword argument in the case that another value isn't provided.
 

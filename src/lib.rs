@@ -33,7 +33,7 @@ fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
 }
 
 #[pymodule]
-fn filzl(_py: Python, m: &PyModule) -> PyResult<()> {
+fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
 
     #[pyfn(m)]

@@ -46,16 +46,15 @@ RUN rustc --version \
     && npm --version
 
 # Copy the application files
-COPY filzl filzl
+COPY mountaineer mountaineer
 COPY pyproject.toml .
 COPY Cargo.toml .
 COPY Cargo.lock .
 COPY src src
-COPY create_filzl_app create_filzl_app
+COPY create_mountaineer_app create_mountaineer_app
 COPY README.md .
 COPY Makefile .
 COPY my_website my_website
-COPY filzl-plugins filzl-plugins
 
 # Sometimes this may have to be executed manually after
 # a few fresh launches of the dockerfile

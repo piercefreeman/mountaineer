@@ -1,0 +1,65 @@
+{# POETRY #}
+{% if use_poetry %}
+
+[tool.poetry]
+name = "{{project_name}}"
+version = "0.1.0"
+description = ""
+authors = ["{{author_name}} <{{author_email}}>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+{% if mountaineer_dev_path %}
+mountaineer = { path = "{{mountaineer_dev_path}}", develop = true }
+{% else %}
+mountaineer = "^0.1.0"
+{% endif %}
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+runserver = "{{ project_name }}.cli:runserver"
+watch = "{{ project_name }}.cli:watch"
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+{# VENV #}
+{% else %}
+
+[project]
+name = "{{ project_name }}"
+version = "0.1.0"
+description = ""
+authors = [{name = "{{ author }}", email = "{{ author_email }}"}]
+readme = "README.md"
+
+dependencies = [
+    {% if mountaineer_dev_path %}
+    "mountaineer @ file://{{ mountaineer_dev_path }}"
+    {% else %}
+    "mountaineer"
+    {% endif %}
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-data]
+{{ project_name }} = [
+    "views/**/*",
+]
+
+[project.scripts]
+runserver = "{{ project_name }}.cli:runserver"
+watch = "{{ project_name }}.cli:watch"
+
+[tool.mypy]
+plugins = ["pydantic.mypy"]
+
+{% endif %}
