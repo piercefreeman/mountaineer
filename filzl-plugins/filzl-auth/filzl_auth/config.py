@@ -19,7 +19,7 @@ class AuthConfig(BaseSettings):
     # Client-side key for browser embedding, tied to your GCP ReCapcha instance
     RECAPTCHA_GCP_CLIENT_KEY: str | None = None
 
-    USER_MODEL_AUTH: Type[UserAuthMixin]
+    AUTH_USER: Type[UserAuthMixin]
 
     @model_validator(mode="after")
     def validate_recaptcha(self) -> "AuthConfig":

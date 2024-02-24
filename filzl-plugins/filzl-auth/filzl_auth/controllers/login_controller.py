@@ -96,7 +96,7 @@ class LoginController(ControllerBase):
         ),
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session),
     ):
-        user_model = auth_config.USER_MODEL_AUTH
+        user_model = auth_config.AUTH_USER
         matched_users = select(user_model).where(
             user_model.email == login_payload.username
         )

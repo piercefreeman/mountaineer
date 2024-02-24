@@ -37,7 +37,7 @@ class AuthDependencies:
             if user_id is None:
                 return None
 
-            return await db.get(auth_config.USER_MODEL_AUTH, user_id)
+            return await db.get(auth_config.AUTH_USER, user_id)
         except ExpiredSignatureError:
             return None
         except JWTError:

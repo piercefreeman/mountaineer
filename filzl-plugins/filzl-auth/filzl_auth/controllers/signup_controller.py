@@ -83,7 +83,7 @@ class SignupController(ControllerBase):
         if auth_config.RECAPTCHA_ENABLED and signup_payload.recapcha_key is None:
             raise SignupInvalid(invalid_reason="Recapcha is required.")
 
-        user_model = auth_config.USER_MODEL_AUTH
+        user_model = auth_config.AUTH_USER
         matched_users = select(user_model).where(
             user_model.email == signup_payload.username
         )
