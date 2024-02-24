@@ -1,6 +1,9 @@
 from functools import wraps
 from inspect import isclass, iscoroutinefunction, signature
+from typing import Any, Callable
 
+from fastapi import params as fastapi_params
+from filzl.dependencies import get_function_dependencies
 from pydantic import BaseModel
 
 from filzl_daemons.registry import REGISTRY
@@ -23,7 +26,14 @@ def action(f):
     # - A pydantic model as the first argument
     sig = signature(f)
     params = list(sig.parameters.values())
-    if len(params) > 1:
+
+    standard_params = [
+        param
+        for param in params
+        if not isinstance(param.default, fastapi_params.Depends)
+    ]
+
+    if len(standard_params) > 1:
         raise TypeError(
             f"Function {f.__name__} must have no arguments or the first argument must be a Pydantic model."
         )
@@ -64,3 +74,52 @@ def action(f):
         )
 
     return wrapper
+
+
+async def call_action(
+    registry_id: str,
+    input_body: BaseModel | str | None,
+):
+    """
+    Resolves an action from the registry and executes it
+    """
+    task_fn = REGISTRY.get_action(registry_id)
+    task_model = REGISTRY.get_action_model(registry_id)
+
+    # If the task model is provided, we should try to parse the inputs as the pydantic model
+    task_args = []
+    if task_model is not None:
+        if isinstance(input_body, str):
+            task_args.append(task_model.model_validate_json(input_body))
+        elif isinstance(input_body, BaseModel):
+            task_args.append(input_body)
+
+    async with get_function_dependencies(
+        callable=isolate_dependency_only_function(task_fn)
+    ) as dependency_injection_args:
+        return await task_fn(*task_args, **dependency_injection_args)
+
+
+def isolate_dependency_only_function(original_fn: Callable):
+    """
+    Create and return a mocked function that only includes the Depends parameters
+    from the original function. This allows fastapi to resolve dependencies that are
+    specified while allowing our logic to provide other non-dependency injected args.
+
+    """
+    sig = signature(original_fn)
+    parameters = sig.parameters
+
+    dependency_params = {
+        name: param
+        for name, param in parameters.items()
+        if isinstance(param.default, fastapi_params.Depends)
+    }
+
+    # Construct a new function dynamically accepting only the dependencies
+    async def mock_fn(**deps: Any) -> Any:
+        pass
+
+    mock_fn.__signature__ = sig.replace(parameters=dependency_params.values())  # type: ignore
+
+    return mock_fn

@@ -4,17 +4,17 @@ from warnings import filterwarnings
 
 import pytest
 import pytest_asyncio
+from filzl.sqlmodel import SQLModel
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
-from sqlmodel import SQLModel
 
 from filzl_daemons.__tests__.conf_models import (
     LOCAL_MODEL_DEFINITION,
 )
+from filzl_daemons.client import DaemonClient
 from filzl_daemons.db import PostgresBackend
 from filzl_daemons.logging import LOGGER
-from filzl_daemons.workflow import DaemonClient
 
 
 @pytest_asyncio.fixture(scope="function")

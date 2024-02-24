@@ -1,5 +1,3 @@
-from typing import Type
-
 from fastapi import Depends, status
 from fastapi.responses import JSONResponse
 from filzl import (
@@ -19,7 +17,6 @@ from sqlmodel import select
 
 from filzl_auth.authorize import authorize_response
 from filzl_auth.config import AuthConfig
-from filzl_auth.user_model import User
 from filzl_auth.views import get_auth_view_path
 
 
@@ -50,9 +47,8 @@ class SignupController(ControllerBase):
     # Defaults to 24 hours
     token_expiration_minutes: int = 60 * 24
 
-    def __init__(self, post_signup_redirect: str, user_model: Type[User] = User):
+    def __init__(self, post_signup_redirect: str):
         super().__init__()
-        self.user_model = user_model
         self.post_signup_redirect = post_signup_redirect
 
     def render(
@@ -87,8 +83,9 @@ class SignupController(ControllerBase):
         if auth_config.RECAPTCHA_ENABLED and signup_payload.recapcha_key is None:
             raise SignupInvalid(invalid_reason="Recapcha is required.")
 
-        matched_users = select(self.user_model).where(
-            self.user_model.email == signup_payload.username
+        user_model = auth_config.AUTH_USER
+        matched_users = select(user_model).where(
+            user_model.email == signup_payload.username
         )
         result = await session.execute(matched_users)
         user = result.scalars().first()
@@ -96,9 +93,9 @@ class SignupController(ControllerBase):
             raise SignupInvalid(invalid_reason="User already exists with this email.")
 
         # Create a new user
-        hashed_password = self.user_model.get_password_hash(signup_payload.password)
+        hashed_password = user_model.get_password_hash(signup_payload.password)
 
-        new_user = self.user_model(
+        new_user = user_model(
             email=signup_payload.username, hashed_password=hashed_password
         )
         session.add(new_user)

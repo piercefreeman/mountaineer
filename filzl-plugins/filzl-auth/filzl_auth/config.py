@@ -1,5 +1,9 @@
+from typing import Type
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
+
+from filzl_auth.models import UserAuthMixin
 
 
 class AuthConfig(BaseSettings):
@@ -14,6 +18,8 @@ class AuthConfig(BaseSettings):
     RECAPTCHA_GCP_PROJECT_ID: str | None = None
     # Client-side key for browser embedding, tied to your GCP ReCapcha instance
     RECAPTCHA_GCP_CLIENT_KEY: str | None = None
+
+    AUTH_USER: Type[UserAuthMixin]
 
     @model_validator(mode="after")
     def validate_recaptcha(self) -> "AuthConfig":

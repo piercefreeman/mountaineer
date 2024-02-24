@@ -8,9 +8,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql.schema import Table
-from sqlmodel import SQLModel
 
 from filzl.logging import LOGGER
+from filzl.sqlmodel import SQLModel
 
 
 class FieldSchema(BaseModel):

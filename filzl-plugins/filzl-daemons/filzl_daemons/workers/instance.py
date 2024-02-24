@@ -105,6 +105,7 @@ class InstanceWorkerProcess(WorkerBase):
                 raw_input=task.raw_input,
                 task_manager=self.task_manager,
                 instance_process_id=self.process_id,
+                is_testing=False,
             )
         finally:
             self.pool_semaphore.release()
