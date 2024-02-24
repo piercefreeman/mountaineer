@@ -3,21 +3,9 @@ from time import time
 
 import pytest
 from pydantic import BaseModel
-from tqdm import tqdm
 
+from mountaineer.__tests__.common import calculate_primes
 from mountaineer.cropper import FunctionCropException, crop_function_for_return_keys
-
-
-def calculate_primes(up_to: int):
-    def is_prime(n: int) -> bool:
-        if n < 2:
-            return False
-        for i in range(2, int(n**0.5) + 1):
-            if n % i == 0:
-                return False
-        return True
-
-    return sum(is_prime(i) for i in tqdm(range(2, up_to + 1)))
 
 
 class ExampleResponse(BaseModel):

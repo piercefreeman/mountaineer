@@ -159,7 +159,7 @@ class ASTReducer(ast.NodeTransformer):
         return node
 
     def visit_function_common(self, node: ast.AsyncFunctionDef | ast.FunctionDef):
-        new_body = []
+        new_body: list[ast.stmt] = []
         for stmt in node.body:
             if isinstance(stmt, ast.If):
                 if stmt := self.visit_If(stmt) and stmt:
@@ -180,9 +180,7 @@ class ASTReducer(ast.NodeTransformer):
                 for target in stmt.targets
                 if isinstance(target, ast.Name)
             )
-        elif isinstance(
-            stmt, ast.Expr
-        ):
+        elif isinstance(stmt, ast.Expr):
             # For now assume that we need all expressions
             return True
         elif isinstance(stmt, ast.If):
