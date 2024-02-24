@@ -49,9 +49,7 @@ class SyntheticVarInserter(ast.NodeTransformer):
 
         if isinstance(node.value, ast.Dict):  # Direct dictionary returns
             for i, (key, value) in enumerate(zip(node.value.keys, node.value.values)):
-                key_str = (
-                    key.value if isinstance(key, (ast.Str, ast.Constant)) else None
-                )
+                key_str = key.value if isinstance(key, ast.Constant) else None
                 if key_str:
                     assign, synthetic_var_name = self.create_synthetic_assign(
                         key_str, value
@@ -190,7 +188,7 @@ class ASTReducer(ast.NodeTransformer):
 
     def modify_return_stmt(self, stmt: ast.Return):
         # Prepare the dictionary keys and values based on the model's fields (arguments to the model)
-        new_keys: list[ast.Str] = []
+        new_keys: list[ast.Constant] = []
         new_values: list[ast.expr] = []
 
         if (
@@ -202,7 +200,7 @@ class ASTReducer(ast.NodeTransformer):
             )
         ):
             for key, value in zip(
-                [ast.Str(s=arg.arg) for arg in stmt.value.keywords],
+                [ast.Constant(value=arg.arg) for arg in stmt.value.keywords],
                 [arg.value for arg in stmt.value.keywords],
             ):
                 if isinstance(value, ast.Name) and value.id in self.needed_vars:
@@ -211,7 +209,7 @@ class ASTReducer(ast.NodeTransformer):
         elif isinstance(stmt.value, ast.Dict):
             for dict_key, dict_value in zip(stmt.value.keys, stmt.value.values):
                 if (
-                    isinstance(dict_key, ast.Str)
+                    isinstance(dict_key, ast.Constant)
                     and isinstance(dict_value, ast.Name)
                     and dict_value.id in self.needed_vars
                 ):

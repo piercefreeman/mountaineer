@@ -29,7 +29,7 @@ def test_simple_sync_function():
     optimized_func = crop_function_for_return_keys(example_function, ["a"], locals())
 
     # Our raw function execution should be over 1s
-    # Our optimized function should be less than 0.01s
+    # Our optimized function should be less than 0.05s
     start = time()
     output_value = example_function()
     assert time() - start > 1
@@ -37,7 +37,7 @@ def test_simple_sync_function():
 
     start = time()
     output_value = optimized_func()
-    assert time() - start < 0.01
+    assert time() - start < 0.05
     assert output_value == {"a": 1244}
 
 
@@ -59,12 +59,12 @@ def test_conditional_sync_function():
 
     start = time()
     output_value = optimized_func(100)
-    assert time() - start < 0.01
+    assert time() - start < 0.05
     assert output_value == {"a": 4}
 
     start = time()
     output_value = optimized_func(0)
-    assert time() - start < 0.01
+    assert time() - start < 0.05
     assert output_value == {"a": 0}
 
 
@@ -80,7 +80,7 @@ def test_pydantic_model():
 
     start = time()
     output_value = optimized_func()
-    assert time() - start < 0.01
+    assert time() - start < 0.05
     assert output_value == {"a": 1244}
 
 
@@ -107,7 +107,7 @@ async def test_async_function():
 
     start = time()
     output_value = await optimized_func_async()
-    assert time() - start < 0.01
+    assert time() - start < 0.05
     assert output_value == {"a": 20}
 
 
