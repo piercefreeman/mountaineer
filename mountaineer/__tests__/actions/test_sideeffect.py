@@ -1,17 +1,21 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+from time import time
 from unittest.mock import patch
 
 import pytest
 from fastapi import Depends, Request
+from fastapi.testclient import TestClient
 from pydantic.main import BaseModel
 from starlette.datastructures import Headers
 
+from mountaineer.__tests__.common import calculate_primes
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
 from mountaineer.actions.sideeffect import sideeffect
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
+from mountaineer.logging import LOGGER
 from mountaineer.render import RenderBase
 
 
@@ -217,3 +221,71 @@ async def test_get_render_parameters():
             "cookie_dependency": "cookie-value",
             "query_id": 5,
         }
+
+
+@pytest.mark.parametrize(
+    "use_experimental,min_time,max_time",
+    [
+        (False, 1, None),
+        (True, None, 0.05),
+    ],
+)
+def test_limit_codepath_experimental(
+    use_experimental: bool,
+    min_time: float | None,
+    max_time: float | None,
+):
+    class ExampleController(ControllerBase):
+        url: str = "/test/{query_id}/"
+
+        def render(
+            self,
+            query_id: int,
+        ) -> ExampleRenderModel:
+            a = calculate_primes(10000)
+            b = calculate_primes(1000000)
+            return ExampleRenderModel(
+                value_a=f"Hello {a}",
+                value_b=f"World {b}",
+            )
+
+        @sideeffect(
+            reload=(ExampleRenderModel.value_a,),
+            experimental_render_reload=use_experimental,
+        )
+        def call_sideeffect(self, payload: dict):
+            pass
+
+    # We need to load this test controller to an actual application runtime
+    # or else we don't have the render() metadata added
+    app = AppController(view_root=Path())
+    controller = ExampleController()
+    app.register(controller)
+
+    sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).url
+    assert isinstance(sideeffect_url, str)
+
+    client = TestClient(app.app)
+    start = time()
+    response = client.post(
+        sideeffect_url,
+        json={},
+        headers={
+            # From the original view page that is calling this sub-function
+            "referer": "http://example.com/test/5/",
+        },
+    )
+    elapsed = time() - start
+    assert response.status_code == 200
+    assert response.json() == {
+        "sideeffect": {
+            "value_a": "Hello 1229",
+        }
+    }
+
+    LOGGER.info(f"Use Experimental: {use_experimental}\nElapsed: {elapsed}")
+
+    if min_time is not None:
+        assert elapsed >= min_time
+    if max_time is not None:
+        assert elapsed <= max_time

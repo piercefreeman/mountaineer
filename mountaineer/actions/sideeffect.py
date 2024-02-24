@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from functools import wraps
+from functools import partial, wraps
 from inspect import Parameter, isawaitable, signature
 from typing import TYPE_CHECKING, Any, Callable, Type, overload
 from urllib.parse import urlparse
@@ -14,6 +14,7 @@ from mountaineer.actions.fields import (
     handle_explicit_responses,
     init_function_metadata,
 )
+from mountaineer.cropper import crop_function_for_return_keys
 from mountaineer.dependencies import get_function_dependencies
 from mountaineer.exceptions import APIException
 from mountaineer.render import FieldClassDefinition
@@ -30,6 +31,7 @@ def sideeffect(
     reload: tuple[Any, ...] | None = None,
     response_model: Type[BaseModel] | None = None,
     exception_models: list[Type[APIException]] | None = None,
+    experimental_render_reload: bool | None = None,
 ) -> Callable[[Callable], Callable]:
     ...
 
@@ -49,19 +51,53 @@ def sideeffect(*args, **kwargs):
         as if render() is called again. This parameter only controls the data that is streamed back to the client in order to help
         reduce bandwidth of data that won't be changed.
 
+    Experimental options. Disabled by default:
+
+    :experimental_render_reload: If True, will attempt to only execute the logic in render() that is required to calculate your
+        `reload` parameters. Other logic will be short-circuited. If your render function has significant computation for other
+        properties this can be a significant performance improvement. However, it is experimental and may not work in all cases.
+
     """
 
     def decorator_with_args(
         reload: tuple[FieldClassDefinition, ...] | None = None,
         response_model: Type[BaseModel] | None = None,
         exception_models: list[Type[APIException]] | None = None,
+        experimental_render_reload: bool = False,
     ):
         def wrapper(func: Callable):
             original_sig = signature(func)
             function_needs_request = "request" in original_sig.parameters
 
+            # Must be delayed until we actually have a self reference
+            # Keep a dictionary versus a single value, so we are able to support one
+            # controller definition (and therefore a single @sideeffect decorator) being
+            # subclassed multiple times
+            render_fns: dict[Any, Callable] = {}
+
             @wraps(func)
             async def inner(self: "ControllerBase", *func_args, **func_kwargs):
+                # Delay
+                nonlocal render_fns
+                render_fn = render_fns.get(self)
+                if not render_fn:
+                    if experimental_render_reload and reload:
+                        render_fn = partial(
+                            crop_function_for_return_keys(
+                                self.render, keys=[field.key for field in reload]
+                            ),
+                            self,
+                        )
+                    else:
+                        render_fn = self.render
+                    render_fns[self] = render_fn
+
+                # This shouldn't occur - but is necessary for typehinting
+                if not render_fn:
+                    raise ValueError(
+                        "Unable to compute a valid render function for sideeffect"
+                    )
+
                 # Check if the original function expects a 'request' parameter
                 request = func_kwargs.pop("request")
                 if not request:
@@ -84,7 +120,7 @@ def sideeffect(*args, **kwargs):
                     # For this we rely on the Referrer header that is sent on the fetch(). Note that this
                     # referrer can be spoofed, so it assumes that the endpoint also internally validates
                     # the caller has correct permissions to access the data.
-                    server_data = self.render(**values)
+                    server_data = render_fn(**values)
                     if isawaitable(server_data):
                         server_data = await server_data
 
@@ -123,11 +159,7 @@ def sideeffect(*args, **kwargs):
         return decorator_with_args()(func)
     else:
         # It's used as @sideeffect(xyz=2) with arguments
-        return decorator_with_args(
-            reload=kwargs.get("reload"),
-            response_model=kwargs.get("response_model"),
-            exception_models=kwargs.get("exception_models"),
-        )
+        return decorator_with_args(**kwargs)
 
 
 @asynccontextmanager
@@ -189,5 +221,5 @@ async def get_render_parameters(
             yield values
     except RuntimeError as e:
         raise RuntimeError(
-            f"Error occurred while resolving dependencies for render(): {controller}"
+            f"Error occurred while resolving dependencies for render(): {controller}: {e}"
         ) from e
