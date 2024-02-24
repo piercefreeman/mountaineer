@@ -29,7 +29,7 @@ def increment_count(self):
 
 ```python
 @sideeffect(
-    # only refresh the current_count variable
+    # only push the updated current_count variable to the client
     reload=(CountRender.current_count,)
 )
 def increment_count(self):
@@ -60,6 +60,58 @@ const response = await serverState.increment_count({
 You can also manually inspect the sideeffect payload by accessing `response.sideeffect`.
 
 If the action has a passthrough, it will be supplied in `response.passthrough`. Otherwise it will be undefined.
+
+### Experimental Render Cropper
+
+> [!TIP]
+> This feature is experimental and only supports relatively simple render() function implementations. If you use it for a more complicated render() function and it doesn't work as expected, report a bug to improve the test coverage.
+
+Render functions sometimes have heavy logic overhead: they need to fetch multiple objects from the database, do some roll-up computation, etc. If you're issuing a sideeffect that only affects a small portion of the initial data, this is wasted computation.
+
+Passing a `reload` filter to `sideeffect` prevents this redundant data from being sent to the frontend. But this feature only saves bandwidth; it doesn't actually prevent the server from doing the computation in the first place. This is where the `experimental_render_reload` comes in.
+
+When this flag is set to `True`, Mountaineer will inspect the AST ([Abstract Syntax Tree](https://en.wikipedia.org/wiki/Abstract_syntax_tree)) of your render function. It creates a new synthetic render function that only does the computation required to calculate the `reload` parameters. If some intensive compute isn't required for your sideeffect, it will be ignored.
+
+We compile this function into the Python runtime so it runs with the same performance as if you had implemented an alternative `render()` function yourself. Depending on your full render function complexity, this can lead to significant performance improvements.
+
+Let's consider the following render function:
+
+```python
+def render(
+    self,
+    query_id: int,
+) -> ExampleRenderModel:
+    a = calculate_primes(10000)
+    b = calculate_primes(1000000)
+    return ExampleRenderModel(
+        value_a=f"Hello {a}",
+        value_b=f"World {b}",
+    )
+
+@sideeffect(
+    reload=(ExampleRenderModel.value_a,),
+    experimental_render_reload=use_experimental,
+)
+def call_sideeffect(self, payload: dict):
+    pass
+```
+
+Benchmarked on a Macbook M1, calling this initial render will perform ~1.84s of compute. It results in:
+
+```json
+{
+  "value_a": "Hello 1229",
+  "value_b": "Hello 78498"
+}
+```
+
+When `call_sideeffect` is called with `experimental_render_reload=True`, the compute is `0.010s`. It results in:
+
+```json
+{
+  "value_a": "Hello 1229"
+}
+```
 
 ## Passthrough
 

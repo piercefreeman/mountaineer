@@ -15,6 +15,7 @@ from mountaineer.actions.sideeffect import sideeffect
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
+from mountaineer.logging import LOGGER
 from mountaineer.render import RenderBase
 
 
@@ -225,8 +226,8 @@ async def test_get_render_parameters():
 @pytest.mark.parametrize(
     "use_experimental,min_time,max_time",
     [
-        (True, None, 0.05),
         (False, 1, None),
+        (True, None, 0.05),
     ],
 )
 def test_limit_codepath_experimental(
@@ -281,6 +282,8 @@ def test_limit_codepath_experimental(
             "value_a": "Hello 1229",
         }
     }
+
+    LOGGER.info(f"Use Experimental: {use_experimental}\nElapsed: {elapsed}")
 
     if min_time is not None:
         assert elapsed >= min_time
