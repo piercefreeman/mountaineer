@@ -1,5 +1,5 @@
 [package]
-name = "filzl"
+name = "mountaineer"
 version = "0.1.0"
 edition = "2021"
 
@@ -24,7 +24,7 @@ lto = true
 incremental = false
 
 [package.metadata.maturin]
-name = "filzl"
+name = "mountaineer"
 
 [[bench]]
 path = "src/benches/source_map_benchmark.rs"

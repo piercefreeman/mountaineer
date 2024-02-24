@@ -209,20 +209,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "filzl"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "env_logger",
- "lazy_static",
- "libc",
- "log",
- "pyo3",
- "v8",
- "winapi",
-]
-
-[[package]]
 name = "fslock"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -374,6 +360,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "mountaineer"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "env_logger",
+ "lazy_static",
+ "libc",
+ "log",
+ "pyo3",
+ "v8",
+ "winapi",
 ]
 
 [[package]]

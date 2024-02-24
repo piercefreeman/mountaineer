@@ -1,16 +1,20 @@
-# filzl
+![Mountaineer Header](./docs/media/header.png)
 
-filzl is a batteries-included framework to easily build webapps in Python and React. If you've used either of these languages before for web development, we think you'll be right at home.
+<center><i>Move fast. Climb mountains. Don't break things.</i></center>
+
+<br/>
+
+Mountaineer 🏔️ is a framework to easily build webapps in Python and React. If you've used either of these languages before for development, we think you'll be right at home.
 
 ## Main Features
 
-Each web framework has its own unique features and tradeoffs. Filzl focuses on developer productivity above all else, with production speed a close second.
+Each framework has its own unique features and tradeoffs. Mountaineer focuses on developer productivity above all else, with production speed a close second.
 
-- 📝 First-class typehints for both the frontend and backend
+- 📝 Typehints up and down the stack: frontend, backend, and database
 - 🎙️ Trivially easy client<->server communication, data binding, and function calling
 - 🌎 Optimized server rendering for better accessibility and SEO
+- 🏹 Static analysis of web pages for strong validation: link validity, data access, etc.
 - 🤩 Skip the API or Node.js server just to serve frontend clients
-- 🏹 Static analysis of templates for strong validation: link validity, data access, etc.
 
 ## Getting Started
 
@@ -19,7 +23,7 @@ Each web framework has its own unique features and tradeoffs. Filzl focuses on d
 To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A.
 
 ```bash
-$ pipx run create-filzl-app new
+$ pipx run create-mountaineer-app new
 
 ? Project name [my-project]: my_website
 ? Use poetry for dependency management? [Yes] Yes
@@ -27,7 +31,7 @@ $ pipx run create-filzl-app new
 ? Use Tailwind CSS? [Yes] Yes
 ```
 
-Filzl projects all follow a similar structure. After running this CLI you should see a new folder called `my_website`, with folders like the following:
+Mountaineer projects all follow a similar structure. After running this CLI you should see a new folder called `my_website`, with folders like the following:
 
 ```
 my_website
@@ -62,12 +66,12 @@ $ poetry run watch
 
 ### Walkthrough
 
-Below we go through some of the unique aspects of filzl. Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
+Below we go through some of the unique aspects of mountaineer. Let's get started with creating a new controller, since this will define which data you can push and pull to your frontend.
 
 ```python title="my_website/controllers/home.py"
-from filzl.actions import sideeffect
-from filzl.controller import ControllerBase
-from filzl.render import RenderBase
+from mountaineer.actions import sideeffect
+from mountaineer.controller import ControllerBase
+from mountaineer.render import RenderBase
 from fastapi import Request
 
 class HomeRender(RenderBase):
@@ -152,7 +156,7 @@ What good is a counter that doesn't count? We define a function that accepts a p
 
 The important part here is the `@sideeffect`. This decorator indicates that we want the frontend to refresh its data, since after we update the global count on the server the client state will be newly outdated.
 
-Filzl detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
+Mountaineer detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
 
 ```tsx title="my_website/views/home/page.tsx"
 
@@ -188,7 +192,7 @@ export default Home;
 
 We run this async handler when the button is clicked and specify our desired increment count. Notice that we don't have to read or parse the output value of this function. Since the function is marked as a sideeffect, the frontend will automatically refresh its data after the function is called.
 
-Go ahead and load it in your browser. If you open up your web tools, you can increment the ticker and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by filzl.
+Go ahead and load it in your browser. If you open up your web tools, you can increment the ticker and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by mountaineer.
 
 ![Getting Started Final Webapp](./docs/media/getting_started_ticker.png)
 
@@ -198,7 +202,7 @@ And that's it. We've just built a fully interactive web application without havi
 
 ### Learn More
 
-We have additional documentation that does more of a technical deep dive on different features of filzl. We order these roughly in the order that we anticipate you'll need them.
+We have additional documentation that does more of a technical deep dive on different features of mountaineer. We order these roughly in the order that we anticipate you'll need them.
 
 - [Client Actions](./docs/client_actions.md): Details on @sideeffect, @passthrough, and masking @sideeffect fields for partial re-rendering.
 - [View Definition](./docs/view.md): How to define the view and use the serverState hook. Covers `page.tsx` and `layout.tsx` conventions to easily nest your site designs.
