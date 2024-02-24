@@ -70,12 +70,16 @@ def sideeffect(*args, **kwargs):
             function_needs_request = "request" in original_sig.parameters
 
             # Must be delayed until we actually have a self reference
-            render_fn: Callable | None = None
+            # Keep a dictionary versus a single value, so we are able to support one
+            # controller definition (and therefore a single @sideeffect decorator) being
+            # subclassed multiple times
+            render_fns: dict[Any, Callable] = {}
 
             @wraps(func)
             async def inner(self: "ControllerBase", *func_args, **func_kwargs):
                 # Delay
-                nonlocal render_fn
+                nonlocal render_fns
+                render_fn = render_fns.get(self)
                 if not render_fn:
                     if experimental_render_reload and reload:
                         render_fn = partial(
@@ -86,6 +90,7 @@ def sideeffect(*args, **kwargs):
                         )
                     else:
                         render_fn = self.render
+                    render_fns[self] = render_fn
 
                 # This shouldn't occur - but is necessary for typehinting
                 if not render_fn:

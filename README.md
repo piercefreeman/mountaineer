@@ -1,8 +1,6 @@
 ![Mountaineer Header](./docs/media/header.png)
 
-<center><i>Move fast. Climb mountains. Don't break things.</i></center>
-
-<br/>
+<p align="center"><i>Move fast. Climb mountains. Don't break things.</i></p>
 
 Mountaineer 🏔️ is a framework to easily build webapps in Python and React. If you've used either of these languages before for development, we think you'll be right at home.
 
