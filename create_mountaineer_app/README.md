@@ -24,7 +24,7 @@ If you're making frequent changes in development, you'll often want to create a 
 
 ```bash
 poetry install
-rm -rf test-project && poetry run new --output-path test-project
+rm -rf test-project && poetry run new --output-path test-project --mountaineer-dev-path ../
 ```
 
 ### Client Poetry Installation

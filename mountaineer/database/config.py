@@ -20,7 +20,7 @@ class DatabaseConfig(BaseSettings):
                 username=values["POSTGRES_USER"],
                 password=values["POSTGRES_PASSWORD"],
                 host=values["POSTGRES_HOST"],
-                port=int(values["POSTGRES_PORT"]),
+                port=int(values.get("POSTGRES_PORT", 5432)),
                 path=values["POSTGRES_DB"],
             )
         return values

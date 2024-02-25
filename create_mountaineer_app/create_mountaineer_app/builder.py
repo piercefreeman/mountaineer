@@ -13,6 +13,7 @@ from create_mountaineer_app.generation import ProjectMetadata, format_template
 from create_mountaineer_app.templates import get_template_path
 
 IGNORE_FILES = {"__pycache__", "node_modules"}
+ALLOW_HIDDEN_FILES = {".env"}
 
 
 def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
@@ -35,7 +36,7 @@ def should_copy_path(path: Path):
     for part in path.parts:
         if part in IGNORE_FILES:
             return False
-        if part.startswith("."):
+        if part.startswith(".") and part not in ALLOW_HIDDEN_FILES:
             return False
     return True
 
