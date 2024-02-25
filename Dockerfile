@@ -54,7 +54,7 @@ COPY src src
 COPY create_mountaineer_app create_mountaineer_app
 COPY README.md .
 COPY Makefile .
-COPY my_website my_website
+COPY ci_webapp my_website
 
 # Sometimes this may have to be executed manually after
 # a few fresh launches of the dockerfile

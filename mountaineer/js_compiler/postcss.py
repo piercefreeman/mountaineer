@@ -16,7 +16,7 @@ class PostCSSBundler(ClientBuilderBase):
     Support PostCSS processing for CSS files.
 
     - Assumes postcss-cli is installed in the primary project's package root (ie.
-      the my_website/views/node_modules directory)
+      the ci_webapp/views/node_modules directory)
     - Assumes that the css file under consideration has a root postcss.config.js file
       within its own view path
 

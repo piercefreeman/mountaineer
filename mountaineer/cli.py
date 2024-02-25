@@ -179,8 +179,8 @@ def handle_watch(
     """
     Watch the file directory and rebuild auto-generated files.
 
-    :param client_package: "my_website"
-    :param client_controller: "my_website.app:controller"
+    :param client_package: "ci_webapp"
+    :param client_controller: "ci_webapp.app:controller"
 
     """
     update_multiprocessing_settings()
@@ -214,9 +214,9 @@ def handle_runserver(
     subscribe_to_fizl: bool = False,
 ):
     """
-    :param client_package: "my_website"
-    :param client_webservice: "my_website.app:app"
-    :param client_controller: "my_website.app:controller"
+    :param client_package: "ci_webapp"
+    :param client_webservice: "ci_webapp.app:app"
+    :param client_controller: "ci_webapp.app:controller"
 
     """
     update_multiprocessing_settings()
@@ -292,7 +292,7 @@ def update_multiprocessing_settings():
 
 def import_from_string(import_string: str):
     """
-    Given a string to the package (like "my_website.app:controller") import the
+    Given a string to the package (like "ci_webapp.app:controller") import the
     actual variable
     """
     module_name, attribute_name = import_string.split(":")

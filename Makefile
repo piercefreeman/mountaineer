@@ -14,17 +14,17 @@ LIB_NAME := mountaineer
 CREATE_MOUNTAINEER_APP_DIR := create_mountaineer_app
 CREATE_MOUNTAINEER_APP_NAME := create_mountaineer_app
 
-MY_WEBSITE_DIR := my_website
-MY_WEBSITE_NAME := my_website
+CI_WEBAPP_DIR := ci_webapp
+CI_WEBAPP_NAME := ci_webapp
 
 # Ignore these directories in the local filesystem if they exist
 .PHONY: lint test
 
 # Main lint target
-lint: lint-lib lint-create-mountaineer-app lint-my-website
+lint: lint-lib lint-create-mountaineer-app lint-ci-webapp
 
 # Lint validation target
-lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint-validation-my-website
+lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint-validation-ci-webapp
 
 # Testing target
 test: test-lib test-create-mountaineer-app
@@ -41,8 +41,8 @@ install-deps:
 	@echo "Installing dependencies for $(CREATE_MOUNTAINEER_APP_DIR)..."
 	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && poetry install)
 
-	@echo "Installing dependencies for $(MY_WEBSITE_DIR)..."
-	@(cd $(MY_WEBSITE_DIR) && poetry install)
+	@echo "Installing dependencies for $(CI_WEBAPP_DIR)..."
+	@(cd $(CI_WEBAPP_DIR) && poetry install)
 
 # Clean the current poetry.lock files, useful for remote CI machines
 # where we're running on a different base architecture than when
@@ -51,23 +51,23 @@ clean-poetry-lock:
 	@echo "Cleaning poetry.lock files..."
 	@rm -f $(LIB_DIR)/poetry.lock
 	@rm -f $(CREATE_MOUNTAINEER_APP_DIR)/poetry.lock
-	@rm -f $(MY_WEBSITE_DIR)/poetry.lock
+	@rm -f $(CI_WEBAPP_DIR)/poetry.lock
 
 # Standard linting - local development, with fixing enabled
 lint-lib:
 	$(call lint-common,$(LIB_DIR),$(LIB_NAME))
 lint-create-mountaineer-app:
 	$(call lint-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
-lint-my-website:
-	$(call lint-common,$(MY_WEBSITE_DIR),$(MY_WEBSITE_NAME))
+lint-ci-webapp:
+	$(call lint-common,$(CI_WEBAPP_DIR),$(CI_WEBAPP_NAME))
 
 # Lint validation - CI to fail on any errors
 lint-validation-lib:
 	$(call lint-validation-common,$(LIB_DIR),$(LIB_NAME))
 lint-validation-create-mountaineer-app:
 	$(call lint-validation-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
-lint-validation-my-website:
-	$(call lint-validation-common,$(MY_WEBSITE_DIR),$(MY_WEBSITE_NAME))
+lint-validation-ci-webapp:
+	$(call lint-validation-common,$(CI_WEBAPP_DIR),$(CI_WEBAPP_NAME))
 
 # Tests
 test-lib:
