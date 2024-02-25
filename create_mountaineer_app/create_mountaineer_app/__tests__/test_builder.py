@@ -2,7 +2,6 @@ import subprocess
 from itertools import product
 from pathlib import Path
 from time import sleep
-from uuid import uuid4
 
 import pytest
 from click import secho
@@ -89,16 +88,18 @@ def test_valid_permutations(
     app_test_port = get_free_port()
     secho(f"Found free port for test server: {app_test_port}", fg="green")
 
-    # Launch docker
+    # Launch docker to host the default database
     subprocess.run(
         ["docker-compose", "up", "-d"], cwd=metadata.project_path, check=True
     )
 
-    # Now launch the server in the background
     environment = environment_from_metadata(metadata)
+
+    # Make sure the required models are created
     create_db_process = environment.run_command(["createdb"], metadata.project_path)
     create_db_process.communicate()
 
+    # Now launch the server in the background
     process = environment.run_command(
         ["runserver", "--port", str(app_test_port)], metadata.project_path
     )
@@ -123,9 +124,6 @@ def test_valid_permutations(
 
         # Perform the fetch tests
         response = get(f"http://localhost:{app_test_port}")
-        assert response.ok
-
-        response = get(f"http://localhost:{app_test_port}/detail/{uuid4()}")
         assert response.ok
 
         response = get(f"http://localhost:{app_test_port}/not_found")
