@@ -35,6 +35,8 @@ Mountaineer projects all follow a similar structure. After running this CLI you 
 my_webapp
   /controllers
     /home.py
+  /models
+    /mymodel.py
   /views
     /app
       /home
@@ -42,6 +44,8 @@ my_webapp
       /layout.tsx
     /package.json
     /tsconfig.json
+  /app.py
+  /cli.py
 pyproject.toml
 poetry.lock
 ```
