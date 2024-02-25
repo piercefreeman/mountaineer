@@ -1,12 +1,27 @@
 from uuid import UUID
 
-from fastapi import Request
-from mountaineer.controller import ControllerBase
-from mountaineer.render import Metadata, RenderBase
+from mountaineer import Metadata, RenderBase, ControllerBase, APIException, sideeffect
+from mountaineer.database import DatabaseDependencies
+
+from fastapi import Request, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.exceptions import HTTPException
+from pydantic import BaseModel
+
+from {{project_name}} import models
+
+class NotFoundException(APIException):
+    status_code = 404
+    detail = "Detail item not found"
+
+
+class UpdateTextRequest(BaseModel):
+    description: str
 
 
 class DetailRender(RenderBase):
-    client_ip: str
+    id: int
+    description: str
 
 
 class DetailController(ControllerBase):
@@ -16,8 +31,31 @@ class DetailController(ControllerBase):
     def __init__(self):
         super().__init__()
 
-    def render(self, detail_id: UUID, request: Request) -> DetailRender:
+    async def render(
+        self,
+        detail_id: int,
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+    ) -> DetailRender:
+        detail_item = await session.get(models.DetailItem, detail_id)
+        if not detail_item:
+            raise NotFoundException()
+
         return DetailRender(
-            client_ip=request.client.host if request.client else "unknown",
+            id=detail_item.id,
+            description=detail_item.description,
             metadata=Metadata(title=f"Detail: {detail_id}"),
         )
+
+    @sideeffect
+    async def update_text(
+        self,
+        detail_id: int,
+        payload: UpdateTextRequest,
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+    ):
+        detail_item = await session.get(models.DetailItem, detail_id)
+        if not detail_item:
+            raise NotFoundException()
+
+        detail_item.description = payload.description
+        await session.commit()

@@ -1,34 +1,39 @@
 from uuid import UUID, uuid4
 
-from fastapi import Request
-from mountaineer.actions import passthrough, sideeffect
-from mountaineer.controller import ControllerBase
-from mountaineer.render import Metadata, RenderBase
+from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
+from mountaineer.database import DatabaseDependencies
+
+from fastapi import Request, Depends
 from pydantic import BaseModel
+from sqlmodel import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from {{project_name}} import models
 
 
 class HomeRender(RenderBase):
-    current_count: int
-
-
-class IncrementCountRequest(BaseModel):
-    count: int
+    items: list[models.DetailItem]
 
 
 class HomeController(ControllerBase):
     url = "/"
     view_path = "/app/home/page.tsx"
 
-    def __init__(self):
-        super().__init__()
-        self.global_count = 0
-
-    @sideeffect
-    def increment_count(self, payload: IncrementCountRequest):
-        self.global_count += payload.count
-
-    def render(self) -> HomeRender:
+    async def render(
+        self,
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+    ) -> HomeRender:
+        items = await session.execute(select(models.DetailItem))
         return HomeRender(
-            current_count=self.global_count,
+            items=items.scalars().all(),
             metadata=Metadata(title="Home"),
         )
+
+    @sideeffect
+    async def new_detail(
+        self,
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+    ):
+        obj = models.DetailItem(description="Untitled Item")
+        session.add(obj)
+        await session.commit()
