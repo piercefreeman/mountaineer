@@ -1,3 +1,9 @@
+"""
+We specify packages both as python dependencies and venv packages depending
+on the local linking strategy. This script ensures that both dependency lists
+align so we don't end up out of sync with one install pipeline.
+
+"""
 import toml
 from dataclasses import dataclass
 
