@@ -2,10 +2,10 @@ from mountaineer.app import AppController
 from mountaineer.js_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
-from my_website.controllers.complex import ComplexController
-from my_website.controllers.detail import DetailController
-from my_website.controllers.home import HomeController
-from my_website.views import get_view_path
+from ci_webapp.controllers.complex import ComplexController
+from ci_webapp.controllers.detail import DetailController
+from ci_webapp.controllers.home import HomeController
+from ci_webapp.views import get_view_path
 
 controller = AppController(
     view_root=get_view_path(""),

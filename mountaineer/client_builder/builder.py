@@ -267,7 +267,7 @@ class ClientBuilder:
                 "import React, { useState } from 'react';\n"
                 + f"import {{ applySideEffect }} from '{relative_server_path}/api';\n"
                 + f"import LinkGenerator from '{relative_server_path}/links';\n"
-                + f"import {{ {render_model_name} }} from './models';"
+                + f"import {{ {render_model_name} }} from './models';\n"
                 + (
                     f"import {{ {', '.join([metadata.function_name for metadata in controller_action_metadata])} }} from './actions';"
                     if controller_action_metadata
@@ -286,10 +286,28 @@ class ClientBuilder:
             # add the typehinting here just so that the IDE can be happy.
             chunks.append("declare global {\n" "var SERVER_DATA: any;\n" "}\n")
 
-            # Step 5: Final implementation of the useServer() hook, which returns a subview of the overall
+            # Step 5: Typehint the return type of the server state in case client callers
+            # want to pass this to sub-functions
+            chunks.append(
+                f"export interface ServerState extends {render_model_name} {{\n"
+                + "linkGenerator: typeof LinkGenerator;\n"
+                + (
+                    "\n".join(
+                        [
+                            f"{metadata.function_name}: typeof {metadata.function_name};"
+                            for metadata in controller_action_metadata
+                        ]
+                    )
+                    if controller_action_metadata
+                    else ""
+                )
+                + "}\n"
+            )
+
+            # Step 6: Final implementation of the useServer() hook, which returns a subview of the overall
             # server state that's only relevant to this controller
             chunks.append(
-                "export const useServer = () => {\n"
+                "export const useServer = () : ServerState => {\n"
                 + f"const [ serverState, setServerState ] = useState(SERVER_DATA as {render_model_name});\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a

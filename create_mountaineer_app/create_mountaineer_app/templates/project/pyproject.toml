@@ -24,6 +24,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
+createdb = "{{ project_name }}.cli:createdb"
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
@@ -58,6 +59,7 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
+createdb = "{{ project_name }}.cli:createdb"
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]

@@ -6,7 +6,6 @@ from time import time
 
 from pydantic import BaseModel
 
-from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.logging import LOGGER
 
 
@@ -39,6 +38,8 @@ class SourceMapParser:
         to this path.
 
         """
+        from mountaineer import mountaineer as mountaineer_rs  # type: ignore
+
         self.path = Path(path)
 
         self.source_map: SourceMapSchema | None = None
@@ -49,6 +50,8 @@ class SourceMapParser:
         ] | None = None
 
     def parse(self):
+        from mountaineer import mountaineer as mountaineer_rs  # type: ignore
+
         # If we've already parsed this file, don't do it again
         if self.parsed_mappings is not None:
             return

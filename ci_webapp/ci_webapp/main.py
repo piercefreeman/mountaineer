@@ -1,4 +1,4 @@
-from my_website.app import controller
+from ci_webapp.app import controller
 
 # Expose for WSGI
 app = controller.app

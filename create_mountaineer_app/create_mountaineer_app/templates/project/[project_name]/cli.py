@@ -1,5 +1,10 @@
 from click import command, option
 from mountaineer.cli import handle_runserver, handle_watch
+from mountaineer.database.cli import handle_createdb
+from mountaineer.io import async_to_sync
+
+from {{project_name}} import models
+from {{project_name}}.config import AppConfig
 
 
 @command()
@@ -19,3 +24,11 @@ def watch():
         package="{{project_name}}",
         webcontroller="{{project_name}}.app:controller",
     )
+
+
+@command()
+@async_to_sync
+async def createdb():
+    _ = AppConfig()
+
+    await handle_createdb(models)

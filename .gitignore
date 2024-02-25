@@ -161,6 +161,12 @@ pyrightconfig.json
 node_modules
 .watchdog.lock
 
+# Testing create-mountaineer-app
+test-project
+
+# Include create-mountaineer-app env files, since these are part of the template
+!*/create_mountaineer_app/templates/project/.env
+
 # We don't commit our automatically managed files - you can in your project, but these
 # change so much we'd like to avoid them in code reviews.
 _server

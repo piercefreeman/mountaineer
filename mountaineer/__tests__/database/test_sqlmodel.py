@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from mountaineer.sqlmodel import Field, SQLModel
+from mountaineer.database.sqlmodel import Field, SQLModel
 
 T = TypeVar("T")
 

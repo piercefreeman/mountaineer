@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "my-website"
+name = "ci-webapp"
 version = "0.1.0"
 description = ""
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
@@ -12,8 +12,8 @@ python = "^3.11"
 mountaineer = { path = "../", develop = true }
 
 [tool.poetry.scripts]
-runserver = "my_website.cli:runserver"
-watch = "my_website.cli:watch"
+runserver = "ci_webapp.cli:runserver"
+watch = "ci_webapp.cli:watch"
 
 [tool.poetry.group.dev.dependencies]
 types-setuptools = "^69.0.0.20240125"

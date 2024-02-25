@@ -9,8 +9,8 @@ from sqlalchemy import (
 from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.sql.schema import Table
 
+from mountaineer.database.sqlmodel import SQLModel
 from mountaineer.logging import LOGGER
-from mountaineer.sqlmodel import SQLModel
 
 
 class FieldSchema(BaseModel):

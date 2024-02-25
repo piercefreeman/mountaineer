@@ -1,6 +1,6 @@
-# my-website
+# ci-webapp
 
-An example webapp, built with mountaineer. This webapp is a simple counter that can be incremented and decremented. It is built with a single page and multiple layouts, to demonstrate how complex webapplications can be constructed in a modular way.
+An example webapp, built with mountaineer. This is intended for use by CI only, to test various edge cases that are more easily served by a fully functioning webapp.
 
 ## Getting Started
 
