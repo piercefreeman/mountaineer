@@ -14,6 +14,12 @@ Each framework has its own unique features and tradeoffs. Mountaineer focuses on
 - 🏹 Static analysis of web pages for strong validation: link validity, data access, etc.
 - 🤩 Skip the API or Node.js server just to serve frontend clients
 
+> We built Mountaineer out of a frustration that we were reinventing the webapp wheel time and time again. We love Python for backend development and the interactivity of React for frontend UX. But they don't work seamlessly together without a fair amount of glue. So: we built the glue. While we were at it, we embedded a V8 engine to provide server-side rendering, added conventions for application configuration, built native Typescript integrations, and more. Our vision is for you to import one slim dependency and you're off to the races.
+>
+> We're eager for you to give Mountaineer a try, and equally devoted to making you successful if you like it. Especially while we're in the early days, I'm happy to hop on a text thread or call to help debug. Let me know.
+>
+> ~ Pierce
+
 ## Getting Started
 
 ### New Project
