@@ -1,3 +1,4 @@
+import subprocess
 from itertools import product
 from pathlib import Path
 from time import sleep
@@ -88,8 +89,16 @@ def test_valid_permutations(
     app_test_port = get_free_port()
     secho(f"Found free port for test server: {app_test_port}", fg="green")
 
+    # Launch docker
+    subprocess.run(
+        ["docker-compose", "up", "-d"], cwd=metadata.project_path, check=True
+    )
+
     # Now launch the server in the background
     environment = environment_from_metadata(metadata)
+    create_db_process = environment.run_command(["createdb"], metadata.project_path)
+    create_db_process.communicate()
+
     process = environment.run_command(
         ["runserver", "--port", str(app_test_port)], metadata.project_path
     )
@@ -128,3 +137,9 @@ def test_valid_permutations(
             secho("Server shut down...")
         else:
             secho(f"Server exited with code {process.returncode}")
+
+        secho("Shutting down docker...")
+        subprocess.run(
+            ["docker-compose", "down"], cwd=metadata.project_path, check=True
+        )
+        secho("Docker shut down successfully.")
