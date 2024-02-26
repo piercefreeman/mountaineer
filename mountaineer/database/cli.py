@@ -46,7 +46,7 @@ async def handle_createdb(*args, **kwargs):
                 )
             )
             tables = "\n".join([f"* {table[0]}" for table in result.fetchall()])
-            secho(f"Database tables created: {tables}", fg="green")
+            secho(f"Database tables created:\n{tables}", fg="green")
 
     async with get_function_dependencies(callable=run_migrations) as values:
         await run_migrations(**values)

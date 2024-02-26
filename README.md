@@ -183,6 +183,32 @@ Note that the database session is provided via dependency injection, which plug-
 - mountaineer.CoreDependencies: helper functions for configurations and general dependency injection
 - mountaineer.database.DatabaseDependencies: helper functions for database lifecycle and management
 
+Now that we've newly created this controller, we wire it up to the application. This registers it for display when you load the homepage.
+
+```python
+# my_webapp/app.py
+from mountaineer.app import AppController
+from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.render import LinkAttribute, Metadata
+
+from my_webapp.views import get_view_path
+from my_webapp.config import AppConfig
+from my_webapp.controllers.home import HomeController
+
+controller = AppController(
+    view_root=get_view_path(""),
+    config=AppConfig(),
+    global_metadata=Metadata(
+        links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
+    ),
+    custom_builders=[
+        PostCSSBundler(),
+    ],
+)
+
+controller.register(HomeController())
+```
+
 Let's move over to the frontend.
 
 ```tsx
@@ -315,12 +341,6 @@ const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
 
 export default Home;
 ```
-
-We add some boilerplate functionality to our component to:
-
-- Expand a text input when the "New TODO" button is clicked
-- Allow the user to enter in a new todo description
-- Create that todo when the "Create" button is clicked
 
 `useServer()` exposes our `add_todo` function so we can call our backend directly from our frontend. Also notice that we don't have to read or parse the output value of this function to render the new todo item to the list. Since the function is marked as a sideeffect, the frontend will automatically refresh its data after the function is called.
 
