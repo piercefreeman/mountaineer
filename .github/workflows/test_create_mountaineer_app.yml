@@ -81,7 +81,9 @@ jobs:
           poetry version $VERSION
 
       - name: Build
-        run: poetry build
+        run: |
+          cd create_mountaineer_app
+          poetry build
 
       - uses: actions/upload-artifact@v4
         with:
