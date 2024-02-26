@@ -193,11 +193,17 @@ import { useServer, ServerState } from "./_server/useServer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
-    <div className="flex gap-x-4">
-      <button
-        className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-      >New TODO</button>
-    </div>
+  <div className="flex gap-x-4">
+    <input
+      type="text"
+      className="grow rounded border-2 border-gray-200 px-4 py-2"
+    />
+    <button
+      className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+    >
+      Create
+    </button>
+  </div>
   )
 }
 
@@ -274,44 +280,33 @@ import { useServer } from "./_server/useServer";
 
 /* Replace the existing CreateTodo component definition you have */
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
-  const [showNew, setShowNew] = useState(false);
   const [newTodo, setNewTodo] = useState("");
 
   return (
     <div className="flex gap-x-4">
+      <input
+        type="text"
+        className="grow rounded border-2 border-gray-200 px-4 py-2"
+        value={newTodo}
+        onChange={(e) => setNewTodo(e.target.value)}
+      />
       <button
         className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-        onClick={() => setShowNew(true)}
+        onClick={
+          /* Here we call our sideeffect function */
+          async () => {
+            await serverState.add_todo({
+              requestBody: {
+                description: newTodo,
+              },
+            });
+            setNewTodo("");
+            setShowNew(false);
+          }
+        }
       >
-        New TODO
+        Create
       </button>
-      {showNew && (
-        <>
-          <input
-            type="text"
-            className="grow rounded border-2 border-gray-200 px-4 py-2"
-            value={newTodo}
-            onChange={(e) => setNewTodo(e.target.value)}
-          />
-          <button
-            className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-            onClick={
-              /* Here we call our sideeffect function */
-              async () => {
-                await serverState.add_todo({
-                  requestBody: {
-                    description: newTodo,
-                  },
-                });
-                setNewTodo("");
-                setShowNew(false);
-              }
-            }
-          >
-            Create
-          </button>
-        </>
-      )}
     </div>
   );
 };
