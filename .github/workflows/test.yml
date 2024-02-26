@@ -43,9 +43,7 @@ jobs:
       docker:
         image: docker:24.0.2
         options: --privileged
-        #ports:
-        # postgres test port
-        #  - 5434:5434
+
     env:
       PYTHON: ${{ matrix.python-version }}
 
@@ -73,13 +71,10 @@ jobs:
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           make clean-poetry-lock
-          make install-deps
+          make install-deps-lib
 
       - name: Python tests
-        run: make test
-
-      - name: Python integration tests
-        run: make test-integrations
+        run: make test-lib
 
   lint:
     runs-on: ubuntu-latest
@@ -169,6 +164,13 @@ jobs:
       # Run basic benchmarks to make sure these still compile
       - name: Rust benchmarks
         run: cargo bench
+
+      - name: Update version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Version to update: $VERSION"
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
 
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}

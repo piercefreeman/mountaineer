@@ -9,6 +9,7 @@ import pytest
 from click import secho
 from requests import get
 
+from create_mountaineer_app.__tests__.common import wait_for_database_to_be_ready
 from create_mountaineer_app.builder import (
     build_project,
     environment_from_metadata,
@@ -112,6 +113,9 @@ def test_valid_permutations(
         check=True,
         env=docker_compose_env,
     )
+
+    # Wait until the database is ready
+    wait_for_database_to_be_ready(metadata)
 
     environment = environment_from_metadata(metadata)
 

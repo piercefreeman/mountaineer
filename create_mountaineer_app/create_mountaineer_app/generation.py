@@ -13,6 +13,8 @@ class ProjectMetadata(BaseModel):
     use_poetry: bool
     use_tailwind: bool
     project_path: Path
+
+    postgres_password: str = "mysecretpassword"
     postgres_port: int = 5432
 
     create_stub_files: bool
