@@ -14,7 +14,7 @@ python = "^3.11"
 {% if mountaineer_dev_path %}
 mountaineer = { path = "{{mountaineer_dev_path}}", develop = true }
 {% else %}
-mountaineer = "^0.1.1"
+mountaineer = "^0.1.0"
 {% endif %}
 
 [build-system]

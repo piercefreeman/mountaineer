@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "mountaineer"
-version = "0.1.2"
+version = "0.1.0"
 description = ""
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
