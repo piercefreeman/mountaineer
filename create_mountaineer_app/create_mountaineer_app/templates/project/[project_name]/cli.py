@@ -1,5 +1,5 @@
 from click import command, option
-from mountaineer.cli import handle_runserver, handle_watch
+from mountaineer.cli import handle_runserver, handle_watch, handle_build
 from mountaineer.database.cli import handle_createdb
 from mountaineer.io import async_to_sync
 
@@ -22,6 +22,13 @@ def runserver(port: int):
 def watch():
     handle_watch(
         package="{{project_name}}",
+        webcontroller="{{project_name}}.app:controller",
+    )
+
+
+@command()
+def build():
+    handle_build(
         webcontroller="{{project_name}}.app:controller",
     )
 

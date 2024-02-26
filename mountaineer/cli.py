@@ -268,6 +268,20 @@ def handle_runserver(
     watchdog.start_watching()
 
 
+def handle_build(
+    *,
+    webcontroller: str,
+):
+    app_controller = import_from_string(webcontroller)
+    js_compiler = ClientBuilder(
+        app_controller,
+        live_reload_port=None,
+    )
+    start = time()
+    js_compiler.build()
+    secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
+
+
 def update_multiprocessing_settings():
     """
     fork() is still the default on Linux, and can result in stalls with our asyncio

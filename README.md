@@ -30,8 +30,9 @@ To get started as quickly as possible, we bundle a project generator that sets u
 $ pipx run create-mountaineer-app
 
 ? Project name [my-project]: my_webapp
-? Use poetry for dependency management? [Yes] Yes
 ? Author [Pierce Freeman <pierce@freeman.vc>] Default
+? Use poetry for dependency management? [Yes] Yes
+? Create stub MVC files? [Yes] Yes
 ? Use Tailwind CSS? [Yes] Yes
 ```
 

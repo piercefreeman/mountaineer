@@ -1,7 +1,9 @@
 from types import ModuleType
 from typing import overload
 
+from click import secho
 from fastapi import Depends
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from mountaineer.database.dependencies import DatabaseDependencies
@@ -32,6 +34,19 @@ async def handle_createdb(*args, **kwargs):
     ):
         async with engine.begin() as connection:
             await connection.run_sync(SQLModel.metadata.create_all)
+
+            # Log the tables that were created
+            result = await connection.execute(
+                text(
+                    """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                """
+                )
+            )
+            tables = "\n".join([f"* {table[0]}" for table in result.fetchall()])
+            secho(f"Database tables created: {tables}", fg="green")
 
     async with get_function_dependencies(callable=run_migrations) as values:
         await run_migrations(**values)
