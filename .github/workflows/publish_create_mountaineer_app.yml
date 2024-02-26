@@ -1,0 +1,118 @@
+name: publish_create_mountaineer_app
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "**"
+  pull_request: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Configure Poetry
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: make install-deps
+
+      - name: Run tests
+        run: make test-create-mountaineer-app
+
+      - name: Run integration tests
+        run: make test-integrations
+
+  build:
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # linux
+          - os: linux
+            target: x86_64
+          - os: linux
+            target: aarch64
+
+          # macos
+          - os: macos
+            target: x86_64
+          - os: macos
+            target: aarch64
+
+          # windows
+          - os: windows
+            target: x86_64
+
+    runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          architecture: ${{ matrix.python-architecture || 'x64' }}
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+
+      - name: Configure Poetry
+        run: |
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel
+
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir wheelhouse
+
+      - name: Update version in pyproject.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "Version to update: $VERSION"
+          poetry version $VERSION
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheelhouse-${{ matrix.os }}
+          path: ./wheelhouse
+
+  release:
+    needs: build
+    if: "success() && startsWith(github.ref, 'refs/tags/')"
+    runs-on: ubuntu-latest
+    environment: release
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheelhouse-*
+          merge-multiple: true
+          path: wheelhouse
+
+      - run: ls -lh wheelhouse
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@v1
