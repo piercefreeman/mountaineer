@@ -1,1 +1,1 @@
-from .visit_model import VisitModel # noqa: F401
+from .detail import DetailItem # noqa: F401

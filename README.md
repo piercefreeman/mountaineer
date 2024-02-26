@@ -24,10 +24,10 @@ Each framework has its own unique features and tradeoffs. Mountaineer focuses on
 
 ### New Project
 
-To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A.
+To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A. Make sure you have pipx [installed](https://pipx.pypa.io/stable/installation/).
 
 ```bash
-$ pipx run create-mountaineer-app new
+$ pipx run create-mountaineer-app
 
 ? Project name [my-project]: my_webapp
 ? Use poetry for dependency management? [Yes] Yes

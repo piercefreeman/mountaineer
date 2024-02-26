@@ -3,7 +3,7 @@
 CLI to setup a basic scaffolding for mountaineer. This provides a simple base project that can be generated via pipx.
 
 ```bash
-pipx run create-mountaineer-app new
+pipx run create-mountaineer-app
 ```
 
 ## Installing pipx

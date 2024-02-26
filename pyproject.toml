@@ -69,4 +69,6 @@ dependencies = [
     "watchdog",
     "pydantic-settings",
     "sqlmodel",
+    "asyncpg",
+    "sqlalchemy[asyncio]",
 ]

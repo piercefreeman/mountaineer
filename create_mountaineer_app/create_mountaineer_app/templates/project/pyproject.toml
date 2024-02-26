@@ -36,7 +36,7 @@ plugins = ["pydantic.mypy"]
 name = "{{ project_name }}"
 version = "0.1.0"
 description = ""
-authors = [{name = "{{ author }}", email = "{{ author_email }}"}]
+authors = [{ name = "{{ author }}", email = "{{ author_email }}" }]
 readme = "README.md"
 
 dependencies = [
@@ -63,5 +63,6 @@ createdb = "{{ project_name }}.cli:createdb"
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
+
 
 {% endif %}

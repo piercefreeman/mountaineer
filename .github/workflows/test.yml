@@ -20,7 +20,6 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
-
 name: CI
 
 on:
@@ -191,9 +190,9 @@ jobs:
 
       - run: twine check --strict dist/*
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: pypi_files
+          name: pypi_files-${{ matrix.os }}-${{ matrix.target }}
           path: dist
 
   inspect-pypi-assets:
@@ -204,9 +203,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: get dist artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: pypi_files
+          pattern: pypi_files-*
+          merge-multiple: true
           path: dist
 
       - name: list dist files
@@ -228,24 +228,26 @@ jobs:
       - run: pip install twine
       - run: twine check dist/*
 
-  # release:
-  #   needs: [check, build, inspect-pypi-assets]
-  #   if: "success() && startsWith(github.ref, 'refs/tags/')"
-  #   runs-on: ubuntu-latest
-  #   environment: release
+  release:
+    needs: [check, build, inspect-pypi-assets]
+    if: "success() && startsWith(github.ref, 'refs/tags/')"
+    runs-on: ubuntu-latest
+    environment: release
 
-  #   permissions:
-  #     id-token: write
+    permissions:
+      id-token: write
+      contents: read
 
-  #   steps:
-  #     - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - name: get dist artifacts
-  #       uses: actions/download-artifact@v3
-  #       with:
-  #         name: pypi_files
-  #         path: dist
+      - name: get dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pypi_files-*
+          merge-multiple: true
+          path: dist
 
-  #     - run: ls -lh dist
+      - run: ls -lh dist
 
-  #     - uses: pypa/gh-action-pypi-publish@release/v1
+      - uses: pypa/gh-action-pypi-publish@release/v1
