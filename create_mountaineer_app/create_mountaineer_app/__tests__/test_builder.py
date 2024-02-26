@@ -118,6 +118,12 @@ def test_valid_permutations(
     # Make sure the required models are created
     create_db_process = environment.run_command(["createdb"], metadata.project_path)
     create_db_process.communicate()
+    assert create_db_process.returncode == 0
+
+    # Make sure we can build the files without any errors
+    build_process = environment.run_command(["build"], metadata.project_path)
+    build_process.communicate()
+    assert build_process.returncode == 0
 
     # Now launch the server in the background
     process = environment.run_command(
