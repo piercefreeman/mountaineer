@@ -365,9 +365,3 @@ We have additional documentation that does more of a technical deep dive on diff
 - [Error Handling](./docs/error_handling.md): Conventions for handling client-side errors while fetching data in your webapp.
 - [PostCSS](./docs/postcss.md): PostCSS build plugin for TailwindCSS support and other CSS processing.
 - [Core Library](./docs/core_library.md): Details on how to do local development on the core library.
-
-## Future Directions
-
-- Offload more of the server logic to Rust
-- AST parsing of the tsx files to determine which parts of the serverState they're actually using and mask accordingly
-- Plugins for simple authentication, daemons, billing, etc.
