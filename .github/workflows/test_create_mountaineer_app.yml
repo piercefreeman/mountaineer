@@ -1,4 +1,4 @@
-name: publish_create_mountaineer_app
+name: test_create_mountaineer_app
 
 on:
   push:
@@ -28,13 +28,13 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: make install-deps
+        run: make install-deps-create-mountaineer-app
 
       - name: Run tests
         run: make test-create-mountaineer-app
 
       - name: Run integration tests
-        run: make test-integrations
+        run: make test-create-mountaineer-app-integrations
 
   build:
     needs: test

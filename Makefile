@@ -7,8 +7,6 @@ SHELL := /bin/bash
 # Fail on first error
 .SHELLFLAGS := -ec
 
-CPUS := $(shell which nproc > /dev/null && nproc || sysctl -n hw.ncpu)
-
 # Global variables
 LIB_DIR := ./
 LIB_NAME := mountaineer
@@ -35,14 +33,18 @@ test: test-lib test-create-mountaineer-app
 test-integrations: test-create-mountaineer-app-integrations
 
 # Install all sub-project dependencies with poetry
-install-deps:
+install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-ci-webapp
+
+install-deps-lib:
 	@echo "Installing dependencies for $(LIB_DIR)..."
 	@(cd $(LIB_DIR) && poetry install)
 	@(cd $(LIB_DIR) && poetry run maturin develop --release)
 
+install-deps-create-mountaineer-app:
 	@echo "Installing dependencies for $(CREATE_MOUNTAINEER_APP_DIR)..."
 	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && poetry install)
 
+install-deps-ci-webapp:
 	@echo "Installing dependencies for $(CI_WEBAPP_DIR)..."
 	@(cd $(CI_WEBAPP_DIR) && poetry install)
 
@@ -97,7 +99,7 @@ endef
 # Use `-n auto` to run tests in parallel
 define test-common-integrations
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -s -n $(CPUS) -m integration_tests -W error $(2))
+	@(cd $(1) && poetry run pytest -s -m integration_tests -W error $(2))
 endef
 
 define lint-common
