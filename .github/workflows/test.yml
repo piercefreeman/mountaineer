@@ -170,7 +170,8 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/v}
           echo "Version to update: $VERSION"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+          sed -i '' "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+        shell: bash
 
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}
