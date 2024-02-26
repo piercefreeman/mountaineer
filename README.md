@@ -60,13 +60,29 @@ Every service file is nested under the `my_webapp` root package. Views are defin
 
 ### Development
 
+If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker-compose file for convenience with `create-mountaineer-app`.
+
+```bash
+docker-compose up -d
+poetry run createdb
+```
+
+Mountaineer relies on watching your project for changes and doing progressive compilation. We provide a few CLI commands to help with this.
+
 While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
 
 ```bash
 $ poetry run runserver
+
+INFO:     Started server process [93111]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:5006 (Press CTRL+C to quit)
 ```
 
-Or, if you just want to watch the source tree for changes without hosting the server:
+Navigate to http://127.0.0.1:5006 to see your new webapp running.
+
+Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
 
 ```bash
 $ poetry run watch
@@ -77,6 +93,8 @@ Both of these CLI commands are specified in your project's `cli.py` file.
 ### Walkthrough
 
 Below we go through some of the unique aspects of Mountaineer. Let's create a simple Todo list where we can add new items.
+
+For the purposes of this walkthrough we assume your project is generated with `create-mountaineer-app` and you've skipped MVC stub files. If not, you'll have to delete some of the pre-existing files.
 
 Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [SQLModel](https://github.com/tiangolo/sqlmodel).
 
@@ -131,9 +149,6 @@ class HomeController(ControllerBase):
     url = "/"
     view_path = "/app/home/page.tsx"
 
-    def __init__(self):
-        super().__init__()
-
     async def render(
         self,
         request: Request,
@@ -170,7 +185,7 @@ Note that the database session is provided via dependency injection, which plug-
 Let's move over to the frontend.
 
 ```tsx
-/* my_webapp/views/home/page.tsx */
+/* my_webapp/views/app/home/page.tsx */
 
 import React from "react";
 import { useServer, ServerState } from "./_server/useServer";
@@ -222,7 +237,7 @@ If you access this in your browser at `localhost:5006/` we can see our welcome m
 
 <p align="center"><img src="./docs/media/server_side_rendering.png" alt="Server-side rendering" height="400px" /></p>
 
-What good is todo list that doesn't get longer? We define a function that accepts a pydantic model, which defines the new object. We then cast this to a database object and add it to the postgres table.
+What good is todo list that doesn't get longer? We define a `add_todo` function that accepts a pydantic model `NewTodoRequest`, which defines the required parameters for a new todo item. We then cast this to a database object and add it to the postgres table.
 
 ```python
 # my_webapp/controllers/home.py
@@ -246,16 +261,17 @@ class HomeController(ControllerBase):
         await session.commit()
 ```
 
-The important part here is the `@sideeffect`. This decorator indicates that we want the frontend to refresh its data, since after we update the todo list on the server the client state will be newly outdated.
+The important part here is the `@sideeffect`. Once you create a new Todo item, the previous state on the frontend is outdated. It will only show the todos before you created a new one. That's not what we want in an interactive app. This decorator indicates that we want the frontend to refresh its data, since after we update the todo list on the server the client state will be newly outdated.
 
 Mountaineer detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
 
 ```tsx
-/* my_webapp/views/home/page.tsx */
+/* my_webapp/views/app/home/page.tsx */
 
 import React, { useState } from "react";
 import { useServer } from "./_server/useServer";
 
+/* Replace the existing CreateTodo component definition you have */
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   const [showNew, setShowNew] = useState(false);
   const [newTodo, setNewTodo] = useState("");

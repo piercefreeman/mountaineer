@@ -1,3 +1,4 @@
+{% if create_stub_files %}
 from uuid import UUID
 
 from mountaineer import Metadata, RenderBase, ControllerBase, APIException, sideeffect
@@ -59,3 +60,4 @@ class DetailController(ControllerBase):
 
         detail_item.description = payload.description
         await session.commit()
+{% endif %}

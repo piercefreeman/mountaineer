@@ -1,3 +1,4 @@
+{% if create_stub_files %}
 from uuid import UUID, uuid4
 
 from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
@@ -37,3 +38,4 @@ class HomeController(ControllerBase):
         obj = models.DetailItem(description="Untitled Item")
         session.add(obj)
         await session.commit()
+{% endif %}

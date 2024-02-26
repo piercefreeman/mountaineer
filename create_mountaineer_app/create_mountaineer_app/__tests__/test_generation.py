@@ -10,6 +10,7 @@ def test_path_url_replacement():
         author_email="TEST_EMAIL",
         use_tailwind=True,
         use_poetry=True,
+        create_stub_files=True,
         project_path=Path("fake-path"),
         mountaineer_dev_path=None,
     )

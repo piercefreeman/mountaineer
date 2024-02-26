@@ -7,6 +7,8 @@ SHELL := /bin/bash
 # Fail on first error
 .SHELLFLAGS := -ec
 
+CPUS := $(shell which nproc > /dev/null && nproc || sysctl -n hw.ncpu)
+
 # Global variables
 LIB_DIR := ./
 LIB_NAME := mountaineer
@@ -95,7 +97,7 @@ endef
 # Use `-n auto` to run tests in parallel
 define test-common-integrations
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -s -m integration_tests -W error $(2))
+	@(cd $(1) && poetry run pytest -s -n $(CPUS) -m integration_tests -W error $(2))
 endef
 
 define lint-common
