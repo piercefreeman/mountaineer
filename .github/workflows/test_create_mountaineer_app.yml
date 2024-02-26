@@ -91,8 +91,7 @@ jobs:
           path: create_mountaineer_app/dist
 
   release:
-    #needs: [test, build]
-    needs: [build]
+    needs: [test, build]
     if: "success() && startsWith(github.ref, 'refs/tags/')"
     runs-on: ubuntu-latest
     environment: release
