@@ -364,7 +364,7 @@ dependencies = [
 
 [[package]]
 name = "mountaineer"
-version = "0.1.2"
+version = "0.1.0"
 dependencies = [
  "criterion",
  "env_logger",

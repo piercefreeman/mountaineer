@@ -1,6 +1,7 @@
 [package]
 name = "mountaineer"
-version = "0.1.2"
+# Bumped automatically by CI on a release
+version = "0.1.0"
 edition = "2021"
 
 [dependencies]
