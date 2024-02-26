@@ -80,7 +80,9 @@ Below we go through some of the unique aspects of Mountaineer. Let's create a si
 
 Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [SQLModel](https://github.com/tiangolo/sqlmodel).
 
-```python filename="my_webapp/models/todo.py"
+```python
+# my_webapp/models/todo.py
+
 from mountaineer.database import SQLModel, Field
 from uuid import UUID, uuid4
 
@@ -93,7 +95,9 @@ class TodoItem(SQLModel, table=True):
 
 Update the index file as well:
 
-```python filename="my_webapp/models/__init__.py"
+```python
+# my_webapp/models/__init__.py
+
 from .todo import TodoItem # noqa: F401
 ```
 
@@ -107,7 +111,9 @@ poetry run runserver
 
 Great! At this point we have our database tables created and have a basic server running. We next move to creating a new controller, since this will define which data you can push and pull to your frontend.
 
-```python filename="my_webapp/controllers/home.py"
+```python
+# my_webapp/controllers/home.py
+
 from mountaineer import sideeffect, ControllerBase, RenderBase
 from mountaineer.database import DatabaseDependencies
 
@@ -163,7 +169,9 @@ Note that the database session is provided via dependency injection, which plug-
 
 Let's move over to the frontend.
 
-```tsx filename="my_webapp/views/home/page.tsx"
+```tsx
+/* my_webapp/views/home/page.tsx */
+
 import React from "react";
 import { useServer, ServerState } from "./_server/useServer";
 
@@ -216,7 +224,9 @@ If you access this in your browser at `localhost:5006/` we can see our welcome m
 
 What good is todo list that doesn't get longer? We define a function that accepts a pydantic model, which defines the new object. We then cast this to a database object and add it to the postgres table.
 
-```python filename="my_webapp/controllers/home.py"
+```python
+# my_webapp/controllers/home.py
+
 from pydantic import BaseModel
 
 class NewTodoRequest(BaseModel):
@@ -240,7 +250,9 @@ The important part here is the `@sideeffect`. This decorator indicates that we w
 
 Mountaineer detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
 
-```tsx filename="my_website/views/home/page.tsx"
+```tsx
+/* my_webapp/views/home/page.tsx */
+
 import React, { useState } from "react";
 import { useServer } from "./_server/useServer";
 
