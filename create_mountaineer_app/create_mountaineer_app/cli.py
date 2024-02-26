@@ -36,6 +36,12 @@ def prompt_should_use_poetry():
                 secho(f"Error installing poetry: {e}", fg="red")
                 raise e
 
+            input_add_to_path = questionary.confirm(
+                "Add poetry to PATH? [Yes]", default=True
+            ).unsafe_ask()
+            if input_add_to_path:
+                poetry_environment.add_poetry_to_path()
+
     return input_use_poetry
 
 
@@ -80,6 +86,9 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
     )
     input_author_name, input_author_email = prompt_author()
     input_use_poetry = prompt_should_use_poetry()
+    input_create_stub_files = questionary.confirm(
+        "Create stub MVC files? [Yes]", default=True
+    ).unsafe_ask()
     input_use_tailwind = questionary.confirm(
         "Use Tailwind CSS? [Yes]", default=True
     ).unsafe_ask()
@@ -96,6 +105,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         use_poetry=input_use_poetry,
         use_tailwind=input_use_tailwind,
         project_path=project_path,
+        create_stub_files=input_create_stub_files,
         mountaineer_dev_path=Path(mountaineer_dev_path).resolve()
         if mountaineer_dev_path
         else None,

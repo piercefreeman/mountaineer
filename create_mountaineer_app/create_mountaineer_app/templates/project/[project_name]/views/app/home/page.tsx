@@ -1,3 +1,4 @@
+{% if create_stub_files %}
 import React from "react";
 import { useServer } from "./_server/useServer";
 
@@ -37,3 +38,4 @@ const Home = () => {
 };
 
 export default Home;
+{% endif %}

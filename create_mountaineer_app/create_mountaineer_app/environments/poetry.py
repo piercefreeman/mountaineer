@@ -1,5 +1,5 @@
 import subprocess
-from os import environ
+from os import environ, pathsep
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -82,6 +82,43 @@ class PoetryEnvironment(EnvironmentBase):
             subprocess.run(["python3", tmp_file.name], check=True)
 
         secho("Poetry installed successfully.", fg="green")
+
+    def add_poetry_to_path(self) -> None:
+        """
+        Mount poetry in the current terminal session and the user's shell profile.
+
+        """
+        directory = str(Path.home() / ".local" / "bin")
+
+        shell = environ.get("SHELL")
+        if not shell:
+            secho("Could not detect the shell environment.", fg="red")
+            raise Exception("Shell environment detection failed.")
+
+        profile_path: Path
+        if "bash" in shell:
+            profile_path = Path("~/.bashrc")
+        elif "zsh" in shell:
+            profile_path = Path("~/.zshrc")
+        else:
+            secho(f"Unsupported shell: {shell}", fg="red")
+            raise Exception("Unsupported shell.")
+
+        # Expand the user's home directory and prepare the command to modify the profile file.
+        profile_abs_path = profile_path.expanduser()
+        path_command = f'export PATH="$PATH:{directory}"\n'
+
+        # Check if the path is already in the file to avoid duplication
+        with open(profile_abs_path, "r+") as profile:
+            if path_command not in profile.read():
+                profile.write(path_command)
+                secho(f"Added {directory} to {profile_path}", fg="green")
+            else:
+                secho(f"{directory} is already in {profile_path}", fg="yellow")
+
+        # Apply the path change to the current session
+        environ["PATH"] += pathsep + directory
+        secho("The PATH has been updated for the current session.", fg="green")
 
     def run_command(self, command: list[str], path: Path):
         return subprocess.Popen(

@@ -13,6 +13,9 @@ class ProjectMetadata(BaseModel):
     use_poetry: bool
     use_tailwind: bool
     project_path: Path
+    postgres_port: int = 5432
+
+    create_stub_files: bool
 
     # If specified, will install mountaineer in development mode pointing to a local path
     # This is useful for testing changes to mountaineer itself

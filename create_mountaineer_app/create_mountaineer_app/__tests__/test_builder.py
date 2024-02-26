@@ -1,7 +1,9 @@
 import subprocess
 from itertools import product
+from os import environ
 from pathlib import Path
 from time import sleep
+from uuid import uuid4
 
 import pytest
 from click import secho
@@ -43,12 +45,16 @@ def test_copy_path(input_path: Path, expected_copy: bool):
 
 
 @pytest.mark.parametrize(
-    "use_poetry, use_tailwind",
-    product(
-        # Use poetry
-        [False, True],
-        # Use tailwind
-        [False, True],
+    "use_poetry, use_tailwind, create_stub_files",
+    list(
+        product(
+            # Use poetry
+            [False, True],
+            # Use tailwind
+            [False, True],
+            # Create stub files
+            [False, True],
+        )
     ),
 )
 @pytest.mark.integration_tests
@@ -56,6 +62,7 @@ def test_valid_permutations(
     tmpdir: str,
     use_poetry: bool,
     use_tailwind: bool,
+    create_stub_files: bool,
 ):
     """
     Ensures that regardless of the input parameters
@@ -63,6 +70,9 @@ def test_valid_permutations(
     run and return the expected endpoints.
 
     """
+    new_project_dir = Path(tmpdir) / str(uuid4())
+    new_project_dir.mkdir()
+
     # Assume the create-mountaineer-app project is in the same directory as the
     # main mountaineer package. We use a slight hack here assuming that our file
     # directory is oriented like "mountaineer/create_mountaineer_app/create_mountaineer_app/templates"
@@ -73,31 +83,53 @@ def test_valid_permutations(
     if not (main_mountaineer_path / "pyproject.toml").exists():
         raise ValueError("Unable to find the main mountaineer package.")
 
+    app_test_port = get_free_port()
+    postgres_port = get_free_port()
+    secho(f"Found free port for test server: {app_test_port}", fg="green")
+
     metadata = ProjectMetadata(
         project_name="my_project",
         author_name="John Appleseed",
         author_email="test@email.com",
-        project_path=Path(tmpdir),
+        project_path=new_project_dir,
         use_poetry=use_poetry,
         use_tailwind=use_tailwind,
+        create_stub_files=create_stub_files,
+        postgres_port=postgres_port,
         mountaineer_dev_path=main_mountaineer_path,
     )
 
     build_project(metadata)
 
-    app_test_port = get_free_port()
-    secho(f"Found free port for test server: {app_test_port}", fg="green")
-
     # Launch docker to host the default database
+    docker_compose_env = {
+        **environ,
+        "COMPOSE_PROJECT_NAME": f"test_project-{uuid4()}",
+    }
     subprocess.run(
-        ["docker-compose", "up", "-d"], cwd=metadata.project_path, check=True
+        ["docker-compose", "up", "-d"],
+        cwd=metadata.project_path,
+        check=True,
+        env=docker_compose_env,
     )
 
     environment = environment_from_metadata(metadata)
 
     # Make sure the required models are created
     create_db_process = environment.run_command(["createdb"], metadata.project_path)
-    create_db_process.communicate()
+    output, errors = create_db_process.communicate()
+    if create_db_process.returncode != 0:
+        secho(output.decode("utf-8"), fg="red")
+        secho(errors.decode("utf-8"), fg="red")
+        raise ValueError("Failed to create database.")
+
+    # Make sure we can build the files without any errors
+    build_process = environment.run_command(["build"], metadata.project_path)
+    output, errors = build_process.communicate()
+    if build_process.returncode != 0:
+        secho(output.decode("utf-8"), fg="red")
+        secho(errors.decode("utf-8"), fg="red")
+        raise ValueError("Failed to build project.")
 
     # Now launch the server in the background
     process = environment.run_command(
@@ -110,8 +142,12 @@ def test_valid_permutations(
         while max_wait > 0:
             try:
                 response = get(f"http://localhost:{app_test_port}")
-                if response.ok:
-                    break
+                if create_stub_files:
+                    if response.ok:
+                        break
+                else:
+                    if response.status_code == 404:
+                        break
             except Exception:
                 pass
             secho(f"Waiting for server to start (remaining: {max_wait})...")
@@ -124,7 +160,10 @@ def test_valid_permutations(
 
         # Perform the fetch tests
         response = get(f"http://localhost:{app_test_port}")
-        assert response.ok
+        if create_stub_files:
+            assert response.ok
+        else:
+            assert response.status_code == 404
 
         response = get(f"http://localhost:{app_test_port}/not_found")
         assert not response.ok
@@ -138,6 +177,9 @@ def test_valid_permutations(
 
         secho("Shutting down docker...")
         subprocess.run(
-            ["docker-compose", "down"], cwd=metadata.project_path, check=True
+            ["docker-compose", "down"],
+            cwd=metadata.project_path,
+            check=True,
+            env=docker_compose_env,
         )
         secho("Docker shut down successfully.")

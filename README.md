@@ -30,8 +30,9 @@ To get started as quickly as possible, we bundle a project generator that sets u
 $ pipx run create-mountaineer-app
 
 ? Project name [my-project]: my_webapp
-? Use poetry for dependency management? [Yes] Yes
 ? Author [Pierce Freeman <pierce@freeman.vc>] Default
+? Use poetry for dependency management? [Yes] Yes
+? Create stub MVC files? [Yes] Yes
 ? Use Tailwind CSS? [Yes] Yes
 ```
 
@@ -60,13 +61,29 @@ Every service file is nested under the `my_webapp` root package. Views are defin
 
 ### Development
 
+If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker-compose file for convenience with `create-mountaineer-app`.
+
+```bash
+docker-compose up -d
+poetry run createdb
+```
+
+Mountaineer relies on watching your project for changes and doing progressive compilation. We provide a few CLI commands to help with this.
+
 While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
 
 ```bash
 $ poetry run runserver
+
+INFO:     Started server process [93111]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:5006 (Press CTRL+C to quit)
 ```
 
-Or, if you just want to watch the source tree for changes without hosting the server:
+Navigate to http://127.0.0.1:5006 to see your new webapp running.
+
+Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
 
 ```bash
 $ poetry run watch
@@ -77,6 +94,8 @@ Both of these CLI commands are specified in your project's `cli.py` file.
 ### Walkthrough
 
 Below we go through some of the unique aspects of Mountaineer. Let's create a simple Todo list where we can add new items.
+
+For the purposes of this walkthrough we assume your project is generated with `create-mountaineer-app` and you've skipped MVC stub files. If not, you'll have to delete some of the pre-existing files.
 
 Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [SQLModel](https://github.com/tiangolo/sqlmodel).
 
@@ -131,9 +150,6 @@ class HomeController(ControllerBase):
     url = "/"
     view_path = "/app/home/page.tsx"
 
-    def __init__(self):
-        super().__init__()
-
     async def render(
         self,
         request: Request,
@@ -167,21 +183,53 @@ Note that the database session is provided via dependency injection, which plug-
 - mountaineer.CoreDependencies: helper functions for configurations and general dependency injection
 - mountaineer.database.DatabaseDependencies: helper functions for database lifecycle and management
 
+Now that we've newly created this controller, we wire it up to the application. This registers it for display when you load the homepage.
+
+```python
+# my_webapp/app.py
+from mountaineer.app import AppController
+from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.render import LinkAttribute, Metadata
+
+from my_webapp.views import get_view_path
+from my_webapp.config import AppConfig
+from my_webapp.controllers.home import HomeController
+
+controller = AppController(
+    view_root=get_view_path(""),
+    config=AppConfig(),
+    global_metadata=Metadata(
+        links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
+    ),
+    custom_builders=[
+        PostCSSBundler(),
+    ],
+)
+
+controller.register(HomeController())
+```
+
 Let's move over to the frontend.
 
 ```tsx
-/* my_webapp/views/home/page.tsx */
+/* my_webapp/views/app/home/page.tsx */
 
 import React from "react";
 import { useServer, ServerState } from "./_server/useServer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
-    <div className="flex gap-x-4">
-      <button
-        className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-      >New TODO</button>
-    </div>
+  <div className="flex gap-x-4">
+    <input
+      type="text"
+      className="grow rounded border-2 border-gray-200 px-4 py-2"
+    />
+    <button
+      className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+    >
+      Create
+    </button>
+  </div>
   )
 }
 
@@ -222,7 +270,7 @@ If you access this in your browser at `localhost:5006/` we can see our welcome m
 
 <p align="center"><img src="./docs/media/server_side_rendering.png" alt="Server-side rendering" height="400px" /></p>
 
-What good is todo list that doesn't get longer? We define a function that accepts a pydantic model, which defines the new object. We then cast this to a database object and add it to the postgres table.
+What good is todo list that doesn't get longer? We define a `add_todo` function that accepts a pydantic model `NewTodoRequest`, which defines the required parameters for a new todo item. We then cast this to a database object and add it to the postgres table.
 
 ```python
 # my_webapp/controllers/home.py
@@ -246,55 +294,45 @@ class HomeController(ControllerBase):
         await session.commit()
 ```
 
-The important part here is the `@sideeffect`. This decorator indicates that we want the frontend to refresh its data, since after we update the todo list on the server the client state will be newly outdated.
+The important part here is the `@sideeffect`. Once you create a new Todo item, the previous state on the frontend is outdated. It will only show the todos before you created a new one. That's not what we want in an interactive app. This decorator indicates that we want the frontend to refresh its data, since after we update the todo list on the server the client state will be newly outdated.
 
 Mountaineer detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
 
 ```tsx
-/* my_webapp/views/home/page.tsx */
+/* my_webapp/views/app/home/page.tsx */
 
 import React, { useState } from "react";
 import { useServer } from "./_server/useServer";
 
+/* Replace the existing CreateTodo component definition you have */
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
-  const [showNew, setShowNew] = useState(false);
   const [newTodo, setNewTodo] = useState("");
 
   return (
     <div className="flex gap-x-4">
+      <input
+        type="text"
+        className="grow rounded border-2 border-gray-200 px-4 py-2"
+        value={newTodo}
+        onChange={(e) => setNewTodo(e.target.value)}
+      />
       <button
         className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-        onClick={() => setShowNew(true)}
+        onClick={
+          /* Here we call our sideeffect function */
+          async () => {
+            await serverState.add_todo({
+              requestBody: {
+                description: newTodo,
+              },
+            });
+            setNewTodo("");
+            setShowNew(false);
+          }
+        }
       >
-        New TODO
+        Create
       </button>
-      {showNew && (
-        <>
-          <input
-            type="text"
-            className="grow rounded border-2 border-gray-200 px-4 py-2"
-            value={newTodo}
-            onChange={(e) => setNewTodo(e.target.value)}
-          />
-          <button
-            className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-            onClick={
-              /* Here we call our sideeffect function */
-              async () => {
-                await serverState.add_todo({
-                  requestBody: {
-                    description: newTodo,
-                  },
-                });
-                setNewTodo("");
-                setShowNew(false);
-              }
-            }
-          >
-            Create
-          </button>
-        </>
-      )}
     </div>
   );
 };
@@ -303,12 +341,6 @@ const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
 
 export default Home;
 ```
-
-We add some boilerplate functionality to our component to:
-
-- Expand a text input when the "New TODO" button is clicked
-- Allow the user to enter in a new todo description
-- Create that todo when the "Create" button is clicked
 
 `useServer()` exposes our `add_todo` function so we can call our backend directly from our frontend. Also notice that we don't have to read or parse the output value of this function to render the new todo item to the list. Since the function is marked as a sideeffect, the frontend will automatically refresh its data after the function is called.
 
@@ -333,9 +365,3 @@ We have additional documentation that does more of a technical deep dive on diff
 - [Error Handling](./docs/error_handling.md): Conventions for handling client-side errors while fetching data in your webapp.
 - [PostCSS](./docs/postcss.md): PostCSS build plugin for TailwindCSS support and other CSS processing.
 - [Core Library](./docs/core_library.md): Details on how to do local development on the core library.
-
-## Future Directions
-
-- Offload more of the server logic to Rust
-- AST parsing of the tsx files to determine which parts of the serverState they're actually using and mask accordingly
-- Plugins for simple authentication, daemons, billing, etc.

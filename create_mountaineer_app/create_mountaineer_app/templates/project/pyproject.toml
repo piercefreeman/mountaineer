@@ -24,6 +24,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry.scripts]
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
+build = "{{ project_name }}.cli:build"
 createdb = "{{ project_name }}.cli:createdb"
 
 [tool.mypy]
@@ -59,6 +60,7 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
+build = "{{ project_name }}.cli:build"
 createdb = "{{ project_name }}.cli:createdb"
 
 [tool.mypy]
