@@ -21,28 +21,39 @@ from create_mountaineer_app.templates import get_template_path
 
 
 @pytest.mark.parametrize(
-    "input_path, expected_copy",
+    "root_path, input_path, expected_copy",
     [
         (
-            Path("myproject/__pycache__/test.pyc"),
+            Path("base"),
+            Path("base/myproject/__pycache__/test.pyc"),
             False,
         ),
         (
-            Path("myproject/.gitignore"),
+            Path("base"),
+            Path("base/myproject/.gitignore"),
             False,
         ),
         (
-            Path("myproject/.git/HEAD"),
+            Path("base"),
+            Path("base/myproject/.git/HEAD"),
             False,
         ),
         (
-            Path("myproject/regular_file.txt"),
+            Path("base"),
+            Path("base/myproject/regular_file.txt"),
+            True,
+        ),
+        (
+            # Root paths with hidden files should be excluded from our filtering logic
+            # We don't control where installers like pipx place our library
+            Path(".cache/pipx/venvs"),
+            Path(".cache/pipx/venvs/myproject/regular_file.txt"),
             True,
         ),
     ],
 )
-def test_copy_path(input_path: Path, expected_copy: bool):
-    assert should_copy_path(input_path) == expected_copy
+def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
+    assert should_copy_path(root_path, input_path) == expected_copy
 
 
 @pytest.mark.parametrize(
