@@ -22,7 +22,7 @@ APP_CONFIG: ConfigBase | None = None
 def register_config(config: ConfigBase):
     global APP_CONFIG
 
-    if APP_CONFIG is not None:
+    if APP_CONFIG is not None and APP_CONFIG != config:
         raise ValueError("Config already registered")
 
     APP_CONFIG = config

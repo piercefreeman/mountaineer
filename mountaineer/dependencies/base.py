@@ -1,27 +1,37 @@
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import Callable, Type, TypeVar
+from typing import Callable
 
 from fastapi import Request
 from fastapi.dependencies.utils import get_dependant, solve_dependencies
-from pydantic_settings import BaseSettings
-
-from mountaineer.config import get_config
-
-T = TypeVar("T", bound=BaseSettings)
 
 
-class CoreDependencies:
-    @staticmethod
-    def get_config_with_type(required_type: Type[T]):
-        def internal_dependency() -> T:
-            config = get_config()
-            if not isinstance(config, required_type):
+class DependenciesBaseMeta(type):
+    """
+    Dependencies have to be appended to their wrapper class explicitly. Providing static
+    methods confuses the FastAPI resolution pipeline, because staticfunctions don't properly
+    inspect as coroutines.
+
+    Within `solve_dependencies`, it relies on function inspection to determine whether it should
+    be run in the async loop or a separate thread. Executing `is_coroutine_callable` with a static
+    method will always returns False, so we will inadvertantly run async dependencies in a thread
+    loop. This will just return the raw coroutine instead of actually resolving the dependency.
+
+    Adding functions to the class directly will just link their function signatures, which
+    will inspect as intended.
+
+    """
+
+    def __new__(cls, name, bases, namespace, **kwargs):
+        for attr_name, attr_value in namespace.items():
+            if isinstance(attr_value, staticmethod):
                 raise TypeError(
-                    f"Expected config to inherit from {required_type}, {type(config)} is not a valid subclass"
+                    f"Static methods are not allowed in dependency wrapper '{name}'. Found static method: '{attr_name}'."
                 )
-            return config
+        return super().__new__(cls, name, bases, namespace, **kwargs)
 
-        return internal_dependency
+
+class DependenciesBase(metaclass=DependenciesBaseMeta):
+    pass
 
 
 @asynccontextmanager
