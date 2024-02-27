@@ -13,7 +13,10 @@ from create_mountaineer_app.generation import ProjectMetadata, format_template
 from create_mountaineer_app.templates import get_template_path
 
 IGNORE_FILES = {"__pycache__", "node_modules"}
-ALLOW_HIDDEN_FILES = {".env"}
+ALLOW_HIDDEN_FILES = {
+    # A template .env file is explicitly included in our build logic
+    ".env",
+}
 
 
 def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
@@ -23,7 +26,7 @@ def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
         return VEnvEnvironment()
 
 
-def should_copy_path(path: Path):
+def should_copy_path(root_path: Path, path: Path):
     """
     Determine whether we should copy the template path to our final project.
     We need to ignore certain build-time directories that don't actually
@@ -33,7 +36,9 @@ def should_copy_path(path: Path):
     - Ignore hidden files and folders
 
     """
-    for part in path.parts:
+    relative_path = path.relative_to(root_path)
+
+    for part in relative_path.parts:
         if part in IGNORE_FILES:
             return False
         if part.startswith(".") and part not in ALLOW_HIDDEN_FILES:
@@ -43,9 +48,20 @@ def should_copy_path(path: Path):
 
 def build_project(metadata: ProjectMetadata):
     template_base = get_template_path("project")
+    template_paths = list(template_base.glob("**/*"))
 
-    for template_path in template_base.glob("**/*"):
-        if template_path.is_dir() or not should_copy_path(template_path):
+    if not template_paths:
+        all_template_paths = list(get_template_path("").glob("**/*"))
+        secho(
+            f"No templates found in {template_base}.\n"
+            f"All found: {all_template_paths}\n"
+            "This might indicate an issue with your install or the pypi packaging pipeline.",
+            fg="red",
+        )
+        raise Exception("No templates found.")
+
+    for template_path in template_paths:
+        if template_path.is_dir() or not should_copy_path(template_base, template_path):
             continue
 
         # Internally, format_template will re-look up the template. Convert the full glob path into a relative template path.

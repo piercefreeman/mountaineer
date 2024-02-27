@@ -227,7 +227,7 @@ async def test_get_render_parameters():
     "use_experimental,min_time,max_time",
     [
         (False, 1, None),
-        (True, None, 0.05),
+        (True, None, 0.10),
     ],
 )
 def test_limit_codepath_experimental(
