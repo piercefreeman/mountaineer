@@ -163,11 +163,18 @@ class IsolatedEnvProcess(Process):
             self.terminate()
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
-        return await self.exception_controller._generate_html(
-            global_metadata=None,
-            exception=str(exc),
-            stack="".join(format_exception(exc)),
-        )
+        # If we're receiving a GET request, show the exception. Otherwise fall back
+        # on the normal REST handlers
+        if request.method == "GET":
+            response = await self.exception_controller._generate_html(
+                global_metadata=None,
+                exception=str(exc),
+                stack="".join(format_exception(exc)),
+            )
+            response.status_code = 500
+            return response
+        else:
+            raise exc
 
 
 def handle_watch(
