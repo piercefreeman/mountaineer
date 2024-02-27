@@ -191,20 +191,24 @@ class PackageWatchdog:
         # https://the-hitchhikers-guide-to-packaging.readthedocs.io/en/latest/introduction.html
         # "Path configuration files have an extension of .pth, and each line must
         # contain a single path that will be appended to sys.path."
-        package_name = dist.name.replace("-", "_")
+        package_name = dist.name.replace("-", "_").lower()
         symbolic_links = [
-            path for path in (dist.files or []) if path.name == f"{package_name}.pth"
+            path
+            for path in (dist.files or [])
+            if path.name.lower() == f"{package_name}.pth"
         ]
         dist_links = [
             path
             for path in (dist.files or [])
             if path.name == "direct_url.json"
-            and re_search(package_name + r"-[0-9-.]+\.dist-info", path.parent.name)
+            and re_search(
+                package_name + r"-[0-9-.]+\.dist-info", path.parent.name.lower()
+            )
         ]
         explicit_links = [
             path
             for path in (dist.files or [])
-            if path.parent.name == package_name
+            if path.parent.name.lower() == package_name
             and (
                 # Sanity check that the parent is the high level project directory
                 # by looking for common base files
