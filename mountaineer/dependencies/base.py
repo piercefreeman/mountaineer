@@ -1,4 +1,5 @@
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from typing import Callable
 
 from fastapi import Request
@@ -34,17 +35,29 @@ class DependenciesBase(metaclass=DependenciesBaseMeta):
     pass
 
 
+@dataclass
+class DependencyOverrideProvider:
+    # Internally FastAPI uses a property accessor to access the dependency_overrides, so we
+    # reproduce this with a simple dataclass
+    dependency_overrides: dict[Callable, Callable]
+
+
 @asynccontextmanager
 async def get_function_dependencies(
     *,
     callable: Callable,
     url: str | None = None,
     request: Request | None = None,
+    dependency_overrides: dict[Callable, Callable] | None = None,
 ):
     """
     Get the dependencies of a function. This will return the values that should
     be injected into the function. Provide as much metadata as possible, so we can
     resolve more accurate dependencies. If not provided, we will synthesize some values.
+
+    :param dependency_overrides: Specify functions that should be swapped-in when resolving
+    the dependency chains. This is useful during testing or when you need to override one value
+    in a dependency pipeline (like a user session) with a deterministic value.
 
     """
     # Synthesize defaults
@@ -72,6 +85,11 @@ async def get_function_dependencies(
             request=request,
             dependant=dependant,
             async_exit_stack=async_exit_stack,
+            dependency_overrides_provider=(
+                DependencyOverrideProvider(dependency_overrides=dependency_overrides)
+                if dependency_overrides
+                else None
+            ),
         )
         if background_tasks:
             raise RuntimeError(
