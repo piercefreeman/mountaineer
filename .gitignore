@@ -176,3 +176,5 @@ _static
 # Ignore template files that might be used locally for testing
 # but shouldn't be added to the downstream templates
 **/create_mountaineer_app/templates/poetry.lock
+
+.DS_Store
