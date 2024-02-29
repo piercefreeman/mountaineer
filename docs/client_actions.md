@@ -43,6 +43,8 @@ def increment_count(self):
 )
 def increment_count(self):
     self.global_count += 1
+    ...
+    return CustomDataModel(...)
 ```
 
 Keyword arguments can be chained as you expect to customize the sideeffect behavior.

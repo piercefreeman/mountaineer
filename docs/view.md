@@ -49,6 +49,8 @@ We also support the Next.js `layout.tsx` convention, which is a special file tha
 The children of the page will be passed as `{children}` to the layout component. Make sure to include this in your rendered view:
 
 ```typescript title="/views/app/layout.tsx"
+import React from "react";
+
 const Layout = ({ children } : { children: React.ReactNode }) => {
   return (
     <div>
