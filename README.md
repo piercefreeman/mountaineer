@@ -326,8 +326,7 @@ const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
                 description: newTodo,
               },
             });
-            setNewTodo("");
-            setShowNew(false);
+            setNewTodo("");            
           }
         }
       >
