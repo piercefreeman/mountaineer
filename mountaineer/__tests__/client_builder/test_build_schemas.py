@@ -1,3 +1,4 @@
+from enum import Enum, IntEnum, StrEnum
 from json import dumps as json_dumps
 
 import pytest
@@ -17,6 +18,21 @@ class SubModel2(BaseModel):
     sub_b: int
 
 
+class MyStrEnum(StrEnum):
+    VALUE_1 = "value_1"
+    VALUE_2 = "value_2"
+
+
+class MyIntEnum(IntEnum):
+    VALUE_1 = 1
+    VALUE_2 = 2
+
+
+class MyEnum(Enum):
+    VALUE_1 = "value_1"
+    VALUE_2 = 5
+
+
 class MyModel(BaseModel):
     a: str = Field(description="The a field")
     b: int
@@ -34,6 +50,11 @@ def test_basic_interface():
 
 
 def test_model_gathering():
+    """
+    Ensure we are able to traverse a single model definition for all the
+    sub-models it uses.
+
+    """
     schema = OpenAPISchema(**MyModel.model_json_schema())
 
     converter = OpenAPIToTypescriptSchemaConverter()
@@ -59,11 +80,17 @@ def test_model_gathering():
         (dict[str, SubModel1], ["value: Record<string, SubModel1>"]),
         (dict[str, int], ["value: Record<string, number>"]),
         ("SubModel1", ["value: SubModel1"]),
+        (MyStrEnum, ["value: MyStrEnum"]),
+        (MyIntEnum, ["value: MyIntEnum"]),
+        (MyEnum, ["value: MyEnum"]),
     ],
 )
 def test_python_to_typescript_types(
     python_type: type, expected_typescript_types: list[str]
 ):
+    """
+    Test type resolution when attached to a given model's field
+    """
     # Create a model schema automatically with the passed in typing
     fake_model = create_model(
         "FakeModel",
@@ -126,3 +153,22 @@ def test_get_model_json_schema_excludes_masked_fields():
     assert "ExcludedModel" not in fixed_openapi_result
     assert "included_obj" in fixed_openapi_result
     assert "IncludedModel" in fixed_openapi_result
+
+
+def test_format_enums():
+    class MyModel(BaseModel):
+        a: MyStrEnum
+        b: MyIntEnum
+        c: MyEnum
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+    js_interfaces = converter.convert(MyModel)
+
+    assert (
+        js_interfaces["MyStrEnum"]
+        == "enum MyStrEnum {\nVALUE_1 = 'value_1',\nVALUE_2 = 'value_2'\n}"
+    )
+    assert js_interfaces["MyIntEnum"] == "enum MyIntEnum {\nVALUE_1 = 1,\nVALUE_2 = 2\n}"
+    assert (
+        js_interfaces["MyEnum"] == "enum MyEnum {\nVALUE_1 = 'value_1',\nVALUE_5 = 5\n}"
+    )
