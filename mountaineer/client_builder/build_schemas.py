@@ -184,15 +184,15 @@ class OpenAPIToTypescriptSchemaConverter:
 
         for enum_value in model.enum:
             # If the enum is an integer, we need to escape it
-            enum_key: TSLiteral
+            enum_key: str
             if isinstance(enum_value, (int, float)):
-                enum_key = TSLiteral(f"VALUE_{enum_value}")
+                enum_key = f"Value__{enum_value}"
             elif isinstance(enum_value, str):
-                enum_key = TSLiteral(enum_value.upper())
+                enum_key = camelize(enum_value, uppercase_first_letter=True)
             else:
                 raise ValueError(f"Invalid enum value: {enum_value}")
 
-            fields[enum_key] = enum_value
+            fields[TSLiteral(enum_key)] = enum_value
 
         # Enums use an equal assignment syntax
         interface_body = python_payload_to_typescript(fields).replace(":", " =")

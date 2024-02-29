@@ -49,7 +49,7 @@ def test_basic_interface():
     assert "interface MyModel {" in result["MyModel"]
 
 
-def test_model_gathering():
+def test_model_gathering_pydantic_models():
     """
     Ensure we are able to traverse a single model definition for all the
     sub-models it uses.
@@ -67,6 +67,26 @@ def test_model_gathering():
         "SubModel2",
         "MyModel",
         "Sub Map",
+    }
+
+
+def test_model_gathering_enum_models():
+    class EnumModel(BaseModel):
+        a: MyStrEnum
+        b: MyIntEnum
+        c: MyEnum
+
+    schema = OpenAPISchema(**EnumModel.model_json_schema())
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+    all_models = converter.gather_all_models(schema)
+
+    assert len(all_models) == 4
+    assert {m.title for m in all_models} == {
+        "EnumModel",
+        "MyStrEnum",
+        "MyIntEnum",
+        "MyEnum",
     }
 
 
@@ -157,8 +177,11 @@ def test_get_model_json_schema_excludes_masked_fields():
 
 def test_format_enums():
     class MyModel(BaseModel):
+        # String type enums
         a: MyStrEnum
+        # Int type enums
         b: MyIntEnum
+        # Mixed type enums: string and int
         c: MyEnum
 
     converter = OpenAPIToTypescriptSchemaConverter()
@@ -166,9 +189,11 @@ def test_format_enums():
 
     assert (
         js_interfaces["MyStrEnum"]
-        == "enum MyStrEnum {\nVALUE_1 = 'value_1',\nVALUE_2 = 'value_2'\n}"
+        == "enum MyStrEnum {\nValue1 = 'value_1',\nValue2 = 'value_2'\n}"
     )
-    assert js_interfaces["MyIntEnum"] == "enum MyIntEnum {\nVALUE_1 = 1,\nVALUE_2 = 2\n}"
     assert (
-        js_interfaces["MyEnum"] == "enum MyEnum {\nVALUE_1 = 'value_1',\nVALUE_5 = 5\n}"
+        js_interfaces["MyIntEnum"] == "enum MyIntEnum {\nValue__1 = 1,\nValue__2 = 2\n}"
+    )
+    assert (
+        js_interfaces["MyEnum"] == "enum MyEnum {\nValue1 = 'value_1',\nValue__5 = 5\n}"
     )
