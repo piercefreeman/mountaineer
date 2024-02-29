@@ -13,6 +13,7 @@ node_modules
 _server
 _ssr
 _static
+.watchdog.lock
 
 # General Python excludes
 # see: https://github.com/github/gitignore/blob/main/Python.gitignore
