@@ -61,6 +61,9 @@ class OpenAPIProperty(BaseModel):
     ref: str | None = Field(alias="$ref", default=None)
     # Array of another type
     items: Optional["OpenAPIProperty"] = None
+    # Enum type
+    enum: list[Any] | None = None
+
     # Pointer to multiple possible subtypes
     anyOf: list["OpenAPIProperty"] = []
 
@@ -69,8 +72,10 @@ class OpenAPIProperty(BaseModel):
     # Validator to ensure that one of the optional values is set
     @model_validator(mode="after")
     def check_provided_value(self) -> "OpenAPIProperty":
-        if not any([self.variable_type, self.ref, self.items, self.anyOf]):
-            raise ValueError("One of variable_type, $ref, anyOf, or items must be set")
+        if not any([self.variable_type, self.ref, self.items, self.anyOf, self.enum]):
+            raise ValueError(
+                "One of variable_type, $ref, anyOf, enum, or items must be set"
+            )
         return self
 
     def __hash__(self):

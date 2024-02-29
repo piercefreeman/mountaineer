@@ -102,7 +102,7 @@ class ClientBuilder:
             ).items():
                 schemas[schema_name] = component
 
-            # Convert the sideeffect routes
+            # Convert all the other models defined in sideeffect routes
             for schema_name, component in base.components.schemas.items():
                 schemas[
                     schema_name

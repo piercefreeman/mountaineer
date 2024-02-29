@@ -1,7 +1,7 @@
 """
 Generator for TypeScript interfaces from OpenAPI specifications.
 """
-from typing import Dict, Iterator, Type, get_args, get_origin
+from typing import Any, Dict, Iterator, Type, get_args, get_origin
 
 from inflection import camelize
 from pydantic import BaseModel, create_model
@@ -12,7 +12,11 @@ from mountaineer.client_builder.openapi import (
     OpenAPISchema,
     OpenAPISchemaType,
 )
-from mountaineer.client_builder.typescript import map_openapi_type_to_ts
+from mountaineer.client_builder.typescript import (
+    TSLiteral,
+    map_openapi_type_to_ts,
+    python_payload_to_typescript,
+)
 
 
 class OpenAPIToTypescriptSchemaConverter:
@@ -55,9 +59,6 @@ class OpenAPIToTypescriptSchemaConverter:
         return synthetic_model.model_json_schema()
 
     def convert_to_typescript(self, parsed_spec: OpenAPISchema):
-        # components = parsed_spec.get('components', {})
-        # schemas = components.get('schemas', {})
-
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
 
@@ -76,7 +77,10 @@ class OpenAPIToTypescriptSchemaConverter:
         """
 
         def walk_models(property: OpenAPIProperty) -> Iterator[OpenAPIProperty]:
-            if property.variable_type == OpenAPISchemaType.OBJECT:
+            if (
+                property.variable_type == OpenAPISchemaType.OBJECT
+                or property.enum is not None
+            ):
                 yield property
             if property.ref is not None:
                 yield from walk_models(self.resolve_ref(property.ref, base))
@@ -115,6 +119,14 @@ class OpenAPIToTypescriptSchemaConverter:
         return current_obj
 
     def convert_schema_to_interface(self, model: OpenAPIProperty, base: BaseModel):
+        if model.variable_type == OpenAPISchemaType.OBJECT:
+            return self._convert_object_to_interface(model, base)
+        elif model.enum is not None:
+            return self._convert_enum_to_interface(model)
+        else:
+            raise ValueError(f"Unknown model type: {model}")
+
+    def _convert_object_to_interface(self, model: OpenAPIProperty, base: BaseModel):
         fields = []
 
         # We have to support arrays with one and multiple values
@@ -158,6 +170,35 @@ class OpenAPIToTypescriptSchemaConverter:
 
         interface_body = "\n".join(fields)
         interface_full = f"interface {self.get_typescript_interface_name(model)} {{\n{interface_body}\n}}"
+
+        if self.export_interface:
+            interface_full = f"export {interface_full}"
+
+        return interface_full
+
+    def _convert_enum_to_interface(self, model: OpenAPIProperty):
+        fields: dict[str, Any] = {}
+
+        if not model.enum:
+            raise ValueError(f"Model {model} is not an enum")
+
+        for enum_value in model.enum:
+            # If the enum is an integer, we need to escape it
+            enum_key: str
+            if isinstance(enum_value, (int, float)):
+                enum_key = f"Value__{enum_value}"
+            elif isinstance(enum_value, str):
+                enum_key = camelize(enum_value, uppercase_first_letter=True)
+            else:
+                raise ValueError(f"Invalid enum value: {enum_value}")
+
+            fields[TSLiteral(enum_key)] = enum_value
+
+        # Enums use an equal assignment syntax
+        interface_body = python_payload_to_typescript(fields).replace(":", " =")
+        interface_full = (
+            f"enum {self.get_typescript_interface_name(model)} {interface_body}"
+        )
 
         if self.export_interface:
             interface_full = f"export {interface_full}"

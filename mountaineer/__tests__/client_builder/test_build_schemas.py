@@ -1,3 +1,4 @@
+from enum import Enum, IntEnum, StrEnum
 from json import dumps as json_dumps
 
 import pytest
@@ -17,6 +18,21 @@ class SubModel2(BaseModel):
     sub_b: int
 
 
+class MyStrEnum(StrEnum):
+    VALUE_1 = "value_1"
+    VALUE_2 = "value_2"
+
+
+class MyIntEnum(IntEnum):
+    VALUE_1 = 1
+    VALUE_2 = 2
+
+
+class MyEnum(Enum):
+    VALUE_1 = "value_1"
+    VALUE_2 = 5
+
+
 class MyModel(BaseModel):
     a: str = Field(description="The a field")
     b: int
@@ -33,7 +49,12 @@ def test_basic_interface():
     assert "interface MyModel {" in result["MyModel"]
 
 
-def test_model_gathering():
+def test_model_gathering_pydantic_models():
+    """
+    Ensure we are able to traverse a single model definition for all the
+    sub-models it uses.
+
+    """
     schema = OpenAPISchema(**MyModel.model_json_schema())
 
     converter = OpenAPIToTypescriptSchemaConverter()
@@ -49,6 +70,26 @@ def test_model_gathering():
     }
 
 
+def test_model_gathering_enum_models():
+    class EnumModel(BaseModel):
+        a: MyStrEnum
+        b: MyIntEnum
+        c: MyEnum
+
+    schema = OpenAPISchema(**EnumModel.model_json_schema())
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+    all_models = converter.gather_all_models(schema)
+
+    assert len(all_models) == 4
+    assert {m.title for m in all_models} == {
+        "EnumModel",
+        "MyStrEnum",
+        "MyIntEnum",
+        "MyEnum",
+    }
+
+
 @pytest.mark.parametrize(
     "python_type,expected_typescript_types",
     [
@@ -59,11 +100,17 @@ def test_model_gathering():
         (dict[str, SubModel1], ["value: Record<string, SubModel1>"]),
         (dict[str, int], ["value: Record<string, number>"]),
         ("SubModel1", ["value: SubModel1"]),
+        (MyStrEnum, ["value: MyStrEnum"]),
+        (MyIntEnum, ["value: MyIntEnum"]),
+        (MyEnum, ["value: MyEnum"]),
     ],
 )
 def test_python_to_typescript_types(
     python_type: type, expected_typescript_types: list[str]
 ):
+    """
+    Test type resolution when attached to a given model's field
+    """
     # Create a model schema automatically with the passed in typing
     fake_model = create_model(
         "FakeModel",
@@ -126,3 +173,27 @@ def test_get_model_json_schema_excludes_masked_fields():
     assert "ExcludedModel" not in fixed_openapi_result
     assert "included_obj" in fixed_openapi_result
     assert "IncludedModel" in fixed_openapi_result
+
+
+def test_format_enums():
+    class MyModel(BaseModel):
+        # String type enums
+        a: MyStrEnum
+        # Int type enums
+        b: MyIntEnum
+        # Mixed type enums: string and int
+        c: MyEnum
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+    js_interfaces = converter.convert(MyModel)
+
+    assert (
+        js_interfaces["MyStrEnum"]
+        == "enum MyStrEnum {\nValue1 = 'value_1',\nValue2 = 'value_2'\n}"
+    )
+    assert (
+        js_interfaces["MyIntEnum"] == "enum MyIntEnum {\nValue__1 = 1,\nValue__2 = 2\n}"
+    )
+    assert (
+        js_interfaces["MyEnum"] == "enum MyEnum {\nValue1 = 'value_1',\nValue__5 = 5\n}"
+    )
