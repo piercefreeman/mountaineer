@@ -221,12 +221,19 @@ import { useServer, ServerState } from "./_server/useServer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
-    <div className="flex gap-x-4">
-      <input type="text" className="grow rounded border-2 border-gray-200 px-4 py-2" />
-      <button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700">Create</button>
-    </div>
-  );
-};
+  <div className="flex gap-x-4">
+    <input
+      type="text"
+      className="grow rounded border-2 border-gray-200 px-4 py-2"
+    />
+    <button
+      className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
+    >
+      Create
+    </button>
+  </div>
+  )
+}
 
 const Home = () => {
   const serverState = useServer();
