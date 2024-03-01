@@ -80,6 +80,13 @@ class LinkAttribute(BaseModel):
     optional_attributes: dict[str, str] = {}
 
 
+class ScriptAttribute(BaseModel):
+    src: str
+    asynchronous: bool = False
+    defer: bool = False
+    optional_attributes: dict[str, str] = {}
+
+
 class Metadata(BaseModel):
     """
     Metadata lets the client specify the different metadata definitions that should
@@ -90,8 +97,10 @@ class Metadata(BaseModel):
 
     title: str | None = None
 
+    # Specify dynamic injection of tags into the <head>
     metas: list[MetaAttribute] = []
     links: list[LinkAttribute] = []
+    scripts: list[ScriptAttribute] = []
 
     # Allows the client to specify a different response type
     # that should occur on initial render

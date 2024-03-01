@@ -5,6 +5,7 @@ from mountaineer.render import (
     LinkAttribute,
     Metadata,
     RenderBase,
+    ScriptAttribute,
     ThemeColorMeta,
     ViewportMeta,
 )
@@ -66,6 +67,34 @@ class StubController(ControllerBase):
             [
                 '<meta name="theme-color" content="#000000" />',
                 '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=no" />',
+            ],
+        ),
+        # Script tags
+        (
+            Metadata(
+                scripts=[
+                    ScriptAttribute(
+                        src="/script1.js",
+                    ),
+                    ScriptAttribute(
+                        src="/script2.js",
+                        asynchronous=True,
+                    ),
+                    ScriptAttribute(
+                        src="/script3.js",
+                        defer=True,
+                    ),
+                    ScriptAttribute(
+                        src="/script4.js",
+                        optional_attributes={"test-attr": "test-value"},
+                    ),
+                ],
+            ),
+            [
+                '<script src="/script1.js"></script>',
+                '<script src="/script2.js" async></script>',
+                '<script src="/script3.js" defer></script>',
+                '<script src="/script4.js" test-attr="test-value"></script>',
             ],
         ),
     ],

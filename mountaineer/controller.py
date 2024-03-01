@@ -3,7 +3,7 @@ from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import time
-from typing import Any, Callable, Coroutine, Iterable
+from typing import Any, Callable, Coroutine, Iterable, Mapping
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -176,33 +176,48 @@ class ControllerBase(ABC):
         """
         tags: list[str] = []
 
-        def format_optional_keys(payload: dict[str, str | None]) -> str:
-            return " ".join(
-                [
-                    f'{key}="{value}"'
-                    for key, value in payload.items()
-                    if value is not None
-                ]
-            )
+        def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
+            attributes: list[str] = []
+            for key, value in payload.items():
+                if value is None:
+                    continue
+                elif isinstance(value, bool):
+                    # Boolean attributes can just be represented by just their key
+                    if value:
+                        attributes.append(key)
+                    else:
+                        continue
+                else:
+                    attributes.append(f'{key}="{value}"')
+            return " ".join(attributes)
 
         if metadata.title:
             tags.append(f"<title>{metadata.title}</title>")
 
         for meta_definition in metadata.metas:
-            all_attributes = {
+            meta_attributes = {
                 "name": meta_definition.name,
                 "content": meta_definition.content,
                 **meta_definition.optional_attributes,
             }
-            tags.append(f"<meta {format_optional_keys(all_attributes)} />")
+            tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
+
+        for script_definition in metadata.scripts:
+            script_attributes: dict[str, str | bool] = {
+                "src": script_definition.src,
+                "async": script_definition.asynchronous,
+                "defer": script_definition.defer,
+                **script_definition.optional_attributes,
+            }
+            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
 
         for link_definition in metadata.links:
-            all_attributes = {
+            link_attributes = {
                 "rel": link_definition.rel,
                 "href": link_definition.href,
                 **link_definition.optional_attributes,
             }
-            tags.append(f"<link {format_optional_keys(all_attributes)} />")
+            tags.append(f"<link {format_optional_keys(link_attributes)} />")
 
         return tags
 
