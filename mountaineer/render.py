@@ -1,3 +1,5 @@
+from hashlib import sha256
+from json import dumps as json_dumps
 from typing import TYPE_CHECKING, Any, Type
 
 from fastapi import Response
@@ -40,7 +42,21 @@ class ReturnModelMetaclass(ModelMetaclass):
                 raise
 
 
-class MetaAttribute(BaseModel):
+class HashableAttribute(BaseModel):
+    """
+    Even with frozen=True, we can't hash our attributes because they include dictionary field types.
+    Instead provide a mixin to calculate the hash of the current state of the attributes.
+
+    """
+
+    def __hash__(self):
+        model_json = json_dumps(self.model_dump(), sort_keys=True)
+        hash_object = sha256(model_json.encode())
+        # __hash__ must return an integer
+        return int(hash_object.hexdigest(), 16)
+
+
+class MetaAttribute(HashableAttribute, BaseModel):
     name: str | None = None
     content: str | None = None
     optional_attributes: dict[str, str] = {}
@@ -74,13 +90,13 @@ class ViewportMeta(MetaAttribute):
         return self
 
 
-class LinkAttribute(BaseModel):
+class LinkAttribute(HashableAttribute, BaseModel):
     rel: str
     href: str
     optional_attributes: dict[str, str] = {}
 
 
-class ScriptAttribute(BaseModel):
+class ScriptAttribute(HashableAttribute, BaseModel):
     src: str
     asynchronous: bool = False
     defer: bool = False

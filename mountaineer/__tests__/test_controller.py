@@ -3,6 +3,7 @@ import pytest
 from mountaineer.controller import ControllerBase
 from mountaineer.render import (
     LinkAttribute,
+    MetaAttribute,
     Metadata,
     RenderBase,
     ScriptAttribute,
@@ -102,3 +103,86 @@ class StubController(ControllerBase):
 def test_build_header(metadata: Metadata, expected_tags: list[str]):
     controller = StubController()
     assert controller.build_header(metadata) == expected_tags
+
+
+COMPLEX_METADATA = Metadata(
+    title="MyTitle",
+    links=[
+        LinkAttribute(
+            rel="stylesheet",
+            href="/stylesheet1.css",
+        )
+    ],
+    metas=[
+        MetaAttribute(
+            name="theme-color",
+            content="#000000",
+        )
+    ],
+    scripts=[
+        ScriptAttribute(
+            src="/script1.js",
+        )
+    ],
+)
+
+
+@pytest.mark.parametrize(
+    "metadatas, expected_metadata",
+    [
+        # A complex metadata definition should always echo its own definition
+        ([COMPLEX_METADATA], COMPLEX_METADATA),
+        # We shouldn't end up with duplicates
+        (
+            [
+                COMPLEX_METADATA,
+                COMPLEX_METADATA,
+            ],
+            COMPLEX_METADATA,
+        ),
+        # Test a simple merge of two different values on the same property
+        (
+            [
+                Metadata(
+                    links=[
+                        LinkAttribute(
+                            rel="stylesheet",
+                            href="/stylesheet1.css",
+                        )
+                    ]
+                ),
+                Metadata(
+                    links=[
+                        LinkAttribute(
+                            rel="stylesheet",
+                            href="/stylesheet2.css",
+                        )
+                    ]
+                ),
+            ],
+            Metadata(
+                links=[
+                    LinkAttribute(
+                        rel="stylesheet",
+                        href="/stylesheet1.css",
+                    ),
+                    LinkAttribute(
+                        rel="stylesheet",
+                        href="/stylesheet2.css",
+                    ),
+                ]
+            ),
+        ),
+        # The first specified header should win.
+        (
+            [
+                Metadata(title="Primary"),
+                Metadata(title="Secondary"),
+            ],
+            Metadata(title="Primary"),
+        ),
+    ],
+)
+def test_merge_metadatas(metadatas: list[Metadata], expected_metadata: Metadata):
+    controller = StubController()
+    assert controller.merge_metadatas(metadatas) == expected_metadata

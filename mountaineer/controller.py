@@ -16,7 +16,14 @@ from mountaineer.actions import (
 from mountaineer.js_compiler.source_maps import SourceMapParser
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
-from mountaineer.render import Metadata, RenderBase, RenderNull
+from mountaineer.render import (
+    LinkAttribute,
+    MetaAttribute,
+    Metadata,
+    RenderBase,
+    RenderNull,
+    ScriptAttribute,
+)
 from mountaineer.ssr import V8RuntimeError, render_ssr
 
 
@@ -273,12 +280,30 @@ class ControllerBase(ABC):
         take the union (like scripts) - others will prioritize earlier entries (title).
 
         """
-        base_metadata = Metadata()
+        # Keep track of the unique values we've seen already to ensure that we are:
+        # 1. Only including unique values
+        # 2. Ranking them in the same order as they were provided
+        metas: set[MetaAttribute] = set()
+        links: set[LinkAttribute] = set()
+        scripts: set[ScriptAttribute] = set()
+
+        final_metadata = Metadata()
 
         for metadata in metadatas:
-            base_metadata.title = base_metadata.title or metadata.title
+            final_metadata.title = final_metadata.title or metadata.title
 
-            base_metadata.metas.extend(metadata.metas)
-            base_metadata.links.extend(metadata.links)
+            final_metadata.metas.extend(
+                [element for element in metadata.metas if element not in metas]
+            )
+            final_metadata.links.extend(
+                [element for element in metadata.links if element not in links]
+            )
+            final_metadata.scripts.extend(
+                [element for element in metadata.scripts if element not in scripts]
+            )
 
-        return base_metadata
+            metas |= set(metadata.metas)
+            links |= set(metadata.links)
+            scripts |= set(metadata.scripts)
+
+        return final_metadata
