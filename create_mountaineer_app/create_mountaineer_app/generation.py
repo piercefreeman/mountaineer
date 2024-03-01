@@ -12,6 +12,7 @@ class ProjectMetadata(BaseModel):
     author_email: str
     use_poetry: bool
     use_tailwind: bool
+    editor_config: str
     project_path: Path
 
     postgres_password: str = "mysecretpassword"
