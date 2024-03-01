@@ -3,7 +3,7 @@ from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import time
-from typing import Any, Callable, Coroutine, Iterable
+from typing import Any, Callable, Coroutine, Iterable, Mapping
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -16,7 +16,14 @@ from mountaineer.actions import (
 from mountaineer.js_compiler.source_maps import SourceMapParser
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
-from mountaineer.render import Metadata, RenderBase, RenderNull
+from mountaineer.render import (
+    LinkAttribute,
+    MetaAttribute,
+    Metadata,
+    RenderBase,
+    RenderNull,
+    ScriptAttribute,
+)
 from mountaineer.ssr import V8RuntimeError, render_ssr
 
 
@@ -176,33 +183,48 @@ class ControllerBase(ABC):
         """
         tags: list[str] = []
 
-        def format_optional_keys(payload: dict[str, str | None]) -> str:
-            return " ".join(
-                [
-                    f'{key}="{value}"'
-                    for key, value in payload.items()
-                    if value is not None
-                ]
-            )
+        def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
+            attributes: list[str] = []
+            for key, value in payload.items():
+                if value is None:
+                    continue
+                elif isinstance(value, bool):
+                    # Boolean attributes can just be represented by just their key
+                    if value:
+                        attributes.append(key)
+                    else:
+                        continue
+                else:
+                    attributes.append(f'{key}="{value}"')
+            return " ".join(attributes)
 
         if metadata.title:
             tags.append(f"<title>{metadata.title}</title>")
 
         for meta_definition in metadata.metas:
-            all_attributes = {
+            meta_attributes = {
                 "name": meta_definition.name,
                 "content": meta_definition.content,
                 **meta_definition.optional_attributes,
             }
-            tags.append(f"<meta {format_optional_keys(all_attributes)} />")
+            tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
+
+        for script_definition in metadata.scripts:
+            script_attributes: dict[str, str | bool] = {
+                "src": script_definition.src,
+                "async": script_definition.asynchronous,
+                "defer": script_definition.defer,
+                **script_definition.optional_attributes,
+            }
+            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
 
         for link_definition in metadata.links:
-            all_attributes = {
+            link_attributes = {
                 "rel": link_definition.rel,
                 "href": link_definition.href,
                 **link_definition.optional_attributes,
             }
-            tags.append(f"<link {format_optional_keys(all_attributes)} />")
+            tags.append(f"<link {format_optional_keys(link_attributes)} />")
 
         return tags
 
@@ -258,12 +280,30 @@ class ControllerBase(ABC):
         take the union (like scripts) - others will prioritize earlier entries (title).
 
         """
-        base_metadata = Metadata()
+        # Keep track of the unique values we've seen already to ensure that we are:
+        # 1. Only including unique values
+        # 2. Ranking them in the same order as they were provided
+        metas: set[MetaAttribute] = set()
+        links: set[LinkAttribute] = set()
+        scripts: set[ScriptAttribute] = set()
+
+        final_metadata = Metadata()
 
         for metadata in metadatas:
-            base_metadata.title = base_metadata.title or metadata.title
+            final_metadata.title = final_metadata.title or metadata.title
 
-            base_metadata.metas.extend(metadata.metas)
-            base_metadata.links.extend(metadata.links)
+            final_metadata.metas.extend(
+                [element for element in metadata.metas if element not in metas]
+            )
+            final_metadata.links.extend(
+                [element for element in metadata.links if element not in links]
+            )
+            final_metadata.scripts.extend(
+                [element for element in metadata.scripts if element not in scripts]
+            )
 
-        return base_metadata
+            metas |= set(metadata.metas)
+            links |= set(metadata.links)
+            scripts |= set(metadata.scripts)
+
+        return final_metadata
