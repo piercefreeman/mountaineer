@@ -6,7 +6,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
-from mountaineer.cli import IsolatedEnvProcess, IsolatedWatchConfig
+from mountaineer.cli import (
+    IsolatedEnvProcess,
+    IsolatedWatchConfig,
+    find_packages_with_prefix,
+)
 from mountaineer.controllers.exception_controller import ExceptionController
 
 
@@ -71,3 +75,13 @@ def test_dev_exception_on_get(tmpdir: str):
                 }
             ]
         }
+
+
+def test_find_packages_with_prefix():
+    # Choose some packages that we know will be in the test environment
+    assert set(find_packages_with_prefix("fasta")) == {"fastapi"}
+    assert set(find_packages_with_prefix("pydan")) == {
+        "pydantic",
+        "pydantic_core",
+        "pydantic-settings",
+    }
