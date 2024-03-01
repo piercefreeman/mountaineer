@@ -34,6 +34,7 @@ $ pipx run create-mountaineer-app
 ? Use poetry for dependency management? [Yes] Yes
 ? Create stub MVC files? [Yes] Yes
 ? Use Tailwind CSS? [Yes] Yes
+? Add editor configuration? [vscode] vscode
 ```
 
 Mountaineer projects all follow a similar structure. After running this CLI you should see a new folder called `my_webapp`, with folders like the following:
@@ -219,19 +220,12 @@ import { useServer, ServerState } from "./_server/useServer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
-  <div className="flex gap-x-4">
-    <input
-      type="text"
-      className="grow rounded border-2 border-gray-200 px-4 py-2"
-    />
-    <button
-      className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-    >
-      Create
-    </button>
-  </div>
-  )
-}
+    <div className="flex gap-x-4">
+      <input type="text" className="grow rounded border-2 border-gray-200 px-4 py-2" />
+      <button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700">Create</button>
+    </div>
+  );
+};
 
 const Home = () => {
   const serverState = useServer();
@@ -326,7 +320,7 @@ const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
                 description: newTodo,
               },
             });
-            setNewTodo("");            
+            setNewTodo("");
           }
         }
       >
