@@ -1,6 +1,5 @@
 from pathlib import Path
 from re import match as re_match
-from .templates import get_template_path
 
 import questionary
 from click import command, option, secho
@@ -94,7 +93,9 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         "Use Tailwind CSS? [Yes]", default=True
     ).unsafe_ask()
     input_editor_config = questionary.rawselect(
-        "Add editor configuration? [vscode]", choices=["vscode", "vim", "no"], default="vscode"
+        "Add editor configuration? [vscode]",
+        choices=["vscode", "vim", "no"],
+        default="vscode",
     ).unsafe_ask()
 
     secho("\nCreating project...", fg="green")
