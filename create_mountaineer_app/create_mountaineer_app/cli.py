@@ -92,6 +92,11 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
     input_use_tailwind = questionary.confirm(
         "Use Tailwind CSS? [Yes]", default=True
     ).unsafe_ask()
+    input_editor_config = questionary.rawselect(
+        "Add editor configuration? [vscode]",
+        choices=["vscode", "vim", "no"],
+        default="vscode",
+    ).unsafe_ask()
 
     secho("\nCreating project...", fg="green")
 
@@ -104,6 +109,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         author_email=input_author_email,
         use_poetry=input_use_poetry,
         use_tailwind=input_use_tailwind,
+        editor_config=input_editor_config,
         project_path=project_path,
         create_stub_files=input_create_stub_files,
         mountaineer_dev_path=Path(mountaineer_dev_path).resolve()

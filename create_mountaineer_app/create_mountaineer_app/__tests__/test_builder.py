@@ -30,11 +30,6 @@ from create_mountaineer_app.templates import get_template_path
         ),
         (
             Path("base"),
-            Path("base/myproject/.gitignore"),
-            False,
-        ),
-        (
-            Path("base"),
             Path("base/myproject/.git/HEAD"),
             False,
         ),
@@ -57,13 +52,15 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
 
 
 @pytest.mark.parametrize(
-    "use_poetry, use_tailwind, create_stub_files",
+    "use_poetry, use_tailwind, editor_config, create_stub_files",
     list(
         product(
             # Use poetry
             [False, True],
             # Use tailwind
             [False, True],
+            # Editor config
+            ["no", "vscode", "vim"],
             # Create stub files
             [False, True],
         )
@@ -74,6 +71,7 @@ def test_valid_permutations(
     tmpdir: str,
     use_poetry: bool,
     use_tailwind: bool,
+    editor_config: str,
     create_stub_files: bool,
 ):
     """
@@ -106,6 +104,7 @@ def test_valid_permutations(
         project_path=new_project_dir,
         use_poetry=use_poetry,
         use_tailwind=use_tailwind,
+        editor_config=editor_config,
         create_stub_files=create_stub_files,
         postgres_port=postgres_port,
         mountaineer_dev_path=main_mountaineer_path,
