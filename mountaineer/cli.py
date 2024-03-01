@@ -1,6 +1,7 @@
 import asyncio
 import socket
 from importlib import import_module
+from importlib.metadata import distributions
 from multiprocessing import Event, Process, get_start_method, set_start_method
 from multiprocessing.queues import Queue
 from signal import SIGINT, signal
@@ -181,7 +182,7 @@ def handle_watch(
     *,
     package: str,
     webcontroller: str,
-    subscribe_to_fizl: bool = False,
+    subscribe_to_mountaineer: bool = False,
 ):
     """
     Watch the file directory and rebuild auto-generated files.
@@ -207,7 +208,7 @@ def handle_watch(
         current_process.start()
 
     watchdog = build_common_watchdog(
-        package, update_build, subscribe_to_fizl=subscribe_to_fizl
+        package, update_build, subscribe_to_mountaineer=subscribe_to_mountaineer
     )
     watchdog.start_watching()
 
@@ -218,7 +219,7 @@ def handle_runserver(
     webservice: str,
     webcontroller: str,
     port: int,
-    subscribe_to_fizl: bool = False,
+    subscribe_to_mountaineer: bool = False,
 ):
     """
     :param client_package: "ci_webapp"
@@ -270,7 +271,7 @@ def handle_runserver(
     signal(SIGINT, graceful_shutdown)
 
     watchdog = build_common_watchdog(
-        package, update_build, subscribe_to_fizl=subscribe_to_fizl
+        package, update_build, subscribe_to_mountaineer=subscribe_to_mountaineer
     )
     watchdog.start_watching()
 
@@ -321,25 +322,43 @@ def import_from_string(import_string: str):
     return getattr(module, attribute_name)
 
 
+def find_packages_with_prefix(prefix: str):
+    """
+    Find and return a list of all installed package names that start with the given prefix.
+
+    """
+    return [
+        dist.metadata["Name"]
+        for dist in distributions()
+        if dist.metadata["Name"].startswith(prefix)
+    ]
+
+
 def build_common_watchdog(
     client_package: str,
     callback: Callable,
-    subscribe_to_fizl: bool,
+    subscribe_to_mountaineer: bool,
 ):
     """
     Useful creation class to build a watchdog the common client class
     and our internal package.
 
-    :param subscribe_to_fizl: If True, we'll also subscribe to the mountaineer package
+    :param subscribe_to_mountaineer: If True, we'll also subscribe to the mountaineer package
     changes in the local environment. This is helpful for local development of the core
     package concurrent with a downstream client application.
 
     """
+    dependent_packages: list[str] = []
+    if subscribe_to_mountaineer:
+        # Found mountaineer core and mountaineer external dependencies
+        dependent_packages = find_packages_with_prefix("mountaineer")
+        LOGGER.debug(
+            f"Subscribing to changes in local mountaineer packages: {dependent_packages}"
+        )
+
     return PackageWatchdog(
         client_package,
-        dependent_packages=["mountaineer", "mountaineer_auth", "mountaineer_daemons"]
-        if subscribe_to_fizl
-        else [],
+        dependent_packages=dependent_packages,
         callbacks=[
             CallbackDefinition(
                 CallbackType.CREATED | CallbackType.MODIFIED,
