@@ -1,7 +1,13 @@
 import collections
 from enum import Enum
 from functools import wraps
-from inspect import isawaitable, isclass
+from inspect import (
+    isasyncgen,
+    isasyncgenfunction,
+    isawaitable,
+    isclass,
+    isgeneratorfunction,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -14,6 +20,7 @@ from typing import (
     overload,
 )
 
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from mountaineer.actions.fields import (
@@ -35,18 +42,11 @@ class ResponseModelType(Enum):
 @overload
 def passthrough(
     *,
-    response_model: Type[BaseModel] | None = None,
-    exception_models: list[Type[APIException]] | None = None,
-) -> Callable[[Callable], Callable]:
-    ...
-
-
-@overload
-def passthrough(
-    *,
-    # Support for server-event generators
-    response_model: Iterator[Type[BaseModel]]
-    | AsyncIterator[Type[BaseModel]]
+    response_model: Type[BaseModel]
+    # When Iterator[BaseModel] is provided as a kwarg, it will appear as a Type[]
+    # argument when checked by mypy
+    | Type[Iterator[BaseModel]]
+    | Type[AsyncIterator[BaseModel]]
     | None = None,
     exception_models: list[Type[APIException]] | None = None,
 ) -> Callable[[Callable], Callable]:
@@ -76,16 +76,38 @@ def passthrough(*args, **kwargs):
         exception_models: list[Type[APIException]] | None,
     ):
         def wrapper(func: Callable):
+            passthrough_model, response_type = extract_model_from_decorated_types(
+                response_model
+            )
+
+            # Ensure our function is valid as early as possible
+            # Since sync functions are blocking (unless they're run in a separate thread pool), we require long-running
+            # functions to be async
+            if isgeneratorfunction(func):
+                raise ValueError(
+                    f"Only async generators are supported: Define {func} as `async def`"
+                )
+
+            # The user has defined a generator but not a response_model
+            # The frontend builder needs a response model to be able to determine the type
+            if (
+                isasyncgenfunction(func)
+                and response_type != ResponseModelType.ITERATOR_RESPONSE
+            ):
+                raise ValueError(
+                    f"Async generator {func} must have a response_model of type AsyncIterator[BaseModel]"
+                )
+
             @wraps(func)
             async def inner(self: "ControllerBase", *func_args, **func_kwargs):
                 response = func(self, *func_args, **func_kwargs)
                 if isawaitable(response):
                     response = await response
-                return handle_explicit_responses(dict(passthrough=response))
 
-            passthrough_model, response_type = extract_model_from_decorated_types(
-                response_model
-            )
+                if isasyncgen(response):
+                    return wrap_passthrough_generator(response)
+
+                return handle_explicit_responses(dict(passthrough=response))
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
@@ -130,3 +152,17 @@ def extract_model_from_decorated_types(
             return args[0], ResponseModelType.ITERATOR_RESPONSE
 
     raise ValueError(f"Invalid response_model typehint: {type_hint}")
+
+
+def wrap_passthrough_generator(generator: AsyncIterator[BaseModel]):
+    """
+    Simple function to convert a generator of Pydantic values to a server-event-stream
+    of text payloads.
+
+    """
+
+    async def generate():
+        async for value in generator:
+            yield f"data: {value.model_dump_json()}\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

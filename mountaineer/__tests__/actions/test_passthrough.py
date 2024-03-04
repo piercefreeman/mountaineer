@@ -1,7 +1,9 @@
 from pathlib import Path
-from typing import AsyncIterator, Iterator
+from typing import Any, AsyncIterator, Iterator, cast
 
 import pytest
+from fastapi.responses import StreamingResponse
+from fastapi.testclient import TestClient
 from pydantic.main import BaseModel
 
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
@@ -110,6 +112,18 @@ class ExampleModel(BaseModel):
     value: str
 
 
+class ExampleIterableController(ControllerBase):
+    url = "/example"
+
+    async def render(self) -> None:
+        pass
+
+    @passthrough(response_model=AsyncIterator[ExampleModel])
+    async def get_data(self):
+        yield ExampleModel(value="Hello")
+        yield ExampleModel(value="World")
+
+
 @pytest.mark.parametrize(
     "input_type, expected_model, expected_model_type",
     [
@@ -132,3 +146,59 @@ def test_extract_model_from_decorated_types(
         expected_model,
         expected_model_type,
     )
+
+
+def test_extracts_iterable():
+    controller = ExampleIterableController()
+    metadata = get_function_metadata(controller.get_data)
+    assert metadata.passthrough_model == ExampleModel
+    assert metadata.is_iterator
+
+
+def test_disallows_invalid_iterables():
+    # Sync functions
+    with pytest.raises(ValueError, match="async generators are supported"):
+
+        class ExampleController1(ControllerBase):
+            @passthrough(response_model=Iterator[ExampleModel])
+            def sync_iterable(self):
+                yield ExampleModel(value="Hello")
+                yield ExampleModel(value="World")
+
+    # Generator without marking up the response model
+    with pytest.raises(ValueError, match="must have a response_model"):
+
+        class ExampleController2(ControllerBase):
+            @passthrough
+            async def no_response_type_iterable(self):
+                yield ExampleModel(value="Hello")
+                yield ExampleModel(value="World")
+
+
+@pytest.mark.asyncio
+async def test_can_call_iterable():
+    app = AppController(view_root=Path())
+    controller = ExampleIterableController()
+    app.register(controller)
+
+    # Ensure we return a valid StreamingResponse when called directly from the code
+    return_value_sync = cast(Any, await controller.get_data())
+    assert isinstance(return_value_sync, StreamingResponse)
+
+    # StreamingResponses are intended to be read by an ASGI server, so we'll use the TestClient to simulate one instead of calling directly
+    passthrough_url = get_function_metadata(controller.get_data).get_url()
+
+    client = TestClient(app.app)
+    lines: list[str] = []
+    with client.stream(
+        "POST",
+        passthrough_url,
+        json={},
+    ) as response:
+        for line in response.iter_lines():
+            lines.append(line)
+
+    assert lines == [
+        'data: {"value":"Hello"}',
+        'data: {"value":"World"}',
+    ]

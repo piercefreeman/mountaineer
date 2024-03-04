@@ -262,8 +262,7 @@ def test_limit_codepath_experimental(
     controller = ExampleController()
     app.register(controller)
 
-    sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).url
-    assert isinstance(sideeffect_url, str)
+    sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).get_url()
 
     client = TestClient(app.app)
     start = time()
