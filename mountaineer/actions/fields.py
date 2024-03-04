@@ -39,6 +39,7 @@ class FunctionMetadata(BaseModel):
     exception_models: list[
         Type[APIException]
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    is_iterator: bool | MountaineerUnsetValue = MountaineerUnsetValue()
 
     # Render type, defines the data model that is returned by the render typehint
     # If "None", the user has explicitly stated that no render model is returned
@@ -78,6 +79,11 @@ class FunctionMetadata(BaseModel):
         if isinstance(self.exception_models, MountaineerUnsetValue):
             raise ValueError("Exception models not set")
         return self.exception_models
+
+    def get_is_iterator(self) -> bool:
+        if isinstance(self.is_iterator, MountaineerUnsetValue):
+            raise ValueError("Is iterator not set")
+        return self.is_iterator
 
     def get_url(self) -> str:
         if isinstance(self.url, MountaineerUnsetValue):

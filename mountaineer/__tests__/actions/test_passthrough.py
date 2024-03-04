@@ -1,10 +1,15 @@
 from pathlib import Path
+from typing import AsyncIterator, Iterator
 
 import pytest
 from pydantic.main import BaseModel
 
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
-from mountaineer.actions.passthrough import passthrough
+from mountaineer.actions.passthrough import (
+    ResponseModelType,
+    extract_model_from_decorated_types,
+    passthrough,
+)
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
@@ -99,3 +104,31 @@ async def test_can_call_passthrough():
 
     # Our passthrough logic by definition should not re-render
     assert controller.render_counts == 0
+
+
+class ExampleModel(BaseModel):
+    value: str
+
+
+@pytest.mark.parametrize(
+    "input_type, expected_model, expected_model_type",
+    [
+        (ExampleModel, ExampleModel, ResponseModelType.SINGLE_RESPONSE),
+        (Iterator[ExampleModel], ExampleModel, ResponseModelType.ITERATOR_RESPONSE),
+        (
+            AsyncIterator[ExampleModel],
+            ExampleModel,
+            ResponseModelType.ITERATOR_RESPONSE,
+        ),
+        (None, None, ResponseModelType.SINGLE_RESPONSE),
+    ],
+)
+def test_extract_model_from_decorated_types(
+    input_type: type,
+    expected_model: BaseModel | None,
+    expected_model_type: ResponseModelType,
+):
+    assert extract_model_from_decorated_types(input_type) == (
+        expected_model,
+        expected_model_type,
+    )
