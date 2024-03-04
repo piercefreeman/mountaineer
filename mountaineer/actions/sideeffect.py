@@ -149,6 +149,7 @@ def sideeffect(*args, **kwargs):
             metadata.reload_states = reload
             metadata.passthrough_model = response_model
             metadata.exception_models = exception_models
+            metadata.media_type = None  # Use the default json response type
             return inner
 
         return wrapper

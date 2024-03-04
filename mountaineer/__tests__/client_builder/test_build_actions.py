@@ -16,6 +16,7 @@ from mountaineer.client_builder.openapi import (
     ParameterLocationType,
     URLParameterDefinition,
 )
+from mountaineer.constants import STREAM_EVENT_TYPE
 
 
 def test_convert():
@@ -215,6 +216,66 @@ def test_build_action(
     """
     Test the building of a single action fetch body.
     """
+    builder = OpenAPIToTypescriptActionConverter()
+    built_function, build_imports = builder.build_action(url, definition, method_name)
+
+    # Exact match for function contents
+    assert re_sub(r"\s+", "", built_function) == re_sub(r"\s+", "", expected_function)
+
+    # Order doesn't matter in the imports. We assume they're all coming from the locally defined
+    # /models.ts source file.
+    assert set(build_imports) == set(expected_imports)
+
+
+@pytest.mark.parametrize(
+    "method_name,url,definition,expected_function,expected_imports",
+    [
+        (
+            "my_method_fn",
+            "/testing/url",
+            ActionDefinition(
+                action_type=ActionType.POST,
+                summary="",
+                operationId="",
+                requestBody=EXAMPLE_REQUEST_BODY,
+                responses={
+                    "200": EXAMPLE_RESPONSE_200,
+                    "422": EXAMPLE_RESPONSE_400,
+                },
+                media_type=STREAM_EVENT_TYPE,
+            ),
+            (
+                """
+                export const my_method_fn = (
+                    {requestBody}: {requestBody: ExampleModel}
+                ): Promise<AsyncGenerator<ExampleResponseModel, void, unknown>> => {
+                    return __request({
+                        'method': 'POST',
+                        'url': '/testing/url',
+                        'errors': {
+                            422: HTTPValidationErrorException
+                        },
+                        'body': requestBody,
+                        'mediaType': 'application/json',
+                        'eventStreamResponse': true
+                    });
+                }
+                """
+            ),
+            [
+                "ExampleModel",
+                "ExampleResponseModel",
+            ],
+        ),
+    ],
+)
+def test_build_server_side_event_action(
+    url: str,
+    method_name: str,
+    definition: ActionDefinition,
+    expected_function: str,
+    expected_imports: list[str],
+):
     builder = OpenAPIToTypescriptActionConverter()
     built_function, build_imports = builder.build_action(url, definition, method_name)
 

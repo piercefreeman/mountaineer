@@ -152,7 +152,8 @@ def test_extracts_iterable():
     controller = ExampleIterableController()
     metadata = get_function_metadata(controller.get_data)
     assert metadata.passthrough_model == ExampleModel
-    assert metadata.is_iterator
+    # Explicitly validate type here instead of using global constant
+    assert metadata.media_type == "text/event-stream"
 
 
 def test_disallows_invalid_iterables():
@@ -199,6 +200,6 @@ async def test_can_call_iterable():
             lines.append(line)
 
     assert lines == [
-        'data: {"value":"Hello"}',
-        'data: {"value":"World"}',
+        'data: {"passthrough": {"value": "Hello"}}',
+        'data: {"passthrough": {"value": "World"}}',
     ]

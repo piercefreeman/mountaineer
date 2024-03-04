@@ -161,6 +161,10 @@ class ActionDefinition(BaseModel):
     responses: dict[str, ContentBodyDefinition]
     requestBody: ContentBodyDefinition | None = None
 
+    # Custom Mountaineer event types specified in the OpenAPI schema
+    # These should all have defaults since they're optional
+    media_type: str | None = None
+
 
 class EndpointDefinition(BaseModel):
     actions: list[ActionDefinition] = []

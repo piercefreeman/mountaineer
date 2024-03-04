@@ -1,4 +1,5 @@
 import collections
+import typing
 from enum import Enum
 from functools import wraps
 from inspect import (
@@ -8,6 +9,7 @@ from inspect import (
     isclass,
     isgeneratorfunction,
 )
+from json import dumps as json_dumps
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -28,6 +30,7 @@ from mountaineer.actions.fields import (
     handle_explicit_responses,
     init_function_metadata,
 )
+from mountaineer.constants import STREAM_EVENT_TYPE
 from mountaineer.exceptions import APIException
 
 if TYPE_CHECKING:
@@ -112,7 +115,11 @@ def passthrough(*args, **kwargs):
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
             metadata.exception_models = exception_models
-            metadata.is_iterator = response_type == ResponseModelType.ITERATOR_RESPONSE
+            metadata.media_type = (
+                STREAM_EVENT_TYPE
+                if response_type == ResponseModelType.ITERATOR_RESPONSE
+                else None
+            )
             return inner
 
         return wrapper
@@ -143,15 +150,22 @@ def extract_model_from_decorated_types(
     elif isclass(type_hint) and issubclass(type_hint, BaseModel):
         return type_hint, ResponseModelType.SINGLE_RESPONSE
     elif origin_type in (
-        # At runtime our types are actually instantiated as collections.abc objects
+        typing.Iterator,
+        typing.AsyncIterator,
+        # At runtime our types are sometimes instantiated as collections.abc objects
         collections.abc.Iterator,
         collections.abc.AsyncIterator,
     ):
         args = get_args(type_hint)
         if args and issubclass(args[0], BaseModel):
             return args[0], ResponseModelType.ITERATOR_RESPONSE
+        raise ValueError(
+            f"Invalid response_model typehint for iterator action: {type_hint} {origin_type} {args}"
+        )
 
-    raise ValueError(f"Invalid response_model typehint: {type_hint}")
+    raise ValueError(
+        f"Invalid response_model typehint for standard action: {type_hint}"
+    )
 
 
 def wrap_passthrough_generator(generator: AsyncIterator[BaseModel]):
@@ -163,6 +177,8 @@ def wrap_passthrough_generator(generator: AsyncIterator[BaseModel]):
 
     async def generate():
         async for value in generator:
-            yield f"data: {value.model_dump_json()}\n"
+            json_payload = value.model_dump(mode="json")
+            data = json_dumps(dict(passthrough=json_payload))
+            yield f"data: {data}\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(generate(), media_type=STREAM_EVENT_TYPE)
