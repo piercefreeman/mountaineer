@@ -20,7 +20,7 @@ async def get_db(
         raise RuntimeError("No SQLALCHEMY_DATABASE_URI set")
 
     if GLOBAL_ENGINE is None:
-        GLOBAL_ENGINE = create_async_engine(str(config.SQLALCHEMY_DATABASE_URI))
+        GLOBAL_ENGINE = create_async_engine(str(config.SQLALCHEMY_DATABASE_URI), poolclass=NullPool)
     return GLOBAL_ENGINE
 
 
