@@ -142,6 +142,56 @@ const response = await serverState.server_action({});
 console.log(response.passthrough);
 ```
 
+### Server Events
+
+[Server-event](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) streams are a useful paradigm in webapp design, and increasing utilized to provide realtime Server->Client data for use in user notifications, CI feedback, and model inference.
+
+Mountaineer supports these natively on the server and client side. Simply decorate your response_model with a `typing.AsyncIterator` annotation and implement an async generator like you normally do:
+
+```python
+from typing import AsyncIterator
+from mountaineer import passthrough, ControllerBase
+from pydantic import BaseModel
+
+class MyMetadata(BaseModel):
+    state: int
+
+class MyController(ControllerBase):
+    ...
+
+    @passthrough(response_model=AsyncIterator[MyMetadata])
+    async def stream_metadata(self):
+        yield MyMetadata(state=1)
+        await asyncio.sleep(10)
+        yield MyMetadata(state=2)
+```
+
+For the time being we only support server-events in `@passthrough` functions, not `@sideeffect`. It's ill-defined whether we should re-render() content every yield or when the iterator has finished.
+
+In your frontend, you can iterate over these responses with an async generator loop. Each response object will be parsed into your typed schema for you, so you can see typehints like you would for any regular Mountaineer action.
+
+```tsx
+import React, { useState, useEffect } from "react";
+
+const Page = () => {
+  const [currentState, setCurrentState] = useState(-1);
+
+  useEffect(() => {
+      const runStream = async () => {
+        const responseStream = await serverState.stream_metadata({});
+        for await (const response of responseStream) {
+          setCurrentState(response.passthrough.state);
+        }
+      };
+      runStream();
+    }, []);
+
+  return <div>{currentState}</div>;
+}
+```
+
+You'll see the first event state `1` for 10 seconds, then it will update to `2`.
+
 ## Action Definitions
 
 When defining your action functions themselves in your controller, we support typehinting via:
