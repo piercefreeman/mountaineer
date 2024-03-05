@@ -26,9 +26,9 @@ def test_markup_passthrough():
         first_name: str
 
     class TestController(ControllerBase):
-        @passthrough(response_model=ExamplePassthroughModel)
-        def get_external_data(self):
-            return dict(
+        @passthrough
+        def get_external_data(self) -> ExamplePassthroughModel:
+            return ExamplePassthroughModel(
                 first_name="John",
             )
 

@@ -182,12 +182,17 @@ def test_extract_response_model_from_signature():
     ) == (ExampleModel, ResponseModelType.ITERATOR_RESPONSE)
 
     # Deprecated but test until we move support for explicit_response
-    assert extract_response_model_from_signature(no_typehint, ExampleModel) == (
-        ExampleModel,
-        ResponseModelType.SINGLE_RESPONSE,
-    )
-
-    with pytest.raises(ValueError):
-        extract_response_model_from_signature(
-            no_typehint,
+    with pytest.warns(DeprecationWarning):
+        assert (
+            extract_response_model_from_signature(no_typehint, ExampleModel)
+            == (
+                ExampleModel,
+                ResponseModelType.SINGLE_RESPONSE,
+            )
+            == (ExampleModel, ResponseModelType.SINGLE_RESPONSE)
         )
+
+    with pytest.warns(DeprecationWarning):
+        assert extract_response_model_from_signature(
+            no_typehint,
+        ) == (None, ResponseModelType.SINGLE_RESPONSE)

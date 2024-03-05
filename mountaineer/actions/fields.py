@@ -1,6 +1,7 @@
 import collections
 import collections.abc
 import typing
+import warnings
 from enum import Enum
 from inspect import (
     isclass,
@@ -24,7 +25,6 @@ from pydantic.fields import FieldInfo
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.exceptions import APIException
-from mountaineer.logging import LOGGER
 from mountaineer.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
 
 
@@ -274,18 +274,30 @@ def extract_response_model_from_signature(
 ):
     typehinted_response = func.__annotations__.get("return", MountaineerUnsetValue())
     if explicit_response:
-        LOGGER.warning(
-            "The response_model argument is deprecated. Instead, just typehint your function explicitly:\n"
-            "def my_function() -> MyResponseModel:"
+        warnings.warn(
+            (
+                "The response_model argument is deprecated. Instead, just typehint your function explicitly:\n"
+                "def my_function() -> MyResponseModel:"
+            ),
+            DeprecationWarning,
+            stacklevel=2,
         )
 
     if explicit_response:
         return explicit_response, ResponseModelType.SINGLE_RESPONSE
 
     if isinstance(typehinted_response, MountaineerUnsetValue):
-        raise ValueError(
-            f"You must typehint the return value of your `{func}` with either a BaseModel or None."
+        # This will be converted into a ValueError in the future
+        # For now, backwards compatible with the old markup
+        warnings.warn(
+            (
+                f"You must typehint the return value of your `{func}` with either a BaseModel or None.\n"
+                "We will stop inferring `None` as a response model in the future."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
         )
+        return None, ResponseModelType.SINGLE_RESPONSE
 
     return extract_model_from_decorated_types(typehinted_response)
 
