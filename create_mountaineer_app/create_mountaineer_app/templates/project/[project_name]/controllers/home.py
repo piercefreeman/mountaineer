@@ -34,7 +34,7 @@ class HomeController(ControllerBase):
     async def new_detail(
         self,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
-    ):
+    ) -> None:
         obj = models.DetailItem(description="Untitled Item")
         session.add(obj)
         await session.commit()
