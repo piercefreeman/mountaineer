@@ -17,6 +17,7 @@ from typing import (
     get_origin,
 )
 
+import starlette.responses
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from inflection import camelize
@@ -328,6 +329,10 @@ def extract_model_from_decorated_types(
         raise ValueError(
             f"Invalid response_model typehint for iterator action: {type_hint} {origin_type} {args}"
         )
+    elif isclass(type_hint) and issubclass(type_hint, starlette.responses.Response):
+        # No pydantic model to include in the API schema, instead the endpoint
+        # will just return the raw value
+        return None, ResponseModelType.SINGLE_RESPONSE
 
     raise ValueError(
         f"Invalid response_model typehint for standard action: {type_hint}"

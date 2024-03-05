@@ -1,6 +1,7 @@
 from typing import AsyncIterator, Iterator, Optional, Type
 
 import pytest
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
@@ -161,6 +162,9 @@ def test_extract_response_model_from_signature():
     def no_typehint(self):
         pass
 
+    def explicit_starlette_response(self) -> JSONResponse:
+        return JSONResponse(content=dict(value="example"))
+
     # Regular payload return functions
     assert extract_response_model_from_signature(
         none_typehint,
@@ -180,6 +184,10 @@ def test_extract_response_model_from_signature():
     assert extract_response_model_from_signature(
         example_async_iterator_typehint,
     ) == (ExampleModel, ResponseModelType.ITERATOR_RESPONSE)
+
+    assert extract_response_model_from_signature(
+        explicit_starlette_response,
+    ) == (None, ResponseModelType.SINGLE_RESPONSE)
 
     # Deprecated but test until we move support for explicit_response
     with pytest.warns(DeprecationWarning):
