@@ -97,10 +97,12 @@ class ClientBuilder:
 
             # Convert the render model
             render_metadata = get_function_metadata(controller.render)
-            for schema_name, component in self.openapi_schema_converter.convert(
-                render_metadata.get_render_model()
-            ).items():
-                schemas[schema_name] = component
+            render_model = render_metadata.get_render_model()
+            if render_model:
+                for schema_name, component in self.openapi_schema_converter.convert(
+                    render_model
+                ).items():
+                    schemas[schema_name] = component
 
             # Convert all the other models defined in sideeffect routes
             for schema_name, component in base.components.schemas.items():
@@ -492,7 +494,14 @@ class ClientBuilder:
         :returns ReturnModel
         """
         render_metadata = get_function_metadata(controller.render)
-        return camelize(render_metadata.get_render_model().__name__)
+        render_model = render_metadata.get_render_model()
+
+        if not render_model:
+            raise ValueError(
+                f"Controller {controller} does not have a render model defined"
+            )
+
+        return camelize(render_model.__name__)
 
     def openapi_from_controller(self, controller_definition: ControllerDefinition):
         """

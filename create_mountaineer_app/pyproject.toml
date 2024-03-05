@@ -25,6 +25,7 @@ pytest-asyncio = "^0.23.4"
 pytest-xdist = "^3.5.0"
 psycopg2 = "^2.9.9"
 types-psycopg2 = "^2.9.21.20240218"
+pyright = "^1.1.352"
 
 [build-system]
 requires = ["poetry-core"]

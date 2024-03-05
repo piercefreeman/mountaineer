@@ -105,10 +105,10 @@ def test_collapse_repeated_literals(
     "url_parameter, expected_ts_key, expected_ts_type",
     [
         (
-            URLParameterDefinition(
+            URLParameterDefinition.from_meta(
                 name="test",
                 required=True,
-                schema_ref=OpenAPIProperty(
+                schema_ref=OpenAPIProperty.from_meta(
                     format="uuid",
                     variable_type=OpenAPISchemaType.STRING,
                 ),
@@ -125,10 +125,10 @@ def test_collapse_repeated_literals(
                     anyOf=[
                         OpenAPIProperty(
                             format="uuid",
-                            variable_type=OpenAPISchemaType.STRING,
+                            variable_type=OpenAPISchemaType.STRING,  # pyright: ignore
                         ),
                         OpenAPIProperty(
-                            variable_type=OpenAPISchemaType.INTEGER,
+                            variable_type=OpenAPISchemaType.INTEGER,  # pyright: ignore
                         ),
                     ]
                 ),

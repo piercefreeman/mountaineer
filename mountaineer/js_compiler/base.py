@@ -20,9 +20,9 @@ class ClientBuilderBase(ABC):
     """
 
     @abstractmethod
-    def handle_file(
+    async def handle_file(
         self,
-        current_path: ManagedViewPath,
+        file_path: ManagedViewPath,
         controller: ControllerBase | None,
         metadata: ClientBundleMetadata,
     ) -> None | Coroutine[Any, Any, None]:

@@ -13,15 +13,17 @@ from typing import (
 
 from pydantic import BaseModel
 from pydantic._internal._model_construction import ModelMetaclass
-from sqlmodel.main import (
-    Column,
-    FieldInfo,
-    NoArgAnyCallable,
-    Undefined,
-    UndefinedType,
+from pydantic_core import PydanticUndefined as Undefined
+from pydantic_core import PydanticUndefinedType as UndefinedType
+from sqlalchemy import Column
+from sqlmodel._compat import (
     finish_init,
     post_init_field_info,
     sqlmodel_init,
+)
+from sqlmodel.main import (
+    FieldInfo,
+    NoArgAnyCallable,
 )
 from sqlmodel.main import (
     SQLModel as SQLModelBase,

@@ -195,8 +195,8 @@ class ASTReducer(ast.NodeTransformer):
             isinstance(stmt.value, ast.Call)
             and hasattr(stmt.value.func, "id")
             and (
-                stmt.value.func.id == "dict"
-                or stmt.value.func.id in self.known_pydantic_models
+                stmt.value.func.id == "dict"  # type: ignore
+                or stmt.value.func.id in self.known_pydantic_models  # type: ignore
             )
         ):
             for key, value in zip(
