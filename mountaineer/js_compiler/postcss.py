@@ -24,19 +24,18 @@ class PostCSSBundler(ClientBuilderBase):
 
     async def handle_file(
         self,
-        current_path: ManagedViewPath,
+        file_path: ManagedViewPath,
         controller: ControllerBase | None,
         metadata: ClientBundleMetadata,
     ):
         # If this is a CSS file we try to process it
-        if current_path.suffix not in {".css", ".scss"}:
+        if file_path.suffix not in {".css", ".scss"}:
             return
 
-        root_path = current_path.get_package_root_link()
-        built_css = await self.process_css(current_path)
+        root_path = file_path.get_package_root_link()
+        built_css = await self.process_css(file_path)
         (
-            root_path.get_managed_static_dir()
-            / self.get_style_output_name(current_path)
+            root_path.get_managed_static_dir() / self.get_style_output_name(file_path)
         ).write_text(built_css)
 
     async def process_css(self, css_path: ManagedViewPath) -> str:

@@ -2,7 +2,7 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 
 from mountaineer.database.config import DatabaseConfig
-from mountaineer.dependencies import CoreDependencies, DependenciesBase
+from mountaineer.dependencies import CoreDependencies
 
 
 def get_db(
@@ -22,13 +22,3 @@ async def get_db_session(
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     async with session_maker() as session:
         yield session
-
-
-class DatabaseDependencies(DependenciesBase):
-    """
-    Dependencies for use in API endpoint routes.
-
-    """
-
-    get_db = get_db
-    get_db_session = get_db_session

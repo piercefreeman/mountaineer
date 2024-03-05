@@ -59,15 +59,17 @@ def test_convert():
 
 EXAMPLE_REQUEST_BODY = ContentBodyDefinition(
     content_type="application/json",
-    content_schema=ContentDefinition(
-        schema_ref=ContentDefinition.Reference(ref="#/components/schemas/ExampleModel")
+    content_schema=ContentDefinition.from_meta(
+        schema_ref=ContentDefinition.Reference.from_meta(
+            ref="#/components/schemas/ExampleModel"
+        )
     ),
 )
 
 EXAMPLE_RESPONSE_200 = ContentBodyDefinition(
     content_type="application/json",
-    content_schema=ContentDefinition(
-        schema_ref=ContentDefinition.Reference(
+    content_schema=ContentDefinition.from_meta(
+        schema_ref=ContentDefinition.Reference.from_meta(
             ref="#/components/schemas/ExampleResponseModel"
         )
     ),
@@ -75,8 +77,8 @@ EXAMPLE_RESPONSE_200 = ContentBodyDefinition(
 
 EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
     content_type="application/json",
-    content_schema=ContentDefinition(
-        schema_ref=ContentDefinition.Reference(
+    content_schema=ContentDefinition.from_meta(
+        schema_ref=ContentDefinition.Reference.from_meta(
             ref="#/components/schemas/HTTPValidationError"
         )
     ),
@@ -136,9 +138,9 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                 },
                 parameters=[
                     # All path parameters are required
-                    URLParameterDefinition(
+                    URLParameterDefinition.from_meta(
                         name="item_id",
-                        schema_ref=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty.from_meta(
                             title="",
                             variable_type=OpenAPISchemaType.STRING,
                         ),
@@ -146,9 +148,9 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         required=True,
                     ),
                     # Required query parameter
-                    URLParameterDefinition(
+                    URLParameterDefinition.from_meta(
                         name="query_param_required_id",
-                        schema_ref=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty.from_meta(
                             title="",
                             variable_type=OpenAPISchemaType.STRING,
                         ),
@@ -156,9 +158,9 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         required=True,
                     ),
                     # Optional query parameter
-                    URLParameterDefinition(
+                    URLParameterDefinition.from_meta(
                         name="query_param_optional_id",
-                        schema_ref=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty.from_meta(
                             title="",
                             variable_type=OpenAPISchemaType.STRING,
                         ),

@@ -13,15 +13,17 @@ from typing import (
 
 from pydantic import BaseModel
 from pydantic._internal._model_construction import ModelMetaclass
-from sqlmodel.main import (
-    Column,
-    FieldInfo,
-    NoArgAnyCallable,
-    Undefined,
-    UndefinedType,
+from pydantic_core import PydanticUndefined as Undefined
+from pydantic_core import PydanticUndefinedType as UndefinedType
+from sqlalchemy import Column
+from sqlmodel._compat import (
     finish_init,
     post_init_field_info,
     sqlmodel_init,
+)
+from sqlmodel.main import (
+    FieldInfo,
+    NoArgAnyCallable,
 )
 from sqlmodel.main import (
     SQLModel as SQLModelBase,
@@ -29,6 +31,7 @@ from sqlmodel.main import (
 from sqlmodel.main import (
     SQLModelMetaclass as SQLModelMetaclassBase,
 )
+from typing_extensions import dataclass_transform
 
 
 def Field(
@@ -123,6 +126,7 @@ def Field(
     return field_info
 
 
+@dataclass_transform(kw_only_default=True, field_specifiers=(Field, FieldInfo))
 class GenericSQLModelMetaclass(SQLModelMetaclassBase):
     def __new__(
         cls,

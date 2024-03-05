@@ -3,7 +3,7 @@ from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import time
-from typing import Any, Callable, Coroutine, Iterable, Mapping
+from typing import Any, Callable, Coroutine, Generic, Iterable, Mapping, ParamSpec
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -26,8 +26,10 @@ from mountaineer.render import (
 )
 from mountaineer.ssr import V8RuntimeError, render_ssr
 
+RenderInput = ParamSpec("RenderInput")
 
-class ControllerBase(ABC):
+
+class ControllerBase(ABC, Generic[RenderInput]):
     url: str
     # Typically, view paths should be a relative path to the local
     # Paths are only used if you need to specify an absolute path to another
@@ -58,7 +60,7 @@ class ControllerBase(ABC):
 
     @abstractmethod
     def render(
-        self, *args, **kwargs
+        self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
     ) -> RenderBase | None | Coroutine[Any, Any, RenderBase]:
         """
         Client implementations must override render() to define the data that will

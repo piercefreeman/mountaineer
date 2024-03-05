@@ -5,6 +5,8 @@ from typing import Callable
 from fastapi import Request
 from fastapi.dependencies.utils import get_dependant, solve_dependencies
 
+from mountaineer.logging import LOGGER
+
 
 class DependenciesBaseMeta(type):
     """
@@ -23,6 +25,9 @@ class DependenciesBaseMeta(type):
     """
 
     def __new__(cls, name, bases, namespace, **kwargs):
+        # Flag this as deprecated
+        LOGGER.warning("DependenciesBase is deprecated")
+
         for attr_name, attr_value in namespace.items():
             if isinstance(attr_value, staticmethod):
                 raise TypeError(
