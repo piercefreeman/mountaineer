@@ -47,8 +47,10 @@ class ExampleRenderModel(RenderBase):
     value_a: str
     value_b: str
 
+
 class ExamplePassthroughModel(BaseModel):
     status: str
+
 
 @pytest.mark.asyncio
 async def test_can_call_passthrough():
@@ -76,7 +78,9 @@ async def test_can_call_passthrough():
             return ExamplePassthroughModel(status="success")
 
         @passthrough
-        async def call_passthrough_async(self, payload: dict) -> ExamplePassthroughModel:
+        async def call_passthrough_async(
+            self, payload: dict
+        ) -> ExamplePassthroughModel:
             self.counter += 1
             return ExamplePassthroughModel(status="success")
 
@@ -147,9 +151,9 @@ def test_disallows_invalid_iterables():
 
         class ExampleController2(ControllerBase):
             @passthrough
-            async def no_response_type_iterable(self) -> None: # type: ignore
-                yield ExampleModel(value="Hello") # type: ignore
-                yield ExampleModel(value="World") # type: ignore
+            async def no_response_type_iterable(self) -> None:  # type: ignore
+                yield ExampleModel(value="Hello")  # type: ignore
+                yield ExampleModel(value="World")  # type: ignore
 
 
 @pytest.mark.asyncio

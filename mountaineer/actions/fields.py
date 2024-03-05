@@ -283,7 +283,9 @@ def extract_response_model_from_signature(
         return explicit_response, ResponseModelType.SINGLE_RESPONSE
 
     if isinstance(typehinted_response, MountaineerUnsetValue):
-        raise ValueError(f"You must typehint the return value of your `{func}` with either a BaseModel or None.")
+        raise ValueError(
+            f"You must typehint the return value of your `{func}` with either a BaseModel or None."
+        )
 
     return extract_model_from_decorated_types(typehinted_response)
 

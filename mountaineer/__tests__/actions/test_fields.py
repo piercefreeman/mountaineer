@@ -9,7 +9,7 @@ from mountaineer.actions.fields import (
     FunctionMetadata,
     ResponseModelType,
     annotation_is_metadata,
-    extract_model_from_decorated_types,
+    extract_response_model_from_signature,
     fuse_metadata_to_response_typehint,
 )
 from mountaineer.render import Metadata, RenderBase
@@ -142,25 +142,52 @@ class ExampleModel(BaseModel):
     value: str
 
 
-@pytest.mark.parametrize(
-    "input_type, expected_model, expected_model_type",
-    [
-        (ExampleModel, ExampleModel, ResponseModelType.SINGLE_RESPONSE),
-        (Iterator[ExampleModel], ExampleModel, ResponseModelType.ITERATOR_RESPONSE),
-        (
-            AsyncIterator[ExampleModel],
-            ExampleModel,
-            ResponseModelType.ITERATOR_RESPONSE,
-        ),
-        (None, None, ResponseModelType.SINGLE_RESPONSE),
-    ],
-)
-def test_extract_model_from_decorated_types(
-    input_type: type,
-    expected_model: BaseModel | None,
-    expected_model_type: ResponseModelType,
-):
-    assert extract_model_from_decorated_types(input_type) == (
-        expected_model,
-        expected_model_type,
+def test_extract_response_model_from_signature():
+    def none_typehint() -> None:
+        pass
+
+    def example_typehint(self) -> ExampleModel:
+        return ExampleModel(value="example")
+
+    async def example_async_typehint(self) -> ExampleModel:
+        return ExampleModel(value="example")
+
+    def example_iterator_typehint(self) -> Iterator[ExampleModel]:
+        yield ExampleModel(value="example")
+
+    async def example_async_iterator_typehint(self) -> AsyncIterator[ExampleModel]:
+        yield ExampleModel(value="example")
+
+    def no_typehint(self):
+        pass
+
+    # Regular payload return functions
+    assert extract_response_model_from_signature(
+        none_typehint,
+    ) == (None, ResponseModelType.SINGLE_RESPONSE)
+    assert extract_response_model_from_signature(
+        example_typehint,
+    ) == (ExampleModel, ResponseModelType.SINGLE_RESPONSE)
+    assert extract_response_model_from_signature(
+        example_async_typehint,
+    ) == (ExampleModel, ResponseModelType.SINGLE_RESPONSE)
+
+    # Iterator return functions
+    assert extract_response_model_from_signature(
+        example_iterator_typehint,
+    ) == (ExampleModel, ResponseModelType.ITERATOR_RESPONSE)
+
+    assert extract_response_model_from_signature(
+        example_async_iterator_typehint,
+    ) == (ExampleModel, ResponseModelType.ITERATOR_RESPONSE)
+
+    # Deprecated but test until we move support for explicit_response
+    assert extract_response_model_from_signature(no_typehint, ExampleModel) == (
+        ExampleModel,
+        ResponseModelType.SINGLE_RESPONSE,
     )
+
+    with pytest.raises(ValueError):
+        extract_response_model_from_signature(
+            no_typehint,
+        )
