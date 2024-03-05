@@ -43,7 +43,9 @@ class FunctionMetadata(BaseModel):
 
     # Render type, defines the data model that is returned by the render typehint
     # If "None", the user has explicitly stated that no render model is returned
-    render_model: Type[RenderBase] | MountaineerUnsetValue = MountaineerUnsetValue()
+    render_model: Type[
+        RenderBase
+    ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
 
     # Inserted by the render decorator
     url: str | MountaineerUnsetValue = MountaineerUnsetValue()
@@ -65,7 +67,7 @@ class FunctionMetadata(BaseModel):
             raise ValueError("Reload states not set")
         return self.reload_states
 
-    def get_render_model(self) -> Type[RenderBase]:
+    def get_render_model(self) -> Type[RenderBase] | None:
         if isinstance(self.render_model, MountaineerUnsetValue):
             raise ValueError("Render model not set")
         return self.render_model or RenderNull
@@ -138,7 +140,7 @@ def annotation_is_metadata(annotation: type | None):
 
 def fuse_metadata_to_response_typehint(
     metadata: FunctionMetadata,
-    render_model: Type[RenderBase],
+    render_model: Type[RenderBase] | None,
 ) -> Type[BaseModel]:
     """
     Functions can either be marked up with side effects, explicit responses, or both.
@@ -152,7 +154,7 @@ def fuse_metadata_to_response_typehint(
     ):
         passthrough_fields = {**metadata.passthrough_model.model_fields}
 
-    if metadata.action_type == FunctionActionType.SIDEEFFECT:
+    if metadata.action_type == FunctionActionType.SIDEEFFECT and render_model:
         # By default, reload all fields
         sideeffect_fields = {**render_model.model_fields}
 

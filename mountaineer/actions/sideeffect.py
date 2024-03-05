@@ -41,7 +41,7 @@ def sideeffect(func: Callable) -> Callable:
     ...
 
 
-def sideeffect(*args, **kwargs):
+def sideeffect(*args, **kwargs):  # type: ignore
     """
     Mark a function as causing a sideeffect to the data. This will force a reload of the full (or partial) server state
     and sync these changes down to the client page.

@@ -71,12 +71,43 @@ class OpenAPIProperty(BaseModel):
 
     # Validator to ensure that one of the optional values is set
     @model_validator(mode="after")
-    def check_provided_value(self) -> "OpenAPIProperty":
+    def check_provided_value(self: "OpenAPIProperty") -> "OpenAPIProperty":
         if not any([self.variable_type, self.ref, self.items, self.anyOf, self.enum]):
             raise ValueError(
                 "One of variable_type, $ref, anyOf, enum, or items must be set"
             )
         return self
+
+    @classmethod
+    def from_meta(
+        cls,
+        title: str | None = None,
+        description: str | None = None,
+        properties: dict[str, "OpenAPIProperty"] = {},
+        additional_properties: Optional["OpenAPIProperty"] = None,
+        required: list[str] = [],
+        format: str | None = None,
+        variable_type: OpenAPISchemaType | None = None,
+        ref: str | None = None,
+        items: Optional["OpenAPIProperty"] = None,
+        enum: list[Any] | None = None,
+        anyOf: list["OpenAPIProperty"] = [],
+    ) -> "OpenAPIProperty":
+        return cls.model_validate(
+            {
+                "title": title,
+                "description": description,
+                "properties": properties,
+                "additionalProperties": additional_properties,
+                "required": required,
+                "format": format,
+                "type": variable_type,
+                "$ref": ref,
+                "items": items,
+                "enum": enum,
+                "anyOf": anyOf,
+            }
+        )
 
     def __hash__(self):
         # Normally we would make use of a frozen BaseClass to enable hashing, but since
@@ -99,9 +130,19 @@ class ContentDefinition(BaseModel):
 
         model_config = {"populate_by_name": True}
 
+        @classmethod
+        def from_meta(cls, ref: str) -> "ContentDefinition.Reference":
+            # Workaround to pyright overriding the instance method with
+            # the alias, but we can't create attributes with these dynamic types
+            return cls.model_validate({"$ref": ref})
+
     schema_ref: Reference = Field(alias="schema")
 
     model_config = {"populate_by_name": True}
+
+    @classmethod
+    def from_meta(cls, schema_ref: Reference) -> "ContentDefinition":
+        return cls.model_validate({"schema": schema_ref})
 
 
 class ContentBodyDefinition(BaseModel):
@@ -147,6 +188,23 @@ class URLParameterDefinition(BaseModel):
     required: bool
 
     model_config = {"populate_by_name": True}
+
+    @classmethod
+    def from_meta(
+        cls,
+        name: str,
+        in_location: ParameterLocationType,
+        schema_ref: OpenAPIProperty,
+        required: bool,
+    ) -> "URLParameterDefinition":
+        return cls.model_validate(
+            {
+                "name": name,
+                "in": in_location,
+                "schema": schema_ref,
+                "required": required,
+            }
+        )
 
 
 class ActionDefinition(BaseModel):

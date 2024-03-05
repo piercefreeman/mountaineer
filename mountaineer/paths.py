@@ -1,3 +1,4 @@
+import sys
 from os import PathLike
 from os.path import relpath
 from pathlib import Path
@@ -146,19 +147,34 @@ class ManagedViewPath(type(Path())):  # type: ignore
         path.package_root_link = self.package_root_link
         return path
 
-    def rglob(self, pattern: str):
-        # Override the rglob method to return a ManagedViewPath
-        for path in super().rglob(pattern):
-            yield self._inherit_root_link(path)
+    if sys.version_info >= (3, 12):
 
-    def resolve(self):
+        def rglob(self, pattern: str, *, case_sensitive: bool | None = None):
+            for path in super().rglob(pattern, case_sensitive=case_sensitive):
+                yield self._inherit_root_link(path)
+    else:
+
+        def rglob(self, pattern: str):
+            # Override the rglob method to return a ManagedViewPath
+            for path in super().rglob(pattern):
+                yield self._inherit_root_link(path)
+
+    def resolve(self, strict=False):
         return self._inherit_root_link(super().resolve())
 
     def absolute(self):
         return self._inherit_root_link(super().absolute())
 
-    def relative_to(self, *other):
-        return self._inherit_root_link(super().relative_to(*other))
+    if sys.version_info >= (3, 12):
+
+        def relative_to(self, __other, *_deprecated, walk_up: bool = False):
+            return self._inherit_root_link(
+                super().relative_to(__other, *_deprecated, walk_up=walk_up)
+            )
+    else:
+
+        def relative_to(self, *other):
+            return self._inherit_root_link(super().relative_to(*other))
 
     def with_name(self, name):
         return self._inherit_root_link(super().with_name(name))
@@ -171,7 +187,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
         return self == self.root_link
 
     @property
-    def parent(self):
+    def parent(self):  # type: ignore
         return self._inherit_root_link(super().parent)
 
     def _inherit_root_link(self, new_path: Path) -> "ManagedViewPath":

@@ -246,7 +246,7 @@ class PackageWatchdog:
         dist = importlib.metadata.distribution(self.main_package)
         package_path = self.resolve_package_path(dist)
 
-        lock_path = (Path(package_path) / ".watchdog.lock").absolute()
+        lock_path = (Path(str(package_path)) / ".watchdog.lock").absolute()
         if lock_path.exists():
             raise WatchdogLockError(lock_path=lock_path)
 

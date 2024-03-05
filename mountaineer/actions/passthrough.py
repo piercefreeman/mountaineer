@@ -21,6 +21,8 @@ from typing import (
     get_origin,
     overload,
 )
+from inspect import isawaitable
+from typing import TYPE_CHECKING, Callable, ParamSpec, Type, overload
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -35,6 +37,8 @@ from mountaineer.exceptions import APIException
 
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
+
+PassthroughInputs = ParamSpec("PassthroughInputs")
 
 
 class ResponseModelType(Enum):
@@ -61,7 +65,7 @@ def passthrough(func: Callable) -> Callable:
     ...
 
 
-def passthrough(*args, **kwargs):
+def passthrough(*args, **kwargs):  # type: ignore
     """
     By default, we mask out function return values to avoid leaking any unintended data to client applications. This
     decorator marks a function .

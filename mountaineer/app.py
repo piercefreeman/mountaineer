@@ -24,7 +24,7 @@ from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.js_compiler.bundler import JavascriptBundler
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
-from mountaineer.render import Metadata
+from mountaineer.render import Metadata, RenderBase
 
 
 class ControllerDefinition(BaseModel):
@@ -161,7 +161,7 @@ class AppController:
         # Validate the return model is actually a RenderBase or explicitly marked up as None
         if not (
             return_model is None
-            or (isclass(return_model) and issubclass(return_model, BaseModel))
+            or (isclass(return_model) and issubclass(return_model, RenderBase))
         ):
             raise ValueError(
                 "Controller render() return type annotation is not a RenderBase"

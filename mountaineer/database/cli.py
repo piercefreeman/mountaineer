@@ -6,8 +6,7 @@ from fastapi import Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from mountaineer.database.dependencies import DatabaseDependencies
-from mountaineer.database.sqlmodel import SQLModel
+from mountaineer.database import DatabaseDependencies, SQLModel
 from mountaineer.dependencies import get_function_dependencies
 
 
