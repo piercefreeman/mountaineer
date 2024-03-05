@@ -37,6 +37,9 @@ exclude = ".*/templates/.*"
 [tool.ruff]
 exclude = ["**/templates/**"]
 
+[tool.pyright]
+exclude = ["**/templates"]
+
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
 # Disable print statements

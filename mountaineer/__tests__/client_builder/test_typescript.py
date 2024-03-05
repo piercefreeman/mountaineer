@@ -118,17 +118,17 @@ def test_collapse_repeated_literals(
             "string",
         ),
         (
-            URLParameterDefinition(
+            URLParameterDefinition.from_meta(
                 name="test",
                 required=True,
                 schema_ref=OpenAPIProperty(
                     anyOf=[
-                        OpenAPIProperty(
+                        OpenAPIProperty.from_meta(
                             format="uuid",
-                            variable_type=OpenAPISchemaType.STRING,  # pyright: ignore
+                            variable_type=OpenAPISchemaType.STRING,
                         ),
-                        OpenAPIProperty(
-                            variable_type=OpenAPISchemaType.INTEGER,  # pyright: ignore
+                        OpenAPIProperty.from_meta(
+                            variable_type=OpenAPISchemaType.INTEGER,
                         ),
                     ]
                 ),

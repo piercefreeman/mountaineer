@@ -9,7 +9,7 @@ def runserver():
         webservice="ci_webapp.main:app",
         webcontroller="ci_webapp.app:controller",
         port=5006,
-        subscribe_to_fizl=True,
+        subscribe_to_mountaineer=True,
     )
 
 
@@ -18,5 +18,5 @@ def watch():
     handle_watch(
         package="ci_webapp",
         webcontroller="ci_webapp.app:controller",
-        subscribe_to_fizl=True,
+        subscribe_to_mountaineer=True,
     )
