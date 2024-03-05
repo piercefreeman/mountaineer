@@ -20,6 +20,9 @@ from mountaineer.render import (
     RenderBase as RenderBase,
 )
 from mountaineer.render import (
+    ScriptAttribute as ScriptAttribute,
+)
+from mountaineer.render import (
     ThemeColorMeta as ThemeColorMeta,
 )
 from mountaineer.render import (

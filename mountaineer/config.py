@@ -1,9 +1,12 @@
 from contextlib import contextmanager
 
 from pydantic._internal._model_construction import ModelMetaclass
+from pydantic.fields import Field
 from pydantic_settings import BaseSettings
+from typing_extensions import dataclass_transform
 
 
+@dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ConfigMeta(ModelMetaclass):
     def __call__(cls, *args, **kwargs):
         instance = super().__call__(*args, **kwargs)

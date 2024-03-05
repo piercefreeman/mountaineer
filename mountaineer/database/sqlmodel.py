@@ -31,6 +31,7 @@ from sqlmodel.main import (
 from sqlmodel.main import (
     SQLModelMetaclass as SQLModelMetaclassBase,
 )
+from typing_extensions import dataclass_transform
 
 
 def Field(
@@ -125,6 +126,7 @@ def Field(
     return field_info
 
 
+@dataclass_transform(kw_only_default=True, field_specifiers=(Field, FieldInfo))
 class GenericSQLModelMetaclass(SQLModelMetaclassBase):
     def __new__(
         cls,
