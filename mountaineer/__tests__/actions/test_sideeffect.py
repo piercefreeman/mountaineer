@@ -37,11 +37,10 @@ def test_markup_sideeffect():
         # We declare as complicated a payload as @sideeffect supports so we can
         # see the full amount of metadata properties that are set
         @sideeffect(
-            response_model=ExamplePassthroughModel,
             reload=tuple([ExampleRenderModel.value_a]),
         )
-        def sideeffect_and_return_data(self):
-            return dict(
+        def sideeffect_and_return_data(self) -> ExamplePassthroughModel:
+            return ExamplePassthroughModel(
                 first_name="John",
             )
 
@@ -65,11 +64,11 @@ class ControllerCommon(ControllerBase):
         self.render_counts = 0
 
     @sideeffect
-    def call_sideeffect(self, payload: dict):
+    def call_sideeffect(self, payload: dict) -> None:
         self.counter += 1
 
     @sideeffect
-    async def call_sideeffect_async(self, payload: dict):
+    async def call_sideeffect_async(self, payload: dict) -> None:
         self.counter += 1
 
 
@@ -253,7 +252,7 @@ def test_limit_codepath_experimental(
             reload=(ExampleRenderModel.value_a,),
             experimental_render_reload=use_experimental,
         )
-        def call_sideeffect(self, payload: dict):
+        def call_sideeffect(self, payload: dict) -> None:
             pass
 
     # We need to load this test controller to an actual application runtime

@@ -284,7 +284,7 @@ class HomeController(ControllerBase):
         self,
         payload: NewTodoRequest,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
-    ):
+    ) -> None:
         new_todo =  TodoItem(description=payload.description)
         session.add(new_todo)
         await session.commit()

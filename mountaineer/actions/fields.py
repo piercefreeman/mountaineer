@@ -1,7 +1,20 @@
+import collections
+import collections.abc
+import typing
 from enum import Enum
-from inspect import ismethod
+from inspect import (
+    isclass,
+    ismethod,
+)
 from json import loads as json_loads
-from typing import Any, Callable, Optional, Type
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    Type,
+    get_args,
+    get_origin,
+)
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -11,6 +24,7 @@ from pydantic.fields import FieldInfo
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.exceptions import APIException
+from mountaineer.logging import LOGGER
 from mountaineer.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
 
 
@@ -18,6 +32,11 @@ class FunctionActionType(Enum):
     RENDER = "render"
     SIDEEFFECT = "sideeffect"
     PASSTHROUGH = "passthrough"
+
+
+class ResponseModelType(Enum):
+    SINGLE_RESPONSE = "SINGLE_RESPONSE"
+    ITERATOR_RESPONSE = "ITERATOR_RESPONSE"
 
 
 class FunctionMetadata(BaseModel):
@@ -247,4 +266,55 @@ def handle_explicit_responses(
             for key, value in response.headers.items()
             if key not in {"content-length", "content-type"}
         },
+    )
+
+
+def extract_response_model_from_signature(
+    func: Callable, explicit_response: Type[BaseModel] | None = None
+):
+    typehinted_response = func.__annotations__.get("return", MountaineerUnsetValue())
+    if explicit_response:
+        LOGGER.warning(
+            "The response_model argument is deprecated. Instead, just typehint your function explicitly:\n"
+            "def my_function() -> MyResponseModel:"
+        )
+
+    if explicit_response:
+        return explicit_response, ResponseModelType.SINGLE_RESPONSE
+
+    if isinstance(typehinted_response, MountaineerUnsetValue):
+        raise ValueError(f"You must typehint the return value of your `{func}` with either a BaseModel or None.")
+
+    return extract_model_from_decorated_types(typehinted_response)
+
+
+def extract_model_from_decorated_types(
+    type_hint: Any,
+) -> tuple[Type[BaseModel] | None, ResponseModelType]:
+    """
+    Support response_model typehints like Iterator[Type[BaseModel]] and AsyncIterator[Type[BaseModel]].
+
+    """
+    origin_type = get_origin(type_hint)
+
+    if type_hint is None:
+        return None, ResponseModelType.SINGLE_RESPONSE
+    elif isclass(type_hint) and issubclass(type_hint, BaseModel):
+        return type_hint, ResponseModelType.SINGLE_RESPONSE
+    elif origin_type in (
+        typing.Iterator,
+        typing.AsyncIterator,
+        # At runtime our types are sometimes instantiated as collections.abc objects
+        collections.abc.Iterator,
+        collections.abc.AsyncIterator,
+    ):
+        args = get_args(type_hint)
+        if args and issubclass(args[0], BaseModel):
+            return args[0], ResponseModelType.ITERATOR_RESPONSE
+        raise ValueError(
+            f"Invalid response_model typehint for iterator action: {type_hint} {origin_type} {args}"
+        )
+
+    raise ValueError(
+        f"Invalid response_model typehint for standard action: {type_hint}"
     )

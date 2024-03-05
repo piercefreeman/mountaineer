@@ -4,12 +4,10 @@ from typing import Any, AsyncIterator, Iterator, cast
 import pytest
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
-from pydantic.main import BaseModel
+from pydantic import BaseModel
 
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
 from mountaineer.actions.passthrough import (
-    ResponseModelType,
-    extract_model_from_decorated_types,
     passthrough,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
@@ -49,6 +47,8 @@ class ExampleRenderModel(RenderBase):
     value_a: str
     value_b: str
 
+class ExamplePassthroughModel(BaseModel):
+    status: str
 
 @pytest.mark.asyncio
 async def test_can_call_passthrough():
@@ -71,14 +71,14 @@ async def test_can_call_passthrough():
             )
 
         @passthrough
-        def call_passthrough(self, payload: dict):
+        def call_passthrough(self, payload: dict) -> ExamplePassthroughModel:
             self.counter += 1
-            return dict(status="success")
+            return ExamplePassthroughModel(status="success")
 
         @passthrough
-        async def call_passthrough_async(self, payload: dict):
+        async def call_passthrough_async(self, payload: dict) -> ExamplePassthroughModel:
             self.counter += 1
-            return dict(status="success")
+            return ExamplePassthroughModel(status="success")
 
     app = AppController(view_root=Path())
     controller = TestController()
@@ -94,9 +94,9 @@ async def test_can_call_passthrough():
 
     # The response payload should be the same both both sync and async endpoints
     expected_response = {
-        "passthrough": {
-            "status": "success",
-        }
+        "passthrough": ExamplePassthroughModel(
+            status="success",
+        )
     }
 
     assert return_value_sync == expected_response
@@ -118,34 +118,10 @@ class ExampleIterableController(ControllerBase):
     async def render(self) -> None:
         pass
 
-    @passthrough(response_model=AsyncIterator[ExampleModel])
-    async def get_data(self):
+    @passthrough
+    async def get_data(self) -> AsyncIterator[ExampleModel]:
         yield ExampleModel(value="Hello")
         yield ExampleModel(value="World")
-
-
-@pytest.mark.parametrize(
-    "input_type, expected_model, expected_model_type",
-    [
-        (ExampleModel, ExampleModel, ResponseModelType.SINGLE_RESPONSE),
-        (Iterator[ExampleModel], ExampleModel, ResponseModelType.ITERATOR_RESPONSE),
-        (
-            AsyncIterator[ExampleModel],
-            ExampleModel,
-            ResponseModelType.ITERATOR_RESPONSE,
-        ),
-        (None, None, ResponseModelType.SINGLE_RESPONSE),
-    ],
-)
-def test_extract_model_from_decorated_types(
-    input_type: type,
-    expected_model: BaseModel | None,
-    expected_model_type: ResponseModelType,
-):
-    assert extract_model_from_decorated_types(input_type) == (
-        expected_model,
-        expected_model_type,
-    )
 
 
 def test_extracts_iterable():
@@ -161,8 +137,8 @@ def test_disallows_invalid_iterables():
     with pytest.raises(ValueError, match="async generators are supported"):
 
         class ExampleController1(ControllerBase):
-            @passthrough(response_model=Iterator[ExampleModel])
-            def sync_iterable(self):
+            @passthrough
+            def sync_iterable(self) -> Iterator[ExampleModel]:
                 yield ExampleModel(value="Hello")
                 yield ExampleModel(value="World")
 
@@ -171,9 +147,9 @@ def test_disallows_invalid_iterables():
 
         class ExampleController2(ControllerBase):
             @passthrough
-            async def no_response_type_iterable(self):
-                yield ExampleModel(value="Hello")
-                yield ExampleModel(value="World")
+            async def no_response_type_iterable(self) -> None: # type: ignore
+                yield ExampleModel(value="Hello") # type: ignore
+                yield ExampleModel(value="World") # type: ignore
 
 
 @pytest.mark.asyncio

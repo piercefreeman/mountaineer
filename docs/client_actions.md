@@ -23,7 +23,7 @@ Side-effects work as if you have reloaded the page. They update the server state
 ```python
 # no parameters, refresh all state
 @sideeffect
-def increment_count(self):
+def increment_count(self) -> None:
     self.global_count += 1
 ```
 
@@ -32,16 +32,14 @@ def increment_count(self):
     # only push the updated current_count variable to the client
     reload=(CountRender.current_count,)
 )
-def increment_count(self):
+def increment_count(self) -> None:
     self.global_count += 1
 ```
 
 ```python
-@sideeffect(
-    # execute a sideeffect and then return additional data from a custom data model
-    response_model=CustomDataModel
-)
-def increment_count(self):
+# execute a sideeffect and then return additional data from a custom data model
+@sideeffect
+def increment_count(self) -> CustomDataModel:
     self.global_count += 1
     ...
     return CustomDataModel(...)
@@ -94,7 +92,7 @@ def render(
     reload=(ExampleRenderModel.value_a,),
     experimental_render_reload=use_experimental,
 )
-def call_sideeffect(self, payload: dict):
+def call_sideeffect(self, payload: dict) -> None:
     pass
 ```
 
@@ -122,16 +120,14 @@ Passthrough is conceptually much simpler, since it doesn't perform any server->c
 ```python
 # no parameters, no response model
 @passthrough
-def server_action(self):
+def server_action(self) -> None:
     pass
 ```
 
 ```python
-@passthrough(
-    # execute a passthrough and then return additional data from a custom data model
-    response_model=CustomDataModel
-)
-def server_action(self):
+# execute a passthrough and then return additional data from a custom data model
+@passthrough
+def server_action(self) -> CustomDataModel:
     pass
 ```
 
@@ -159,8 +155,8 @@ class MyMetadata(BaseModel):
 class MyController(ControllerBase):
     ...
 
-    @passthrough(response_model=AsyncIterator[MyMetadata])
-    async def stream_metadata(self):
+    @passthrough
+    async def stream_metadata(self) -> AsyncIterator[MyMetadata]:
         yield MyMetadata(state=1)
         await asyncio.sleep(10)
         yield MyMetadata(state=2)
@@ -215,7 +211,7 @@ async def increment_count(
     payload: IncrementCountRequest,
     query_param: int,
     user: User = Depends(get_current_user)
-):
+) -> None:
     self.global_count += payload.count
 ```
 

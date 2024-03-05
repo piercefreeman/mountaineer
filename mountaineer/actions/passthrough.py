@@ -1,34 +1,27 @@
-import collections
-import typing
-from enum import Enum
 from functools import wraps
 from inspect import (
     isasyncgen,
     isasyncgenfunction,
     isawaitable,
-    isclass,
     isgeneratorfunction,
 )
 from json import dumps as json_dumps
 from typing import (
     TYPE_CHECKING,
-    Any,
     AsyncIterator,
     Callable,
-    Iterator,
+    ParamSpec,
     Type,
-    get_args,
-    get_origin,
     overload,
 )
-from inspect import isawaitable
-from typing import TYPE_CHECKING, Callable, ParamSpec, Type, overload
 
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from mountaineer.actions.fields import (
     FunctionActionType,
+    ResponseModelType,
+    extract_response_model_from_signature,
     handle_explicit_responses,
     init_function_metadata,
 )
@@ -41,20 +34,10 @@ if TYPE_CHECKING:
 PassthroughInputs = ParamSpec("PassthroughInputs")
 
 
-class ResponseModelType(Enum):
-    SINGLE_RESPONSE = "SINGLE_RESPONSE"
-    ITERATOR_RESPONSE = "ITERATOR_RESPONSE"
-
-
 @overload
 def passthrough(
     *,
-    response_model: Type[BaseModel]
-    # When Iterator[BaseModel] is provided as a kwarg, it will appear as a Type[]
-    # argument when checked by mypy
-    | Type[Iterator[BaseModel]]
-    | Type[AsyncIterator[BaseModel]]
-    | None = None,
+    response_model: Type[BaseModel] | None = None,
     exception_models: list[Type[APIException]] | None = None,
 ) -> Callable[[Callable], Callable]:
     ...
@@ -76,15 +59,12 @@ def passthrough(*args, **kwargs):  # type: ignore
     """
 
     def decorator_with_args(
-        response_model: Type[BaseModel]
-        | Iterator[Type[BaseModel]]
-        | AsyncIterator[Type[BaseModel]]
-        | None,
+        response_model: Type[BaseModel] | None,
         exception_models: list[Type[APIException]] | None,
     ):
         def wrapper(func: Callable):
-            passthrough_model, response_type = extract_model_from_decorated_types(
-                response_model
+            passthrough_model, response_type = extract_response_model_from_signature(
+                func, response_model
             )
 
             # Ensure our function is valid as early as possible
@@ -138,38 +118,6 @@ def passthrough(*args, **kwargs):  # type: ignore
             response_model=kwargs.get("response_model"),
             exception_models=kwargs.get("exception_models"),
         )
-
-
-def extract_model_from_decorated_types(
-    type_hint: Any,
-) -> tuple[Type[BaseModel] | None, ResponseModelType]:
-    """
-    Support response_model typehints like Iterator[Type[BaseModel]] and AsyncIterator[Type[BaseModel]].
-
-    """
-    origin_type = get_origin(type_hint)
-
-    if type_hint is None:
-        return None, ResponseModelType.SINGLE_RESPONSE
-    elif isclass(type_hint) and issubclass(type_hint, BaseModel):
-        return type_hint, ResponseModelType.SINGLE_RESPONSE
-    elif origin_type in (
-        typing.Iterator,
-        typing.AsyncIterator,
-        # At runtime our types are sometimes instantiated as collections.abc objects
-        collections.abc.Iterator,
-        collections.abc.AsyncIterator,
-    ):
-        args = get_args(type_hint)
-        if args and issubclass(args[0], BaseModel):
-            return args[0], ResponseModelType.ITERATOR_RESPONSE
-        raise ValueError(
-            f"Invalid response_model typehint for iterator action: {type_hint} {origin_type} {args}"
-        )
-
-    raise ValueError(
-        f"Invalid response_model typehint for standard action: {type_hint}"
-    )
 
 
 def wrap_passthrough_generator(generator: AsyncIterator[BaseModel]):

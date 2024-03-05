@@ -1,4 +1,4 @@
-from typing import Optional, Type
+from typing import AsyncIterator, Iterator, Optional, Type
 
 import pytest
 from pydantic import BaseModel
@@ -7,7 +7,9 @@ from pydantic.fields import FieldInfo
 from mountaineer.actions.fields import (
     FunctionActionType,
     FunctionMetadata,
+    ResponseModelType,
     annotation_is_metadata,
+    extract_model_from_decorated_types,
     fuse_metadata_to_response_typehint,
 )
 from mountaineer.render import Metadata, RenderBase
@@ -134,3 +136,31 @@ def test_annotation_is_metadata():
     assert annotation_is_metadata(Optional[Metadata])  # type: ignore
     assert annotation_is_metadata(Metadata | None)  # type: ignore
     assert not annotation_is_metadata(str)
+
+
+class ExampleModel(BaseModel):
+    value: str
+
+
+@pytest.mark.parametrize(
+    "input_type, expected_model, expected_model_type",
+    [
+        (ExampleModel, ExampleModel, ResponseModelType.SINGLE_RESPONSE),
+        (Iterator[ExampleModel], ExampleModel, ResponseModelType.ITERATOR_RESPONSE),
+        (
+            AsyncIterator[ExampleModel],
+            ExampleModel,
+            ResponseModelType.ITERATOR_RESPONSE,
+        ),
+        (None, None, ResponseModelType.SINGLE_RESPONSE),
+    ],
+)
+def test_extract_model_from_decorated_types(
+    input_type: type,
+    expected_model: BaseModel | None,
+    expected_model_type: ResponseModelType,
+):
+    assert extract_model_from_decorated_types(input_type) == (
+        expected_model,
+        expected_model_type,
+    )
