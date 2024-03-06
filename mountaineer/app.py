@@ -21,7 +21,7 @@ from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.controller import ControllerBase
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
 from mountaineer.js_compiler.base import ClientBuilderBase
-from mountaineer.js_compiler.bundler import JavascriptBundler
+from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 from mountaineer.render import Metadata, RenderBase

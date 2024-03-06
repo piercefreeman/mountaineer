@@ -89,10 +89,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
         pass
 
     async def _generate_html(self, *args, global_metadata: Metadata | None, **kwargs):
-        if not self.ssr_path:
-            # Try to resolve the path dynamically now
-            raise ValueError("No SSR path set for this controller")
-
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
@@ -123,6 +119,39 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         header_str = "\n".join(self.build_header(self.merge_metadatas(metadatas)))
 
+        ssr_html = self._generate_ssr_html(server_data)
+
+        # Client-side react scripts that will hydrate the server side contents on load
+        server_data_json = server_data.model_dump_json()
+        optional_scripts = "\n".join(
+            [
+                f"<script src='/static/{script_name}'></script>"
+                for script_name in self.bundled_scripts
+            ]
+        )
+
+        page_contents = f"""
+        <html>
+        <head>
+        {header_str}
+        </head>
+        <body>
+        <div id="root">{ssr_html}</div>
+        <script type="text/javascript">
+        const SERVER_DATA = {server_data_json};
+        </script>
+        {optional_scripts}
+        </body>
+        </html>
+        """
+
+        return HTMLResponse(page_contents)
+
+    def _generate_ssr_html(self, server_data: RenderBase) -> str:
+        if not self.ssr_path:
+            # Try to resolve the path dynamically now
+            raise ValueError("No SSR path set for this controller")
+
         # Now that we've built the header, we can remove it from the server data
         # This makes our cache more efficient, since metadata changes don't affect
         # the actual page contents.
@@ -151,31 +180,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         else:
             LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
 
-        # Client-side react scripts that will hydrate the server side contents on load
-        server_data_json = server_data.model_dump_json()
-        optional_scripts = "\n".join(
-            [
-                f"<script src='/static/{script_name}'></script>"
-                for script_name in self.bundled_scripts
-            ]
-        )
-
-        page_contents = f"""
-        <html>
-        <head>
-        {header_str}
-        </head>
-        <body>
-        <div id="root">{ssr_html}</div>
-        <script type="text/javascript">
-        const SERVER_DATA = {server_data_json};
-        </script>
-        {optional_scripts}
-        </body>
-        </html>
-        """
-
-        return HTMLResponse(page_contents)
+        return ssr_html
 
     def build_header(self, metadata: Metadata) -> list[str]:
         """
