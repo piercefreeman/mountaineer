@@ -207,7 +207,15 @@ class AppController:
                 f"{controller_url_prefix}/{metadata.function_name.strip('/')}"
             )
 
-            controller_api.post(f"/{metadata.function_name}")(fn)
+            # Pass along relevant tags in the OpenAPI meta struct
+            # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
+            openapi_extra: dict[str, Any] = {}
+            if metadata.get_media_type():
+                openapi_extra["media_type"] = metadata.get_media_type()
+
+            controller_api.post(
+                f"/{metadata.function_name}", openapi_extra=openapi_extra
+            )(fn)
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__
         # But the application greedily copies all contents from the router when it's added via `include_router`, so this

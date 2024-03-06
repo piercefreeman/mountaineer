@@ -61,7 +61,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
     @abstractmethod
     def render(
         self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
-    ) -> RenderBase | None | Coroutine[Any, Any, RenderBase]:
+    ) -> RenderBase | None | Coroutine[Any, Any, RenderBase | None]:
         """
         Client implementations must override render() to define the data that will
         be pushed from the server to the client. This function must be typehinted with

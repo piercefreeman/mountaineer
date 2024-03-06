@@ -10,6 +10,8 @@ from starlette.routing import Match
 
 from mountaineer.actions.fields import (
     FunctionActionType,
+    ResponseModelType,
+    extract_response_model_from_signature,
     get_function_metadata,
     handle_explicit_responses,
     init_function_metadata,
@@ -66,6 +68,15 @@ def sideeffect(*args, **kwargs):  # type: ignore
         experimental_render_reload: bool = False,
     ):
         def wrapper(func: Callable):
+            passthrough_model, response_type = extract_response_model_from_signature(
+                func, response_model
+            )
+
+            if response_type == ResponseModelType.ITERATOR_RESPONSE:
+                raise ValueError(
+                    "Sideeffect functions cannot return an iterator response. Use a normal response model instead."
+                )
+
             original_sig = signature(func)
             function_needs_request = "request" in original_sig.parameters
 
@@ -147,8 +158,9 @@ def sideeffect(*args, **kwargs):  # type: ignore
 
             metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
             metadata.reload_states = reload
-            metadata.passthrough_model = response_model
+            metadata.passthrough_model = passthrough_model
             metadata.exception_models = exception_models
+            metadata.media_type = None  # Use the default json response type
             return inner
 
         return wrapper

@@ -55,7 +55,7 @@ def test_generate_openapi():
             pass
 
         @passthrough(exception_models=[ExampleException])
-        def test_exception_action(self):
+        def test_exception_action(self) -> None:
             pass
 
     app = AppController(view_root=Path(""))

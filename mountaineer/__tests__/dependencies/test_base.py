@@ -18,10 +18,12 @@ async def test_get_function_dependencies_recursive():
     def dep_3(dep_2: int = Depends(dep_2)):
         return dep_2 + 3
 
-    class ExampleDependencies(DependenciesBase):
-        dep_1: Callable
-        dep_2: Callable
-        dep_3: Callable
+    with pytest.warns(DeprecationWarning):
+
+        class ExampleDependencies(DependenciesBase):
+            dep_1: Callable
+            dep_2: Callable
+            dep_3: Callable
 
     ExampleDependencies.dep_1 = dep_1
     ExampleDependencies.dep_2 = dep_2
@@ -37,7 +39,7 @@ def test_incorrect_static_method():
     Ensure static methods will throw an error on init
 
     """
-    with pytest.raises(TypeError):
+    with pytest.warns(DeprecationWarning), pytest.raises(TypeError):
 
         class ExampleIncorrectDependency(DependenciesBase):
             @staticmethod

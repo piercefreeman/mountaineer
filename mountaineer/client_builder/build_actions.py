@@ -13,6 +13,7 @@ from mountaineer.client_builder.typescript import (
     get_typehint_for_parameter,
     python_payload_to_typescript,
 )
+from mountaineer.constants import STREAM_EVENT_TYPE
 
 
 class OpenAPIToTypescriptActionConverter:
@@ -81,8 +82,19 @@ class OpenAPIToTypescriptActionConverter:
 
         lines: list[str] = []
 
+        response_type_template: str
+        if action.media_type == STREAM_EVENT_TYPE:
+            response_type_template = (
+                "Promise<AsyncGenerator<{response_type}, void, unknown>>"
+            )
+        else:
+            response_type_template = "Promise<{response_type}>"
+        response_type = response_type_template.format(
+            response_type=" | ".join(response_types)
+        )
+
         lines.append(
-            f"export const {method_name} = ({parameters}): Promise<{' | '.join(response_types)}> => {{\n"
+            f"export const {method_name} = ({parameters}): {response_type} => {{\n"
             + "return __request(\n"
             + arguments
             + "\n);\n"
@@ -192,6 +204,10 @@ class OpenAPIToTypescriptActionConverter:
         for optional_parameter in ["errors", "path", "query"]:
             if not common_params[optional_parameter]:
                 del common_params[optional_parameter]
+
+        # Support for server-events
+        if action.media_type == STREAM_EVENT_TYPE:
+            common_params["eventStreamResponse"] = True
 
         return python_payload_to_typescript(common_params), response_types
 

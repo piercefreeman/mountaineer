@@ -53,7 +53,7 @@ class DetailController(ControllerBase):
         detail_id: int,
         payload: UpdateTextRequest,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
-    ):
+    ) -> None:
         detail_item = await session.get(models.DetailItem, detail_id)
         if not detail_item:
             raise NotFoundException()

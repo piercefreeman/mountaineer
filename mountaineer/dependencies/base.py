@@ -1,11 +1,10 @@
+import warnings
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from typing import Callable
 
 from fastapi import Request
 from fastapi.dependencies.utils import get_dependant, solve_dependencies
-
-from mountaineer.logging import LOGGER
 
 
 class DependenciesBaseMeta(type):
@@ -25,8 +24,16 @@ class DependenciesBaseMeta(type):
     """
 
     def __new__(cls, name, bases, namespace, **kwargs):
-        # Flag this as deprecated
-        LOGGER.warning("DependenciesBase is deprecated")
+        # Flag any child instances as deprecated but not the base model
+        if name != "DependenciesBase":
+            warnings.warn(
+                (
+                    "DependenciesBase is deprecated and will be removed in a future version.\n"
+                    "Import modules to form dependencies. See mountaineer.dependencies.core for an example."
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         for attr_name, attr_value in namespace.items():
             if isinstance(attr_value, staticmethod):

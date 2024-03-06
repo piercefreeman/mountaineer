@@ -116,7 +116,10 @@ define lint-validation-common
 	echo "Running lint validation for $(2)..."
 	@(cd $(1) && poetry run ruff format --check $(2))
 	@(cd $(1) && poetry run ruff check $(2))
+	echo "Running mypy for $(2)..."
 	@(cd $(1) && poetry run mypy $(2))
+	echo "Running pyright for $(2)..."
+	@(cd $(1) && poetry run pyright $(2))
 endef
 
 # Function to wait for PostgreSQL to be ready
