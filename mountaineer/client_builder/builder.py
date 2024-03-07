@@ -47,6 +47,9 @@ class ClientBuilder:
         self.live_reload_port = live_reload_port
 
     def build(self):
+        asyncio.run(self.async_build())
+
+    async def async_build(self):
         # Make sure our application definitions are in a valid state before we start
         # to build the client code
         self.validate_unique_paths()
@@ -63,7 +66,7 @@ class ClientBuilder:
         self.generate_link_aggregator()
         self.generate_view_servers()
 
-        self.build_javascript_chunks()
+        await self.build_javascript_chunks()
 
         # Update the cached paths attached to the app
         for controller_definition in self.app.controllers:
@@ -339,7 +342,7 @@ class ClientBuilder:
 
             (controller_model_path / "useServer.ts").write_text("\n\n".join(chunks))
 
-    def build_javascript_chunks(self, max_concurrency: int = 25):
+    async def build_javascript_chunks(self, max_concurrency: int = 25):
         """
         Build the final javascript chunks that will render the react documents. Each page will get
         one chunk associated with it. We suffix these files with the current md5 hash of the contents to
@@ -390,40 +393,37 @@ class ClientBuilder:
                 if isawaitable(result):
                     await result
 
-        async def parallel_build():
-            tasks = [
-                spawn_builder(controller_definition.controller)
-                for controller_definition in self.app.controllers
-            ] + [
-                # Optionally build static files the main views and plugin views
-                # This allows plugins to have custom handling for different file types
-                spawn_file_builder(path)
-                for view_root in self.get_all_root_views()
-                for path in view_root.rglob("*")
-            ]
-            results = await gather_with_concurrency(
-                tasks, n=max_concurrency, catch_exceptions=True
-            )
-
-            # Go through the exceptions, logging the build errors explicitly
-            has_build_error = False
-            for result in results:
-                if isinstance(result, Exception):
-                    has_build_error = True
-                    if isinstance(result, BuildProcessException):
-                        secho(f"Build error: {result}", fg="red")
-                    else:
-                        raise result
-
-            if has_build_error:
-                raise BuildProcessException(
-                    "Build process failed. Errors are listed in the console."
-                )
-
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
-        asyncio.run(parallel_build())
+        tasks = [
+            spawn_builder(controller_definition.controller)
+            for controller_definition in self.app.controllers
+        ] + [
+            # Optionally build static files the main views and plugin views
+            # This allows plugins to have custom handling for different file types
+            spawn_file_builder(path)
+            for view_root in self.get_all_root_views()
+            for path in view_root.rglob("*")
+        ]
+        results = await gather_with_concurrency(
+            tasks, n=max_concurrency, catch_exceptions=True
+        )
+
+        # Go through the exceptions, logging the build errors explicitly
+        has_build_error = False
+        for result in results:
+            if isinstance(result, Exception):
+                has_build_error = True
+                if isinstance(result, BuildProcessException):
+                    secho(f"Build error: {result}", fg="red")
+                else:
+                    raise result
+
+        if has_build_error:
+            raise BuildProcessException(
+                "Build process failed. Errors are listed in the console."
+            )
 
     def validate_unique_paths(self):
         """

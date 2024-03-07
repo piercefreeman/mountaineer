@@ -3,7 +3,7 @@ from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import time
-from typing import Any, Callable, Coroutine, Generic, Iterable, Mapping, ParamSpec
+from typing import Any, Callable, Coroutine, Generic, Iterable, Mapping, ParamSpec, cast
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -180,7 +180,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         else:
             LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
 
-        return ssr_html
+        return cast(str, ssr_html)
 
     def build_header(self, metadata: Metadata) -> list[str]:
         """
