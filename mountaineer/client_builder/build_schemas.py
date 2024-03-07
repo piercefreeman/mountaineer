@@ -30,12 +30,19 @@ class OpenAPIToTypescriptSchemaConverter:
     def __init__(self, export_interface: bool = False):
         self.export_interface = export_interface
 
-    def convert(self, model: Type[BaseModel]):
+    def convert(self, model: Type[BaseModel], defaults_are_required: bool = False):
+        """
+        :param defaults_are_required: If provided, will mark all properties with a "default"
+        as required properties in the client model.
+
+        """
         self.validate_typescript_candidate(model)
 
         openapi_spec = self.get_model_json_schema(model)
         schema = OpenAPISchema(**openapi_spec)
-        return self.convert_to_typescript(schema)
+        return self.convert_to_typescript(
+            schema, defaults_are_required=defaults_are_required
+        )
 
     def get_model_json_schema(self, model: Type[BaseModel]):
         """
@@ -58,12 +65,18 @@ class OpenAPIToTypescriptSchemaConverter:
 
         return synthetic_model.model_json_schema()
 
-    def convert_to_typescript(self, parsed_spec: OpenAPISchema):
+    def convert_to_typescript(
+        self, parsed_spec: OpenAPISchema, defaults_are_required: bool = False
+    ):
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
 
         return {
-            model.title: self.convert_schema_to_interface(model, base=parsed_spec)
+            model.title: self.convert_schema_to_interface(
+                model,
+                base=parsed_spec,
+                defaults_are_required=defaults_are_required,
+            )
             for model in all_models
             if model.title and model.title.strip()
         }
@@ -118,15 +131,24 @@ class OpenAPIToTypescriptSchemaConverter:
             raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")
         return current_obj
 
-    def convert_schema_to_interface(self, model: OpenAPIProperty, base: BaseModel):
+    def convert_schema_to_interface(
+        self,
+        model: OpenAPIProperty,
+        base: BaseModel,
+        defaults_are_required: bool,
+    ):
         if model.variable_type == OpenAPISchemaType.OBJECT:
-            return self._convert_object_to_interface(model, base)
+            return self._convert_object_to_interface(
+                model, base, defaults_are_required=defaults_are_required
+            )
         elif model.enum is not None:
             return self._convert_enum_to_interface(model)
         else:
             raise ValueError(f"Unknown model type: {model}")
 
-    def _convert_object_to_interface(self, model: OpenAPIProperty, base: BaseModel):
+    def _convert_object_to_interface(
+        self, model: OpenAPIProperty, base: BaseModel, defaults_are_required: bool
+    ):
         fields = []
 
         # We have to support arrays with one and multiple values
@@ -149,7 +171,9 @@ class OpenAPIToTypescriptSchemaConverter:
                 yield map_openapi_type_to_ts(prop.variable_type)
 
         for prop_name, prop_details in model.properties.items():
-            is_required = prop_name in model.required
+            is_required = (prop_name in model.required) or (
+                defaults_are_required and prop_details.default is not None
+            )
             ts_type = (
                 map_openapi_type_to_ts(prop_details.variable_type)
                 if prop_details.variable_type

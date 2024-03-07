@@ -103,7 +103,10 @@ class ClientBuilder:
             render_model = render_metadata.get_render_model()
             if render_model:
                 for schema_name, component in self.openapi_schema_converter.convert(
-                    render_model
+                    render_model,
+                    # Render models are sent server -> client, so we know they'll provide all their
+                    # default values in the initial payload
+                    defaults_are_required=True,
                 ).items():
                     schemas[schema_name] = component
 
@@ -114,6 +117,14 @@ class ClientBuilder:
                 ] = self.openapi_schema_converter.convert_schema_to_interface(
                     component,
                     base=base,
+                    # Don't require client data uploads to have all the fields
+                    # if there's a value specified server side. Note that this will apply
+                    # to both requests/response models right now, so clients might need
+                    # to do additional validation on the response side to confirm that
+                    # the server did send down the default values.
+                    # This is in contrast to the render() where we always know the response
+                    # payloads should be force required.
+                    defaults_are_required=False,
                 )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies

@@ -120,7 +120,9 @@ def test_python_to_typescript_types(
     schema = OpenAPISchema(**fake_model.model_json_schema())
 
     converter = OpenAPIToTypescriptSchemaConverter()
-    interface_definition = converter.convert_schema_to_interface(schema, base=schema)
+    interface_definition = converter.convert_schema_to_interface(
+        schema, base=schema, defaults_are_required=False
+    )
 
     for expected_str in expected_typescript_types:
         assert expected_str in interface_definition
@@ -197,3 +199,27 @@ def test_format_enums():
     assert (
         js_interfaces["MyEnum"] == "enum MyEnum {\nValue1 = 'value_1',\nValue__5 = 5\n}"
     )
+
+
+@pytest.mark.parametrize("defaults_are_required", [True, False])
+def test_defaults_are_required(defaults_are_required: bool):
+    class MyModelExplicitField(BaseModel):
+        a: str = Field(default="default value")
+
+    class MyModelImplicitField(BaseModel):
+        a: str = "default value"
+
+    # Both behaviors should be the same
+    for base_model in [MyModelExplicitField, MyModelImplicitField]:
+        converter = OpenAPIToTypescriptSchemaConverter()
+        js_interfaces = converter.convert(
+            base_model, defaults_are_required=defaults_are_required
+        )
+        model_name = base_model.__name__
+
+        if defaults_are_required:
+            assert "a: string" in js_interfaces[model_name]
+            assert "a?: string" not in js_interfaces[model_name]
+        else:
+            assert "a: string" not in js_interfaces[model_name]
+            assert "a?: string" in js_interfaces[model_name]
