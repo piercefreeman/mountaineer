@@ -38,7 +38,7 @@ def fake_view_root() -> Iterable[ManagedViewPath]:
 def mocked_esbuild():
     mocked_builder = MockedESBuild()
 
-    with patch("mountaineer.js_compiler.bundler.ESBuildWrapper") as mock:
+    with patch("mountaineer.js_compiler.javascript.ESBuildWrapper") as mock:
         mock.return_value = mocked_builder
         yield mocked_builder
 
