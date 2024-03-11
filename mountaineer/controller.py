@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
@@ -275,7 +276,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
                 config = get_config()
                 if config.PACKAGE:
                     view_base = Path(resolve_package_path(config.PACKAGE)) / "views"
-            except ValueError:
+            except (ValueError, PackageNotFoundError):
                 # Config isn't registered yet
                 pass
 
