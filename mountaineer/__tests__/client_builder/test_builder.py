@@ -67,3 +67,7 @@ def test_generate_link_aggregator(builder: ClientBuilder):
 
 def test_generate_view_servers(builder: ClientBuilder):
     builder.generate_view_servers()
+
+
+def test_generate_index_file(builder: ClientBuilder):
+    builder.generate_index_file()
