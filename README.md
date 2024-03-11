@@ -194,12 +194,10 @@ from mountaineer.app import AppController
 from mountaineer.js_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
-from my_webapp.views import get_view_path
 from my_webapp.config import AppConfig
 from my_webapp.controllers.home import HomeController
 
 controller = AppController(
-    view_root=get_view_path(""),
     config=AppConfig(),
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
@@ -223,8 +221,13 @@ import { useServer, ServerState } from "./_server/useServer";
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
     <div className="flex gap-x-4">
-      <input type="text" className="grow rounded border-2 border-gray-200 px-4 py-2" />
-      <button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700">Create</button>
+      <input
+        type="text"
+        className="grow rounded border-2 border-gray-200 px-4 py-2"
+      />
+      <button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700">
+        Create
+      </button>
     </div>
   );
 };
@@ -235,7 +238,8 @@ const Home = () => {
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-8 text-2xl">
       <p>
-        Hello {serverState.client_ip}, you have {serverState.todos.length} todo items.
+        Hello {serverState.client_ip}, you have {serverState.todos.length} todo
+        items.
       </p>
       <CreateTodo serverState={serverState} />
       {
