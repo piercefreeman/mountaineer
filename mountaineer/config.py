@@ -6,7 +6,6 @@ from pydantic_settings import BaseSettings
 from typing_extensions import dataclass_transform
 
 
-@dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ConfigMeta(ModelMetaclass):
     def __call__(cls, *args, **kwargs):
         instance = super().__call__(*args, **kwargs)
@@ -14,7 +13,11 @@ class ConfigMeta(ModelMetaclass):
         return instance
 
 
+@dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ConfigBase(BaseSettings, metaclass=ConfigMeta):
+    # Name of the python package
+    PACKAGE: str | None = None
+
     model_config = {"frozen": True}
 
 

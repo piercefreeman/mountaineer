@@ -13,9 +13,10 @@ from mountaineer.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
+from mountaineer.config import get_config
 from mountaineer.js_compiler.source_maps import SourceMapParser
 from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath
+from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import (
     LinkAttribute,
     MetaAttribute,
@@ -52,11 +53,15 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         # Injected by the build framework
         self.bundled_scripts: list[str] = []
-        self.ssr_path: Path | None = None
         self.initialized = True
         self.slow_ssr_threshold = slow_ssr_threshold
         self.hard_ssr_timeout = hard_ssr_timeout
         self.source_map: SourceMapParser | None = None
+
+        self.view_base_path: Path | None = None
+        self.ssr_path: Path | None = None
+
+        self.resolve_paths()
 
     @abstractmethod
     def render(
@@ -148,6 +153,8 @@ class ControllerBase(ABC, Generic[RenderInput]):
         return HTMLResponse(page_contents)
 
     def _generate_ssr_html(self, server_data: RenderBase) -> str:
+        self.resolve_paths()
+
         if not self.ssr_path:
             # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
@@ -253,13 +260,31 @@ class ControllerBase(ABC, Generic[RenderInput]):
             except AttributeError:
                 continue
 
-    def resolve_paths(self, view_base: Path):
+    def resolve_paths(self, view_base: Path | None = None, force: bool = True):
         """
         Given the path to the root /view directory, resolve our various
         on-disk paths.
 
         """
+        if not force and self.view_base_path is not None:
+            return
+
+        # Try to resolve the view base path from the global config
+        if view_base is None:
+            try:
+                config = get_config()
+                if config.PACKAGE:
+                    view_base = Path(resolve_package_path(config.PACKAGE)) / "views"
+            except ValueError:
+                # Config isn't registered yet
+                pass
+
+        if view_base is None:
+            # Unable to resolve, no-op
+            return
+
         script_name = underscore(self.__class__.__name__)
+        self.view_base_path = view_base
 
         # The SSR path is going to be static
         ssr_path = view_base / "_ssr" / f"{script_name}.js"

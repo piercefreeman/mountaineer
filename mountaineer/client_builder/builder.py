@@ -72,7 +72,7 @@ class ClientBuilder:
         # Update the cached paths attached to the app
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller.resolve_paths(self.view_root)
+            controller.resolve_paths(self.view_root, force=True)
 
     def generate_static_files(self):
         """
