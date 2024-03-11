@@ -64,6 +64,8 @@ class OpenAPIProperty(BaseModel):
     # Enum type
     enum: list[Any] | None = None
 
+    default: Any | None = None
+
     # Pointer to multiple possible subtypes
     anyOf: list["OpenAPIProperty"] = []
 

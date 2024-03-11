@@ -1,8 +1,14 @@
+from inspect import signature
+
 import pytest
-from fastapi import Depends
+from fastapi import Depends, Request
 from typing_extensions import Callable
 
-from mountaineer.dependencies.base import DependenciesBase, get_function_dependencies
+from mountaineer.dependencies.base import (
+    DependenciesBase,
+    get_function_dependencies,
+    isolate_dependency_only_function,
+)
 
 
 @pytest.mark.asyncio
@@ -68,3 +74,32 @@ async def test_dependency_overrides():
     ) as values:
         result = dep_2(**values)
         assert result == "Final Value: Mocked Value"
+
+
+class ExamplePayload:
+    value: int
+
+
+@pytest.mark.asyncio
+async def test_isolate_dependency_only_function():
+    def test_dependency():
+        return 1
+
+    def test_complex_function(
+        payload: ExamplePayload,
+        request: Request,
+        resolved_dep: int = Depends(test_dependency),
+    ):
+        return resolved_dep
+
+    modified_function = isolate_dependency_only_function(
+        test_complex_function,
+    )
+    new_signature = signature(modified_function)
+    assert set(new_signature.parameters.keys()) == {"resolved_dep"}
+
+    # Now try to execute the dependencies
+    async with get_function_dependencies(
+        callable=modified_function,
+    ) as values:
+        assert values == {"resolved_dep": 1}

@@ -19,11 +19,10 @@ class FieldClassDefinition(BaseModel):
     }
 
 
-INTERNAL_RENDER_FIELDS = ["metadata"]
-
-
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ReturnModelMetaclass(ModelMetaclass):
+    INTERNAL_RENDER_FIELDS = ["metadata"]
+
     if not TYPE_CHECKING:  # pragma: no branch
         # Following the lead of the pydantic superclass, we wrap with a non-TYPE_CHECKING
         # block: "otherwise mypy allows arbitrary attribute access""
@@ -33,7 +32,7 @@ class ReturnModelMetaclass(ModelMetaclass):
             except AttributeError:
                 # Determine if this field is defined within the spec
                 # If so, return it
-                if key in self.model_fields and key not in INTERNAL_RENDER_FIELDS:
+                if key in self.model_fields and key not in self.INTERNAL_RENDER_FIELDS:
                     return FieldClassDefinition(
                         root_model=self,
                         key=key,
