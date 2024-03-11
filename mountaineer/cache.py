@@ -33,6 +33,9 @@ class LRUCache:
         if len(self.cache) > self.capacity:
             self.cache.popitem(last=False)
 
+    def clear(self):
+        self.cache.clear()
+
 
 def serialize_args(args, kwargs):
     """
@@ -60,6 +63,9 @@ def extended_lru_cache(maxsize: int, max_size_mb: float | None = None):
     - A max_size_mb parameter to limit the size of each element of the cache. If a new
         request/response set of values exceeds this size, it will not be cached.
 
+    Will inject a `use_cache` optional argument to the function signature too, so you can
+    disable caching per request if needed.
+
     """
     max_size_bytes = int(max_size_mb * 1024 * 1024) if max_size_mb is not None else None
 
@@ -67,18 +73,25 @@ def extended_lru_cache(maxsize: int, max_size_mb: float | None = None):
         cache = LRUCache(capacity=maxsize, max_size_bytes=max_size_bytes)
 
         @functools.wraps(func)
-        def wrapper(*args, **kwargs):
+        def wrapper(*args, use_cache=True, **kwargs):
             serialized = serialize_args(args, kwargs)
             hash_key = sha256(serialized.encode()).hexdigest()
-            if (result := cache.get(hash_key)) is not None:
-                return result
+
+            if use_cache:
+                if (result := cache.get(hash_key)) is not None:
+                    return result
+
             result = func(*args, **kwargs)
+
             # Serialize result to check size
-            serialized_result = dumps(result)
-            size_bytes = len(serialized_result.encode("utf-8"))
-            cache.put(hash_key, result, size_bytes)
+            if use_cache:
+                serialized_result = dumps(result)
+                size_bytes = len(serialized_result.encode("utf-8"))
+                cache.put(hash_key, result, size_bytes)
+
             return result
 
+        setattr(wrapper, "_cache", cache)
         return wrapper
 
     return decorator

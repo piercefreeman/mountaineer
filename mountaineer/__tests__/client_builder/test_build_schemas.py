@@ -99,6 +99,7 @@ def test_model_gathering_enum_models():
         (list[SubModel1], ["value: Array<SubModel1>"]),
         (dict[str, SubModel1], ["value: Record<string, SubModel1>"]),
         (dict[str, int], ["value: Record<string, number>"]),
+        (dict[str, dict[str, str]], ["value: Record<string, Record<string, string>>"]),
         ("SubModel1", ["value: SubModel1"]),
         (MyStrEnum, ["value: MyStrEnum"]),
         (MyIntEnum, ["value: MyIntEnum"]),

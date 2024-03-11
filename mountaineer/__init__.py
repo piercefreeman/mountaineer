@@ -1,3 +1,7 @@
+# Re-export some core dependencies from other packages that will
+# be used across projects
+from fastapi import Depends as Depends
+
 from mountaineer.actions import passthrough as passthrough
 from mountaineer.actions import sideeffect as sideeffect
 from mountaineer.app import AppController as AppController
