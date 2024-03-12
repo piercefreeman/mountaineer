@@ -198,7 +198,9 @@ class AppController:
             f"{self.internal_api_prefix}/{underscore(controller.__class__.__name__)}"
         )
         for _, fn, metadata in controller._get_client_functions():
-            openapi_extra: dict[str, Any] = {}
+            openapi_extra: dict[str, Any] = {
+                "is_raw_response": metadata.get_is_raw_response()
+            }
 
             if not metadata.get_is_raw_response():
                 # We need to delay adding the typehint for each function until we are here, adding the view. Since
