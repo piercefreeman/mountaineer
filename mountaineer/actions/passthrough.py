@@ -19,7 +19,7 @@ from typing import (
     overload,
 )
 
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 from mountaineer.actions.fields import (
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
 
 P = ParamSpec("P")
-R = TypeVar("R", bound=BaseModel | AsyncIterator[BaseModel] | None)
+R = TypeVar("R", bound=BaseModel | AsyncIterator[BaseModel] | JSONResponse | None)
 
 RawResponseR = TypeVar("RawResponseR", bound=Response)
 

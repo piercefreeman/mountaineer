@@ -15,6 +15,7 @@ from typing import (
 from urllib.parse import urlparse
 
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.routing import Match
 
@@ -34,11 +35,8 @@ from mountaineer.render import FieldClassDefinition
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
 
-# TypedResponseType = TypeVar("TypedResponseType", bound=Callable[..., RenderBase | None])
-
-
 P = ParamSpec("P")
-R = TypeVar("R", bound=BaseModel | None)
+R = TypeVar("R", bound=BaseModel | JSONResponse | None)
 
 
 @overload
