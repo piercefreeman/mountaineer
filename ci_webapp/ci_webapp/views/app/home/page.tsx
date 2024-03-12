@@ -1,6 +1,5 @@
 import React from "react";
-import { useServer } from "./_server/useServer";
-import { HTTPValidationErrorException } from "./_server/actions";
+import { useServer, HTTPValidationErrorException } from "./_server";
 
 const Home = () => {
   const serverState = useServer();
@@ -32,6 +31,14 @@ const Home = () => {
           })}
         >
           Test Complex Link
+        </a>
+      </p>
+      <p>
+        <a
+          className="font-medium text-blue-500"
+          href={serverState.linkGenerator.streamController({})}
+        >
+          Stream Link
         </a>
       </p>
       <div className="flex gap-x-4">
