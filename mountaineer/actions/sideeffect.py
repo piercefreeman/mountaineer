@@ -1,7 +1,17 @@
 from contextlib import asynccontextmanager
 from functools import partial, wraps
 from inspect import Parameter, isawaitable, signature
-from typing import TYPE_CHECKING, Any, Callable, Type, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    ParamSpec,
+    Type,
+    TypeVar,
+    overload,
+)
 from urllib.parse import urlparse
 
 from fastapi import Request
@@ -24,22 +34,28 @@ from mountaineer.render import FieldClassDefinition
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
 
+# TypedResponseType = TypeVar("TypedResponseType", bound=Callable[..., RenderBase | None])
+
+
+P = ParamSpec("P")
+R = TypeVar("R", bound=BaseModel | None)
+
 
 @overload
 def sideeffect(
     *,
-    # We need to typehint reload to be Any, because during typechecking our Model.attribute will just
-    # yield whatever the typehint of that field is. Only at runtime does it become a FieldClassDefinition
     reload: tuple[Any, ...] | None = None,
     response_model: Type[BaseModel] | None = None,
     exception_models: list[Type[APIException]] | None = None,
     experimental_render_reload: bool | None = None,
-) -> Callable[[Callable], Callable]:
+) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
     ...
 
 
 @overload
-def sideeffect(func: Callable) -> Callable:
+def sideeffect(
+    func: Callable[P, R | Coroutine[Any, Any, R]],
+) -> Callable[P, Awaitable[R]]:
     ...
 
 

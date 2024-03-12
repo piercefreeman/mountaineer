@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Iterator, cast
 
 import pytest
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
@@ -141,7 +141,7 @@ def test_disallows_invalid_iterables():
     with pytest.raises(ValueError, match="async generators are supported"):
 
         class ExampleController1(ControllerBase):
-            @passthrough
+            @passthrough  # type: ignore
             def sync_iterable(self) -> Iterator[ExampleModel]:
                 yield ExampleModel(value="Hello")
                 yield ExampleModel(value="World")
@@ -183,3 +183,31 @@ async def test_can_call_iterable():
         'data: {"passthrough": {"value": "Hello"}}',
         'data: {"passthrough": {"value": "World"}}',
     ]
+
+
+@pytest.mark.asyncio
+async def test_raw_response():
+    class TestController(ControllerBase):
+        url: str = "/test/{query_id}/"
+
+        def render(
+            self,
+            query_id: int,
+        ) -> ExampleRenderModel:
+            return ExampleRenderModel(value_a="Hello", value_b="World")
+
+        @passthrough(raw_response=True)
+        def call_passthrough(self, payload: dict) -> JSONResponse:
+            return JSONResponse(content={"raw_value": "success"})
+
+    app = AppController(view_root=Path())
+    controller = TestController()
+    app.register(controller)
+
+    client = TestClient(app.app)
+    response = client.post(
+        get_function_metadata(controller.call_passthrough).get_url(),
+        json={},
+    )
+    # No "passthrough" wrapping
+    assert response.json() == {"raw_value": "success"}

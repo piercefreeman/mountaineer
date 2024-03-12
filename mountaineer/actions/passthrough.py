@@ -8,14 +8,18 @@ from inspect import (
 from json import dumps as json_dumps
 from typing import (
     TYPE_CHECKING,
+    Any,
     AsyncIterator,
+    Awaitable,
     Callable,
+    Coroutine,
     ParamSpec,
     Type,
+    TypeVar,
     overload,
 )
 
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from mountaineer.actions.fields import (
@@ -31,20 +35,36 @@ from mountaineer.exceptions import APIException
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
 
-PassthroughInputs = ParamSpec("PassthroughInputs")
+P = ParamSpec("P")
+R = TypeVar("R", bound=BaseModel | AsyncIterator[BaseModel] | None)
+
+RawResponseR = TypeVar("RawResponseR", bound=Response)
+
+
+@overload
+def passthrough(  # type: ignore
+    *,
+    response_model: Type[BaseModel] | None = None,
+    exception_models: list[Type[APIException]] | None = None,
+) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
+    ...
 
 
 @overload
 def passthrough(
     *,
-    response_model: Type[BaseModel] | None = None,
-    exception_models: list[Type[APIException]] | None = None,
-) -> Callable[[Callable], Callable]:
+    raw_response: bool = True,
+) -> Callable[
+    [Callable[P, RawResponseR | Coroutine[Any, Any, RawResponseR]]],
+    Callable[P, Awaitable[RawResponseR]],
+]:
     ...
 
 
 @overload
-def passthrough(func: Callable) -> Callable:
+def passthrough(
+    func: Callable[P, R | Coroutine[Any, Any, R]],
+) -> Callable[P, Awaitable[R]]:
     ...
 
 
@@ -61,6 +81,7 @@ def passthrough(*args, **kwargs):  # type: ignore
     def decorator_with_args(
         response_model: Type[BaseModel] | None,
         exception_models: list[Type[APIException]] | None,
+        raw_response: bool | None,
     ):
         def wrapper(func: Callable):
             passthrough_model, response_type = extract_response_model_from_signature(
@@ -91,6 +112,9 @@ def passthrough(*args, **kwargs):  # type: ignore
                 if isawaitable(response):
                     response = await response
 
+                if raw_response:
+                    return response
+
                 if isasyncgen(response):
                     return wrap_passthrough_generator(response)
 
@@ -99,6 +123,7 @@ def passthrough(*args, **kwargs):  # type: ignore
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
             metadata.exception_models = exception_models
+            metadata.is_raw_response = raw_response or False
             metadata.media_type = (
                 STREAM_EVENT_TYPE
                 if response_type == ResponseModelType.ITERATOR_RESPONSE
@@ -111,12 +136,13 @@ def passthrough(*args, **kwargs):  # type: ignore
     if args and callable(args[0]):
         # It's used as @sideeffect without arguments
         func = args[0]
-        return decorator_with_args(None, None)(func)
+        return decorator_with_args(None, None, None)(func)
     else:
         # It's used as @passthrough(xyz=2) with arguments
         return decorator_with_args(
             response_model=kwargs.get("response_model"),
             exception_models=kwargs.get("exception_models"),
+            raw_response=kwargs.get("raw_response"),
         )
 
 

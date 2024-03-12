@@ -60,6 +60,7 @@ class FunctionMetadata(BaseModel):
         Type[APIException]
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
     media_type: str | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    is_raw_response: bool = False
 
     # Render type, defines the data model that is returned by the render typehint
     # If "None", the user has explicitly stated that no render model is returned
@@ -106,6 +107,9 @@ class FunctionMetadata(BaseModel):
         if isinstance(self.media_type, MountaineerUnsetValue):
             raise ValueError("Media type not set")
         return self.media_type
+
+    def get_is_raw_response(self) -> bool:
+        return self.is_raw_response
 
     def get_url(self) -> str:
         if isinstance(self.url, MountaineerUnsetValue):
@@ -240,8 +244,13 @@ def handle_explicit_responses(
     dict_payload: dict[str, Any],
 ):
     """
-    Wrapper to allow actions to respond with an explicit Response, or a dictionary. If it returns
-    with a Response, we will manipulate the output to validate to our expected output schema.
+    Wrapper to allow actions to respond with an explicit JSONResponse, or a dictionary. This lets
+    both sideeffects and passthrough payloads to inject header metadata that otherwise can't be captured
+    in a regular BaseModel.
+
+    Since the eventual result of an action is a combined sideeffect+passthrough payload, we need to
+    merge the final payload into the explicit response.
+
     """
     responses = [
         (key, response)
@@ -250,7 +259,7 @@ def handle_explicit_responses(
     ]
 
     if len(responses) > 1:
-        raise ValueError("Multiple conflicting responses returned")
+        raise ValueError(f"Multiple conflicting responses returned: {responses}")
 
     if len(responses) == 0:
         return dict_payload
