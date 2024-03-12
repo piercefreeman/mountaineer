@@ -65,13 +65,14 @@ class ClientBuilder:
         self.generate_link_shortcuts()
         self.generate_link_aggregator()
         self.generate_view_servers()
+        self.generate_index_file()
 
         await self.build_javascript_chunks()
 
         # Update the cached paths attached to the app
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller.resolve_paths(self.view_root)
+            controller.resolve_paths(self.view_root, force=True)
 
     def generate_static_files(self):
         """
@@ -352,6 +353,22 @@ class ClientBuilder:
             )
 
             (controller_model_path / "useServer.ts").write_text("\n\n".join(chunks))
+
+    def generate_index_file(self):
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            controller_code_dir = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
+
+            chunks: list[str] = []
+
+            chunks.append("export * from './actions';")
+            chunks.append("export * from './links';")
+            chunks.append("export * from './models';")
+            chunks.append("export * from './useServer';")
+
+            (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
     async def build_javascript_chunks(self, max_concurrency: int = 25):
         """

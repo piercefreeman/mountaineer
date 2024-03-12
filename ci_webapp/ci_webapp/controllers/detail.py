@@ -1,8 +1,7 @@
 from uuid import UUID
 
 from fastapi import Request
-from mountaineer.controller import ControllerBase
-from mountaineer.render import Metadata, RenderBase
+from mountaineer import ControllerBase, Metadata, RenderBase
 
 
 class DetailRender(RenderBase):

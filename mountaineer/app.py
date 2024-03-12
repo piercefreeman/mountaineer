@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
-from pydantic_settings import BaseSettings
 from starlette.routing import BaseRoute
 
 from mountaineer.actions import (
@@ -18,12 +17,13 @@ from mountaineer.actions import (
     init_function_metadata,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
+from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
 from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath
+from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -55,10 +55,10 @@ class AppController:
         *,
         name: str = "Mountaineer Webapp",
         version: str = "0.1.0",
-        view_root: Path,
+        view_root: Path | None = None,
         global_metadata: Metadata | None = None,
         custom_builders: list[ClientBuilderBase] | None = None,
-        config: BaseSettings | None = None,
+        config: ConfigBase | None = None,
     ):
         """
         :param global_metadata: Script and meta will be applied to every
@@ -71,7 +71,6 @@ class AppController:
         self.controllers: list[ControllerDefinition] = []
         self.name = name
         self.version = version
-        self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
         self.builders = [
             # Default builders
@@ -79,6 +78,17 @@ class AppController:
             # Custom builders
             *(custom_builders if custom_builders else []),
         ]
+
+        # Follow our managed path conventions
+        if config is not None and config.PACKAGE is not None:
+            package_path = resolve_package_path(config.PACKAGE)
+            self.view_root = ManagedViewPath.from_view_root(package_path / "views")
+        elif view_root is not None:
+            self.view_root = ManagedViewPath.from_view_root(view_root)
+        else:
+            raise ValueError(
+                "You must provide either a config.package or a view_root to the AppController"
+            )
 
         # The act of instantiating the config should register it with the
         # global settings registry. We keep a reference to it so we can shortcut
@@ -110,7 +120,7 @@ class AppController:
 
         """
         # Update the paths now that we have access to the runtime package path
-        controller.resolve_paths(self.view_root)
+        controller.resolve_paths(self.view_root, force=True)
 
         # The controller superclass needs to be initialized before it's
         # registered into the application

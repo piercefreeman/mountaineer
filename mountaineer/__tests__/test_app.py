@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
@@ -6,6 +7,7 @@ from pydantic import BaseModel
 from mountaineer.actions import passthrough
 from mountaineer.app import AppController
 from mountaineer.client_builder.openapi import OpenAPIDefinition
+from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.exceptions import APIException
 
@@ -105,3 +107,20 @@ def test_update_ref_path():
         properties["list_values"]["items"][0]["$ref"]
         == "#/components/schemas/ExampleSubModel"
     )
+
+
+def test_view_root_from_config(tmp_path: Path):
+    class MockConfig(ConfigBase):
+        PACKAGE: str | None = "test_webapp"
+
+    # Simulate a package with a views directory
+    (tmp_path / "views").mkdir()
+
+    with patch("mountaineer.app.resolve_package_path") as mock_resolve_package_path:
+        mock_resolve_package_path.return_value = tmp_path
+
+        app = AppController(config=MockConfig())
+        assert app.view_root == tmp_path / "views"
+
+        assert mock_resolve_package_path.call_count == 1
+        assert mock_resolve_package_path.call_args[0] == ("test_webapp",)

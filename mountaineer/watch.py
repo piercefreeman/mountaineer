@@ -3,15 +3,15 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
-from json import loads as json_loads
 from pathlib import Path
-from re import search as re_search
 from threading import Timer
 from typing import Callable
 
 from click import secho
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+from mountaineer.paths import resolve_package_path
 
 
 class CallbackType(Flag):
@@ -178,63 +178,9 @@ class PackageWatchdog:
     def get_package_paths(self):
         paths: list[str] = []
         for package in self.packages:
-            dist = importlib.metadata.distribution(package)
-            package_path = self.resolve_package_path(dist)
+            package_path = resolve_package_path(package)
             paths.append(str(package_path))
         self.paths = self.merge_paths(paths)
-
-    def resolve_package_path(self, dist: importlib.metadata.Distribution):
-        """
-        Given a package distribution, returns the local file directory that should be watched
-        """
-        # Recent versions of poetry install development packages (-e .) as direct URLs
-        # https://the-hitchhikers-guide-to-packaging.readthedocs.io/en/latest/introduction.html
-        # "Path configuration files have an extension of .pth, and each line must
-        # contain a single path that will be appended to sys.path."
-        package_name = dist.name.replace("-", "_").lower()
-        symbolic_links = [
-            path
-            for path in (dist.files or [])
-            if path.name.lower() == f"{package_name}.pth"
-        ]
-        dist_links = [
-            path
-            for path in (dist.files or [])
-            if path.name == "direct_url.json"
-            and re_search(
-                package_name + r"-[0-9-.]+\.dist-info", path.parent.name.lower()
-            )
-        ]
-        explicit_links = [
-            path
-            for path in (dist.files or [])
-            if path.parent.name.lower() == package_name
-            and (
-                # Sanity check that the parent is the high level project directory
-                # by looking for common base files
-                path.name == "__init__.py"
-            )
-        ]
-
-        if symbolic_links:
-            direct_url_path = symbolic_links[0]
-            return dist.locate_file(direct_url_path.read_text().strip())
-
-        if dist_links:
-            dist_link = dist_links[0]
-            direct_metadata = json_loads(dist_link.read_text())
-            package_path = "/" + direct_metadata["url"].lstrip("file://").lstrip("/")
-            return dist.locate_file(package_path)
-
-        if explicit_links:
-            # Since we found the __init__.py file for the root, we should be able to go up
-            # to the main path
-            explicit_link = explicit_links[0]
-            return dist.locate_file(explicit_link.parent)
-
-        raise ValueError(
-            f"Could not find a valid path for package {dist.name}, found files: {dist.files}"
-        )
 
     @contextmanager
     def acquire_watchdog_lock(self):
@@ -243,8 +189,7 @@ class PackageWatchdog:
         on each other or having infinitely looping file change notifications.
 
         """
-        dist = importlib.metadata.distribution(self.main_package)
-        package_path = self.resolve_package_path(dist)
+        package_path = resolve_package_path(self.main_package)
 
         lock_path = (Path(str(package_path)) / ".watchdog.lock").absolute()
         if lock_path.exists():
