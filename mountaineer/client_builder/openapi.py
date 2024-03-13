@@ -224,6 +224,7 @@ class ActionDefinition(BaseModel):
     # Custom Mountaineer event types specified in the OpenAPI schema
     # These should all have defaults since they're optional
     media_type: str | None = None
+    is_raw_response: bool = False
 
 
 class EndpointDefinition(BaseModel):

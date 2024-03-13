@@ -89,9 +89,13 @@ class OpenAPIToTypescriptActionConverter:
             )
         else:
             response_type_template = "Promise<{response_type}>"
-        response_type = response_type_template.format(
-            response_type=" | ".join(response_types)
-        )
+
+        if action.is_raw_response:
+            response_type = response_type_template.format(response_type="Response")
+        else:
+            response_type = response_type_template.format(
+                response_type=" | ".join(response_types)
+            )
 
         lines.append(
             f"export const {method_name} = ({parameters}): {response_type} => {{\n"
@@ -186,11 +190,12 @@ class OpenAPIToTypescriptActionConverter:
             if self.status_code_is_valid(status_int):
                 # OK response, we can specify the expected response type
                 # Multiple OK responses for a single action is unusual, but again we support it
-                response_types.append(
-                    self.get_typescript_name_from_content_definition(
-                        response_definition.content_schema
+                if not action.is_raw_response:
+                    response_types.append(
+                        self.get_typescript_name_from_content_definition(
+                            response_definition.content_schema
+                        )
                     )
-                )
             else:
                 error_typehint = self.get_typescript_name_from_content_definition(
                     response_definition.content_schema
@@ -208,6 +213,10 @@ class OpenAPIToTypescriptActionConverter:
         # Support for server-events
         if action.media_type == STREAM_EVENT_TYPE:
             common_params["eventStreamResponse"] = True
+
+        # Support for raw responses
+        if action.is_raw_response:
+            common_params["outputFormat"] = "raw"
 
         return python_payload_to_typescript(common_params), response_types
 

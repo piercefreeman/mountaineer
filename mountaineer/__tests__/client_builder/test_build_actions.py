@@ -280,10 +280,67 @@ def test_build_server_side_event_action(
 ):
     builder = OpenAPIToTypescriptActionConverter()
     built_function, build_imports = builder.build_action(url, definition, method_name)
-
-    # Exact match for function contents
     assert re_sub(r"\s+", "", built_function) == re_sub(r"\s+", "", expected_function)
+    assert set(build_imports) == set(expected_imports)
 
-    # Order doesn't matter in the imports. We assume they're all coming from the locally defined
-    # /models.ts source file.
+
+@pytest.mark.parametrize(
+    "method_name,url,definition,expected_function,expected_imports",
+    [
+        (
+            "my_method_fn",
+            "/testing/url",
+            ActionDefinition(
+                action_type=ActionType.POST,
+                summary="",
+                operationId="",
+                requestBody=EXAMPLE_REQUEST_BODY,
+                responses={
+                    "200": ContentBodyDefinition(
+                        content_type="application/json",
+                        content_schema=ContentDefinition.from_meta(
+                            schema_ref=ContentDefinition.Reference.from_meta(
+                                # We won't have a response_model for raw responses
+                                ref=""
+                            )
+                        ),
+                    ),
+                    "422": EXAMPLE_RESPONSE_400,
+                },
+                is_raw_response=True,
+            ),
+            (
+                """
+                export const my_method_fn = (
+                    {requestBody}: {requestBody: ExampleModel}
+                ): Promise<Response> => {
+                    return __request({
+                        'method': 'POST',
+                        'url': '/testing/url',
+                        'errors': {
+                            422: HTTPValidationErrorException
+                        },
+                        'body': requestBody,
+                        'mediaType': 'application/json',
+                        'outputFormat': 'raw'
+                    });
+                }
+                """
+            ),
+            [
+                "ExampleModel",
+            ],
+        ),
+    ],
+)
+def test_build_raw_response_action(
+    url: str,
+    method_name: str,
+    definition: ActionDefinition,
+    expected_function: str,
+    expected_imports: list[str],
+):
+    builder = OpenAPIToTypescriptActionConverter()
+    built_function, build_imports = builder.build_action(url, definition, method_name)
+    assert re_sub(r"\s+", "", built_function) == re_sub(r"\s+", "", expected_function)
     assert set(build_imports) == set(expected_imports)

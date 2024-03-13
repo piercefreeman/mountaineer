@@ -93,12 +93,12 @@ async def call_sideeffect_common(controller: ControllerCommon):
         # by the function injected by the sideeffect decorator.
         return_value_sync = await controller.call_sideeffect(
             {},
-            request=Request({"type": "http"}),
+            request=Request({"type": "http"}),  # type: ignore
         )
 
         return_value_async = await controller.call_sideeffect_async(
             {},
-            request=Request({"type": "http"}),
+            request=Request({"type": "http"}),  # type: ignore
         )
 
         # The response payload should be the same both both sync and async endpoints

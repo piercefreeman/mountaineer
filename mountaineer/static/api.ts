@@ -26,13 +26,15 @@ interface FetchParams {
   >;
   body?: Record<string, any>;
   mediaType?: string;
-  outputFormat?: "json" | "text";
+  outputFormat?: "json" | "text" | "raw";
   eventStreamResponse?: boolean;
 }
 
 const handleOutputFormat = async (response: Response, format?: string) => {
   if (format === "text") {
     return await response.text();
+  } else if (format == "raw") {
+    return response;
   } else {
     // Assume JSON if not specified
     return await response.json();
