@@ -1,6 +1,5 @@
 import asyncio
 from collections import defaultdict
-from inspect import isawaitable
 from shutil import rmtree
 
 from click import secho
@@ -396,47 +395,35 @@ class ClientBuilder:
             live_reload_port=self.live_reload_port,
         )
 
-        async def spawn_builder(controller: ControllerBase):
-            for builder in self.app.builders:
-                result = builder.handle_file(
-                    self.view_root.get_controller_view_path(controller),
-                    controller,
-                    metadata=metadata,
-                )
-                if isawaitable(result):
-                    await result
-
-        async def spawn_file_builder(path: ManagedViewPath):
-            """
-            Spawn non-controller based file builder
-            """
-            ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
-            # If any of these directories are in the path, we skip it
-            if any([directory in path.parts for directory in ignore_directories]):
-                return
-
-            # Otherwise loop over our bundlers
-            for builder in self.app.builders:
-                result = builder.handle_file(path, controller=None, metadata=metadata)
-                if isawaitable(result):
-                    await result
-
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
-        tasks = [
-            spawn_builder(controller_definition.controller)
+        controller_tasks = [
+            builder.handle_file(
+                self.view_root.get_controller_view_path(
+                    controller_definition.controller
+                ),
+                controller=controller_definition.controller,
+                metadata=metadata,
+            )
             for controller_definition in self.app.controllers
-        ] + [
-            # Optionally build static files the main views and plugin views
-            # This allows plugins to have custom handling for different file types
-            spawn_file_builder(dir_path / filename)
-            for view_root in self.get_all_root_views()
-            for dir_path, _, filenames in view_root.walk()
-            for filename in filenames
+            for builder in self.app.builders
         ]
+
+        # Optionally build static files the main views and plugin views
+        # This allows plugins to have custom handling for different file types
+        file_tasks = [
+            builder.handle_file(
+                path,
+                controller=None,
+                metadata=metadata,
+            )
+            for path in self.get_static_files()
+            for builder in self.app.builders
+        ]
+
         results = await gather_with_concurrency(
-            tasks, n=max_concurrency, catch_exceptions=True
+            controller_tasks + file_tasks, n=max_concurrency, catch_exceptions=True
         )
 
         # Go through the exceptions, logging the build errors explicitly
@@ -453,6 +440,21 @@ class ClientBuilder:
             raise BuildProcessException(
                 "Build process failed. Errors are listed in the console."
             )
+
+    def get_static_files(self):
+        ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
+
+        for view_root in self.get_all_root_views():
+            for dir_path, _, filenames in view_root.walk():
+                for filename in filenames:
+                    if any(
+                        [
+                            directory in dir_path.parts
+                            for directory in ignore_directories
+                        ]
+                    ):
+                        continue
+                    yield dir_path / filename
 
     def validate_unique_paths(self):
         """
