@@ -36,3 +36,8 @@ harness = false
 path = "src/benches/ssr_benchmark.rs"
 name = "ssr_benchmark"
 harness = false
+
+[[bench]]
+path = "src/benches/lexers_benchmark.rs"
+name = "lexers_benchmark"
+harness = false

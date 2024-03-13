@@ -6,6 +6,7 @@ use pyo3::prelude::*;
 use std::time::Duration;
 
 mod errors;
+mod lexers;
 mod source_map;
 mod ssr;
 mod timeout;
@@ -13,6 +14,7 @@ mod timeout;
 #[macro_use]
 extern crate lazy_static;
 
+pub use lexers::strip_js_comments;
 pub use source_map::{MapMetadata, SourceMapParser, VLQDecoder};
 pub use ssr::Ssr;
 
@@ -87,6 +89,17 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
             }
             Err(_err) => Err(PyValueError::new_err("Unable to parse source map mappings")),
         }
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "strip_js_comments")]
+    fn strip_js_comments(_py: Python, js_string: String) -> PyResult<String> {
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
+        let final_text = lexers::strip_js_comments(js_string);
+        Ok(final_text)
     }
 
     Ok(())
