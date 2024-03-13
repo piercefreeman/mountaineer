@@ -2,6 +2,7 @@ import importlib.metadata
 import sys
 from json import loads as json_loads
 from os import PathLike
+from os import walk as os_walk
 from os.path import relpath
 from pathlib import Path
 from re import search as re_search
@@ -162,6 +163,20 @@ class ManagedViewPath(type(Path())):  # type: ignore
             for path in super().rglob(pattern):
                 yield self._inherit_root_link(path)
 
+    if sys.version_info >= (3, 12):
+
+        def walk(self, top_down=True, on_error=None, follow_symlinks=False):
+            for root, dirs, files in super().walk(
+                top_down=top_down, on_error=on_error, follow_symlinks=follow_symlinks
+            ):
+                yield self._inherit_root_link(root), dirs, files
+
+    else:
+
+        def walk(self):
+            for root, dirs, files in os_walk(str(self)):
+                yield self._inherit_root_link(root), dirs, files
+
     def resolve(self, strict=False):
         return self._inherit_root_link(super().resolve())
 
@@ -193,7 +208,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
     def parent(self):  # type: ignore
         return self._inherit_root_link(super().parent)
 
-    def _inherit_root_link(self, new_path: Path) -> "ManagedViewPath":
+    def _inherit_root_link(self, new_path: Path | str) -> "ManagedViewPath":
         managed_path = ManagedViewPath(new_path)
         managed_path.root_link = self.root_link
         managed_path.package_root_link = self.package_root_link

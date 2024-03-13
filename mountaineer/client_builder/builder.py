@@ -430,9 +430,10 @@ class ClientBuilder:
         ] + [
             # Optionally build static files the main views and plugin views
             # This allows plugins to have custom handling for different file types
-            spawn_file_builder(path)
+            spawn_file_builder(dir_path / filename)
             for view_root in self.get_all_root_views()
-            for path in view_root.rglob("*")
+            for dir_path, _, filenames in view_root.walk()
+            for filename in filenames
         ]
         results = await gather_with_concurrency(
             tasks, n=max_concurrency, catch_exceptions=True

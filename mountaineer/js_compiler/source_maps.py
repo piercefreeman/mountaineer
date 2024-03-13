@@ -148,7 +148,7 @@ def make_source_map_paths_absolute(contents: str, original_script_path: Path):
         source_path = Path(source)
         if not source_path.is_absolute():
             source_path = original_script_path.parent / source_path
-            new_sources.append(str(source_path.resolve()))
+            new_sources.append(str(source_path.absolute()))
 
     payload.sources = new_sources
     return payload.model_dump_json()
