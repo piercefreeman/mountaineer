@@ -1,10 +1,6 @@
-#![deny(clippy::print_stdout)]
-
 use errors::AppError;
-use md5;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
-use src_go;
 use std::ffi::c_int;
 use std::fs;
 use std::path::Path;
@@ -111,7 +107,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         match result_value {
             Ok(result) => {
                 let result_py: PyObject = result.to_object(py);
-                Ok(result_py.into())
+                Ok(result_py)
             }
             Err(err) => match err {
                 AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
@@ -123,6 +119,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(name = "parse_source_map_mappings")]
     fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<PyObject> {
+        #[allow(clippy::print_stdout)]
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
         }
@@ -134,7 +131,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         match result {
             Ok(result) => {
                 let result_py: PyObject = result.to_object(py);
-                Ok(result_py.into())
+                Ok(result_py)
             }
             Err(_err) => Err(PyValueError::new_err("Unable to parse source map mappings")),
         }
@@ -144,6 +141,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyo3(name = "build_javascript")]
     // PyRef to support borrow checking: https://github.com/PyO3/pyo3/issues/1177
     fn build_javascript(_py: Python, params: Vec<PyRef<BuildContextParams>>) -> PyResult<bool> {
+        #[allow(clippy::print_stdout)]
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
         }
@@ -178,7 +176,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
             // keeping all file contents in memory until we reach this point. For larger projects
             // this is a safer approach.
             let mut map_contents = fs::read_to_string(&map_file_path).expect("Failed to read map");
-            map_contents = make_source_map_paths_absolute(&map_contents, &original_script_path)
+            map_contents = make_source_map_paths_absolute(&map_contents, original_script_path)
                 .expect("Error processing source map");
 
             let mut script_contents =

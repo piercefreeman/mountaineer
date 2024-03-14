@@ -1,4 +1,4 @@
-pub fn strip_js_comments(js_string: &String, skip_whitespace: bool) -> String {
+pub fn strip_js_comments(js_string: &str, skip_whitespace: bool) -> String {
     let mut final_text = String::new();
     let chars: Vec<char> = js_string.chars().collect();
     let mut i = 0;

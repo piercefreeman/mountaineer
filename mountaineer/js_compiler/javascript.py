@@ -86,7 +86,7 @@ class JavascriptBundler(ClientBuilderBase):
                 LOGGER.debug("Exiting process_pending_files")
                 return
 
-            LOGGER.debug("Got JS build payload: {len(payload)}")
+            LOGGER.debug(f"Got JS build payload: {len(payload)}")
             if payload is None:
                 break
 

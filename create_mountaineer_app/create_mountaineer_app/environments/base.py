@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from os import environ
 from pathlib import Path
 from subprocess import Popen
 
@@ -9,6 +10,14 @@ class EnvironmentBase(ABC):
     dependencies in the remote project, so we avoid a system wide install.
 
     """
+
+    def __init__(self):
+        self.global_env = {
+            "HOME": environ.get("HOME", ""),
+            "GOROOT": environ.get("GOROOT", ""),
+            "GOPATH": environ.get("GOPATH", ""),
+            "GOMODCACHE": environ.get("GOMODCACHE", ""),
+        }
 
     @abstractmethod
     def has_provider(self) -> bool:

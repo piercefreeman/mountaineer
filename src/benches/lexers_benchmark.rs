@@ -5,7 +5,7 @@ use std::io::Read;
 use mountaineer::strip_js_comments;
 
 fn fresh_strip_js_comments(contents: String) -> String {
-    let result = strip_js_comments(contents);
+    let result = strip_js_comments(&contents, true);
     assert!(result.len() > 5000);
     result
 }

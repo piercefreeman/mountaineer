@@ -3,7 +3,6 @@ use path_absolutize::*;
 use pyo3::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -20,7 +19,7 @@ pub struct MapMetadata {
 
 impl ToPyObject for MapMetadata {
     fn to_object(&self, py: Python) -> PyObject {
-        self.clone().into_py(py).into()
+        self.clone().into_py(py)
     }
 }
 
@@ -269,6 +268,12 @@ impl VLQDecoder {
     }
 }
 
+impl Default for VLQDecoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct SourceMapSchema {
     version: i32,
@@ -479,14 +484,28 @@ mod tests {
             "file": null
         }"#;
 
-        // Expected result (note: this will depend on your current directory when running the test)
+        // Expected result - we make sure to also absolutize this path to make it compatible
+        // with both windows and OSX path separators. On windows it will convert the slash to \\
+        let expected_relative: &str;
+        let expected_absolute: &str;
+
+        #[cfg(target_os = "windows")]
+        {
+            expected_relative = "dist\\src\\file1.js";
+            expected_absolute = "C:\\absolute\\path\\src\\file2.js";
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            expected_relative = "dist/src/file1.js";
+            expected_absolute = "/absolute/path/src/file2.js";
+        }
+
         let expected_source_1 = temp_dir_path
-            .join("dist/src/file1.js")
+            .join(expected_relative)
             .to_string_lossy()
             .into_owned();
-        let expected_source_2 = Path::new("/absolute/path/src/file2.js")
-            .to_string_lossy()
-            .into_owned();
+        let expected_source_2 = Path::new(expected_absolute).to_string_lossy().into_owned();
 
         let modified_json =
             make_source_map_paths_absolute(contents, &original_script_path).unwrap();

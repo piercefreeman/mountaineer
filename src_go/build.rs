@@ -9,6 +9,13 @@ fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = PathBuf::from(&out_dir);
 
+    // Log the GOARCH env variable, if specified
+    if let Ok(goarch) = env::var("GOARCH") {
+        eprintln!("GOARCH is set to {}", goarch);
+    } else {
+        eprintln!("GOARCH is not set");
+    }
+
     // Step 1: Compile the Go code into a static library.
     let status = Command::new("go")
         .args([
@@ -16,6 +23,8 @@ fn main() {
             "-buildmode=c-archive",
             "-o",
             out_path.join("libgo.a").to_str().unwrap(),
+            "-ldflags",
+            "-s -w", // Strips debug information, can minimize the payload somewhat
             "./go/js_build.go",
         ])
         .status()

@@ -59,7 +59,8 @@ func GetBuildContext(
 			".jsx": api.LoaderJSX,
 		},
 		Define: map[string]string{
-			"process.env.NODE_ENV": fmt.Sprintf("\"%s\"", environment),
+			"process.env.NODE_ENV":         fmt.Sprintf("\"%s\"", environment),
+			"process.env.LIVE_RELOAD_PORT": fmt.Sprintf("%d", liveReloadPort),
 		},
 		NodePaths: []string{nodeModulesPath},
 	}
@@ -72,10 +73,6 @@ func GetBuildContext(
 	} else {
 		buildOptions.Format = api.FormatESModule
 		buildOptions.Define["process.env.SSR_RENDERING"] = "false"
-
-		if liveReloadPort > 0 {
-			buildOptions.Define["process.env.LIVE_RELOAD_PORT"] = fmt.Sprintf("%d", liveReloadPort)
-		}
 	}
 
 	ctx, err := api.Context(buildOptions)

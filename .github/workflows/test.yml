@@ -69,6 +69,16 @@ jobs:
         with:
           go-version: "1.21.2"
 
+      - name: Log go env
+        run: |
+          go env
+
+      - name: Get GOROOT
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
@@ -80,6 +90,10 @@ jobs:
 
       - name: Python tests
         run: make test-lib
+        env:
+          GOROOT: ${{ env.GOROOT }}
+          GOPATH: ${{ env.GOPATH }}
+          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   lint:
     runs-on: ubuntu-latest
@@ -102,14 +116,44 @@ jobs:
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
+      - name: install golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.21.2"
+
+      - name: Log go env
+        run: |
+          go env
+
+      - name: Get GOROOT
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
+      - name: Log go env
+        run: |
+          go env
+
       - name: Install dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           make clean-poetry-lock
           make install-deps
+        env:
+          GOROOT: ${{ env.GOROOT }}
+          GOPATH: ${{ env.GOPATH }}
+          GOMODCACHE: ${{ env.GOMODCACHE }}
 
       - name: Run typehinting
         run: make lint-validation
+
+      - name: Lint Clippy
+        run: cargo clippy -- -D warnings
+        env:
+          GOROOT: ${{ env.GOROOT }}
+          GOPATH: ${{ env.GOPATH }}
+          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
@@ -163,6 +207,16 @@ jobs:
         with:
           go-version: "1.21.2"
 
+      - name: Log go env
+        run: |
+          go env
+
+      - name: Get GOROOT
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
       - run: pip install -U twine
 
       # Before we start building, validate that the Rust code compiles
@@ -193,7 +247,15 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           args: --release --out dist --interpreter ${{ matrix.interpreter || '3.8 3.9 3.10 3.11 3.12' }}
           rust-toolchain: stable
-          docker-options: -e CI
+          docker-options: -e CI -e CI_TARGET=${{ matrix.target }} -e GOARCH=${{ matrix.target }} -e GOROOT=${{ env.GOROOT }} -v ${{ env.GOROOT }}:${{ env.GOROOT }}
+          command: build -vv
+          before-script-linux: |
+            export PATH=$PATH:$GOROOT/bin
+            go version
+        env:
+          GOROOT: ${{ env.GOROOT }}
+          GOPATH: ${{ env.GOPATH }}
+          GOMODCACHE: ${{ env.GOMODCACHE }}
 
       - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
 

@@ -7,7 +7,6 @@ use crate::errors::AppError;
 
 #[cfg(unix)]
 mod platform {
-    use libc;
     use std::os::unix::thread::JoinHandleExt;
     use std::thread::JoinHandle;
 
