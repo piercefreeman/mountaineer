@@ -1,6 +1,6 @@
 module github.com/piercefreeman/mountaineer
 
-go 1.21.2
+go 1.21
 
 require github.com/evanw/esbuild v0.20.1
 
