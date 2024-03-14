@@ -19,6 +19,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: install golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.21.2"
+
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
