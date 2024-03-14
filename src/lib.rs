@@ -1,6 +1,7 @@
 #![deny(clippy::print_stdout)]
 
 use errors::AppError;
+use md5;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use src_go;
@@ -20,7 +21,10 @@ extern crate lazy_static;
 
 // Export mainly for use in benchmarks
 pub use lexers::strip_js_comments;
-pub use source_map::{make_source_map_paths_absolute, MapMetadata, SourceMapParser, VLQDecoder};
+pub use source_map::{
+    make_source_map_paths_absolute, update_source_map_path, MapMetadata, SourceMapParser,
+    VLQDecoder,
+};
 pub use ssr::Ssr;
 
 fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
@@ -42,11 +46,16 @@ fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
 #[derive(Debug, PartialEq, Clone)]
 #[pyclass(get_all, set_all)]
 struct BuildContextParams {
+    // Build watch settings
     path: String,
     node_modules_path: String,
     environment: String,
     live_reload_port: i32,
     is_server: bool,
+
+    // Output settings
+    controller_name: String,
+    output_dir: String,
 }
 
 #[pymethods]
@@ -58,6 +67,8 @@ impl BuildContextParams {
         environment: String,
         live_reload_port: i32,
         is_server: bool,
+        controller_name: String,
+        output_dir: String,
     ) -> Self {
         Self {
             path,
@@ -65,6 +76,8 @@ impl BuildContextParams {
             environment,
             live_reload_port,
             is_server,
+            controller_name,
+            output_dir,
         }
     }
 }
@@ -128,17 +141,6 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     }
 
     #[pyfn(m)]
-    #[pyo3(name = "strip_js_comments")]
-    fn strip_js_comments(_py: Python, js_string: String) -> PyResult<String> {
-        if cfg!(debug_assertions) {
-            println!("Running in debug mode");
-        }
-
-        let final_text = lexers::strip_js_comments(js_string);
-        Ok(final_text)
-    }
-
-    #[pyfn(m)]
     #[pyo3(name = "build_javascript")]
     // PyRef to support borrow checking: https://github.com/PyO3/pyo3/issues/1177
     fn build_javascript(_py: Python, params: Vec<PyRef<BuildContextParams>>) -> PyResult<bool> {
@@ -166,23 +168,47 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         // downstream clients
         for param in &params {
             let original_script_path = Path::new(&param.path);
-            let map_file_path = original_script_path.with_extension("tsx.out.map");
+            let original_extension = original_script_path.extension().unwrap();
+            let script_file_path = original_script_path
+                .with_extension(format!("{}.out", original_extension.to_string_lossy()));
+            let map_file_path = original_script_path
+                .with_extension(format!("{}.out.map", original_extension.to_string_lossy()));
 
-            match fs::read_to_string(&map_file_path) {
-                Ok(contents) => {
-                    // Make the paths absolute
-                    match make_source_map_paths_absolute(&contents, &original_script_path) {
-                        Ok(modified_json) => match fs::write(&map_file_path, &modified_json) {
-                            Ok(_) => println!("Successfully updated {}", map_file_path.display()),
-                            Err(e) => {
-                                eprintln!("Failed to write to {}: {}", map_file_path.display(), e)
-                            }
-                        },
-                        Err(e) => eprintln!("Error processing {}: {}", map_file_path.display(), e),
-                    }
-                }
-                Err(e) => eprintln!("Failed to read {}: {}", map_file_path.display(), e),
+            // We can also copy these directly in-memory from the golang layer, but this requires
+            // keeping all file contents in memory until we reach this point. For larger projects
+            // this is a safer approach.
+            let mut map_contents = fs::read_to_string(&map_file_path).expect("Failed to read map");
+            map_contents = make_source_map_paths_absolute(&map_contents, &original_script_path)
+                .expect("Error processing source map");
+
+            let mut script_contents =
+                fs::read_to_string(&script_file_path).expect("Failed to read script");
+
+            let script_name: String;
+            let map_name: String;
+
+            if !param.is_server {
+                // Only client files need the hash
+                let content_hash = format!(
+                    "{:x}",
+                    md5::compute(lexers::strip_js_comments(&script_contents, true).as_bytes())
+                );
+                script_name = format!("{}-{}.js", param.controller_name, content_hash);
+                map_name = format!("{}.map", script_name);
+            } else {
+                script_name = format!("{}.js", param.controller_name);
+                map_name = format!("{}.map", script_name);
             }
+
+            // Point the contents to the new map location
+            // This should still be relatively positioned to the original script, so we just need
+            // to replace the name
+            script_contents = update_source_map_path(&script_contents, &map_name);
+
+            let output_dir = Path::new(&param.output_dir);
+            fs::write(output_dir.join(script_name), &script_contents)
+                .expect("Failed to write script");
+            fs::write(output_dir.join(map_name), &map_contents).expect("Failed to write map");
         }
 
         Ok(true)

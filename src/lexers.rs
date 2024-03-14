@@ -1,4 +1,4 @@
-pub fn strip_js_comments(js_string: String) -> String {
+pub fn strip_js_comments(js_string: &String, skip_whitespace: bool) -> String {
     let mut final_text = String::new();
     let chars: Vec<char> = js_string.chars().collect();
     let mut i = 0;
@@ -56,6 +56,8 @@ pub fn strip_js_comments(js_string: String) -> String {
             '\n' if is_in_line_comment => {
                 is_in_line_comment = false;
             }
+            // Skip over all whitespaces outside of strings
+            ch if ch.is_whitespace() && skip_whitespace && string_delimiter.is_none() => (),
             // Fallback for normal non-comment characters
             _ if !is_in_block_comment && !is_in_line_comment => {
                 final_text.push(chars[i]);
@@ -107,7 +109,19 @@ mod tests {
 
         for (input, expected) in test_cases {
             assert_eq!(
-                strip_js_comments(String::from(input)),
+                strip_js_comments(&String::from(input), false),
+                String::from(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn test_strip_js_comments_skip_whitespace() {
+        let test_cases = vec![("let x = 5; // This is a line comment", "letx=5;")];
+
+        for (input, expected) in test_cases {
+            assert_eq!(
+                strip_js_comments(&String::from(input), true),
                 String::from(expected)
             );
         }

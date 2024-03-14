@@ -1,6 +1,5 @@
 import multiprocessing
 from dataclasses import dataclass
-from hashlib import md5
 from pathlib import Path
 from threading import Thread
 from time import monotonic_ns
@@ -11,10 +10,6 @@ from inflection import underscore
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
-from mountaineer.js_compiler.source_maps import (
-    get_cleaned_js_contents,
-    update_source_map_path,
-)
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 
@@ -100,7 +95,15 @@ class JavascriptBundler(ClientBuilderBase):
             ]
 
             start = monotonic_ns()
-            mountaineer_rs.build_javascript(build_params)
+            try:
+                # TODO: Right now this raises pyo3_runtime.PanicException, which isn't caught
+                # appropriately. Our try/except block should be catching this.
+                mountaineer_rs.build_javascript(build_params)
+            except Exception as e:
+                LOGGER.error(f"Error building JS: {e}")
+                output_queue.put(False)
+                continue
+
             LOGGER.debug(
                 f"Processed payload in {(monotonic_ns() - start) / 1e9} seconds"
             )
@@ -139,6 +142,12 @@ class JavascriptBundler(ClientBuilderBase):
 
         build_params = []
         for payload in self.pending_files:
+            controller_base = underscore(payload.controller.__class__.__name__)
+
+            root_path = payload.file_path.get_package_root_link()
+            static_dir = root_path.get_managed_static_dir()
+            ssr_dir = root_path.get_managed_ssr_dir()
+
             # Client entrypoint config
             build_params.append(
                 (
@@ -149,6 +158,8 @@ class JavascriptBundler(ClientBuilderBase):
                     if payload.metadata.live_reload_port
                     else 0,
                     False,
+                    controller_base,
+                    str(static_dir),
                 )
             )
             # Server entrypoint config
@@ -159,60 +170,17 @@ class JavascriptBundler(ClientBuilderBase):
                     self.environment,
                     0,
                     True,
+                    controller_base,
+                    str(ssr_dir),
                 )
             )
 
         # Send the build params to the queue
         self.global_state["js_bundler_input"].put(build_params)
-        self.global_state["js_bundler_output"].get()
+        success = self.global_state["js_bundler_output"].get()
 
-        for payload in self.pending_files:
-            # We need to generate a relative import path from the view root to the current file
-            root_path = payload.file_path.get_package_root_link()
-            static_dir = root_path.get_managed_static_dir()
-            ssr_dir = root_path.get_managed_ssr_dir()
-
-            # Read these files
-            bundle = BundleOutput(
-                client_entrypoint_path=payload.client_entrypoint_path,
-                client_compiled_contents=(
-                    payload.client_entrypoint_path.with_suffix(".tsx.out")
-                ).read_text(),
-                client_source_map_contents=(
-                    payload.client_entrypoint_path.with_suffix(".tsx.out.map")
-                ).read_text(),
-                server_entrypoint_path=payload.server_entrypoint_path,
-                server_compiled_contents=(
-                    payload.server_entrypoint_path.with_suffix(".tsx.out")
-                ).read_text(),
-                server_source_map_contents=(
-                    payload.server_entrypoint_path.with_suffix(".tsx.out.map")
-                ).read_text(),
-            )
-
-            # Write the compiled files to disk
-            # Client-side scripts have to be provided a cache-invalidation suffix alongside
-            # mapping the source map to the new script name
-            controller_base = underscore(payload.controller.__class__.__name__)
-            content_hash = md5(
-                get_cleaned_js_contents(bundle.client_compiled_contents).encode()
-            ).hexdigest()
-            script_name = f"{controller_base}-{content_hash}.js"
-            map_name = f"{script_name}.map"
-
-            # Map to the new script name
-            contents = update_source_map_path(bundle.client_compiled_contents, map_name)
-
-            (static_dir / script_name).write_text(contents)
-            (static_dir / map_name).write_text(
-                bundle.client_source_map_contents
-            )
-
-            ssr_path = ssr_dir / f"{controller_base}.js"
-            ssr_path.write_text(bundle.server_compiled_contents)
-            (ssr_path.with_suffix(".js.map")).write_text(
-                bundle.server_source_map_contents
-            )
+        if not success:
+            raise ValueError("Error building JS")
 
     def generate_js_bundle(
         self,

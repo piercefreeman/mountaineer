@@ -1,5 +1,7 @@
+use lazy_static::lazy_static;
 use path_absolutize::*;
 use pyo3::prelude::*;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -311,6 +313,19 @@ pub fn make_source_map_paths_absolute(
     serde_json::to_string(&source_map)
 }
 
+pub fn update_source_map_path(contents: &str, new_path: &str) -> String {
+    lazy_static! {
+        static ref RE: Regex =
+            Regex::new(r"sourceMappingURL=(.*?).map").expect("Failed to compile regex");
+    }
+
+    RE.replace_all(
+        contents,
+        format!("sourceMappingURL={}.map", new_path).as_str(),
+    )
+    .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,5 +495,30 @@ mod tests {
         // Verify the results
         assert_eq!(modified_source_map.sources[0], expected_source_1);
         assert_eq!(modified_source_map.sources[1], expected_source_2);
+    }
+
+    #[test]
+    fn test_update_source_map_path() {
+        let test_cases = vec![
+            // Single, simple replacement
+            (
+                "var testing; //# sourceMappingURL=myfile.js.map",
+                "final_path.js",
+                "var testing; //# sourceMappingURL=final_path.js.map",
+            ),
+            // Multiple replacements
+            (
+                "var testing; //# sourceMappingURL=first.js.map //# sourceMappingURL=second.js.map",
+                "final_path.js",
+                "var testing; //# sourceMappingURL=final_path.js.map //# sourceMappingURL=final_path.js.map",
+            ),
+        ];
+
+        for (input_str, replace_path, expected_output) in test_cases {
+            assert_eq!(
+                update_source_map_path(input_str, replace_path),
+                expected_output
+            );
+        }
     }
 }

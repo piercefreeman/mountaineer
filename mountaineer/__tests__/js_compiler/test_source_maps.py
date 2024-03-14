@@ -8,51 +8,8 @@ from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.js_compiler.source_maps import (
     SourceMapParser,
     SourceMapSchema,
-    get_cleaned_js_contents,
-    update_source_map_path,
 )
 from mountaineer.test_utilities import benchmark_function
-
-
-@pytest.mark.parametrize(
-    "input_str, expected_output",
-    [
-        # Single-line comments
-        ("var x = 5; // This is a comment", "var x = 5;"),
-        # Whitespace handling
-        ("   // Comment\nvar c = 3;   ", "var c = 3;"),
-    ],
-)
-def test_get_cleaned_js_contents(input_str: str, expected_output: str):
-    """
-    Basic sanity check of the rust->python bridge, more extensive unit tests
-    are in the rust codebase.
-
-    """
-    assert get_cleaned_js_contents(input_str) == expected_output
-
-
-@pytest.mark.parametrize(
-    "input_str, replace_path, expected_output",
-    [
-        # Standard replacement
-        (
-            "var testing; //# sourceMappingURL=myfile.js.map",
-            "final_path.js.map",
-            "var testing; //# sourceMappingURL=final_path.js.map",
-        ),
-        # Replacement of independent map paths
-        (
-            "var testing; //# sourceMappingURL=first.js.map //# sourceMappingURL=second.js.map",
-            "final_path.js.map",
-            "var testing; //# sourceMappingURL=final_path.js.map //# sourceMappingURL=final_path.js.map",
-        ),
-    ],
-)
-def test_update_source_map_path(
-    input_str: str, replace_path: str, expected_output: str
-):
-    assert update_source_map_path(input_str, replace_path) == expected_output
 
 
 @pytest.mark.asyncio
