@@ -131,24 +131,3 @@ def update_source_map_path(contents: str, new_path: str):
     Updates the source map path to the new path, since the path is dynamic.
     """
     return sub(r"sourceMappingURL=(.*?).map", f"sourceMappingURL={new_path}", contents)
-
-
-def make_source_map_paths_absolute(contents: str, original_script_path: Path):
-    """
-    Takes a source map, along with the original pre-compiled entrypoint path,
-    and transforms the relative paths sources into absolute paths. Since often
-    our precompiled endpoints are in tmp directories, this is helpful to encode the
-    persistent path to the source files.
-
-    """
-    payload = SourceMapSchema.model_validate_json(contents)
-
-    new_sources: list[str] = []
-    for source in payload.sources:
-        source_path = Path(source)
-        if not source_path.is_absolute():
-            source_path = original_script_path.parent / source_path
-            new_sources.append(str(source_path.resolve()))
-
-    payload.sources = new_sources
-    return payload.model_dump_json()

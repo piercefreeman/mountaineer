@@ -9,7 +9,6 @@ from mountaineer.js_compiler.source_maps import (
     SourceMapParser,
     SourceMapSchema,
     get_cleaned_js_contents,
-    make_source_map_paths_absolute,
     update_source_map_path,
 )
 from mountaineer.test_utilities import benchmark_function
@@ -147,23 +146,3 @@ def test_map_exception():
         at renderWithHooks (test.ts:600:20)
     """,
     )
-
-
-def test_make_source_map_paths_absolute():
-    schema = SourceMapSchema(
-        version=3,
-        sources=["../../node_modules/sub_folder/test.ts"],
-        names=["symbol_test1", "symbol_test2"],
-        mappings="",
-        sourceRoot="",
-        file="test.js",
-    )
-
-    parsed_result = make_source_map_paths_absolute(
-        schema.model_dump_json(),
-        Path("/fakehome/user/project/app/fake/fake/test.js"),
-    )
-
-    assert SourceMapSchema.model_validate_json(parsed_result).sources == [
-        "/fakehome/user/project/app/node_modules/sub_folder/test.ts"
-    ]

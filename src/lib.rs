@@ -5,6 +5,8 @@ use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use src_go;
 use std::ffi::c_int;
+use std::fs;
+use std::path::Path;
 use std::time::Duration;
 
 mod errors;
@@ -18,7 +20,7 @@ extern crate lazy_static;
 
 // Export mainly for use in benchmarks
 pub use lexers::strip_js_comments;
-pub use source_map::{MapMetadata, SourceMapParser, VLQDecoder};
+pub use source_map::{make_source_map_paths_absolute, MapMetadata, SourceMapParser, VLQDecoder};
 pub use ssr::Ssr;
 
 fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
@@ -146,7 +148,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
         let mut context_ids = Vec::<c_int>::new();
 
-        for param in params {
+        for param in &params {
             let context_id = src_go::get_build_context(
                 &param.path,
                 &param.node_modules_path,
@@ -158,6 +160,30 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         src_go::rebuild_contexts(context_ids);
+
+        // We expect that each input path will have an `.js.out.map` file
+        // Make the paths referenced in this file absolute to make it clearer for
+        // downstream clients
+        for param in &params {
+            let original_script_path = Path::new(&param.path);
+            let map_file_path = original_script_path.with_extension("tsx.out.map");
+
+            match fs::read_to_string(&map_file_path) {
+                Ok(contents) => {
+                    // Make the paths absolute
+                    match make_source_map_paths_absolute(&contents, &original_script_path) {
+                        Ok(modified_json) => match fs::write(&map_file_path, &modified_json) {
+                            Ok(_) => println!("Successfully updated {}", map_file_path.display()),
+                            Err(e) => {
+                                eprintln!("Failed to write to {}: {}", map_file_path.display(), e)
+                            }
+                        },
+                        Err(e) => eprintln!("Error processing {}: {}", map_file_path.display(), e),
+                    }
+                }
+                Err(e) => eprintln!("Failed to read {}: {}", map_file_path.display(), e),
+            }
+        }
 
         Ok(true)
     }

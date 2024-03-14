@@ -10,6 +10,10 @@ lazy_static = "1.4.0"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 log = "0.4"
 env_logger = "0.11"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0"
+path-absolutize = "3.1.1"
+
 src_go = { path = "./src_go" }
 
 # Thread cancellation needs OS bindings
@@ -18,6 +22,7 @@ winapi = { version = "0.3", features = ["processthreadsapi"] }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
+tempfile = "3.10.1"
 
 [profile.release]
 opt-level = 3

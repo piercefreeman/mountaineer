@@ -1,5 +1,9 @@
+use path_absolutize::*;
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashMap;
+use std::path::Path;
 
 #[derive(Debug, PartialEq, Clone)]
 #[pyclass(get_all, set_all)]
@@ -263,9 +267,55 @@ impl VLQDecoder {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct SourceMapSchema {
+    version: i32,
+    sources: Vec<String>,
+    names: Vec<String>,
+    mappings: String,
+    #[serde(rename = "sourcesContent")]
+    sources_content: Option<Vec<String>>,
+    #[serde(rename = "sourceRoot")]
+    source_root: Option<String>,
+    file: Option<String>,
+}
+
+pub fn make_source_map_paths_absolute(
+    contents: &str,
+    original_script_path: &Path,
+) -> serde_json::Result<String> {
+    let mut source_map: SourceMapSchema = serde_json::from_str(contents)?;
+
+    let parent_path = original_script_path
+        .parent()
+        .unwrap_or_else(|| Path::new(""));
+
+    source_map.sources = source_map
+        .sources
+        .iter()
+        .map(|source| {
+            let source_path = Path::new(source);
+            if source_path.is_absolute() {
+                source_path.absolutize().unwrap().to_path_buf()
+            } else {
+                parent_path
+                    .join(source_path)
+                    .absolutize()
+                    .unwrap()
+                    .to_path_buf()
+            }
+        })
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect();
+
+    serde_json::to_string(&source_map)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_vlq_constants() {
@@ -394,5 +444,41 @@ mod tests {
                 "Failed test for expected_metadata_state"
             );
         }
+    }
+
+    #[test]
+    fn test_make_source_map_paths_absolute() {
+        let temp_dir = tempdir().unwrap();
+        let temp_dir_path = temp_dir.path();
+        let original_script_path = temp_dir_path.join("dist/main.js");
+        fs::create_dir_all(original_script_path.parent().unwrap()).unwrap();
+
+        // Paths are relative to the output file
+        let contents = r#"{
+            "version": 3,
+            "sources": ["./src/file1.js", "/absolute/path/../path/src/file2.js"],
+            "names": [],
+            "mappings": "",
+            "sourcesContent": null,
+            "sourceRoot": null,
+            "file": null
+        }"#;
+
+        // Expected result (note: this will depend on your current directory when running the test)
+        let expected_source_1 = temp_dir_path
+            .join("dist/src/file1.js")
+            .to_string_lossy()
+            .into_owned();
+        let expected_source_2 = Path::new("/absolute/path/src/file2.js")
+            .to_string_lossy()
+            .into_owned();
+
+        let modified_json =
+            make_source_map_paths_absolute(contents, &original_script_path).unwrap();
+        let modified_source_map: SourceMapSchema = serde_json::from_str(&modified_json).unwrap();
+
+        // Verify the results
+        assert_eq!(modified_source_map.sources[0], expected_source_1);
+        assert_eq!(modified_source_map.sources[1], expected_source_2);
     }
 }

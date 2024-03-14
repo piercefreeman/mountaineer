@@ -13,7 +13,6 @@ from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
 from mountaineer.js_compiler.source_maps import (
     get_cleaned_js_contents,
-    make_source_map_paths_absolute,
     update_source_map_path,
 )
 from mountaineer.logging import LOGGER
@@ -206,17 +205,13 @@ class JavascriptBundler(ClientBuilderBase):
 
             (static_dir / script_name).write_text(contents)
             (static_dir / map_name).write_text(
-                make_source_map_paths_absolute(
-                    bundle.client_source_map_contents, bundle.client_entrypoint_path
-                )
+                bundle.client_source_map_contents
             )
 
             ssr_path = ssr_dir / f"{controller_base}.js"
             ssr_path.write_text(bundle.server_compiled_contents)
             (ssr_path.with_suffix(".js.map")).write_text(
-                make_source_map_paths_absolute(
-                    bundle.server_source_map_contents, bundle.server_entrypoint_path
-                )
+                bundle.server_source_map_contents
             )
 
     def generate_js_bundle(
