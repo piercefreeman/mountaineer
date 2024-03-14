@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-from multiprocessing.managers import DictProxy
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any, Coroutine, MutableMapping
@@ -21,7 +20,8 @@ class ClientBuilderBase(ABC):
     whether to handle the incoming file.
 
     """
-    def __init__(self,tmp_dir: Path | None = None):
+
+    def __init__(self, tmp_dir: Path | None = None):
         # We keep a tmpdir open for the duration of the build process, so our rust
         # logic can leverage file-based caches for faster builds
         # Note that this tmpdir is shared across all client builders, so it's important

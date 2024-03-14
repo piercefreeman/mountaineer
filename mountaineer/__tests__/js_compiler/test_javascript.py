@@ -2,11 +2,11 @@ from pathlib import Path
 from re import sub as re_sub
 from tempfile import TemporaryDirectory
 from typing import Iterable
-from unittest.mock import ANY, MagicMock, _Call, call, patch
-from mountaineer.controller import ControllerBase
+from unittest.mock import MagicMock, _Call, call, patch
 
 import pytest
 
+from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBundleMetadata
 from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.paths import ManagedViewPath
@@ -248,7 +248,7 @@ async def test_convert(
         await base_javascript_bundler.handle_file(
             file_path=fake_view_root / "page.tsx",
             controller=ExampleController(),
-            metadata=ClientBundleMetadata()
+            metadata=ClientBundleMetadata(),
         )
 
         await base_javascript_bundler.finish_build()
@@ -266,11 +266,10 @@ async def test_convert(
         assert "SSR_PAGE" in ssr_path.read_text()
 
         assert len(static_paths) == 2
-        static_path = next(
-            path for path, is_map in static_paths if not is_map
-        )
+        static_path = next(path for path, is_map in static_paths if not is_map)
 
         assert "CLIENT_PAGE" in static_path.read_text()
+
 
 @pytest.mark.parametrize(
     "page_path, view_root_path, expected_throws",

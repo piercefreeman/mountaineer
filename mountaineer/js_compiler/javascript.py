@@ -1,10 +1,12 @@
-from hashlib import md5
 import multiprocessing
+from dataclasses import dataclass
+from hashlib import md5
 from pathlib import Path
-from tempfile import mkdtemp
+from threading import Thread
+from time import monotonic_ns
+from typing import Any
 
 from inflection import underscore
-from pydantic import BaseModel
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.controller import ControllerBase
@@ -16,11 +18,7 @@ from mountaineer.js_compiler.source_maps import (
 )
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
-from dataclasses import dataclass
-from typing import Any
-from queue import Queue
-from threading import Thread
-from time import monotonic_ns
+
 
 @dataclass
 class JSBundle:
@@ -32,6 +30,7 @@ class JSBundle:
     file_path: ManagedViewPath
     controller: ControllerBase
     metadata: ClientBundleMetadata
+
 
 @dataclass
 class BundleOutput:
@@ -62,23 +61,29 @@ class JavascriptBundler(ClientBuilderBase):
 
         # Pending paths to be processed
         # (client_path, server_path)
-        self.pending_files : list[JSBundle] = []
+        self.pending_files: list[JSBundle] = []
 
     async def init_state(self, global_state):
         self.global_state = global_state
 
         # Launch a thread that will handle our build queue, potentially across
         # multiple subprocesses
-        build_input_queue = multiprocessing.Queue()
-        build_output_queue = multiprocessing.Queue()
+        build_input_queue: multiprocessing.Queue[tuple[Any]] = multiprocessing.Queue()
+        build_output_queue: multiprocessing.Queue[bool] = multiprocessing.Queue()
 
         global_state["js_bundler_input"] = build_input_queue
         global_state["js_bundler_output"] = build_output_queue
 
-        thread = Thread(target=self.process_pending_files, args=(build_input_queue,build_output_queue), daemon=True)
+        thread = Thread(
+            target=self.process_pending_files,
+            args=(build_input_queue, build_output_queue),
+            daemon=True,
+        )
         thread.start()
 
-    def process_pending_files(self, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue):
+    def process_pending_files(
+        self, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue
+    ):
         LOGGER.debug("Spawning process_pending_files")
         while True:
             try:
@@ -92,13 +97,14 @@ class JavascriptBundler(ClientBuilderBase):
                 break
 
             build_params = [
-                mountaineer_rs.BuildContextParams(*params)
-                for params in payload
+                mountaineer_rs.BuildContextParams(*params) for params in payload
             ]
 
             start = monotonic_ns()
             mountaineer_rs.build_javascript(build_params)
-            LOGGER.debug(f"Processed payload in {(monotonic_ns() - start) / 1e9} seconds")
+            LOGGER.debug(
+                f"Processed payload in {(monotonic_ns() - start) / 1e9} seconds"
+            )
 
             output_queue.put(True)
 
@@ -124,9 +130,7 @@ class JavascriptBundler(ClientBuilderBase):
 
         # Now we can process the files in bulk
         payload = self.generate_js_bundle(
-            file_path=file_path,
-            controller=controller,
-            metadata=metadata
+            file_path=file_path, controller=controller, metadata=metadata
         )
         self.pending_files.append(payload)
 
@@ -142,7 +146,9 @@ class JavascriptBundler(ClientBuilderBase):
                     str(payload.client_entrypoint_path),
                     str(payload.temp_path / "node_modules"),
                     self.environment,
-                    payload.metadata.live_reload_port if payload.metadata.live_reload_port else 0,
+                    payload.metadata.live_reload_port
+                    if payload.metadata.live_reload_port
+                    else 0,
                     False,
                 )
             )

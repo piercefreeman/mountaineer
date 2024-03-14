@@ -1,20 +1,18 @@
 import asyncio
-from contextlib import contextmanager
-from multiprocessing.managers import DictProxy
 import socket
+from contextlib import contextmanager
+from functools import partial
 from importlib import import_module
 from importlib.metadata import distributions
 from multiprocessing import Event, Process, get_start_method, set_start_method
 from multiprocessing.queues import Queue
+from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from threading import Thread
 from time import sleep, time
 from traceback import format_exception
-from typing import Callable, Any, MutableMapping
-from pathlib import Path
-from multiprocessing import Manager
-from functools import partial
+from typing import Any, Callable, MutableMapping
 
 from click import secho
 from fastapi import Request
@@ -202,6 +200,7 @@ class IsolatedEnvProcess(Process):
         else:
             raise exc
 
+
 def handle_watch(
     *,
     package: str,
@@ -239,7 +238,9 @@ def handle_watch(
 
     with init_global_state(webcontroller) as global_state:
         watchdog = build_common_watchdog(
-            package, partial(update_build, global_state=global_state), subscribe_to_mountaineer=subscribe_to_mountaineer
+            package,
+            partial(update_build, global_state=global_state),
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
         )
         watchdog.start_watching()
 
@@ -275,7 +276,7 @@ def handle_runserver(
     def update_webservice():
         asyncio.run(watcher_webservice.broadcast_listeners())
 
-    def update_build(global_state: DictProxy[Any, Any]):
+    def update_build(global_state: dict[Any, Any]):
         nonlocal current_process
 
         if current_process is not None:
@@ -311,7 +312,7 @@ def handle_runserver(
         watchdog = build_common_watchdog(
             package,
             partial(update_build, global_state=global_state),
-            subscribe_to_mountaineer=subscribe_to_mountaineer
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
         )
         watchdog.start_watching()
 
@@ -417,7 +418,7 @@ def init_global_state(webcontroller: str):
     initialize global state before the fork.
 
     """
-    global_state = {}
+    global_state: dict[Any, Any] = {}
 
     app_controller = import_from_string(webcontroller)
 
@@ -426,11 +427,9 @@ def init_global_state(webcontroller: str):
 
     async def entrypoint():
         await asyncio.gather(
-            *[
-                builder.init_state(global_state)
-                for builder in app_controller.builders
-            ]
+            *[builder.init_state(global_state) for builder in app_controller.builders]
         )
+
     asyncio.run(entrypoint())
 
     yield global_state
