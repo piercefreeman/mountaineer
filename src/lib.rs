@@ -3,6 +3,8 @@
 use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
+use src_go;
+use std::ffi::c_int;
 use std::time::Duration;
 
 mod errors;
@@ -14,6 +16,7 @@ mod timeout;
 #[macro_use]
 extern crate lazy_static;
 
+// Export mainly for use in benchmarks
 pub use lexers::strip_js_comments;
 pub use source_map::{MapMetadata, SourceMapParser, VLQDecoder};
 pub use ssr::Ssr;
@@ -34,9 +37,40 @@ fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+#[pyclass(get_all, set_all)]
+struct BuildContextParams {
+    path: String,
+    node_modules_path: String,
+    environment: String,
+    live_reload_port: i32,
+    is_server: bool,
+}
+
+#[pymethods]
+impl BuildContextParams {
+    #[new]
+    fn new(
+        path: String,
+        node_modules_path: String,
+        environment: String,
+        live_reload_port: i32,
+        is_server: bool,
+    ) -> Self {
+        Self {
+            path,
+            node_modules_path,
+            environment,
+            live_reload_port,
+            is_server,
+        }
+    }
+}
+
 #[pymodule]
 fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
+    m.add_class::<BuildContextParams>()?;
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
@@ -100,6 +134,32 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
         let final_text = lexers::strip_js_comments(js_string);
         Ok(final_text)
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "build_javascript")]
+    // PyRef to support borrow checking: https://github.com/PyO3/pyo3/issues/1177
+    fn build_javascript(_py: Python, params: Vec<PyRef<BuildContextParams>>) -> PyResult<bool> {
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
+        let mut context_ids = Vec::<c_int>::new();
+
+        for param in params {
+            let context_id = src_go::get_build_context(
+                &param.path,
+                &param.node_modules_path,
+                &param.environment,
+                param.live_reload_port,
+                param.is_server,
+            );
+            context_ids.push(context_id);
+        }
+
+        src_go::rebuild_contexts(context_ids);
+
+        Ok(true)
     }
 
     Ok(())

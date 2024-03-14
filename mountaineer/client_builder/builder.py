@@ -22,7 +22,6 @@ from mountaineer.client_builder.typescript import (
 from mountaineer.controller import ControllerBase
 from mountaineer.io import gather_with_concurrency
 from mountaineer.js_compiler.base import ClientBundleMetadata
-from mountaineer.js_compiler.esbuild import ESBuildWrapper
 from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
@@ -385,12 +384,6 @@ class ClientBuilder:
                 rmtree(clear_dir)
             clear_dir.mkdir(parents=True)
 
-        # Before we spawn our different processes, we make sure that we can actually resolve
-        # the esbuild path. We want one exception / download flow, not one per process.
-        esbuilder = ESBuildWrapper()
-        if not esbuilder.get_esbuild_path():
-            raise ValueError("Unable to resolve esbuild path")
-
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
         )
@@ -422,9 +415,15 @@ class ClientBuilder:
             for builder in self.app.builders
         ]
 
+        for builder in self.app.builders:
+            await builder.start_build()
+
         results = await gather_with_concurrency(
             controller_tasks + file_tasks, n=max_concurrency, catch_exceptions=True
         )
+
+        for builder in self.app.builders:
+            await builder.finish_build()
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False

@@ -10,6 +10,7 @@ lazy_static = "1.4.0"
 pyo3 = { version = "0.20", features = ["extension-module"] }
 log = "0.4"
 env_logger = "0.11"
+src_go = { path = "./src_go" }
 
 # Thread cancellation needs OS bindings
 libc = "0.2"

@@ -1,14 +1,14 @@
-import asyncio
 from hashlib import md5
+import multiprocessing
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 
 from inflection import underscore
 from pydantic import BaseModel
 
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
-from mountaineer.js_compiler.esbuild import ESBuildWrapper
 from mountaineer.js_compiler.source_maps import (
     get_cleaned_js_contents,
     make_source_map_paths_absolute,
@@ -16,9 +16,25 @@ from mountaineer.js_compiler.source_maps import (
 )
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
+from dataclasses import dataclass
+from typing import Any
+from queue import Queue
+from threading import Thread
+from time import time
 
+@dataclass
+class JSBundle:
+    temp_path: Path
+    client_entrypoint_path: Path
+    server_entrypoint_path: Path
 
-class BundleOutput(BaseModel):
+    # Also pass along the raw parameters that we were called with
+    file_path: ManagedViewPath
+    controller: ControllerBase
+    metadata: ClientBundleMetadata
+
+@dataclass
+class BundleOutput:
     client_entrypoint_path: Path
     client_compiled_contents: str
     client_source_map_contents: str
@@ -33,9 +49,60 @@ class JavascriptBundler(ClientBuilderBase):
     of the SSR pipeline and client hydration.
     """
 
-    def __init__(self, root_element: str = "root", environment: str = "development"):
+    def __init__(
+        self,
+        root_element: str = "root",
+        environment: str = "development",
+        tmp_dir: Path | None = None,
+    ):
+        super().__init__(tmp_dir=tmp_dir)
+
         self.root_element = root_element
         self.environment = environment
+
+        # Pending paths to be processed
+        # (client_path, server_path)
+        self.pending_files : list[JSBundle] = []
+
+    async def init_state(self, global_state):
+        self.global_state = global_state
+
+        # Launch a thread that will handle our build queue, potentially across
+        # multiple subprocesses
+        build_input_queue = multiprocessing.Queue()
+        build_output_queue = multiprocessing.Queue()
+
+        global_state["js_bundler_input"] = build_input_queue
+        global_state["js_bundler_output"] = build_output_queue
+
+        thread = Thread(target=self.process_pending_files, args=(build_input_queue,build_output_queue), daemon=True)
+        thread.start()
+
+    def process_pending_files(self, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue):
+        LOGGER.debug("Spawning process_pending_files")
+        while True:
+            payload = input_queue.get()
+            LOGGER.debug("Got JS build payload: {len(payload)}")
+            if payload is None:
+                break
+
+            build_params = [
+                mountaineer_rs.BuildContextParams(*params)
+                for params in payload
+            ]
+
+            start = time()
+            mountaineer_rs.build_javascript(build_params)
+            LOGGER.debug(f"Processed payload in {time() - start} seconds")
+
+            output_queue.put(True)
+
+    async def start_build(self):
+        self.pending_files = []
+
+        # Make sure we have been initialized
+        if self.global_state is None:
+            await self.init_state({})
 
     async def handle_file(
         self,
@@ -50,149 +117,147 @@ class JavascriptBundler(ClientBuilderBase):
             # We only know how to parse tsx and jsx files
             return None
 
-        # We need to generate a relative import path from the view root to the current file
-        root_path = file_path.get_package_root_link()
-        static_dir = root_path.get_managed_static_dir()
-        ssr_dir = root_path.get_managed_ssr_dir()
-        bundle = await self.generate_js_bundle(
-            current_path=file_path, metadata=metadata
+        # Now we can process the files in bulk
+        payload = self.generate_js_bundle(
+            file_path=file_path,
+            controller=controller,
+            metadata=metadata
         )
+        self.pending_files.append(payload)
 
-        # Write the compiled files to disk
-        # Client-side scripts have to be provided a cache-invalidation suffix alongside
-        # mapping the source map to the new script name
-        controller_base = underscore(controller.__class__.__name__)
-        content_hash = md5(
-            get_cleaned_js_contents(bundle.client_compiled_contents).encode()
-        ).hexdigest()
-        script_name = f"{controller_base}-{content_hash}.js"
-        map_name = f"{script_name}.map"
+    async def finish_build(self):
+        if not self.global_state:
+            raise ValueError("JavascriptBundler has not been initialized")
 
-        # Map to the new script name
-        contents = update_source_map_path(bundle.client_compiled_contents, map_name)
-
-        (static_dir / script_name).write_text(contents)
-        (static_dir / map_name).write_text(
-            make_source_map_paths_absolute(
-                bundle.client_source_map_contents, bundle.client_entrypoint_path
+        build_params = []
+        for payload in self.pending_files:
+            # Client entrypoint config
+            build_params.append(
+                (
+                    str(payload.client_entrypoint_path),
+                    str(payload.temp_path / "node_modules"),
+                    self.environment,
+                    payload.metadata.live_reload_port if payload.metadata.live_reload_port else 0,
+                    False,
+                )
             )
-        )
-
-        ssr_path = ssr_dir / f"{controller_base}.js"
-        ssr_path.write_text(bundle.server_compiled_contents)
-        (ssr_path.with_suffix(".js.map")).write_text(
-            make_source_map_paths_absolute(
-                bundle.server_source_map_contents, bundle.server_entrypoint_path
-            )
-        )
-
-    async def generate_js_bundle(
-        self, current_path: ManagedViewPath, metadata: ClientBundleMetadata
-    ) -> BundleOutput:
-        # Before starting, make sure all the files are valid
-        self.validate_page(
-            page_path=current_path, view_root_path=current_path.get_root_link()
-        )
-
-        layout_paths = self.sniff_for_layouts(
-            page_path=current_path, view_root_path=current_path.get_root_link()
-        )
-
-        # esbuild works on disk files
-        with TemporaryDirectory() as temp_dir_name:
-            temp_dir_path = Path(temp_dir_name)
-
-            # Actually create the dist directory, since our relative path sniffing approach
-            # prefers to work with directories that exist
-            (temp_dir_path / "dist").mkdir()
-
-            # The same endpoint definition is used for both SSR and the client build
-            synthetic_payload = self.build_synthetic_endpoint(
-                page_path=current_path,
-                layout_paths=layout_paths,
-                # This output path should be relative to the `synthetic_client` and `synthetic_server`
-                # entrypoint files
-                output_path=temp_dir_path,
+            # Server entrypoint config
+            build_params.append(
+                (
+                    str(payload.server_entrypoint_path),
+                    str(payload.temp_path / "node_modules"),
+                    self.environment,
+                    0,
+                    True,
+                )
             )
 
-            client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)
-            ssr_entrypoint = self.build_synthetic_ssr_page(*synthetic_payload)
+        # Send the build params to the queue
+        self.global_state["js_bundler_input"].put(build_params)
+        self.global_state["js_bundler_output"].get()
 
-            client_entrypoint_path = temp_dir_path / "synthetic_client.tsx"
-            server_entrypoint_path = temp_dir_path / "synthetic_server.tsx"
-
-            self.link_project_files(
-                view_root_path=current_path.get_package_root_link(),
-                temp_dir_path=temp_dir_path,
-            )
-            client_entrypoint_path.write_text(client_entrypoint)
-            server_entrypoint_path.write_text(ssr_entrypoint)
-
-            common_loader = {
-                ".tsx": "tsx",
-                ".jsx": "jsx",
-            }
-
-            es_builder = ESBuildWrapper()
-            await asyncio.gather(
-                *[
-                    es_builder.bundle(
-                        entry_points=[client_entrypoint_path],
-                        outfile=temp_dir_path / "dist" / "synthetic_client.js",
-                        output_format="esm",
-                        bundle=True,
-                        sourcemap=True,
-                        define={
-                            "process.env.NODE_ENV": self.environment,
-                            "process.env.SSR_RENDERING": "false",
-                            **(
-                                {
-                                    "process.env.LIVE_RELOAD_PORT": str(
-                                        metadata.live_reload_port
-                                    ),
-                                }
-                                if metadata.live_reload_port
-                                else {}
-                            ),
-                        },
-                        loaders=common_loader,
-                        node_paths=[temp_dir_path / "node_modules"],
-                    ),
-                    es_builder.bundle(
-                        entry_points=[server_entrypoint_path],
-                        outfile=temp_dir_path / "dist" / "synthetic_server.js",
-                        output_format="iife",
-                        global_name="SSR",
-                        define={
-                            "global": "window",
-                            "process.env.SSR_RENDERING": "true",
-                            "process.env.NODE_ENV": self.environment,
-                        },
-                        bundle=True,
-                        sourcemap=True,
-                        loaders=common_loader,
-                        node_paths=[temp_dir_path / "node_modules"],
-                    ),
-                ]
-            )
+        for payload in self.pending_files:
+            # We need to generate a relative import path from the view root to the current file
+            root_path = payload.file_path.get_package_root_link()
+            static_dir = root_path.get_managed_static_dir()
+            ssr_dir = root_path.get_managed_ssr_dir()
 
             # Read these files
-            return BundleOutput(
-                client_entrypoint_path=client_entrypoint_path,
+            bundle = BundleOutput(
+                client_entrypoint_path=payload.client_entrypoint_path,
                 client_compiled_contents=(
-                    temp_dir_path / "dist" / "synthetic_client.js"
+                    payload.client_entrypoint_path.with_suffix(".tsx.out")
                 ).read_text(),
                 client_source_map_contents=(
-                    temp_dir_path / "dist" / "synthetic_client.js.map"
+                    payload.client_entrypoint_path.with_suffix(".tsx.out.map")
                 ).read_text(),
-                server_entrypoint_path=server_entrypoint_path,
+                server_entrypoint_path=payload.server_entrypoint_path,
                 server_compiled_contents=(
-                    temp_dir_path / "dist" / "synthetic_server.js"
+                    payload.server_entrypoint_path.with_suffix(".tsx.out")
                 ).read_text(),
                 server_source_map_contents=(
-                    temp_dir_path / "dist" / "synthetic_server.js.map"
+                    payload.server_entrypoint_path.with_suffix(".tsx.out.map")
                 ).read_text(),
             )
+
+            # Write the compiled files to disk
+            # Client-side scripts have to be provided a cache-invalidation suffix alongside
+            # mapping the source map to the new script name
+            controller_base = underscore(payload.controller.__class__.__name__)
+            content_hash = md5(
+                get_cleaned_js_contents(bundle.client_compiled_contents).encode()
+            ).hexdigest()
+            script_name = f"{controller_base}-{content_hash}.js"
+            map_name = f"{script_name}.map"
+
+            # Map to the new script name
+            contents = update_source_map_path(bundle.client_compiled_contents, map_name)
+
+            (static_dir / script_name).write_text(contents)
+            (static_dir / map_name).write_text(
+                make_source_map_paths_absolute(
+                    bundle.client_source_map_contents, bundle.client_entrypoint_path
+                )
+            )
+
+            ssr_path = ssr_dir / f"{controller_base}.js"
+            ssr_path.write_text(bundle.server_compiled_contents)
+            (ssr_path.with_suffix(".js.map")).write_text(
+                make_source_map_paths_absolute(
+                    bundle.server_source_map_contents, bundle.server_entrypoint_path
+                )
+            )
+
+    def generate_js_bundle(
+        self,
+        file_path: ManagedViewPath,
+        controller: ControllerBase,
+        metadata: ClientBundleMetadata,
+    ) -> JSBundle:
+        # Before starting, make sure all the files are valid
+        self.validate_page(
+            page_path=file_path, view_root_path=file_path.get_root_link()
+        )
+
+        # Since this directory should persist between build lifecycles, we both use a unchanging
+        # directory name and one that will be unique across different controllers
+        temp_dir_path = self.tmp_dir / controller.__class__.__name__
+        temp_dir_path.mkdir(exist_ok=True)
+
+        layout_paths = self.sniff_for_layouts(
+            page_path=file_path, view_root_path=file_path.get_root_link()
+        )
+
+        # The same endpoint definition is used for both SSR and the client build
+        synthetic_payload = self.build_synthetic_endpoint(
+            page_path=file_path,
+            layout_paths=layout_paths,
+            # This output path should be relative to the `synthetic_client` and `synthetic_server`
+            # entrypoint files
+            output_path=temp_dir_path,
+        )
+
+        client_entrypoint = self.build_synthetic_client_page(*synthetic_payload)
+        ssr_entrypoint = self.build_synthetic_ssr_page(*synthetic_payload)
+
+        client_entrypoint_path = temp_dir_path / "synthetic_client.tsx"
+        server_entrypoint_path = temp_dir_path / "synthetic_server.tsx"
+
+        self.link_project_files(
+            view_root_path=file_path.get_package_root_link(),
+            temp_dir_path=temp_dir_path,
+        )
+        client_entrypoint_path.write_text(client_entrypoint)
+        server_entrypoint_path.write_text(ssr_entrypoint)
+
+        return JSBundle(
+            temp_path=temp_dir_path,
+            client_entrypoint_path=client_entrypoint_path,
+            server_entrypoint_path=server_entrypoint_path,
+            file_path=file_path,
+            controller=controller,
+            metadata=metadata,
+        )
 
     def build_synthetic_client_page(
         self,
@@ -303,6 +368,7 @@ class JavascriptBundler(ClientBuilderBase):
                 continue
 
             LOGGER.debug(f"Linking {file_name} to {temp_dir_path}")
+            (temp_dir_path / file_name).unlink(missing_ok=True)
             (temp_dir_path / file_name).symlink_to(view_root_path / file_name)
 
     def sniff_for_layouts(self, *, page_path: Path, view_root_path: Path):

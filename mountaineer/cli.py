@@ -1,14 +1,20 @@
 import asyncio
+from contextlib import contextmanager
+from multiprocessing.managers import DictProxy
 import socket
 from importlib import import_module
 from importlib.metadata import distributions
 from multiprocessing import Event, Process, get_start_method, set_start_method
 from multiprocessing.queues import Queue
 from signal import SIGINT, signal
+from tempfile import mkdtemp
 from threading import Thread
 from time import sleep, time
 from traceback import format_exception
-from typing import Callable
+from typing import Callable, Any, MutableMapping
+from pathlib import Path
+from multiprocessing import Manager
+from functools import partial
 
 from click import secho
 from fastapi import Request
@@ -45,7 +51,15 @@ class IsolatedEnvProcess(Process):
         watch_config: IsolatedWatchConfig,
         runserver_config: IsolatedRunserverConfig | None = None,
         build_notification_channel: Queue | None = None,
+        build_cache: Path | None = None,
+        build_state: MutableMapping[Any, Any] | None = None,
     ):
+        """
+        build_state: State that was originally initialized in the main process, before
+        we spawned this worker. This can be used to inherit settings or multiprocessing-safe
+        objects that will stick around for the duration of the process lifecycle inbetween-watchers.
+
+        """
         super().__init__()
 
         if runserver_config is None and watch_config is None:
@@ -55,6 +69,8 @@ class IsolatedEnvProcess(Process):
         self.watch_config = watch_config
         self.close_signal = Event()
         self.build_notification_channel = build_notification_channel
+        self.build_cache = build_cache
+        self.build_state = build_state
 
     def run(self):
         app_controller = import_from_string(self.watch_config.webcontroller)
@@ -68,6 +84,15 @@ class IsolatedEnvProcess(Process):
         self.exception_controller = ExceptionController()
         app_controller.register(self.exception_controller)
         app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+
+        # Inject our tmp directory instead of the directories for the already registered
+        # build components
+        if self.build_cache:
+            for builder in app_controller.builders:
+                builder.tmp_dir = self.build_cache
+        if self.build_state:
+            for builder in app_controller.builders:
+                builder.global_state = self.build_state
 
         # Finish the build before we start the server since the server launch is going to sniff
         # for the built artifacts
@@ -177,7 +202,6 @@ class IsolatedEnvProcess(Process):
         else:
             raise exc
 
-
 def handle_watch(
     *,
     package: str,
@@ -195,7 +219,11 @@ def handle_watch(
 
     current_process: IsolatedEnvProcess | None = None
 
-    def update_build():
+    # The global cache will let us keep cache files warm across
+    # different builds
+    global_build_cache = Path(mkdtemp())
+
+    def update_build(global_state: MutableMapping[Any, Any]):
         nonlocal current_process
 
         if current_process is not None:
@@ -204,13 +232,16 @@ def handle_watch(
 
         current_process = IsolatedEnvProcess(
             watch_config=IsolatedWatchConfig(webcontroller=webcontroller),
+            build_cache=global_build_cache,
+            build_state=global_state,
         )
         current_process.start()
 
-    watchdog = build_common_watchdog(
-        package, update_build, subscribe_to_mountaineer=subscribe_to_mountaineer
-    )
-    watchdog.start_watching()
+    with init_global_state(webcontroller) as global_state:
+        watchdog = build_common_watchdog(
+            package, partial(update_build, global_state=global_state), subscribe_to_mountaineer=subscribe_to_mountaineer
+        )
+        watchdog.start_watching()
 
 
 def handle_runserver(
@@ -231,6 +262,10 @@ def handle_runserver(
 
     current_process: IsolatedEnvProcess | None = None
 
+    # The global cache will let us keep cache files warm across
+    # different builds
+    global_build_cache = Path(mkdtemp())
+
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
@@ -240,7 +275,7 @@ def handle_runserver(
     def update_webservice():
         asyncio.run(watcher_webservice.broadcast_listeners())
 
-    def update_build():
+    def update_build(global_state: DictProxy[Any, Any]):
         nonlocal current_process
 
         if current_process is not None:
@@ -255,6 +290,8 @@ def handle_runserver(
             ),
             watch_config=IsolatedWatchConfig(webcontroller=webcontroller),
             build_notification_channel=watcher_webservice.notification_queue,
+            build_cache=global_build_cache,
+            build_state=global_state,
         )
         current_process.start()
 
@@ -270,10 +307,13 @@ def handle_runserver(
 
     signal(SIGINT, graceful_shutdown)
 
-    watchdog = build_common_watchdog(
-        package, update_build, subscribe_to_mountaineer=subscribe_to_mountaineer
-    )
-    watchdog.start_watching()
+    with init_global_state(webcontroller) as global_state:
+        watchdog = build_common_watchdog(
+            package,
+            partial(update_build, global_state=global_state),
+            subscribe_to_mountaineer=subscribe_to_mountaineer
+        )
+        watchdog.start_watching()
 
 
 def handle_build(
@@ -368,3 +408,29 @@ def build_common_watchdog(
         # We want to generate a build on the first load
         run_on_bootup=True,
     )
+
+
+@contextmanager
+def init_global_state(webcontroller: str):
+    """
+    Initialize global state: signal to each builder that they can
+    initialize global state before the fork.
+
+    """
+    global_state = {}
+
+    app_controller = import_from_string(webcontroller)
+
+    if not isinstance(app_controller, AppController):
+        raise ValueError(f"Unknown app controller: {app_controller}")
+
+    async def entrypoint():
+        await asyncio.gather(
+            *[
+                builder.init_state(global_state)
+                for builder in app_controller.builders
+            ]
+        )
+    asyncio.run(entrypoint())
+
+    yield global_state
