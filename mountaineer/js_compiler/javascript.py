@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Any
 from queue import Queue
 from threading import Thread
-from time import time
+from time import monotonic_ns
 
 @dataclass
 class JSBundle:
@@ -81,7 +81,12 @@ class JavascriptBundler(ClientBuilderBase):
     def process_pending_files(self, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue):
         LOGGER.debug("Spawning process_pending_files")
         while True:
-            payload = input_queue.get()
+            try:
+                payload = input_queue.get()
+            except EOFError:
+                LOGGER.debug("Exiting process_pending_files")
+                return
+
             LOGGER.debug("Got JS build payload: {len(payload)}")
             if payload is None:
                 break
@@ -91,9 +96,9 @@ class JavascriptBundler(ClientBuilderBase):
                 for params in payload
             ]
 
-            start = time()
+            start = monotonic_ns()
             mountaineer_rs.build_javascript(build_params)
-            LOGGER.debug(f"Processed payload in {time() - start} seconds")
+            LOGGER.debug(f"Processed payload in {(monotonic_ns() - start) / 1e9} seconds")
 
             output_queue.put(True)
 

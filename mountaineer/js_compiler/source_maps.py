@@ -123,7 +123,7 @@ def get_cleaned_js_contents(contents: str):
     Strip all single or multiline comments, since these can be dynamically generated
     metadata and can change without the underlying logic changing.
     """
-    return mountaineer_rs.strip_js_comments(contents)
+    return mountaineer_rs.strip_js_comments(contents).strip()
 
 
 def update_source_map_path(contents: str, new_path: str):
@@ -148,7 +148,7 @@ def make_source_map_paths_absolute(contents: str, original_script_path: Path):
         source_path = Path(source)
         if not source_path.is_absolute():
             source_path = original_script_path.parent / source_path
-            new_sources.append(str(source_path.absolute()))
+            new_sources.append(str(source_path.resolve()))
 
     payload.sources = new_sources
     return payload.model_dump_json()
