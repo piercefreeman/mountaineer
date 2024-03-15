@@ -1,5 +1,5 @@
 {% if create_stub_files %}
-from .detail import DetailItem # noqa: F401
+from .detail import DetailItem as DetailItem
 {% else %}
 # Specify sub-models here
 # Ex: from .detail import DetailItem

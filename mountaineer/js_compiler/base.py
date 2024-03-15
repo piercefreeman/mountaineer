@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Coroutine
+from pathlib import Path
+from tempfile import mkdtemp
+from typing import Any, Coroutine, MutableMapping
 
 from pydantic import BaseModel
 
@@ -19,6 +21,20 @@ class ClientBuilderBase(ABC):
 
     """
 
+    def __init__(self, tmp_dir: Path | None = None):
+        # We keep a tmpdir open for the duration of the build process, so our rust
+        # logic can leverage file-based caches for faster builds
+        # Note that this tmpdir is shared across all client builders, so it's important
+        # that you enforce uniqueness of filenames if you leverage this cache
+        self.tmp_dir = tmp_dir if tmp_dir else Path(mkdtemp())
+        self.global_state: MutableMapping[Any, Any] | None = None
+
+    async def init_state(self, global_state: MutableMapping[Any, Any]):
+        pass
+
+    async def start_build(self):
+        pass
+
     @abstractmethod
     async def handle_file(
         self,
@@ -31,4 +47,7 @@ class ClientBuilderBase(ABC):
         recursive search of the raw files on disk with controller=None.
 
         """
+        pass
+
+    async def finish_build(self):
         pass

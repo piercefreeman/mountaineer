@@ -16,6 +16,7 @@ class VEnvEnvironment(EnvironmentBase):
     """
 
     def __init__(self, venv_name: str = "venv"):
+        super().__init__()
         self.venv_name = venv_name
 
     def has_provider(self):
@@ -34,7 +35,7 @@ class VEnvEnvironment(EnvironmentBase):
             check=True,
             cwd=project_path,
             # Install within our virtualenv
-            env={"PATH": f"{venv_path}/bin:{environ['PATH']}"},
+            env={"PATH": f"{venv_path}/bin:{environ['PATH']}", **self.global_env},
         )
 
         secho("Packages installed.", fg="green")
@@ -47,5 +48,5 @@ class VEnvEnvironment(EnvironmentBase):
         return subprocess.Popen(
             command,
             cwd=path,
-            env={"PATH": f"{venv_path}/bin:{environ['PATH']}"},
+            env={"PATH": f"{venv_path}/bin:{environ['PATH']}", **self.global_env},
         )

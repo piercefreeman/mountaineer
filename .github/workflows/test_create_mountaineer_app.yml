@@ -19,6 +19,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: install golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.21.2"
+
+      - name: Log go env
+        run: |
+          go env
+
+      - name: Get GOROOT
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
@@ -36,6 +51,10 @@ jobs:
       - name: Run integration tests
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
         run: make test-create-mountaineer-app-integrations test-args="-vv"
+        env:
+          GOROOT: ${{ env.GOROOT }}
+          GOPATH: ${{ env.GOPATH }}
+          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   build:
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')

@@ -1,3 +1,5 @@
+![Mountaineer Header](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/docs/media/header.png)
+
 # Project Template
 
 CLI to setup a basic scaffolding for mountaineer. This provides a simple base project that can be generated via pipx.

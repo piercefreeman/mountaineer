@@ -6,6 +6,7 @@ from time import monotonic_ns
 
 from pydantic import BaseModel
 
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.logging import LOGGER
 
 
@@ -38,8 +39,6 @@ class SourceMapParser:
         to this path.
 
         """
-        from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-
         self.path = Path(path)
 
         self.source_map: SourceMapSchema | None = None
@@ -50,8 +49,6 @@ class SourceMapParser:
         ] | None = None
 
     def parse(self):
-        from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-
         # If we've already parsed this file, don't do it again
         if self.parsed_mappings is not None:
             return
@@ -126,14 +123,7 @@ def get_cleaned_js_contents(contents: str):
     Strip all single or multiline comments, since these can be dynamically generated
     metadata and can change without the underlying logic changing.
     """
-    # Regular expression to match single line and multiline comments
-    # This regex handles single-line comments (// ...), multi-line comments (/* ... */),
-    # and avoids capturing URLs like http://...
-    # It also considers edge cases where comment-like patterns are inside strings
-    pattern = r"(\/\*[\s\S]*?\*\/|([^:]|^)\/\/[^\r\n]*)"
-
-    # Using re.sub to replace the matched comments with an empty string
-    return sub(pattern, "", contents).strip()
+    return mountaineer_rs.strip_js_comments(contents).strip()
 
 
 def update_source_map_path(contents: str, new_path: str):
@@ -141,24 +131,3 @@ def update_source_map_path(contents: str, new_path: str):
     Updates the source map path to the new path, since the path is dynamic.
     """
     return sub(r"sourceMappingURL=(.*?).map", f"sourceMappingURL={new_path}", contents)
-
-
-def make_source_map_paths_absolute(contents: str, original_script_path: Path):
-    """
-    Takes a source map, along with the original pre-compiled entrypoint path,
-    and transforms the relative paths sources into absolute paths. Since often
-    our precompiled endpoints are in tmp directories, this is helpful to encode the
-    persistent path to the source files.
-
-    """
-    payload = SourceMapSchema.model_validate_json(contents)
-
-    new_sources: list[str] = []
-    for source in payload.sources:
-        source_path = Path(source)
-        if not source_path.is_absolute():
-            source_path = original_script_path.parent / source_path
-            new_sources.append(str(source_path.resolve()))
-
-    payload.sources = new_sources
-    return payload.model_dump_json()

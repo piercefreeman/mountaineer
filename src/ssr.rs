@@ -161,10 +161,9 @@ impl<'a> Ssr<'a> {
             let msg = exception.to_rust_string_lossy(&mut scope);
 
             // Directly use try_catch to get the stack trace if available
-            let maybe_stack = exceptions.map_or_else(
-                || String::new(),
-                |trace| format!("\nStack: {}", trace.to_rust_string_lossy(&mut scope)),
-            );
+            let maybe_stack = exceptions.map_or_else(String::new, |trace| {
+                format!("\nStack: {}", trace.to_rust_string_lossy(&mut scope))
+            });
 
             format!("{}: {}{}", user_msg, msg, maybe_stack)
         } else {
