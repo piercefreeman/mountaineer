@@ -106,9 +106,10 @@ func RebuildContext(id C.int) (returnError *C.char) {
 
 	result := context.Context.Rebuild()
 	if len(result.Errors) > 0 {
-		errorString := fmt.Sprintf("Error rebuilding %s:\n", context.Filename)
+		errorString := fmt.Sprintf("Error rebuilding %s:\n\n", context.Filename)
 		for _, err := range result.Errors {
-			errorString += fmt.Sprintf("%s\n", err.Text)
+			errorString += ParseErrorLocation(err.Location)
+			errorString += fmt.Sprintf("%s\n\n", err.Text)
 		}
 		return C.CString(errorString)
 	}
@@ -190,6 +191,38 @@ func RemoveContext(id C.int) {
 
 	context.Context.Dispose()
 	delete(contexts, int(id))
+}
+
+func ParseErrorLocation(loc *api.Location) string {
+	errorMsg := fmt.Sprintf("Error in file '%s'", loc.File)
+	if loc.Namespace != "" {
+		errorMsg += fmt.Sprintf(", namespace '%s'", loc.Namespace)
+	}
+	errorMsg += fmt.Sprintf(" at line %d, column %d:\n", loc.Line, loc.Column+1) // Adjust column to be 1-based for readability
+
+	// Append the line text and underline the error part if Length > 0.
+	if loc.Length > 0 && loc.Column+loc.Length <= len(loc.LineText) {
+		// Ensure proper handling of multi-byte characters.
+		runes := []rune(loc.LineText)
+		underline := make([]rune, len(runes))
+		for i := range underline {
+			if i >= loc.Column && i < loc.Column+loc.Length {
+				underline[i] = '^'
+			} else {
+				underline[i] = ' '
+			}
+		}
+		errorMsg += fmt.Sprintf("%s\n%s\n", string(runes), string(underline))
+	} else {
+		// Just append the line text if Length is not usable.
+		errorMsg += loc.LineText + "\n"
+	}
+
+	if loc.Suggestion != "" {
+		errorMsg += fmt.Sprintf("Suggestion: %s\n", loc.Suggestion)
+	}
+
+	return errorMsg
 }
 
 func main() {}
