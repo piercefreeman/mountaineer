@@ -149,17 +149,29 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         let mut context_ids = Vec::<c_int>::new();
 
         for param in &params {
-            let context_id = src_go::get_build_context(
+            let context_result = src_go::get_build_context(
                 &param.path,
                 &param.node_modules_path,
                 &param.environment,
                 param.live_reload_port,
                 param.is_server,
             );
-            context_ids.push(context_id);
+            match context_result {
+                Ok(context_id) => {
+                    context_ids.push(context_id);
+                }
+                Err(err) => {
+                    println!("Error getting build context: {:?}", err);
+                    return Err(PyErr::new::<PyValueError, _>(err));
+                }
+            }
         }
 
-        src_go::rebuild_contexts(context_ids);
+        let rebuild_result = src_go::rebuild_contexts(context_ids);
+        if let Err(err) = rebuild_result {
+            println!("Error rebuilding contexts: {:?}", err);
+            return Err(PyErr::new::<PyValueError, _>(err.join("\n")));
+        }
 
         // We expect that each input path will have an `.js.out.map` file
         // Make the paths referenced in this file absolute to make it clearer for

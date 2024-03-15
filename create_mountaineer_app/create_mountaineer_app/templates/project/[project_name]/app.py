@@ -9,7 +9,7 @@ from {{project_name}}.controllers.home import HomeController
 from {{project_name}}.config import AppConfig
 
 controller = AppController(
-    config=AppConfig(),
+    config=AppConfig(), # type: ignore
     {% if use_tailwind %}
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]

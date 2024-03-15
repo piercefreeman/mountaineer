@@ -268,7 +268,10 @@ jobs:
 
   inspect-pypi-assets:
     needs: [build]
-    runs-on: ubuntu-latest
+
+    # workaround for mac-compiled wheel files unzipping on other macosx configs
+    # but not on the linux base runner
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -294,7 +297,7 @@ jobs:
         run: |
           mkdir sdist-files
           tar -xvf dist/*.tar.gz -C sdist-files
-          tree -a sdist-files
+          find sdist-files -print
 
       - name: extract and list wheel file
         run: |

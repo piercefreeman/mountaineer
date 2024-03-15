@@ -30,7 +30,7 @@ func GetBuildContext(
 	rawEnvironment *C.char,
 	liveReloadPort C.int,
 	isSSR C.int,
-) C.int {
+) (returnId C.int, returnError *C.char) {
 	/*
 	 * liveReloadPort: 0 for no live reload
 	 */
@@ -45,7 +45,7 @@ func GetBuildContext(
 	// the existing context ID.
 	for id, context := range contexts {
 		if context.Filename == filename {
-			return C.int(id)
+			return C.int(id), nil
 		}
 	}
 
@@ -79,7 +79,7 @@ func GetBuildContext(
 	if err != nil {
 		// Log the error
 		fmt.Println(err)
-		os.Exit(1)
+		return -1, C.CString(err.Error())
 	}
 
 	id := nextID
@@ -89,11 +89,11 @@ func GetBuildContext(
 		Context:  ctx,
 	}
 	fmt.Printf("Created context with ID %d for %s\n", id, filename)
-	return C.int(id)
+	return C.int(id), nil
 }
 
 //export RebuildContext
-func RebuildContext(id C.int) {
+func RebuildContext(id C.int) (returnError *C.char) {
 	mutex.Lock()
 
 	context, exists := contexts[int(id)]
@@ -106,9 +106,11 @@ func RebuildContext(id C.int) {
 
 	result := context.Context.Rebuild()
 	if len(result.Errors) > 0 {
-		// Log the errors
-		fmt.Println(result.Errors)
-		os.Exit(1)
+		errorString := fmt.Sprintf("Error rebuilding %s:\n", context.Filename)
+		for _, err := range result.Errors {
+			errorString += fmt.Sprintf("%s\n", err.Text)
+		}
+		return C.CString(errorString)
 	}
 
 	// fmt.Printf("#### START ####\n")
@@ -126,15 +128,16 @@ func RebuildContext(id C.int) {
 		if err != nil {
 			// Log the error
 			fmt.Println(err)
-			os.Exit(1)
+			return C.CString(err.Error())
 		}
 	}
 
 	// fmt.Printf("#### DONE ####\n")
+	return nil
 }
 
 //export RebuildContexts
-func RebuildContexts(ids *C.int, count C.int) {
+func RebuildContexts(ids *C.int, count C.int) (returnErrors **C.char, returnErrorCount C.int) {
 	// Convert C array to Go slice
 	goIDs := make([]int, count)
 	for i := 0; i < int(count); i++ {
@@ -144,6 +147,7 @@ func RebuildContexts(ids *C.int, count C.int) {
 	// Semaphore channel to limit concurrency
 	var sem = make(chan struct{}, 25)
 
+	errors := make([]*C.char, 0)
 	var wg sync.WaitGroup
 	for _, id := range goIDs {
 		wg.Add(1)
@@ -154,11 +158,22 @@ func RebuildContexts(ids *C.int, count C.int) {
 			defer wg.Done()
 			defer func() { <-sem }() // Release semaphore
 
-			RebuildContext(C.int(id))
+			err := RebuildContext(C.int(id))
+			if err != nil {
+				errors = append(errors, err)
+			}
 		}(id)
 	}
 
 	wg.Wait()
+
+	// Convert slice to C array
+	errorsArray := (**C.char)(C.malloc(C.size_t(len(errors)) * C.size_t(unsafe.Sizeof(uintptr(0)))))
+	for i, err := range errors {
+		*(**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(errorsArray)) + uintptr(i)*unsafe.Sizeof(uintptr(0)))) = err
+	}
+
+	return errorsArray, C.int(len(errors))
 }
 
 //export RemoveContext

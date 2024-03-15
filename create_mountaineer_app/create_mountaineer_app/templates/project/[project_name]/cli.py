@@ -36,6 +36,6 @@ def build():
 @command()
 @async_to_sync
 async def createdb():
-    _ = AppConfig()
+    _ = AppConfig() # type: ignore
 
     await handle_createdb(models)

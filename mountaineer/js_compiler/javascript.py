@@ -10,6 +10,7 @@ from inflection import underscore
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
+from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 
@@ -34,6 +35,13 @@ class BundleOutput:
     server_entrypoint_path: Path
     server_compiled_contents: str
     server_source_map_contents: str
+
+
+@dataclass
+class CompiledOutput:
+    success: bool
+    exception_type: str | None = None
+    exception_message: str | None = None
 
 
 class JavascriptBundler(ClientBuilderBase):
@@ -63,7 +71,9 @@ class JavascriptBundler(ClientBuilderBase):
         # Launch a thread that will handle our build queue, potentially across
         # multiple subprocesses
         build_input_queue: multiprocessing.Queue[tuple[Any]] = multiprocessing.Queue()
-        build_output_queue: multiprocessing.Queue[bool] = multiprocessing.Queue()
+        build_output_queue: multiprocessing.Queue[
+            CompiledOutput
+        ] = multiprocessing.Queue()
 
         global_state["js_bundler_input"] = build_input_queue
         global_state["js_bundler_output"] = build_output_queue
@@ -101,14 +111,20 @@ class JavascriptBundler(ClientBuilderBase):
                 mountaineer_rs.build_javascript(build_params)
             except Exception as e:
                 LOGGER.error(f"Error building JS: {e}")
-                output_queue.put(False)
+                output_queue.put(
+                    CompiledOutput(
+                        success=False,
+                        exception_type=e.__class__.__name__,
+                        exception_message=str(e),
+                    )
+                )
                 continue
 
             LOGGER.debug(
                 f"Processed payload in {(monotonic_ns() - start) / 1e9} seconds"
             )
 
-            output_queue.put(True)
+            output_queue.put(CompiledOutput(success=True))
 
     async def start_build(self):
         self.pending_files = []
@@ -177,10 +193,14 @@ class JavascriptBundler(ClientBuilderBase):
 
         # Send the build params to the queue
         self.global_state["js_bundler_input"].put(build_params)
-        success = self.global_state["js_bundler_output"].get()
+        output_payload = self.global_state["js_bundler_output"].get()
 
-        if not success:
-            raise ValueError("Error building JS")
+        if not output_payload.success:
+            if output_payload.exception_type == "ValueError":
+                raise BuildProcessException(output_payload.exception_message)
+            raise ValueError(
+                f"Error building JS, unknown error: {output_payload.exception_message}"
+            )
 
     def generate_js_bundle(
         self,
