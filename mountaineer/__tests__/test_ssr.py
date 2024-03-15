@@ -1,5 +1,5 @@
 from re import sub as re_sub
-from time import time
+from time import monotonic_ns
 from uuid import UUID, uuid4
 
 import pytest
@@ -23,13 +23,13 @@ def test_ssr_speed_baseline():
         }
 
     for _ in range(50):
-        start = time()
+        start = monotonic_ns()
         render_ssr(
             js_contents,
             FakeModel(random_id=uuid4()),
             hard_timeout=1,
         )
-        all_measurements.append(time() - start)
+        all_measurements.append((monotonic_ns() - start) / 1e9)
 
     assert max(all_measurements) < 0.5
 
@@ -50,14 +50,14 @@ def test_ssr_timeout():
             "frozen": True,
         }
 
-    start = time()
+    start = monotonic_ns()
     with pytest.raises(TimeoutError):
         render_ssr(
             script=js_contents,
             render_data=FakeWaitDurationModel(delay_loops=5, random_id=uuid4()),
             hard_timeout=0.5,
         )
-    assert time() - start < 1.0
+    assert ((monotonic_ns() - start) / 1e9) < 1.0
 
 
 def test_ssr_exception_context():

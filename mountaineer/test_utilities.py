@@ -4,7 +4,7 @@ Utilities for client unit and integration tests
 from functools import wraps
 from inspect import isawaitable, iscoroutinefunction, signature
 from tempfile import NamedTemporaryFile
-from time import time
+from time import monotonic_ns
 
 import pytest
 from sqlalchemy import text
@@ -60,11 +60,11 @@ def benchmark_function(max_time_seconds: int | float):
 
             def start_timing():
                 nonlocal start
-                start = time()
+                start = monotonic_ns()
 
             def end_timing():
                 nonlocal end
-                end = time()
+                end = monotonic_ns()
 
             try:
                 result = test_func(
@@ -80,7 +80,7 @@ def benchmark_function(max_time_seconds: int | float):
 
                 LOGGER.info(f"Test function took: {end - start}")
 
-                if end - start > max_time_seconds:
+                if (end - start) / 1e9 > max_time_seconds:
                     raise ExecutionTooLong()
 
                 return result

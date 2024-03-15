@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from re import finditer as re_finditer
 from re import sub
-from time import time
+from time import monotonic_ns
 
 from pydantic import BaseModel
 
@@ -56,17 +56,17 @@ class SourceMapParser:
         if self.parsed_mappings is not None:
             return
 
-        start_parse = time()
+        start_parse = monotonic_ns()
         self.source_map = SourceMapSchema.model_validate_json(
             Path(self.path).read_text()
         )
-        LOGGER.debug(f"Parsed source map in {time() - start_parse:.2f}s")
+        LOGGER.debug(f"Parsed source map in {(monotonic_ns() - start_parse)/1e9:.2f}s")
 
-        start_parse = time()
+        start_parse = monotonic_ns()
         self.parsed_mappings = mountaineer_rs.parse_source_map_mappings(
             self.source_map.mappings
         )
-        LOGGER.debug(f"Parsed mappings in {time() - start_parse:.2f}s")
+        LOGGER.debug(f"Parsed mappings in {(monotonic_ns() - start_parse)/1e9:.2f}s")
 
     def get_original_location(self, line: int, column: int):
         if self.parsed_mappings is None:

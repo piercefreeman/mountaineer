@@ -1,5 +1,5 @@
 import asyncio
-from time import time
+from time import monotonic_ns
 
 import pytest
 from pydantic import BaseModel
@@ -30,14 +30,14 @@ def test_simple_sync_function():
 
     # Our raw function execution should be over 1s
     # Our optimized function should be less than 0.05s
-    start = time()
+    start = monotonic_ns()
     output_value = example_function()
-    assert time() - start > 1
+    assert ((monotonic_ns() - start) / 1e9) > 1
     assert output_value == {"a": 1244, "b": 78503}
 
-    start = time()
+    start = monotonic_ns()
     output_value = optimized_func()
-    assert time() - start < 0.05
+    assert ((monotonic_ns() - start) / 1e9) < 0.05
     assert output_value == {"a": 1244}
 
 
@@ -57,14 +57,14 @@ def test_conditional_sync_function():
 
     optimized_func = crop_function_for_return_keys(example_function, ["a"], locals())
 
-    start = time()
+    start = monotonic_ns()
     output_value = optimized_func(100)
-    assert time() - start < 0.05
+    assert ((monotonic_ns() - start) / 1e9) < 0.05
     assert output_value == {"a": 4}
 
-    start = time()
+    start = monotonic_ns()
     output_value = optimized_func(0)
-    assert time() - start < 0.05
+    assert ((monotonic_ns() - start) / 1e9) < 0.05
     assert output_value == {"a": 0}
 
 
@@ -78,9 +78,9 @@ def test_pydantic_model():
 
     optimized_func = crop_function_for_return_keys(example_function, ["a"], locals())
 
-    start = time()
+    start = monotonic_ns()
     output_value = optimized_func()
-    assert time() - start < 0.05
+    assert ((monotonic_ns() - start) / 1e9) < 0.05
     assert output_value == {"a": 1244}
 
 
@@ -105,9 +105,9 @@ async def test_async_function():
         example_function_async, ["a"], locals()
     )
 
-    start = time()
+    start = monotonic_ns()
     output_value = await optimized_func_async()
-    assert time() - start < 0.05
+    assert ((monotonic_ns() - start) / 1e9) < 0.05
     assert output_value == {"a": 20}
 
 

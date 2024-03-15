@@ -3,7 +3,7 @@ from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
-from time import time
+from time import monotonic_ns
 from typing import Any, Callable, Coroutine, Generic, Iterable, Mapping, ParamSpec, cast
 
 from fastapi.responses import HTMLResponse
@@ -166,7 +166,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         server_data = server_data.model_copy(update={"metadata": None})
 
         # TODO: Provide a function to automatically sniff for the client view folder
-        start = time()
+        start = monotonic_ns()
         try:
             ssr_html = render_ssr(
                 self.ssr_path.read_text(),
@@ -182,7 +182,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
                 raise V8RuntimeError(self.source_map.map_exception(str(e)))
             raise e
 
-        ssr_duration = time() - start
+        ssr_duration = (monotonic_ns() - start) / 1e9
         if ssr_duration > self.slow_ssr_threshold:
             LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
         else:

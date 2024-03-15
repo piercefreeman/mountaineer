@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-from time import time
+from time import monotonic_ns
 from unittest.mock import patch
 
 import pytest
@@ -264,7 +264,7 @@ def test_limit_codepath_experimental(
     sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).get_url()
 
     client = TestClient(app.app)
-    start = time()
+    start = monotonic_ns()
     response = client.post(
         sideeffect_url,
         json={},
@@ -273,7 +273,7 @@ def test_limit_codepath_experimental(
             "referer": "http://example.com/test/5/",
         },
     )
-    elapsed = time() - start
+    elapsed = (monotonic_ns() - start) / 1e9
     assert response.status_code == 200
     assert response.json() == {
         "sideeffect": {
