@@ -156,38 +156,10 @@ impl<'a> Ssr<'a> {
         context: &mut v8::Local<'_, v8::Context>,
         scope: &mut v8::ContextScope<'_, v8::HandleScope<'_>>,
     ) {
-        let logger_fn = v8::FunctionTemplate::new(
-            scope,
-            move |scope: &mut v8::HandleScope,
-                  args: v8::FunctionCallbackArguments,
-                  mut ret_val: v8::ReturnValue| {
-                let log_message = (0..args.length())
-                    .into_iter()
-                    .map(|i| {
-                        let arg = args.get(i);
-                        if let Some(str_arg) = arg.to_string(scope) {
-                            str_arg.to_rust_string_lossy(scope)
-                        } else {
-                            // Provide a fallback for non-stringable arguments
-                            String::from("[unstringable value]")
-                        }
-                    })
-                    .collect::<Vec<String>>()
-                    .join(" ");
-
-                println!("ssr console: {}", log_message);
-
-                // Console does not need to return a value to JavaScript.
-                // Explicitly set the return value to undefined.
-                ret_val.set_undefined();
-            },
-        );
-
+        let console_types = vec!["log", "warn", "info", "debug", "error"];
         let global = context.global(scope);
         let console_key =
             v8::String::new(scope, "console").unwrap_or_else(|| v8::String::empty(scope));
-        let log_function_value = logger_fn.get_function(scope).unwrap();
-
         let console_obj = global
             .get(scope, console_key.into())
             .and_then(|v| v.to_object(scope))
@@ -197,12 +169,58 @@ impl<'a> Ssr<'a> {
                 obj
             });
 
-        // Set `log` and `error` functions on the `console` object.
-        let log_key = v8::String::new(scope, "log").unwrap();
-        console_obj.set(scope, log_key.into(), log_function_value.into());
+        for console_type in console_types {
+            // Convert to native types which can be stored in the C++ engine
+            let console_type_v8_str = v8::String::new(scope, console_type).unwrap();
+            let console_type_data = v8::External::new(
+                scope,
+                Box::into_raw(Box::new(console_type_v8_str)) as *mut _,
+            );
 
-        let error_key = v8::String::new(scope, "error").unwrap();
-        console_obj.set(scope, error_key.into(), log_function_value.into());
+            // Normally, we'd just use a closure to pass the console data into our handler function.
+            // However, the Function() syntax in V8 relies on us passing a raw function _pointer_ into
+            // the C++ engine. Closures in rust create an AnonymousClosure struct which isn't compatible
+            // with the function interface. We instead pass our necessary variables into a v8::External data
+            // structure and then extract them in our handler function.
+            // If we need to pass other rust-native types in the future, we can do something similar
+            // and just pass the pointers.
+            let logger_fn = v8::Function::builder(
+                move |scope: &mut v8::HandleScope,
+                      args: v8::FunctionCallbackArguments,
+                      mut ret_val: v8::ReturnValue| {
+                    let data = args.data();
+                    // We expect our data to external, but we should check it to be safe.
+                    if data.is_external() {
+                        let external = unsafe { v8::Local::<v8::External>::cast(data) };
+                        let console_type_ptr = external.value();
+                        let console_type = unsafe { &*(console_type_ptr as *const String) };
+
+                        let log_message = (0..args.length())
+                            .map(|i| {
+                                args.get(i)
+                                    .to_string(scope)
+                                    .unwrap()
+                                    .to_rust_string_lossy(scope)
+                            })
+                            .collect::<Vec<String>>()
+                            .join(" ");
+
+                        println!("ssr console [{}]: {}", console_type, log_message);
+                    } else {
+                        // Handle the unexpected case where data is not an external.
+                        println!("Error: Expected external data not found.");
+                    }
+
+                    ret_val.set_undefined();
+                },
+            )
+            .data(console_type_data.into())
+            .build(scope)
+            .unwrap();
+
+            let console_type_key = v8::String::new(scope, console_type).unwrap();
+            console_obj.set(scope, console_type_key.into(), logger_fn.into());
+        }
     }
 
     fn extract_exception_message(
