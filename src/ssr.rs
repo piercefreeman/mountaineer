@@ -27,7 +27,10 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::errors::AppError;
+use crate::logging::StdoutWrapper;
 use std::collections::HashMap;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ssr<'a> {
@@ -35,6 +38,14 @@ pub struct Ssr<'a> {
     source: String,
     entry_point: &'a str,
 }
+
+struct LoggerData {
+    console_type: String,
+    stdout: Arc<Mutex<dyn Write + 'static>>,
+}
+
+// Ensure that LoggerData can be sent safely across threads.
+unsafe impl Send for LoggerData {}
 
 impl<'a> Ssr<'a> {
     /// Create an instance of the Ssr struct instanciate the v8 platform as well.
@@ -63,10 +74,20 @@ impl<'a> Ssr<'a> {
     /// Evaluates the JS source code instanciate in the Ssr struct
     /// "enrty_point" is the variable name set from the frontend bundler used. <a href="https://github.com/Valerioageno/ssr-rs/blob/main/client/webpack.ssr.js" target="_blank">Here</a> an example from webpack.
     pub fn render_to_string(&self, params: Option<&str>) -> Result<String, AppError> {
-        Self::render(self.source.clone(), self.entry_point, params)
+        Self::render(
+            self.source.clone(),
+            self.entry_point,
+            params,
+            StdoutWrapper::new().get_arc(),
+        )
     }
 
-    fn render(source: String, entry_point: &str, params: Option<&str>) -> Result<String, AppError> {
+    fn render(
+        source: String,
+        entry_point: &str,
+        params: Option<&str>,
+        stdout: Arc<Mutex<dyn Write + 'static>>,
+    ) -> Result<String, AppError> {
         /*
          * Main entrypoint for rendering, takes a source string (containing one or many functions) and
          * an entry point (ie. function name to execute) and returns the result of the execution as
@@ -79,7 +100,7 @@ impl<'a> Ssr<'a> {
         let scope = &mut v8::ContextScope::new(handle_scope, context);
 
         // Add logging support
-        Self::inject_logger(&mut context, scope);
+        Self::inject_logger(&mut context, scope, stdout);
 
         // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
         let try_catch = &mut v8::TryCatch::new(scope);
@@ -155,6 +176,7 @@ impl<'a> Ssr<'a> {
     fn inject_logger(
         context: &mut v8::Local<'_, v8::Context>,
         scope: &mut v8::ContextScope<'_, v8::HandleScope<'_>>,
+        stdout: Arc<Mutex<dyn Write + 'static>>,
     ) {
         let console_types = vec!["log", "warn", "info", "debug", "error"];
         let global = context.global(scope);
@@ -170,12 +192,12 @@ impl<'a> Ssr<'a> {
             });
 
         for console_type in console_types {
-            // Convert to native types which can be stored in the C++ engine
-            let console_type_v8_str = v8::String::new(scope, console_type).unwrap();
-            let console_type_data = v8::External::new(
-                scope,
-                Box::into_raw(Box::new(console_type_v8_str)) as *mut _,
-            );
+            let logger_data = LoggerData {
+                console_type: console_type.to_string(),
+                stdout: stdout.clone(),
+            };
+            let logger_data_external =
+                v8::External::new(scope, Box::into_raw(Box::new(logger_data)) as *mut _);
 
             // Normally, we'd just use a closure to pass the console data into our handler function.
             // However, the Function() syntax in V8 relies on us passing a raw function _pointer_ into
@@ -189,32 +211,36 @@ impl<'a> Ssr<'a> {
                       args: v8::FunctionCallbackArguments,
                       mut ret_val: v8::ReturnValue| {
                     let data = args.data();
-                    // We expect our data to external, but we should check it to be safe.
-                    if data.is_external() {
+                    let logger_data = if data.is_external() {
                         let external = unsafe { v8::Local::<v8::External>::cast(data) };
-                        let console_type_ptr = external.value();
-                        let console_type = unsafe { &*(console_type_ptr as *const String) };
-
-                        let log_message = (0..args.length())
-                            .map(|i| {
-                                args.get(i)
-                                    .to_string(scope)
-                                    .unwrap()
-                                    .to_rust_string_lossy(scope)
-                            })
-                            .collect::<Vec<String>>()
-                            .join(" ");
-
-                        println!("ssr console [{}]: {}", console_type, log_message);
+                        let logger_data_ptr = external.value();
+                        unsafe { &*(logger_data_ptr as *const LoggerData) }
                     } else {
-                        // Handle the unexpected case where data is not an external.
-                        println!("Error: Expected external data not found.");
-                    }
+                        panic!("Expected logger data to be passed as external data");
+                    };
+
+                    let log_message = (0..args.length())
+                        .map(|i| {
+                            args.get(i)
+                                .to_string(scope)
+                                .unwrap()
+                                .to_rust_string_lossy(scope)
+                        })
+                        .collect::<Vec<String>>()
+                        .join(" ");
+
+                    let mut stdout_lock = logger_data.stdout.lock().unwrap();
+                    writeln!(
+                        stdout_lock,
+                        "ssr console [{}]: {}",
+                        logger_data.console_type, log_message
+                    )
+                    .expect("Failed to write to stdout");
 
                     ret_val.set_undefined();
                 },
             )
-            .data(console_type_data.into())
+            .data(logger_data_external.into())
             .build(scope)
             .unwrap();
 
@@ -333,5 +359,34 @@ mod tests {
         let result = js.render_to_string(None);
 
         assert_eq!(result, Ok("<html></html>".to_string()))
+    }
+
+    #[test]
+    fn test_log_to_stdout() {
+        // Create a synthetic stdout that we can inspect
+        let stdout = Arc::new(Mutex::new(Vec::new()));
+
+        Ssr::init_platform();
+        let result = Ssr::render(
+            r##"
+                var SSR = {
+                    x: () => {
+                        console.log('test log');
+                        return "<html></html>"
+                    }
+                };"##
+                .to_string(),
+            "SSR",
+            None,
+            stdout.clone(),
+        );
+
+        let result_vector = stdout.lock().unwrap();
+
+        assert_eq!(result, Ok("<html></html>".to_string()));
+        assert_eq!(
+            String::from_utf8_lossy(&*result_vector),
+            "ssr console [log]: test log\n"
+        );
     }
 }
