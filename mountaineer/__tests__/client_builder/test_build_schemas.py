@@ -8,6 +8,7 @@ from mountaineer.client_builder.build_schemas import (
     OpenAPISchema,
     OpenAPIToTypescriptSchemaConverter,
 )
+from mountaineer.client_builder.openapi import OpenAPIProperty, OpenAPISchemaType
 
 
 class SubModel1(BaseModel):
@@ -224,3 +225,25 @@ def test_defaults_are_required(defaults_are_required: bool):
         else:
             assert "a: string" not in js_interfaces[model_name]
             assert "a?: string" in js_interfaces[model_name]
+
+
+@pytest.mark.parametrize(
+    "model_title, expected_interface",
+    [
+        ("MyModel", "MyModel"),
+        # We've seen cases where sub-variables are converted to multiple words
+        ("My Model", "MyModel"),
+        ("My model", "MyModel"),
+    ],
+)
+def test_get_typescript_interface_name(model_title: str, expected_interface: str):
+    converter = OpenAPIToTypescriptSchemaConverter()
+    assert (
+        converter.get_typescript_interface_name(
+            OpenAPIProperty.from_meta(
+                title=model_title,
+                variable_type=OpenAPISchemaType.OBJECT,
+            )
+        )
+        == expected_interface
+    )
