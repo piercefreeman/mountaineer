@@ -19,10 +19,12 @@ class CallbackType(Flag):
     MODIFIED = auto()
     DELETED = auto()
 
+
 @dataclass
 class CallbackEvent:
     action: CallbackType
     path: Path
+
 
 @dataclass
 class CallbackMetadata:
@@ -30,10 +32,12 @@ class CallbackMetadata:
     # in the batch.
     events: list[CallbackEvent]
 
+
 @dataclass
 class CallbackDefinition:
     action: CallbackType
     callback: Callable[[CallbackMetadata], None]
+
 
 class ChangeEventHandler(FileSystemEventHandler):
     def __init__(
@@ -71,7 +75,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File created: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.CREATED, Path(event.src_path)
+            self._debounce(CallbackType.CREATED, Path(event.src_path))
 
     def on_deleted(self, event):
         super().on_deleted(event)
@@ -164,9 +168,7 @@ class PackageWatchdog:
         with self.acquire_watchdog_lock():
             if self.run_on_bootup:
                 for callback_definition in self.callbacks:
-                    callback_definition.callback(
-                        CallbackMetadata(events=[])
-                    )
+                    callback_definition.callback(CallbackMetadata(events=[]))
 
             event_handler = ChangeEventHandler(callbacks=self.callbacks)
             observer = Observer()

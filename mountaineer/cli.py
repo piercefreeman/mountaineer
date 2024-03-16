@@ -1,12 +1,12 @@
 import asyncio
-from dataclasses import dataclass
 import socket
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from importlib import import_module
 from importlib.metadata import distributions
-from multiprocessing import Event, Process, get_start_method, set_start_method
-from multiprocessing.queues import Queue
+from multiprocessing import Event, Process, Queue, get_start_method, set_start_method
+from multiprocessing.queues import Queue as QueueType
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
@@ -17,15 +17,20 @@ from typing import Any, Callable, MutableMapping
 
 from click import secho
 from fastapi import Request
-from pydantic.main import BaseModel
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.controllers.exception_controller import ExceptionController
 from mountaineer.logging import LOGGER
-from mountaineer.watch import CallbackDefinition, CallbackMetadata, CallbackType, PackageWatchdog
+from mountaineer.watch import (
+    CallbackDefinition,
+    CallbackMetadata,
+    CallbackType,
+    PackageWatchdog,
+)
 from mountaineer.watch_server import WatcherWebservice
 from mountaineer.webservice import UvicornThread
+
 
 @dataclass
 class IsolatedBuildConfig:
@@ -33,7 +38,7 @@ class IsolatedBuildConfig:
 
     # When builds are completed, a notification will be sent from the subprocess->main process
     # via this channel
-    notification_channel: Queue | None = None
+    notification_channel: QueueType | None = None
 
     # If the main process needs to rebuild client js, this flag will open a channel
     # to the subprocess to rebuild the client js
@@ -42,6 +47,7 @@ class IsolatedBuildConfig:
     # Optional arguments to inherit a global cache from the main process
     build_cache: Path | None = None
     build_state: MutableMapping[Any, Any] | None = None
+
 
 @dataclass
 class IsolatedRunserverConfig:
@@ -73,7 +79,9 @@ class IsolatedEnvProcess(Process):
         self.build_config = build_config
         self.runserver_config = runserver_config
         self.close_signal = Event()
-        self.rebuild_channel = Queue() if build_config.allow_js_reloads else None
+        self.rebuild_channel: QueueType[bool | None] | None = (
+            Queue() if build_config.allow_js_reloads else None
+        )
 
     def run(self):
         app_controller = import_from_string(self.build_config.webcontroller)
@@ -122,6 +130,7 @@ class IsolatedEnvProcess(Process):
         LOGGER.debug("IsolatedEnvProcess finished")
 
     def rebuild_js(self):
+        LOGGER.debug("JS-Only rebuild started")
         if self.rebuild_channel is not None:
             self.rebuild_channel.put(True)
         else:
@@ -171,13 +180,17 @@ class IsolatedEnvProcess(Process):
         that was previously created in our isolated process.
 
         """
-        def wait_for_rebuild(self):
+
+        def wait_for_rebuild():
+            if not self.rebuild_channel:
+                raise ValueError("No rebuild channel was provided")
             while True:
                 rebuild = self.rebuild_channel.get()
                 if rebuild is None:
                     break
                 self.run_build(app_controller)
 
+        LOGGER.debug("Will launch rebuild thread")
         rebuild_thread = Thread(target=wait_for_rebuild)
         rebuild_thread.start()
 
@@ -191,6 +204,7 @@ class IsolatedEnvProcess(Process):
                 if self.runserver_config
                 else None
             ),
+            build_cache=self.build_config.build_cache,
         )
         js_compiler.build()
         secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
@@ -262,7 +276,9 @@ def handle_watch(
     # different builds
     global_build_cache = Path(mkdtemp())
 
-    def update_build(metadata: CallbackMetadata, global_state: MutableMapping[Any, Any]):
+    def update_build(
+        metadata: CallbackMetadata, global_state: MutableMapping[Any, Any]
+    ):
         nonlocal current_process
 
         # JS-Only build needed
@@ -427,6 +443,7 @@ def find_packages_with_prefix(prefix: str):
         if dist.metadata["Name"].startswith(prefix)
     ]
 
+
 def is_view_update(path: Path):
     """
     Determines if the file change is a view update. This assumes
@@ -434,6 +451,7 @@ def is_view_update(path: Path):
 
     """
     return any(part == "views" for part in path.parts)
+
 
 def build_common_watchdog(
     client_package: str,

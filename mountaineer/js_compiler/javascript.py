@@ -361,6 +361,7 @@ class JavascriptBundler(ClientBuilderBase):
                     )
                 continue
 
+            # If the file exists, we assume it's to the correct path
             LOGGER.debug(f"Linking {file_name} to {temp_dir_path}")
             (temp_dir_path / file_name).unlink(missing_ok=True)
             (temp_dir_path / file_name).symlink_to(view_root_path / file_name)

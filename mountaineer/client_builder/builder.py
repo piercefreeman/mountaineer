@@ -1,6 +1,10 @@
 import asyncio
 from collections import defaultdict
+from json import dumps as json_dumps
+from pathlib import Path
 from shutil import rmtree
+from time import monotonic_ns
+from typing import Any
 
 from click import secho
 from fastapi import APIRouter
@@ -23,6 +27,7 @@ from mountaineer.controller import ControllerBase
 from mountaineer.io import gather_with_concurrency
 from mountaineer.js_compiler.base import ClientBundleMetadata
 from mountaineer.js_compiler.exceptions import BuildProcessException
+from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
 
@@ -33,7 +38,12 @@ class ClientBuilder:
 
     """
 
-    def __init__(self, app: AppController, live_reload_port: int | None = None):
+    def __init__(
+        self,
+        app: AppController,
+        live_reload_port: int | None = None,
+        build_cache: Path | None = None,
+    ):
         self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
@@ -43,27 +53,34 @@ class ClientBuilder:
         self.app = app
         self.view_root = ManagedViewPath.from_view_root(app.view_root)
         self.live_reload_port = live_reload_port
+        self.build_cache = build_cache
 
     def build(self):
         asyncio.run(self.async_build())
 
     async def async_build(self):
-        # Make sure our application definitions are in a valid state before we start
-        # to build the client code
-        self.validate_unique_paths()
+        # Avoid rebuilding if we don't need to
+        if self.cache_is_outdated():
+            secho("Building useServer, cache outdated...", fg="green")
 
-        # Static files that don't depend on client code
-        self.generate_static_files()
+            # Make sure our application definitions are in a valid state before we start
+            # to build the client code
+            self.validate_unique_paths()
 
-        # The order of these generators don't particularly matter since most TSX linters
-        # won't refresh until they're all complete. However, this ordering better aligns
-        # with semantic dependencies so we keep the linearity where possible.
-        self.generate_model_definitions()
-        self.generate_action_definitions()
-        self.generate_link_shortcuts()
-        self.generate_link_aggregator()
-        self.generate_view_servers()
-        self.generate_index_file()
+            # Static files that don't depend on client code
+            self.generate_static_files()
+
+            # The order of these generators don't particularly matter since most TSX linters
+            # won't refresh until they're all complete. However, this ordering better aligns
+            # with semantic dependencies so we keep the linearity where possible.
+            self.generate_model_definitions()
+            self.generate_action_definitions()
+            self.generate_link_shortcuts()
+            self.generate_link_aggregator()
+            self.generate_view_servers()
+            self.generate_index_file()
+        else:
+            secho("useServer up to date", fg="green")
 
         await self.build_javascript_chunks()
 
@@ -71,6 +88,34 @@ class ClientBuilder:
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
             controller.resolve_paths(self.view_root, force=True)
+
+    def cache_is_outdated(self):
+        """
+        Determines if our last build is outdated and we need to rebuild the client. Running
+        this function will also update the cache to the current state.
+
+        """
+        # We need to rebuild every time
+        if not self.build_cache:
+            return True
+
+        cached_metadata = self.build_cache / "client_builder_openapi.json"
+
+        cached_contents = {
+            controller.__class__.__name__: openapi_spec
+            for controller, openapi_spec in self.openapi_specs.items()
+        }
+        cached_str = json_dumps(cached_contents, sort_keys=True)
+
+        if not cached_metadata.exists():
+            cached_metadata.write_text(cached_str)
+            return True
+
+        if cached_metadata.read_text() != cached_str:
+            cached_metadata.write_text(cached_str)
+            return True
+
+        return False
 
     def generate_static_files(self):
         """
@@ -91,8 +136,7 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-
-            openapi_spec = self.openapi_from_controller(controller_definition)
+            openapi_spec = self.openapi_specs[controller]
             base = OpenAPIDefinition(**openapi_spec)
 
             schemas: dict[str, str] = {}
@@ -415,15 +459,24 @@ class ClientBuilder:
             for builder in self.app.builders
         ]
 
-        for builder in self.app.builders:
-            await builder.start_build()
+        start = monotonic_ns()
+        await gather_with_concurrency(
+            [builder.start_build() for builder in self.app.builders],
+            n=max_concurrency,
+        )
+        LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
 
+        start = monotonic_ns()
         results = await gather_with_concurrency(
             controller_tasks + file_tasks, n=max_concurrency, catch_exceptions=True
         )
+        LOGGER.debug(f"Builder tasks took {(monotonic_ns() - start) / 1e9}s")
 
-        for builder in self.app.builders:
-            await builder.finish_build()
+        start = monotonic_ns()
+        await gather_with_concurrency(
+            [builder.finish_build() for builder in self.app.builders], n=max_concurrency
+        )
+        LOGGER.debug(f"Builder finish took in {(monotonic_ns() - start) / 1e9}s")
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False
@@ -544,3 +597,20 @@ class ClientBuilder:
             controller_definition.router, prefix=controller_definition.url_prefix
         )
         return self.app.generate_openapi(routes=root_router.routes)
+
+    @property
+    def openapi_specs(self):
+        """
+        Cache the OpenAPI specs for all the stages that require it.
+
+        """
+        if not hasattr(self, "_openapi_specs"):
+            self._openapi_specs: dict[ControllerBase, Any] = {}
+
+            for controller_definition in self.app.controllers:
+                controller = controller_definition.controller
+                self._openapi_specs[controller] = self.openapi_from_controller(
+                    controller_definition
+                )
+
+        return self._openapi_specs
