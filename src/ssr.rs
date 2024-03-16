@@ -75,8 +75,11 @@ impl<'a> Ssr<'a> {
         // let isolate_params = v8::CreateParams::default().heap_limits(0, 2000 * 1024 * 1024);
         let isolate = &mut v8::Isolate::new(Default::default());
         let handle_scope = &mut v8::HandleScope::new(isolate);
-        let context = v8::Context::new(handle_scope);
+        let mut context = v8::Context::new(handle_scope);
         let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+        // Add logging support
+        Self::inject_logger(&mut context, scope);
 
         // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
         let try_catch = &mut v8::TryCatch::new(scope);
@@ -147,6 +150,59 @@ impl<'a> Ssr<'a> {
         }
 
         Ok(rendered)
+    }
+
+    fn inject_logger(
+        context: &mut v8::Local<'_, v8::Context>,
+        scope: &mut v8::ContextScope<'_, v8::HandleScope<'_>>,
+    ) {
+        let logger_fn = v8::FunctionTemplate::new(
+            scope,
+            move |scope: &mut v8::HandleScope,
+                  args: v8::FunctionCallbackArguments,
+                  mut ret_val: v8::ReturnValue| {
+                let log_message = (0..args.length())
+                    .into_iter()
+                    .map(|i| {
+                        let arg = args.get(i);
+                        if let Some(str_arg) = arg.to_string(scope) {
+                            str_arg.to_rust_string_lossy(scope)
+                        } else {
+                            // Provide a fallback for non-stringable arguments
+                            String::from("[unstringable value]")
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join(" ");
+
+                println!("ssr console: {}", log_message);
+
+                // Console does not need to return a value to JavaScript.
+                // Explicitly set the return value to undefined.
+                ret_val.set_undefined();
+            },
+        );
+
+        let global = context.global(scope);
+        let console_key =
+            v8::String::new(scope, "console").unwrap_or_else(|| v8::String::empty(scope));
+        let log_function_value = logger_fn.get_function(scope).unwrap();
+
+        let console_obj = global
+            .get(scope, console_key.into())
+            .and_then(|v| v.to_object(scope))
+            .unwrap_or_else(|| {
+                let obj = v8::ObjectTemplate::new(scope).new_instance(scope).unwrap();
+                global.set(scope, console_key.into(), obj.into());
+                obj
+            });
+
+        // Set `log` and `error` functions on the `console` object.
+        let log_key = v8::String::new(scope, "log").unwrap();
+        console_obj.set(scope, log_key.into(), log_function_value.into());
+
+        let error_key = v8::String::new(scope, "error").unwrap();
+        console_obj.set(scope, error_key.into(), log_function_value.into());
     }
 
     fn extract_exception_message(
@@ -244,5 +300,20 @@ mod tests {
             result,
             Err(AppError::V8ExceptionError("Error calling function 'x': Error: custom_error_text\nStack: Error: custom_error_text\n    at Object.x (<anonymous>:4:31)".into()))
         )
+    }
+
+    #[test]
+    fn test_render_to_string() {
+        let js = Ssr::new(
+            r##"
+                var SSR = {
+                    x: () => "<html></html>"
+                };"##
+                .to_string(),
+            "SSR",
+        );
+        let result = js.render_to_string(None);
+
+        assert_eq!(result, Ok("<html></html>".to_string()))
     }
 }
