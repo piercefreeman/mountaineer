@@ -19,12 +19,21 @@ class CallbackType(Flag):
     MODIFIED = auto()
     DELETED = auto()
 
+@dataclass
+class CallbackEvent:
+    action: CallbackType
+    path: Path
+
+@dataclass
+class CallbackMetadata:
+    # Since events can be debounced, we need to send all events that occurred
+    # in the batch.
+    events: list[CallbackEvent]
 
 @dataclass
 class CallbackDefinition:
     action: CallbackType
-    callback: Callable
-
+    callback: Callable[[CallbackMetadata], None]
 
 class ChangeEventHandler(FileSystemEventHandler):
     def __init__(
@@ -46,6 +55,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
         self.debounce_timer: Timer | None = None
+        self.pending_events: list[CallbackEvent] = []
 
     def on_modified(self, event):
         super().on_modified(event)
@@ -53,7 +63,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File modified: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.MODIFIED)
+            self._debounce(CallbackType.MODIFIED, Path(event.src_path))
 
     def on_created(self, event):
         super().on_created(event)
@@ -61,7 +71,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File created: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.CREATED)
+            self._debounce(CallbackType.CREATED, Path(event.src_path)
 
     def on_deleted(self, event):
         super().on_deleted(event)
@@ -69,11 +79,14 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File deleted: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.DELETED)
+            self._debounce(CallbackType.DELETED, Path(event.src_path))
 
-    def _debounce(self, action: CallbackType):
+    def _debounce(self, action: CallbackType, path: Path):
         if self.debounce_timer is not None:
             self.debounce_timer.cancel()
+
+        self.pending_events.append(CallbackEvent(action=action, path=path))
+
         self.debounce_timer = Timer(
             self.debounce_interval, self.handle_callbacks, [action]
         )
@@ -87,9 +100,17 @@ class ChangeEventHandler(FileSystemEventHandler):
 
         """
         self.ignore_changes = True
+
         for callback in self.callbacks:
-            if action in callback.action:
-                callback.callback()
+            valid_events = [
+                event
+                for event in self.pending_events
+                if event.action in callback.action
+            ]
+            if valid_events:
+                callback.callback(CallbackMetadata(events=valid_events))
+
+        self.pending_events = []
         self.ignore_changes = False
 
     def should_ignore_path(self, path: Path):
@@ -143,7 +164,9 @@ class PackageWatchdog:
         with self.acquire_watchdog_lock():
             if self.run_on_bootup:
                 for callback_definition in self.callbacks:
-                    callback_definition.callback()
+                    callback_definition.callback(
+                        CallbackMetadata(events=[])
+                    )
 
             event_handler = ChangeEventHandler(callbacks=self.callbacks)
             observer = Observer()
