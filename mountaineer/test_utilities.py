@@ -78,7 +78,7 @@ def benchmark_function(max_time_seconds: int | float):
                 if end is None:
                     raise Exception("Test function did not call end_timing")
 
-                LOGGER.info(f"Test function took: {end - start}")
+                LOGGER.info(f"Test function took: {(end - start) / 1e9}")
 
                 if (end - start) / 1e9 > max_time_seconds:
                     raise ExecutionTooLong()

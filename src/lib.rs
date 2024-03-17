@@ -8,6 +8,7 @@ use std::time::Duration;
 
 mod errors;
 mod lexers;
+mod logging;
 mod source_map;
 mod ssr;
 mod timeout;

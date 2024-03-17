@@ -1,7 +1,7 @@
 import functools
 from collections import OrderedDict
 from hashlib import sha256
-from json import dumps
+from json import dumps as json_dumps
 from typing import Any, Callable
 
 from pydantic import BaseModel
@@ -52,7 +52,7 @@ def serialize_args(args, kwargs):
             serialized.append((key, value.model_dump_json()))
         else:
             serialized.append((key, value))
-    return dumps(serialized, sort_keys=True)
+    return json_dumps(serialized, sort_keys=True)
 
 
 def extended_lru_cache(maxsize: int, max_size_mb: float | None = None):
@@ -85,7 +85,7 @@ def extended_lru_cache(maxsize: int, max_size_mb: float | None = None):
 
             # Serialize result to check size
             if use_cache:
-                serialized_result = dumps(result)
+                serialized_result = json_dumps(result)
                 size_bytes = len(serialized_result.encode("utf-8"))
                 cache.put(hash_key, result, size_bytes)
 

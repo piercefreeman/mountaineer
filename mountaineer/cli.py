@@ -1,11 +1,12 @@
 import asyncio
 import socket
 from contextlib import contextmanager
+from dataclasses import dataclass
 from functools import partial
 from importlib import import_module
 from importlib.metadata import distributions
-from multiprocessing import Event, Process, get_start_method, set_start_method
-from multiprocessing.queues import Queue
+from multiprocessing import Event, Process, Queue, get_start_method, set_start_method
+from multiprocessing.queues import Queue as QueueType
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
@@ -16,25 +17,43 @@ from typing import Any, Callable, MutableMapping
 
 from click import secho
 from fastapi import Request
-from pydantic.main import BaseModel
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.controllers.exception_controller import ExceptionController
 from mountaineer.logging import LOGGER
-from mountaineer.watch import CallbackDefinition, CallbackType, PackageWatchdog
+from mountaineer.watch import (
+    CallbackDefinition,
+    CallbackMetadata,
+    CallbackType,
+    PackageWatchdog,
+)
 from mountaineer.watch_server import WatcherWebservice
 from mountaineer.webservice import UvicornThread
 
 
-class IsolatedRunserverConfig(BaseModel):
+@dataclass
+class IsolatedBuildConfig:
+    webcontroller: str
+
+    # When builds are completed, a notification will be sent from the subprocess->main process
+    # via this channel
+    notification_channel: QueueType | None = None
+
+    # If the main process needs to rebuild client js, this flag will open a channel
+    # to the subprocess to rebuild the client js
+    allow_js_reloads: bool = True
+
+    # Optional arguments to inherit a global cache from the main process
+    build_cache: Path | None = None
+    build_state: MutableMapping[Any, Any] | None = None
+
+
+@dataclass
+class IsolatedRunserverConfig:
     entrypoint: str
     port: int
     live_reload_port: int
-
-
-class IsolatedWatchConfig(BaseModel):
-    webcontroller: str
 
 
 class IsolatedEnvProcess(Process):
@@ -46,11 +65,8 @@ class IsolatedEnvProcess(Process):
 
     def __init__(
         self,
-        watch_config: IsolatedWatchConfig,
+        build_config: IsolatedBuildConfig,
         runserver_config: IsolatedRunserverConfig | None = None,
-        build_notification_channel: Queue | None = None,
-        build_cache: Path | None = None,
-        build_state: MutableMapping[Any, Any] | None = None,
     ):
         """
         build_state: State that was originally initialized in the main process, before
@@ -60,21 +76,18 @@ class IsolatedEnvProcess(Process):
         """
         super().__init__()
 
-        if runserver_config is None and watch_config is None:
-            raise ValueError("Must provide either runserver_config or watch_config")
-
+        self.build_config = build_config
         self.runserver_config = runserver_config
-        self.watch_config = watch_config
         self.close_signal = Event()
-        self.build_notification_channel = build_notification_channel
-        self.build_cache = build_cache
-        self.build_state = build_state
+        self.rebuild_channel: QueueType[bool | None] | None = (
+            Queue() if build_config.allow_js_reloads else None
+        )
 
     def run(self):
-        app_controller = import_from_string(self.watch_config.webcontroller)
+        app_controller = import_from_string(self.build_config.webcontroller)
         if not isinstance(app_controller, AppController):
             raise ValueError(
-                f"Expected {self.watch_config.webcontroller} to be an instance of AppController"
+                f"Expected {self.build_config.webcontroller} to be an instance of AppController"
             )
 
         # Mount our exceptions controller, since we'll need these artifacts built
@@ -83,33 +96,23 @@ class IsolatedEnvProcess(Process):
         app_controller.register(self.exception_controller)
         app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
 
-        # Inject our tmp directory instead of the directories for the already registered
-        # build components
-        if self.build_cache:
-            for builder in app_controller.builders:
-                builder.tmp_dir = self.build_cache
-        if self.build_state:
-            for builder in app_controller.builders:
-                builder.global_state = self.build_state
-
         # Finish the build before we start the server since the server launch is going to sniff
         # for the built artifacts
-        if self.watch_config is not None:
-            secho("Starting build...", fg="yellow")
-            start = time()
+        if self.build_config is not None:
+            # Inject our tmp directory instead of the directories for the already registered
+            # build components
+            if self.build_config.build_cache:
+                for builder in app_controller.builders:
+                    builder.tmp_dir = self.build_config.build_cache
+            if self.build_config.build_state:
+                for builder in app_controller.builders:
+                    builder.global_state = self.build_config.build_state
 
-            js_compiler = ClientBuilder(
-                app_controller,
-                live_reload_port=(
-                    self.runserver_config.live_reload_port
-                    if self.runserver_config
-                    else None
-                ),
-            )
-            js_compiler.build()
-            secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
+            self.run_build(app_controller)
 
-            self.alert_notification_channel()
+            # If the client passed a rebuild channel, we'll listen for rebuild requests
+            if self.build_config.allow_js_reloads:
+                self.listen_for_rebuilds(app_controller)
 
         if self.runserver_config is not None:
             thread = UvicornThread(
@@ -126,6 +129,13 @@ class IsolatedEnvProcess(Process):
 
         LOGGER.debug("IsolatedEnvProcess finished")
 
+    def rebuild_js(self):
+        LOGGER.debug("JS-Only rebuild started")
+        if self.rebuild_channel is not None:
+            self.rebuild_channel.put(True)
+        else:
+            raise ValueError("No rebuild channel was provided")
+
     def alert_notification_channel(self):
         """
         Alerts the notification channel of a build update, once the server
@@ -137,7 +147,7 @@ class IsolatedEnvProcess(Process):
             # No need to do anything if we don't have a notification channel
             if self.runserver_config is None:
                 return
-            if self.build_notification_channel is None:
+            if self.build_config.notification_channel is None:
                 return
 
             # Loop until there is something bound to the runserver_config.port
@@ -156,11 +166,50 @@ class IsolatedEnvProcess(Process):
             # Buffer to make sure the server is fully booted
             sleep(0.5)
 
-            if self.build_notification_channel:
-                self.build_notification_channel.put(True)
+            if self.build_config.notification_channel:
+                self.build_config.notification_channel.put(True)
 
         alert_thread = Thread(target=wait_for_server)
         alert_thread.start()
+
+    def listen_for_rebuilds(self, app_controller: AppController):
+        """
+        If clients place an object into the rebuild channel, our background thread
+        will pick up on these updates and cause a JS-only reload. This only works if the
+        application controller's logic hasn't changed, since we use the global one
+        that was previously created in our isolated process.
+
+        """
+
+        def wait_for_rebuild():
+            if not self.rebuild_channel:
+                raise ValueError("No rebuild channel was provided")
+            while True:
+                rebuild = self.rebuild_channel.get()
+                if rebuild is None:
+                    break
+                self.run_build(app_controller)
+
+        LOGGER.debug("Will launch rebuild thread")
+        rebuild_thread = Thread(target=wait_for_rebuild)
+        rebuild_thread.start()
+
+    def run_build(self, app_controller: AppController):
+        secho("Starting build...", fg="yellow")
+        start = time()
+        js_compiler = ClientBuilder(
+            app_controller,
+            live_reload_port=(
+                self.runserver_config.live_reload_port
+                if self.runserver_config
+                else None
+            ),
+            build_cache=self.build_config.build_cache,
+        )
+        js_compiler.build()
+        secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
+
+        self.alert_notification_channel()
 
     def stop(self, hard_timeout: float = 5.0):
         """
@@ -169,18 +218,23 @@ class IsolatedEnvProcess(Process):
         # If we've already stopped, don't try to stop again
         if not self.is_alive():
             return
+
+        if self.rebuild_channel is not None:
+            self.rebuild_channel.put(None)
+
         if self.runserver_config is not None:
             self.close_signal.set()
-            # Try to give the server time to shut down gracefully
-            while self.is_alive() and hard_timeout > 0:
-                self.join(1)
-                hard_timeout -= 1
 
-            if hard_timeout == 0:
-                secho(
-                    f"Server shutdown reached hard timeout deadline: {self.is_alive()}",
-                    fg="red",
-                )
+        # Try to give the process time to shut down gracefully
+        while self.is_alive() and hard_timeout > 0:
+            self.join(1)
+            hard_timeout -= 1
+
+        if hard_timeout == 0:
+            secho(
+                f"Server shutdown reached hard timeout deadline: {self.is_alive()}",
+                fg="red",
+            )
 
         # As a last resort we send a hard termination signal
         if self.is_alive():
@@ -222,17 +276,27 @@ def handle_watch(
     # different builds
     global_build_cache = Path(mkdtemp())
 
-    def update_build(global_state: MutableMapping[Any, Any]):
+    def update_build(
+        metadata: CallbackMetadata, global_state: MutableMapping[Any, Any]
+    ):
         nonlocal current_process
+
+        # JS-Only build needed
+        if all(is_view_update(event.path) for event in metadata.events):
+            if current_process is not None:
+                current_process.rebuild_js()
+                return
 
         if current_process is not None:
             # Stop the current process if it's running
             current_process.stop()
 
         current_process = IsolatedEnvProcess(
-            watch_config=IsolatedWatchConfig(webcontroller=webcontroller),
-            build_cache=global_build_cache,
-            build_state=global_state,
+            build_config=IsolatedBuildConfig(
+                webcontroller=webcontroller,
+                build_cache=global_build_cache,
+                build_state=global_state,
+            ),
         )
         current_process.start()
 
@@ -273,11 +337,14 @@ def handle_runserver(
     watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
 
-    def update_webservice():
-        asyncio.run(watcher_webservice.broadcast_listeners())
-
-    def update_build(global_state: dict[Any, Any]):
+    def update_build(metadata: CallbackMetadata, global_state: dict[Any, Any]):
         nonlocal current_process
+
+        # JS-Only build needed
+        if all(is_view_update(event.path) for event in metadata.events):
+            if current_process is not None:
+                current_process.rebuild_js()
+                return
 
         if current_process is not None:
             # Stop the current process if it's running
@@ -289,10 +356,12 @@ def handle_runserver(
                 port=port,
                 live_reload_port=watcher_webservice.port,
             ),
-            watch_config=IsolatedWatchConfig(webcontroller=webcontroller),
-            build_notification_channel=watcher_webservice.notification_queue,
-            build_cache=global_build_cache,
-            build_state=global_state,
+            build_config=IsolatedBuildConfig(
+                webcontroller=webcontroller,
+                notification_channel=watcher_webservice.notification_queue,
+                build_cache=global_build_cache,
+                build_state=global_state,
+            ),
         )
         current_process.start()
 
@@ -375,9 +444,18 @@ def find_packages_with_prefix(prefix: str):
     ]
 
 
+def is_view_update(path: Path):
+    """
+    Determines if the file change is a view update. This assumes
+    the user subscribes to our "views" convention.
+
+    """
+    return any(part == "views" for part in path.parts)
+
+
 def build_common_watchdog(
     client_package: str,
-    callback: Callable,
+    callback: Callable[[CallbackMetadata], None],
     subscribe_to_mountaineer: bool,
 ):
     """

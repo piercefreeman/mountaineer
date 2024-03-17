@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from mountaineer.cli import (
+    IsolatedBuildConfig,
     IsolatedEnvProcess,
-    IsolatedWatchConfig,
     find_packages_with_prefix,
 )
 from mountaineer.controllers.exception_controller import ExceptionController
@@ -50,7 +50,7 @@ def test_dev_exception_on_get(tmpdir: str):
     # Install our exception handler hook. The rest of the env process is unused, we just
     # need it for the mounted controller.
     # This is a hack to avoid calling run(), which will trigger an actual build
-    env_process = IsolatedEnvProcess(IsolatedWatchConfig(webcontroller=""))
+    env_process = IsolatedEnvProcess(IsolatedBuildConfig(webcontroller=""))
     env_process.exception_controller = exception_controller
     app.exception_handler(Exception)(env_process.handle_dev_exception)
 
