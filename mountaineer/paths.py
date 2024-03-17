@@ -91,21 +91,29 @@ class ManagedViewPath(type(Path())):  # type: ignore
     def get_managed_code_dir(self):
         return self.get_managed_dir_common("_server")
 
-    def get_managed_static_dir(self):
+    def get_managed_static_dir(self, tmp_build: bool = False):
         # Only root paths can have static directories
         if not self.is_root_link:
             raise ValueError(
                 "Cannot get static directory from a non-root linked view path"
             )
-        return self.get_managed_dir_common("_static")
+        path = self.get_managed_dir_common("_static")
+        if tmp_build:
+            path = path / "tmp"
+            path.mkdir(exist_ok=True)
+        return path
 
-    def get_managed_ssr_dir(self):
+    def get_managed_ssr_dir(self, tmp_build: bool = False):
         # Only root paths can have SSR directories
         if not self.is_root_link:
             raise ValueError(
                 "Cannot get SSR directory from a non-root linked view path"
             )
-        return self.get_managed_dir_common("_ssr")
+        path = self.get_managed_dir_common("_ssr")
+        if tmp_build:
+            path = path / "tmp"
+            path.mkdir(exist_ok=True)
+        return path
 
     def get_managed_dir_common(self, managed_dir: str):
         # If the path is to a file, we want to get the parent directory

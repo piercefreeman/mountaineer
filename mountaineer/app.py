@@ -79,6 +79,11 @@ class AppController:
             *(custom_builders if custom_builders else []),
         ]
 
+        # If this flag is present, we will re-raise this error during render()
+        # so users can see the error in the browser.
+        # This is useful for debugging, but should not be used in production
+        self.build_exception: Exception | None = None
+
         # Follow our managed path conventions
         if config is not None and config.PACKAGE is not None:
             package_path = resolve_package_path(config.PACKAGE)
@@ -133,6 +138,9 @@ class AppController:
         # with the dependency injection kwargs
         @wraps(controller.render)
         async def generate_controller_html(*args, **kwargs):
+            if self.build_exception:
+                raise self.build_exception
+
             try:
                 return await controller._generate_html(
                     *args, global_metadata=self.global_metadata, **kwargs

@@ -253,10 +253,12 @@ async def test_convert(
 
         await base_javascript_bundler.finish_build()
 
-        ssr_path = fake_view_root / "_ssr" / "example_controller.js"
+        ssr_path = (
+            fake_view_root.get_managed_ssr_dir(tmp_build=True) / "example_controller.js"
+        )
         static_paths = {
             (path, ".map" in path.name)
-            for path in (fake_view_root / "_static").iterdir()
+            for path in fake_view_root.get_managed_static_dir(tmp_build=True).iterdir()
             if path.is_file() and "example_controller" in path.name
         }
 

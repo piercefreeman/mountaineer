@@ -215,9 +215,13 @@ class IsolatedEnvProcess(Process):
             js_compiler.build()
             secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
 
+            # Completed successfully
+            app_controller.build_exception = None
+
             self.alert_notification_channel()
         except BuildProcessException as e:
             secho(f"Build failed: {e}", fg="red")
+            app_controller.build_exception = e
 
     def stop(self, hard_timeout: float = 5.0):
         """

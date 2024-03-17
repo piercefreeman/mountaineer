@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
 from shutil import rmtree
+from tempfile import TemporaryDirectory
 from time import monotonic_ns
 from typing import Any
 
@@ -409,14 +410,6 @@ class ClientBuilder:
         contents have rebuilt in the background.
 
         """
-        # Clear the static directories since we only want the latest files in there
-        static_dir = self.view_root.get_managed_static_dir()
-        ssr_dir = self.view_root.get_managed_ssr_dir()
-        for clear_dir in [static_dir, ssr_dir]:
-            if clear_dir.exists():
-                rmtree(clear_dir)
-            clear_dir.mkdir(parents=True)
-
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
         )
@@ -469,18 +462,48 @@ class ClientBuilder:
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False
+        final_exception: str = ""
         for result in results:
             if isinstance(result, Exception):
                 has_build_error = True
                 if isinstance(result, BuildProcessException):
                     secho(f"Build error: {result}", fg="red")
-                else:
-                    raise result
+                final_exception += str(result)
 
         if has_build_error:
-            raise BuildProcessException(
-                "Build process failed. Errors are listed in the console."
-            )
+            raise BuildProcessException(final_exception)
+
+        self.move_build_artifacts_into_project()
+
+    def move_build_artifacts_into_project(self):
+        """
+        Now that we build has completed, we can clear out the old files and replace it
+        with the thus-far temporary files
+
+        This cleans up old controllers in the case that they were deleted, and prevents
+        outdated md5 content hashes from being served
+
+        """
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            tmp_static_dir = tmp_path / "static"
+            tmp_ssr_dir = tmp_path / "ssr"
+
+            # Since the tmp builds are within their parent folder, we need to move
+            # them out of the way before we clear
+            self.view_root.get_managed_static_dir(tmp_build=True).rename(tmp_static_dir)
+            self.view_root.get_managed_ssr_dir(tmp_build=True).rename(tmp_ssr_dir)
+
+            static_dir = self.view_root.get_managed_static_dir()
+            ssr_dir = self.view_root.get_managed_ssr_dir()
+            for clear_dir in [static_dir, ssr_dir]:
+                if clear_dir.exists():
+                    rmtree(clear_dir)
+                clear_dir.mkdir(parents=True)
+
+            # Final move
+            tmp_static_dir.rename(self.view_root.get_managed_static_dir())
+            tmp_ssr_dir.rename(self.view_root.get_managed_ssr_dir())
 
     def cache_is_outdated(self):
         """
