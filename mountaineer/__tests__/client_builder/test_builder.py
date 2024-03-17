@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from json import dumps as json_dumps
 from json import loads as json_loads
 from pathlib import Path
@@ -120,8 +121,14 @@ def test_cache_is_outdated_existing_data(
     cache_path.write_text(
         json_dumps(
             {
-                "ExampleHomeController": builder.openapi_specs[home_controller],
-                "ExampleDetailController": builder.openapi_specs[detail_controller],
+                "ExampleHomeController": {
+                    "action": builder.openapi_action_specs[home_controller],
+                    "render": asdict(builder.openapi_render_specs[home_controller]),
+                },
+                "ExampleDetailController": {
+                    "action": builder.openapi_action_specs[detail_controller],
+                    "render": asdict(builder.openapi_render_specs[detail_controller]),
+                },
             },
             sort_keys=True,
         )

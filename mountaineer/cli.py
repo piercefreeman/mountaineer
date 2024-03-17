@@ -85,6 +85,10 @@ class IsolatedEnvProcess(Process):
         )
 
     def run(self):
+        LOGGER.debug(
+            f"Starting isolated environment process with\nbuild_config: {self.build_config}\nrunserver_config: {self.runserver_config}"
+        )
+
         app_controller = import_from_string(self.build_config.webcontroller)
         if not isinstance(app_controller, AppController):
             raise ValueError(

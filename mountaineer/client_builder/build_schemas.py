@@ -30,20 +30,6 @@ class OpenAPIToTypescriptSchemaConverter:
     def __init__(self, export_interface: bool = False):
         self.export_interface = export_interface
 
-    def convert(self, model: Type[BaseModel], defaults_are_required: bool = False):
-        """
-        :param defaults_are_required: If provided, will mark all properties with a "default"
-        as required properties in the client model.
-
-        """
-        self.validate_typescript_candidate(model)
-
-        openapi_spec = self.get_model_json_schema(model)
-        schema = OpenAPISchema(**openapi_spec)
-        return self.convert_to_typescript(
-            schema, defaults_are_required=defaults_are_required
-        )
-
     def get_model_json_schema(self, model: Type[BaseModel]):
         """
         By default pydantic will still include exclude=True parameters in the
@@ -51,6 +37,8 @@ class OpenAPIToTypescriptSchemaConverter:
         before conversion so we exclude these unnecessary parameters.
 
         """
+        self.validate_typescript_candidate(model)
+
         include_fields = {
             field: (field_info.annotation, field_info)
             for field, field_info in model.model_fields.items()
@@ -65,7 +53,7 @@ class OpenAPIToTypescriptSchemaConverter:
 
         return synthetic_model.model_json_schema()
 
-    def convert_to_typescript(
+    def convert_schema_to_typescript(
         self, parsed_spec: OpenAPISchema, defaults_are_required: bool = False
     ):
         # Fetch all the dependent models
