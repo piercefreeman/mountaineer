@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Flag, auto
 from pathlib import Path
 from threading import Timer
-from typing import Callable
+from typing import Any, Callable
 
 from click import secho
 from watchdog.events import FileSystemEventHandler
@@ -92,11 +92,12 @@ class ChangeEventHandler(FileSystemEventHandler):
         self.pending_events.append(CallbackEvent(action=action, path=path))
 
         self.debounce_timer = Timer(
-            self.debounce_interval, self.handle_callbacks, [action]
+            self.debounce_interval,
+            self.handle_callbacks,
         )
         self.debounce_timer.start()
 
-    def handle_callbacks(self, action: CallbackType):
+    def handle_callbacks(self):
         """
         Runs all callbacks for the given action. Since callbacks are allowed to make
         modifications to the filesystem, we temporarily disable the event handler to avoid
@@ -161,6 +162,9 @@ class PackageWatchdog:
         self.callbacks: list[CallbackDefinition] = callbacks or []
         self.run_on_bootup = run_on_bootup
 
+        self.event_handler: ChangeEventHandler | None = None
+        self.observer: Any | None = None
+
         self.check_packages_installed()
         self.get_package_paths()
 
@@ -170,26 +174,26 @@ class PackageWatchdog:
                 for callback_definition in self.callbacks:
                     callback_definition.callback(CallbackMetadata(events=[]))
 
-            event_handler = ChangeEventHandler(callbacks=self.callbacks)
-            observer = Observer()
+            self.event_handler = ChangeEventHandler(callbacks=self.callbacks)
+            self.observer = Observer()
 
             for path in self.paths:
                 secho(f"Watching {path}", fg="green")
                 if os.path.isdir(path):
-                    observer.schedule(event_handler, path, recursive=True)
+                    self.observer.schedule(self.event_handler, path, recursive=True)
                 else:
-                    observer.schedule(
-                        event_handler, os.path.dirname(path), recursive=False
+                    self.observer.schedule(
+                        self.event_handler, os.path.dirname(path), recursive=False
                     )
 
-            observer.start()
+            self.observer.start()
 
             try:
                 secho("Starting observer...")
-                observer.join()
+                self.observer.join()
             except KeyboardInterrupt:
-                observer.stop()
-                observer.join()
+                self.observer.stop()
+                self.observer.join()
 
     def check_packages_installed(self):
         for package in self.packages:
