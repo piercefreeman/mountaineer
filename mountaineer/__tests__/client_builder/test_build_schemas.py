@@ -1,5 +1,6 @@
 from enum import Enum, IntEnum, StrEnum
 from json import dumps as json_dumps
+from typing import Generic, TypeVar
 
 import pytest
 from pydantic import BaseModel, Field, create_model
@@ -9,6 +10,8 @@ from mountaineer.client_builder.build_schemas import (
     OpenAPIToTypescriptSchemaConverter,
 )
 from mountaineer.client_builder.openapi import OpenAPIProperty, OpenAPISchemaType
+
+T = TypeVar("T")
 
 
 class SubModel1(BaseModel):
@@ -205,6 +208,17 @@ def test_format_enums():
     assert (
         js_interfaces["MyEnum"] == "enum MyEnum {\nValue1 = 'value_1',\nValue__5 = 5\n}"
     )
+
+
+def test_format_generics():
+    class MyModel(BaseModel, Generic[T]):
+        a: T
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+    json_schema = OpenAPISchema(**converter.get_model_json_schema(MyModel[str]))
+    js_interfaces = converter.convert_schema_to_typescript(json_schema)
+
+    assert js_interfaces == {"MyModel[str]": "interface MyModelStr {\n  a: string;\n}"}
 
 
 @pytest.mark.parametrize("defaults_are_required", [True, False])

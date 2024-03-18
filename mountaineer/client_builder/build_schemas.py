@@ -222,7 +222,15 @@ class OpenAPIToTypescriptSchemaConverter:
             raise ValueError(
                 f"Model must have a title to retrieve its typescript name: {model}"
             )
-        return camelize(model.title.replace(" ", "_"))
+
+        replace_chars = {" ", "[", "]"}
+        values = model.title
+
+        for char in replace_chars:
+            values = values.strip(char)
+            values = values.replace(char, "_")
+
+        return camelize(values)
 
     def validate_typescript_candidate(self, model: Type[BaseModel]):
         """
