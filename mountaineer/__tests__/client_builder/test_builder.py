@@ -1,4 +1,4 @@
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from json import dumps as json_dumps
 from json import loads as json_loads
 from pathlib import Path
@@ -135,3 +135,38 @@ def test_cache_is_outdated_existing_data(
     )
 
     assert builder.cache_is_outdated() is False
+
+
+def test_cache_is_outdated_url_change(
+    builder: ClientBuilder,
+    tmp_path: Path,
+    home_controller: ExampleHomeController,
+    detail_controller: ExampleDetailController,
+):
+    builder.build_cache = tmp_path
+
+    cache_path = tmp_path / "client_builder_openapi.json"
+    cache_path.write_text(
+        json_dumps(
+            {
+                "ExampleHomeController": {
+                    "action": builder.openapi_action_specs[home_controller],
+                    "render": asdict(
+                        # Only modify the render attribute. Simulate a user changing the URL
+                        # of a component, which does require a FE rebuild.
+                        replace(
+                            builder.openapi_render_specs[home_controller],
+                            url="/new_url",
+                        )
+                    ),
+                },
+                "ExampleDetailController": {
+                    "action": builder.openapi_action_specs[detail_controller],
+                    "render": asdict(builder.openapi_render_specs[detail_controller]),
+                },
+            },
+            sort_keys=True,
+        )
+    )
+
+    assert builder.cache_is_outdated() is True
