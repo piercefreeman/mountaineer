@@ -61,6 +61,10 @@ impl<'a> Ssr<'a> {
     fn init_platform() {
         lazy_static! {
           static ref INIT_PLATFORM: () = {
+              // Include ICU data file.
+              // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
+              v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
+
               //Initialize a new V8 platform
               let platform = v8::new_default_platform(0, false).make_shared();
               v8::V8::initialize_platform(platform);
@@ -388,5 +392,28 @@ mod tests {
             String::from_utf8_lossy(&*result_vector),
             "ssr console [log]: test log\n"
         );
+    }
+
+    #[test]
+    fn test_timezone_succeeds() {
+        // More context:
+        // https://github.com/denoland/rusty_v8/issues/1444
+        // https://github.com/denoland/rusty_v8/pull/603
+        let js = Ssr::new(
+            r##"
+                var SSR = {
+                    x: () => {
+                        const value = new Intl.DateTimeFormat(void 0, {
+                            timeZone: "America/Los_Angeles",
+                        });
+                        return value;
+                    }
+                };"##
+                .to_string(),
+            "SSR",
+        );
+        let result = js.render_to_string(None);
+
+        assert_eq!(result, Ok("[object Intl.DateTimeFormat]".to_string()))
     }
 }
