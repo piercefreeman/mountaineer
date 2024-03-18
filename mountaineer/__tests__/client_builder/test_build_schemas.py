@@ -1,5 +1,6 @@
 from enum import Enum, IntEnum, StrEnum
 from json import dumps as json_dumps
+from typing import Generic, TypeVar
 
 import pytest
 from pydantic import BaseModel, Field, create_model
@@ -9,6 +10,8 @@ from mountaineer.client_builder.build_schemas import (
     OpenAPIToTypescriptSchemaConverter,
 )
 from mountaineer.client_builder.openapi import OpenAPIProperty, OpenAPISchemaType
+
+T = TypeVar("T")
 
 
 class SubModel1(BaseModel):
@@ -45,7 +48,10 @@ class MyModel(BaseModel):
 
 def test_basic_interface():
     converter = OpenAPIToTypescriptSchemaConverter()
-    result = converter.convert(MyModel)
+
+    json_schema = OpenAPISchema(**converter.get_model_json_schema(MyModel))
+    result = converter.convert_schema_to_typescript(json_schema)
+
     assert set(result.keys()) == {"MyModel", "SubModel1", "SubModel2", "Sub Map"}
     assert "interface MyModel {" in result["MyModel"]
 
@@ -189,7 +195,8 @@ def test_format_enums():
         c: MyEnum
 
     converter = OpenAPIToTypescriptSchemaConverter()
-    js_interfaces = converter.convert(MyModel)
+    json_schema = OpenAPISchema(**converter.get_model_json_schema(MyModel))
+    js_interfaces = converter.convert_schema_to_typescript(json_schema)
 
     assert (
         js_interfaces["MyStrEnum"]
@@ -203,6 +210,17 @@ def test_format_enums():
     )
 
 
+def test_format_generics():
+    class MyModel(BaseModel, Generic[T]):
+        a: T
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+    json_schema = OpenAPISchema(**converter.get_model_json_schema(MyModel[str]))
+    js_interfaces = converter.convert_schema_to_typescript(json_schema)
+
+    assert js_interfaces == {"MyModel[str]": "interface MyModelStr {\n  a: string;\n}"}
+
+
 @pytest.mark.parametrize("defaults_are_required", [True, False])
 def test_defaults_are_required(defaults_are_required: bool):
     class MyModelExplicitField(BaseModel):
@@ -214,8 +232,10 @@ def test_defaults_are_required(defaults_are_required: bool):
     # Both behaviors should be the same
     for base_model in [MyModelExplicitField, MyModelImplicitField]:
         converter = OpenAPIToTypescriptSchemaConverter()
-        js_interfaces = converter.convert(
-            base_model, defaults_are_required=defaults_are_required
+
+        json_schema = OpenAPISchema(**converter.get_model_json_schema(base_model))
+        js_interfaces = converter.convert_schema_to_typescript(
+            json_schema, defaults_are_required=defaults_are_required
         )
         model_name = base_model.__name__
 

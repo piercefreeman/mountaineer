@@ -21,6 +21,7 @@ from fastapi import Request
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.controllers.exception_controller import ExceptionController
+from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.watch import (
     CallbackDefinition,
@@ -84,6 +85,10 @@ class IsolatedEnvProcess(Process):
         )
 
     def run(self):
+        LOGGER.debug(
+            f"Starting isolated environment process with\nbuild_config: {self.build_config}\nrunserver_config: {self.runserver_config}"
+        )
+
         app_controller = import_from_string(self.build_config.webcontroller)
         if not isinstance(app_controller, AppController):
             raise ValueError(
@@ -206,10 +211,17 @@ class IsolatedEnvProcess(Process):
             ),
             build_cache=self.build_config.build_cache,
         )
-        js_compiler.build()
-        secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
+        try:
+            js_compiler.build()
+            secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
 
-        self.alert_notification_channel()
+            # Completed successfully
+            app_controller.build_exception = None
+
+            self.alert_notification_channel()
+        except BuildProcessException as e:
+            secho(f"Build failed: {e}", fg="red")
+            app_controller.build_exception = e
 
     def stop(self, hard_timeout: float = 5.0):
         """

@@ -35,7 +35,8 @@ class PostCSSBundler(ClientBuilderBase):
         root_path = file_path.get_package_root_link()
         built_css = await self.process_css(file_path)
         (
-            root_path.get_managed_static_dir() / self.get_style_output_name(file_path)
+            root_path.get_managed_static_dir(tmp_build=True)
+            / self.get_style_output_name(file_path)
         ).write_text(built_css)
 
     async def process_css(self, css_path: ManagedViewPath) -> str:

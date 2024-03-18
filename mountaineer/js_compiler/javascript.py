@@ -161,8 +161,8 @@ class JavascriptBundler(ClientBuilderBase):
             controller_base = underscore(payload.controller.__class__.__name__)
 
             root_path = payload.file_path.get_package_root_link()
-            static_dir = root_path.get_managed_static_dir()
-            ssr_dir = root_path.get_managed_ssr_dir()
+            static_dir = root_path.get_managed_static_dir(tmp_build=True)
+            ssr_dir = root_path.get_managed_ssr_dir(tmp_build=True)
 
             # Client entrypoint config
             build_params.append(

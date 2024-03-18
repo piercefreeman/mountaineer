@@ -1,8 +1,10 @@
 import asyncio
 from collections import defaultdict
+from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
 from shutil import rmtree
+from tempfile import TemporaryDirectory
 from time import monotonic_ns
 from typing import Any
 
@@ -18,7 +20,7 @@ from mountaineer.client_builder.build_actions import (
 )
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 from mountaineer.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
-from mountaineer.client_builder.openapi import OpenAPIDefinition
+from mountaineer.client_builder.openapi import OpenAPIDefinition, OpenAPISchema
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
@@ -30,6 +32,13 @@ from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
+
+
+@dataclass
+class RenderSpec:
+    url: str
+    view_path: str
+    spec: dict[Any, Any] | None
 
 
 class ClientBuilder:
@@ -89,34 +98,6 @@ class ClientBuilder:
             controller = controller_definition.controller
             controller.resolve_paths(self.view_root, force=True)
 
-    def cache_is_outdated(self):
-        """
-        Determines if our last build is outdated and we need to rebuild the client. Running
-        this function will also update the cache to the current state.
-
-        """
-        # We need to rebuild every time
-        if not self.build_cache:
-            return True
-
-        cached_metadata = self.build_cache / "client_builder_openapi.json"
-
-        cached_contents = {
-            controller.__class__.__name__: openapi_spec
-            for controller, openapi_spec in self.openapi_specs.items()
-        }
-        cached_str = json_dumps(cached_contents, sort_keys=True)
-
-        if not cached_metadata.exists():
-            cached_metadata.write_text(cached_str)
-            return True
-
-        if cached_metadata.read_text() != cached_str:
-            cached_metadata.write_text(cached_str)
-            return True
-
-        return False
-
     def generate_static_files(self):
         """
         Copy over the static files that are required for the client.
@@ -136,17 +117,26 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            openapi_spec = self.openapi_specs[controller]
-            base = OpenAPIDefinition(**openapi_spec)
+
+            action_spec_openapi = self.openapi_action_specs[controller]
+            action_base = OpenAPIDefinition(**action_spec_openapi)
+
+            render_spec_openapi = self.openapi_render_specs[controller]
+            render_base = (
+                OpenAPISchema(**render_spec_openapi.spec)
+                if render_spec_openapi.spec
+                else None
+            )
 
             schemas: dict[str, str] = {}
 
             # Convert the render model
-            render_metadata = get_function_metadata(controller.render)
-            render_model = render_metadata.get_render_model()
-            if render_model:
-                for schema_name, component in self.openapi_schema_converter.convert(
-                    render_model,
+            if render_base:
+                for (
+                    schema_name,
+                    component,
+                ) in self.openapi_schema_converter.convert_schema_to_typescript(
+                    render_base,
                     # Render models are sent server -> client, so we know they'll provide all their
                     # default values in the initial payload
                     defaults_are_required=True,
@@ -154,12 +144,12 @@ class ClientBuilder:
                     schemas[schema_name] = component
 
             # Convert all the other models defined in sideeffect routes
-            for schema_name, component in base.components.schemas.items():
+            for schema_name, component in action_base.components.schemas.items():
                 schemas[
                     schema_name
                 ] = self.openapi_schema_converter.convert_schema_to_interface(
                     component,
-                    base=base,
+                    base=action_base,
                     # Don't require client data uploads to have all the fields
                     # if there's a value specified server side. Note that this will apply
                     # to both requests/response models right now, so clients might need
@@ -420,14 +410,6 @@ class ClientBuilder:
         contents have rebuilt in the background.
 
         """
-        # Clear the static directories since we only want the latest files in there
-        static_dir = self.view_root.get_managed_static_dir()
-        ssr_dir = self.view_root.get_managed_ssr_dir()
-        for clear_dir in [static_dir, ssr_dir]:
-            if clear_dir.exists():
-                rmtree(clear_dir)
-            clear_dir.mkdir(parents=True)
-
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
         )
@@ -480,18 +462,81 @@ class ClientBuilder:
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False
+        final_exception: str = ""
         for result in results:
             if isinstance(result, Exception):
                 has_build_error = True
                 if isinstance(result, BuildProcessException):
                     secho(f"Build error: {result}", fg="red")
-                else:
-                    raise result
+                final_exception += str(result)
 
         if has_build_error:
-            raise BuildProcessException(
-                "Build process failed. Errors are listed in the console."
-            )
+            raise BuildProcessException(final_exception)
+
+        self.move_build_artifacts_into_project()
+
+    def move_build_artifacts_into_project(self):
+        """
+        Now that we build has completed, we can clear out the old files and replace it
+        with the thus-far temporary files
+
+        This cleans up old controllers in the case that they were deleted, and prevents
+        outdated md5 content hashes from being served
+
+        """
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            tmp_static_dir = tmp_path / "static"
+            tmp_ssr_dir = tmp_path / "ssr"
+
+            # Since the tmp builds are within their parent folder, we need to move
+            # them out of the way before we clear
+            self.view_root.get_managed_static_dir(tmp_build=True).rename(tmp_static_dir)
+            self.view_root.get_managed_ssr_dir(tmp_build=True).rename(tmp_ssr_dir)
+
+            static_dir = self.view_root.get_managed_static_dir()
+            ssr_dir = self.view_root.get_managed_ssr_dir()
+            for clear_dir in [static_dir, ssr_dir]:
+                if clear_dir.exists():
+                    rmtree(clear_dir)
+                clear_dir.mkdir(parents=True)
+
+            # Final move
+            tmp_static_dir.rename(self.view_root.get_managed_static_dir())
+            tmp_ssr_dir.rename(self.view_root.get_managed_ssr_dir())
+
+    def cache_is_outdated(self):
+        """
+        Determines if our last build is outdated and we need to rebuild the client. Running
+        this function will also update the cache to the current state.
+
+        """
+        # We need to rebuild every time
+        if not self.build_cache:
+            return True
+
+        cached_metadata = self.build_cache / "client_builder_openapi.json"
+
+        cached_contents = {
+            controller_definition.controller.__class__.__name__: {
+                "action": self.openapi_action_specs[controller_definition.controller],
+                "render": asdict(
+                    self.openapi_render_specs[controller_definition.controller]
+                ),
+            }
+            for controller_definition in self.app.controllers
+        }
+        cached_str = json_dumps(cached_contents, sort_keys=True)
+
+        if not cached_metadata.exists():
+            cached_metadata.write_text(cached_str)
+            return True
+
+        if cached_metadata.read_text() != cached_str:
+            cached_metadata.write_text(cached_str)
+            return True
+
+        return False
 
     def get_static_files(self):
         ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
@@ -599,13 +644,14 @@ class ClientBuilder:
         return self.app.generate_openapi(routes=root_router.routes)
 
     @property
-    def openapi_specs(self):
+    def openapi_action_specs(self):
         """
-        Cache the OpenAPI specs for all the stages that require it.
+        Cache the OpenAPI specs for all side-effects. Render components
+        are defined differently. We internally cache this for all stages that require it.
 
         """
-        if not hasattr(self, "_openapi_specs"):
-            self._openapi_specs: dict[ControllerBase, Any] = {}
+        if not hasattr(self, "_openapi_action_specs"):
+            self._openapi_specs: dict[ControllerBase, dict[Any, Any]] = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller
@@ -614,3 +660,35 @@ class ClientBuilder:
                 )
 
         return self._openapi_specs
+
+    @property
+    def openapi_render_specs(self):
+        """
+        Get the raw spec for all the render attributes.
+
+        If the return model for a render function is "None", the response spec will
+        include {controller: {spec: None}} be so clients can separate undefined controllers from
+        defined controllers with no return model.
+
+        """
+        if not hasattr(self, "_openapi_render_specs"):
+            self._openapi_render_specs: dict[ControllerBase, RenderSpec] = {}
+
+            for controller_definition in self.app.controllers:
+                controller = controller_definition.controller
+
+                render_metadata = get_function_metadata(controller.render)
+                render_model = render_metadata.get_render_model()
+
+                spec = (
+                    self.openapi_schema_converter.get_model_json_schema(render_model)
+                    if render_model
+                    else None
+                )
+                self._openapi_render_specs[controller] = RenderSpec(
+                    url=controller.url,
+                    view_path=str(controller.view_path),
+                    spec=spec,
+                )
+
+        return self._openapi_render_specs
