@@ -13,8 +13,10 @@ from typing import (
 
 from pydantic import BaseModel
 from pydantic._internal._model_construction import ModelMetaclass
-from pydantic_core import PydanticUndefined as Undefined
-from pydantic_core import PydanticUndefinedType as UndefinedType
+from pydantic_core import (
+    PydanticUndefined as Undefined,
+    PydanticUndefinedType as UndefinedType,
+)
 from sqlalchemy import Column
 from sqlmodel._compat import (
     finish_init,
@@ -24,11 +26,7 @@ from sqlmodel._compat import (
 from sqlmodel.main import (
     FieldInfo,
     NoArgAnyCallable,
-)
-from sqlmodel.main import (
     SQLModel as SQLModelBase,
-)
-from sqlmodel.main import (
     SQLModelMetaclass as SQLModelMetaclassBase,
 )
 from typing_extensions import dataclass_transform
