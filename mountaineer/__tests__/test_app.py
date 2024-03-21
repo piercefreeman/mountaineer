@@ -1,7 +1,10 @@
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from mountaineer.actions import passthrough
@@ -124,3 +127,18 @@ def test_view_root_from_config(tmp_path: Path):
 
         assert mock_resolve_package_path.call_count == 1
         assert mock_resolve_package_path.call_args[0] == ("test_webapp",)
+
+
+def test_passthrough_fastapi_args():
+    did_run_lifespan = False
+
+    @asynccontextmanager
+    async def app_lifespan(app: FastAPI):
+        nonlocal did_run_lifespan
+        did_run_lifespan = True
+        yield
+
+    app = AppController(view_root=Path(""), fastapi_args=dict(lifespan=app_lifespan))
+
+    with TestClient(app.app):
+        assert did_run_lifespan

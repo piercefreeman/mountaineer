@@ -59,6 +59,7 @@ class AppController:
         global_metadata: Metadata | None = None,
         custom_builders: list[ClientBuilderBase] | None = None,
         config: ConfigBase | None = None,
+        fastapi_args: dict[str, Any] | None = None,
     ):
         """
         :param global_metadata: Script and meta will be applied to every
@@ -67,7 +68,7 @@ class AppController:
         :param config: Application global configuration.
 
         """
-        self.app = FastAPI(title=name, version=version)
+        self.app = FastAPI(title=name, version=version, **(fastapi_args or {}))
         self.controllers: list[ControllerDefinition] = []
         self.name = name
         self.version = version
