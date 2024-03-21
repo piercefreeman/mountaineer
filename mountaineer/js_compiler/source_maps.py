@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from re import finditer as re_finditer
-from re import sub
+from re import finditer as re_finditer, sub
 from time import monotonic_ns
 
 from pydantic import BaseModel

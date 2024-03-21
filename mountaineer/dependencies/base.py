@@ -4,8 +4,7 @@ from dataclasses import dataclass
 from inspect import signature
 from typing import Any, Callable
 
-from fastapi import Request
-from fastapi import params as fastapi_params
+from fastapi import Request, params as fastapi_params
 from fastapi.dependencies.utils import get_dependant, solve_dependencies
 
 

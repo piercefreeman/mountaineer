@@ -1,8 +1,7 @@
 import importlib.metadata
 import sys
 from json import loads as json_loads
-from os import PathLike
-from os import walk as os_walk
+from os import PathLike, walk as os_walk
 from os.path import relpath
 from pathlib import Path
 from re import search as re_search
