@@ -70,6 +70,7 @@ class AppController:
         """
         self.app = FastAPI(title=name, version=version, **(fastapi_args or {}))
         self.controllers: list[ControllerDefinition] = []
+        self.controller_names: set[str] = set()
         self.name = name
         self.version = version
         self.global_metadata = global_metadata
@@ -125,6 +126,14 @@ class AppController:
             - Mount all actions (ie. @sideeffect and @passthrough decorated functions) to their public API
 
         """
+        # Since the controller name is used to build dependent files, we ensure
+        # that we only register one controller of a given name
+        controller_name = controller.__class__.__name__
+        if controller_name in self.controller_names:
+            raise ValueError(
+                f"Controller with name {controller_name} already registered."
+            )
+
         # Update the paths now that we have access to the runtime package path
         controller.resolve_paths(self.view_root, force=True)
 
@@ -249,7 +258,7 @@ class AppController:
             prefix=controller_url_prefix,
         )
 
-        LOGGER.debug(f"Did register controller: {controller.__class__.__name__}")
+        LOGGER.debug(f"Did register controller: {controller_name}")
 
         self.controllers.append(
             ControllerDefinition(
@@ -259,6 +268,7 @@ class AppController:
                 url_prefix=controller_url_prefix,
             )
         )
+        self.controller_names.add(controller_name)
 
     async def handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
