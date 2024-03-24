@@ -363,4 +363,5 @@ We have additional documentation that does more of a technical deep dive on diff
 - [Link Generation](./docs/links.md): Generate links to other pages within your webapp, with typehinting and automatic URL generation.
 - [Error Handling](./docs/error_handling.md): Conventions for handling client-side errors while fetching data in your webapp.
 - [PostCSS](./docs/postcss.md): PostCSS build plugin for TailwindCSS support and other CSS processing.
+- [Database](./docs/database.md): Database conventions.
 - [Core Library](./docs/core_library.md): Details on how to do local development on the core library.

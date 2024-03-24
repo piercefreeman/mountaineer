@@ -1,10 +1,10 @@
 from fastapi import Depends
-from sqlalchemy import AdaptedQueuePool, NullPool
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
 
 from mountaineer.database.config import DatabaseConfig, PoolType
 from mountaineer.dependencies import CoreDependencies
@@ -27,9 +27,11 @@ async def get_db(
     if GLOBAL_ENGINE is None:
         GLOBAL_ENGINE = create_async_engine(
             str(config.SQLALCHEMY_DATABASE_URI),
-            poolclass=NullPool
-            if config.DATABASE_POOL_TYPE == PoolType.NULL
-            else AdaptedQueuePool,
+            poolclass=(
+                NullPool
+                if config.DATABASE_POOL_TYPE == PoolType.NULL
+                else AsyncAdaptedQueuePool
+            ),
         )
     return GLOBAL_ENGINE
 
