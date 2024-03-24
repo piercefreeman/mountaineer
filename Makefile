@@ -88,7 +88,7 @@ test-create-mountaineer-app-integrations:
 
 define test-common
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -W error $(2))
+	@(cd $(1) && poetry run pytest -W error $(test-args) $(2))
 endef
 
 define test-rust-common
@@ -106,14 +106,20 @@ define lint-common
 	echo "Running linting for $(2)..."
 	@(cd $(1) && poetry run ruff format $(2))
 	@(cd $(1) && poetry run ruff check --fix $(2))
+	echo "Running mypy for $(2)..."
 	@(cd $(1) && poetry run mypy $(2))
+	echo "Running pyright for $(2)..."
+	@(cd $(1) && poetry run pyright $(2))
 endef
 
 define lint-validation-common
 	echo "Running lint validation for $(2)..."
 	@(cd $(1) && poetry run ruff format --check $(2))
 	@(cd $(1) && poetry run ruff check $(2))
+	echo "Running mypy for $(2)..."
 	@(cd $(1) && poetry run mypy $(2))
+	echo "Running pyright for $(2)..."
+	@(cd $(1) && poetry run pyright $(2))
 endef
 
 # Function to wait for PostgreSQL to be ready

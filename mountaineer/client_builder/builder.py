@@ -1,7 +1,12 @@
 import asyncio
 from collections import defaultdict
-from inspect import isawaitable
+from dataclasses import asdict, dataclass
+from json import dumps as json_dumps
+from pathlib import Path
 from shutil import rmtree
+from tempfile import TemporaryDirectory
+from time import monotonic_ns
+from typing import Any
 
 from click import secho
 from fastapi import APIRouter
@@ -15,7 +20,7 @@ from mountaineer.client_builder.build_actions import (
 )
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 from mountaineer.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
-from mountaineer.client_builder.openapi import OpenAPIDefinition
+from mountaineer.client_builder.openapi import OpenAPIDefinition, OpenAPISchema
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
@@ -23,10 +28,17 @@ from mountaineer.client_builder.typescript import (
 from mountaineer.controller import ControllerBase
 from mountaineer.io import gather_with_concurrency
 from mountaineer.js_compiler.base import ClientBundleMetadata
-from mountaineer.js_compiler.esbuild import ESBuildWrapper
 from mountaineer.js_compiler.exceptions import BuildProcessException
+from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
+
+
+@dataclass
+class RenderSpec:
+    url: str
+    view_path: str
+    spec: dict[Any, Any] | None
 
 
 class ClientBuilder:
@@ -35,7 +47,12 @@ class ClientBuilder:
 
     """
 
-    def __init__(self, app: AppController, live_reload_port: int | None = None):
+    def __init__(
+        self,
+        app: AppController,
+        live_reload_port: int | None = None,
+        build_cache: Path | None = None,
+    ):
         self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
@@ -45,30 +62,41 @@ class ClientBuilder:
         self.app = app
         self.view_root = ManagedViewPath.from_view_root(app.view_root)
         self.live_reload_port = live_reload_port
+        self.build_cache = build_cache
 
     def build(self):
-        # Make sure our application definitions are in a valid state before we start
-        # to build the client code
-        self.validate_unique_paths()
+        asyncio.run(self.async_build())
 
-        # Static files that don't depend on client code
-        self.generate_static_files()
+    async def async_build(self):
+        # Avoid rebuilding if we don't need to
+        if self.cache_is_outdated():
+            secho("Building useServer, cache outdated...", fg="green")
 
-        # The order of these generators don't particularly matter since most TSX linters
-        # won't refresh until they're all complete. However, this ordering better aligns
-        # with semantic dependencies so we keep the linearity where possible.
-        self.generate_model_definitions()
-        self.generate_action_definitions()
-        self.generate_link_shortcuts()
-        self.generate_link_aggregator()
-        self.generate_view_servers()
+            # Make sure our application definitions are in a valid state before we start
+            # to build the client code
+            self.validate_unique_paths()
 
-        self.build_javascript_chunks()
+            # Static files that don't depend on client code
+            self.generate_static_files()
+
+            # The order of these generators don't particularly matter since most TSX linters
+            # won't refresh until they're all complete. However, this ordering better aligns
+            # with semantic dependencies so we keep the linearity where possible.
+            self.generate_model_definitions()
+            self.generate_action_definitions()
+            self.generate_link_shortcuts()
+            self.generate_link_aggregator()
+            self.generate_view_servers()
+            self.generate_index_file()
+        else:
+            secho("useServer up to date", fg="green")
+
+        await self.build_javascript_chunks()
 
         # Update the cached paths attached to the app
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
-            controller.resolve_paths(self.view_root)
+            controller.resolve_paths(self.view_root, force=True)
 
     def generate_static_files(self):
         """
@@ -90,25 +118,46 @@ class ClientBuilder:
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
 
-            openapi_spec = self.openapi_from_controller(controller_definition)
-            base = OpenAPIDefinition(**openapi_spec)
+            action_spec_openapi = self.openapi_action_specs[controller]
+            action_base = OpenAPIDefinition(**action_spec_openapi)
+
+            render_spec_openapi = self.openapi_render_specs[controller]
+            render_base = (
+                OpenAPISchema(**render_spec_openapi.spec)
+                if render_spec_openapi.spec
+                else None
+            )
 
             schemas: dict[str, str] = {}
 
             # Convert the render model
-            render_metadata = get_function_metadata(controller.render)
-            for schema_name, component in self.openapi_schema_converter.convert(
-                render_metadata.get_render_model()
-            ).items():
-                schemas[schema_name] = component
+            if render_base:
+                for (
+                    schema_name,
+                    component,
+                ) in self.openapi_schema_converter.convert_schema_to_typescript(
+                    render_base,
+                    # Render models are sent server -> client, so we know they'll provide all their
+                    # default values in the initial payload
+                    defaults_are_required=True,
+                ).items():
+                    schemas[schema_name] = component
 
-            # Convert the sideeffect routes
-            for schema_name, component in base.components.schemas.items():
+            # Convert all the other models defined in sideeffect routes
+            for schema_name, component in action_base.components.schemas.items():
                 schemas[
                     schema_name
                 ] = self.openapi_schema_converter.convert_schema_to_interface(
                     component,
-                    base=base,
+                    base=action_base,
+                    # Don't require client data uploads to have all the fields
+                    # if there's a value specified server side. Note that this will apply
+                    # to both requests/response models right now, so clients might need
+                    # to do additional validation on the response side to confirm that
+                    # the server did send down the default values.
+                    # This is in contrast to the render() where we always know the response
+                    # payloads should be force required.
+                    defaults_are_required=False,
                 )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
@@ -337,7 +386,23 @@ class ClientBuilder:
 
             (controller_model_path / "useServer.ts").write_text("\n\n".join(chunks))
 
-    def build_javascript_chunks(self, max_concurrency: int = 25):
+    def generate_index_file(self):
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            controller_code_dir = self.view_root.get_controller_view_path(
+                controller
+            ).get_managed_code_dir()
+
+            chunks: list[str] = []
+
+            chunks.append("export * from './actions';")
+            chunks.append("export * from './links';")
+            chunks.append("export * from './models';")
+            chunks.append("export * from './useServer';")
+
+            (controller_code_dir / "index.ts").write_text("\n".join(chunks))
+
+    async def build_javascript_chunks(self, max_concurrency: int = 25):
         """
         Build the final javascript chunks that will render the react documents. Each page will get
         one chunk associated with it. We suffix these files with the current md5 hash of the contents to
@@ -345,83 +410,148 @@ class ClientBuilder:
         contents have rebuilt in the background.
 
         """
-        # Clear the static directories since we only want the latest files in there
-        static_dir = self.view_root.get_managed_static_dir()
-        ssr_dir = self.view_root.get_managed_ssr_dir()
-        for clear_dir in [static_dir, ssr_dir]:
-            if clear_dir.exists():
-                rmtree(clear_dir)
-            clear_dir.mkdir(parents=True)
-
-        # Before we spawn our different processes, we make sure that we can actually resolve
-        # the esbuild path. We want one exception / download flow, not one per process.
-        esbuilder = ESBuildWrapper()
-        if not esbuilder.get_esbuild_path():
-            raise ValueError("Unable to resolve esbuild path")
-
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
         )
 
-        async def spawn_builder(controller: ControllerBase):
-            for builder in self.app.builders:
-                result = builder.handle_file(
-                    self.view_root.get_controller_view_path(controller),
-                    controller,
-                    metadata=metadata,
-                )
-                if isawaitable(result):
-                    await result
-
-        async def spawn_file_builder(path: ManagedViewPath):
-            """
-            Spawn non-controller based file builder
-            """
-            ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
-            # If any of these directories are in the path, we skip it
-            if any([directory in path.parts for directory in ignore_directories]):
-                return
-
-            # Otherwise loop over our bundlers
-            for builder in self.app.builders:
-                result = builder.handle_file(path, controller=None, metadata=metadata)
-                if isawaitable(result):
-                    await result
-
-        async def parallel_build():
-            tasks = [
-                spawn_builder(controller_definition.controller)
-                for controller_definition in self.app.controllers
-            ] + [
-                # Optionally build static files the main views and plugin views
-                # This allows plugins to have custom handling for different file types
-                spawn_file_builder(path)
-                for view_root in self.get_all_root_views()
-                for path in view_root.rglob("*")
-            ]
-            results = await gather_with_concurrency(
-                tasks, n=max_concurrency, catch_exceptions=True
-            )
-
-            # Go through the exceptions, logging the build errors explicitly
-            has_build_error = False
-            for result in results:
-                if isinstance(result, Exception):
-                    has_build_error = True
-                    if isinstance(result, BuildProcessException):
-                        secho(f"Build error: {result}", fg="red")
-                    else:
-                        raise result
-
-            if has_build_error:
-                raise BuildProcessException(
-                    "Build process failed. Errors are listed in the console."
-                )
-
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
-        asyncio.run(parallel_build())
+        controller_tasks = [
+            builder.handle_file(
+                self.view_root.get_controller_view_path(
+                    controller_definition.controller
+                ),
+                controller=controller_definition.controller,
+                metadata=metadata,
+            )
+            for controller_definition in self.app.controllers
+            for builder in self.app.builders
+        ]
+
+        # Optionally build static files the main views and plugin views
+        # This allows plugins to have custom handling for different file types
+        file_tasks = [
+            builder.handle_file(
+                path,
+                controller=None,
+                metadata=metadata,
+            )
+            for path in self.get_static_files()
+            for builder in self.app.builders
+        ]
+
+        start = monotonic_ns()
+        await gather_with_concurrency(
+            [builder.start_build() for builder in self.app.builders],
+            n=max_concurrency,
+        )
+        LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
+
+        start = monotonic_ns()
+        results = await gather_with_concurrency(
+            controller_tasks + file_tasks, n=max_concurrency, catch_exceptions=True
+        )
+        LOGGER.debug(f"Builder tasks took {(monotonic_ns() - start) / 1e9}s")
+
+        start = monotonic_ns()
+        await gather_with_concurrency(
+            [builder.finish_build() for builder in self.app.builders], n=max_concurrency
+        )
+        LOGGER.debug(f"Builder finish took in {(monotonic_ns() - start) / 1e9}s")
+
+        # Go through the exceptions, logging the build errors explicitly
+        has_build_error = False
+        final_exception: str = ""
+        for result in results:
+            if isinstance(result, Exception):
+                has_build_error = True
+                if isinstance(result, BuildProcessException):
+                    secho(f"Build error: {result}", fg="red")
+                final_exception += str(result)
+
+        if has_build_error:
+            raise BuildProcessException(final_exception)
+
+        self.move_build_artifacts_into_project()
+
+    def move_build_artifacts_into_project(self):
+        """
+        Now that we build has completed, we can clear out the old files and replace it
+        with the thus-far temporary files
+
+        This cleans up old controllers in the case that they were deleted, and prevents
+        outdated md5 content hashes from being served
+
+        """
+        with TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            tmp_static_dir = tmp_path / "static"
+            tmp_ssr_dir = tmp_path / "ssr"
+
+            # Since the tmp builds are within their parent folder, we need to move
+            # them out of the way before we clear
+            self.view_root.get_managed_static_dir(tmp_build=True).rename(tmp_static_dir)
+            self.view_root.get_managed_ssr_dir(tmp_build=True).rename(tmp_ssr_dir)
+
+            static_dir = self.view_root.get_managed_static_dir()
+            ssr_dir = self.view_root.get_managed_ssr_dir()
+            for clear_dir in [static_dir, ssr_dir]:
+                if clear_dir.exists():
+                    rmtree(clear_dir)
+                clear_dir.mkdir(parents=True)
+
+            # Final move
+            tmp_static_dir.rename(self.view_root.get_managed_static_dir())
+            tmp_ssr_dir.rename(self.view_root.get_managed_ssr_dir())
+
+    def cache_is_outdated(self):
+        """
+        Determines if our last build is outdated and we need to rebuild the client. Running
+        this function will also update the cache to the current state.
+
+        """
+        # We need to rebuild every time
+        if not self.build_cache:
+            return True
+
+        cached_metadata = self.build_cache / "client_builder_openapi.json"
+
+        cached_contents = {
+            controller_definition.controller.__class__.__name__: {
+                "action": self.openapi_action_specs[controller_definition.controller],
+                "render": asdict(
+                    self.openapi_render_specs[controller_definition.controller]
+                ),
+            }
+            for controller_definition in self.app.controllers
+        }
+        cached_str = json_dumps(cached_contents, sort_keys=True)
+
+        if not cached_metadata.exists():
+            cached_metadata.write_text(cached_str)
+            return True
+
+        if cached_metadata.read_text() != cached_str:
+            cached_metadata.write_text(cached_str)
+            return True
+
+        return False
+
+    def get_static_files(self):
+        ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
+
+        for view_root in self.get_all_root_views():
+            for dir_path, _, filenames in view_root.walk():
+                for filename in filenames:
+                    if any(
+                        [
+                            directory in dir_path.parts
+                            for directory in ignore_directories
+                        ]
+                    ):
+                        continue
+                    yield dir_path / filename
 
     def validate_unique_paths(self):
         """
@@ -492,7 +622,14 @@ class ClientBuilder:
         :returns ReturnModel
         """
         render_metadata = get_function_metadata(controller.render)
-        return camelize(render_metadata.get_render_model().__name__)
+        render_model = render_metadata.get_render_model()
+
+        if not render_model:
+            raise ValueError(
+                f"Controller {controller} does not have a render model defined"
+            )
+
+        return camelize(render_model.__name__)
 
     def openapi_from_controller(self, controller_definition: ControllerDefinition):
         """
@@ -505,3 +642,53 @@ class ClientBuilder:
             controller_definition.router, prefix=controller_definition.url_prefix
         )
         return self.app.generate_openapi(routes=root_router.routes)
+
+    @property
+    def openapi_action_specs(self):
+        """
+        Cache the OpenAPI specs for all side-effects. Render components
+        are defined differently. We internally cache this for all stages that require it.
+
+        """
+        if not hasattr(self, "_openapi_action_specs"):
+            self._openapi_specs: dict[ControllerBase, dict[Any, Any]] = {}
+
+            for controller_definition in self.app.controllers:
+                controller = controller_definition.controller
+                self._openapi_specs[controller] = self.openapi_from_controller(
+                    controller_definition
+                )
+
+        return self._openapi_specs
+
+    @property
+    def openapi_render_specs(self):
+        """
+        Get the raw spec for all the render attributes.
+
+        If the return model for a render function is "None", the response spec will
+        include {controller: {spec: None}} be so clients can separate undefined controllers from
+        defined controllers with no return model.
+
+        """
+        if not hasattr(self, "_openapi_render_specs"):
+            self._openapi_render_specs: dict[ControllerBase, RenderSpec] = {}
+
+            for controller_definition in self.app.controllers:
+                controller = controller_definition.controller
+
+                render_metadata = get_function_metadata(controller.render)
+                render_model = render_metadata.get_render_model()
+
+                spec = (
+                    self.openapi_schema_converter.get_model_json_schema(render_model)
+                    if render_model
+                    else None
+                )
+                self._openapi_render_specs[controller] = RenderSpec(
+                    url=controller.url,
+                    view_path=str(controller.view_path),
+                    spec=spec,
+                )
+
+        return self._openapi_render_specs

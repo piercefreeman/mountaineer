@@ -1,0 +1,7 @@
+{
+  "files.exclude": {
+    "_server/": true,
+    "_ssr/": true,
+    "_static/": true
+  }
+}

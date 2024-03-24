@@ -6,8 +6,9 @@ from unittest.mock import MagicMock, _Call, call, patch
 
 import pytest
 
+from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBundleMetadata
-from mountaineer.js_compiler.bundler import JavascriptBundler
+from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.paths import ManagedViewPath
 
 
@@ -37,15 +38,12 @@ def fake_view_root() -> Iterable[ManagedViewPath]:
 @pytest.fixture
 def mocked_esbuild():
     mocked_builder = MockedESBuild()
-
-    with patch("mountaineer.js_compiler.bundler.ESBuildWrapper") as mock:
-        mock.return_value = mocked_builder
-        yield mocked_builder
+    yield mocked_builder
 
 
 @pytest.fixture(scope="function")
 def base_javascript_bundler(mocked_esbuild: MagicMock) -> JavascriptBundler:
-    from mountaineer.js_compiler.bundler import JavascriptBundler
+    from mountaineer.js_compiler.javascript import JavascriptBundler
 
     # Recycle this object every function call, since the end function will usually
     # modify the page_path or other instance variables
@@ -215,6 +213,10 @@ async def test_convert(
     fake_view_root: ManagedViewPath,
     mocked_esbuild: MockedESBuild,
 ):
+    class ExampleController(ControllerBase):
+        async def render(self) -> None:
+            pass
+
     with (
         patch.object(base_javascript_bundler, "sniff_for_layouts") as sniff_for_layouts,
         patch.object(
@@ -241,24 +243,34 @@ async def test_convert(
         build_synthetic_client_page.return_value = "CLIENT_PAGE"
         build_synthetic_ssr_page.return_value = "SSR_PAGE"
 
-        output_bundle = await base_javascript_bundler.generate_js_bundle(
-            current_path=fake_view_root / "page.tsx", metadata=ClientBundleMetadata()
+        await base_javascript_bundler.start_build()
+
+        await base_javascript_bundler.handle_file(
+            file_path=fake_view_root / "page.tsx",
+            controller=ExampleController(),
+            metadata=ClientBundleMetadata(),
         )
 
-        # Assert that our build pipeline called our mocked esbuild_wrapper
-        assert len(mocked_esbuild.calls) == 2
-        assert mocked_esbuild.calls[0].kwargs["output_format"] == "esm"
-        assert mocked_esbuild.calls[1].kwargs["output_format"] == "iife"
-        assert mocked_esbuild.calls[1].kwargs["global_name"] == "SSR"
+        await base_javascript_bundler.finish_build()
 
-        # Assert the outputs
-        expected_fake_str = "FAKE ESBUILD PACKAGE CONTENTS"
-        expected_fake_map_str = "FAKE ESBUILD PACKAGE SOURCE MAP"
+        ssr_path = (
+            fake_view_root.get_managed_ssr_dir(tmp_build=True) / "example_controller.js"
+        )
+        static_paths = {
+            (path, ".map" in path.name)
+            for path in fake_view_root.get_managed_static_dir(tmp_build=True).iterdir()
+            if path.is_file() and "example_controller" in path.name
+        }
 
-        assert output_bundle.client_compiled_contents == expected_fake_str
-        assert output_bundle.client_source_map_contents == expected_fake_map_str
-        assert output_bundle.server_compiled_contents == expected_fake_str
-        assert output_bundle.server_source_map_contents == expected_fake_map_str
+        assert ssr_path.exists()
+        assert ssr_path.with_suffix(".js.map").exists()
+
+        assert "SSR_PAGE" in ssr_path.read_text()
+
+        assert len(static_paths) == 2
+        static_path = next(path for path, is_map in static_paths if not is_map)
+
+        assert "CLIENT_PAGE" in static_path.read_text()
 
 
 @pytest.mark.parametrize(

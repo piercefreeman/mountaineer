@@ -1,3 +1,5 @@
+from hashlib import sha256
+from json import dumps as json_dumps
 from typing import TYPE_CHECKING, Any, Type
 
 from fastapi import Response
@@ -17,11 +19,10 @@ class FieldClassDefinition(BaseModel):
     }
 
 
-INTERNAL_RENDER_FIELDS = ["metadata"]
-
-
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ReturnModelMetaclass(ModelMetaclass):
+    INTERNAL_RENDER_FIELDS = ["metadata"]
+
     if not TYPE_CHECKING:  # pragma: no branch
         # Following the lead of the pydantic superclass, we wrap with a non-TYPE_CHECKING
         # block: "otherwise mypy allows arbitrary attribute access""
@@ -31,7 +32,7 @@ class ReturnModelMetaclass(ModelMetaclass):
             except AttributeError:
                 # Determine if this field is defined within the spec
                 # If so, return it
-                if key in self.model_fields and key not in INTERNAL_RENDER_FIELDS:
+                if key in self.model_fields and key not in self.INTERNAL_RENDER_FIELDS:
                     return FieldClassDefinition(
                         root_model=self,
                         key=key,
@@ -40,7 +41,21 @@ class ReturnModelMetaclass(ModelMetaclass):
                 raise
 
 
-class MetaAttribute(BaseModel):
+class HashableAttribute(BaseModel):
+    """
+    Even with frozen=True, we can't hash our attributes because they include dictionary field types.
+    Instead provide a mixin to calculate the hash of the current state of the attributes.
+
+    """
+
+    def __hash__(self):
+        model_json = json_dumps(self.model_dump(), sort_keys=True)
+        hash_object = sha256(model_json.encode())
+        # __hash__ must return an integer
+        return int(hash_object.hexdigest(), 16)
+
+
+class MetaAttribute(HashableAttribute, BaseModel):
     name: str | None = None
     content: str | None = None
     optional_attributes: dict[str, str] = {}
@@ -74,9 +89,16 @@ class ViewportMeta(MetaAttribute):
         return self
 
 
-class LinkAttribute(BaseModel):
+class LinkAttribute(HashableAttribute, BaseModel):
     rel: str
     href: str
+    optional_attributes: dict[str, str] = {}
+
+
+class ScriptAttribute(HashableAttribute, BaseModel):
+    src: str
+    asynchronous: bool = False
+    defer: bool = False
     optional_attributes: dict[str, str] = {}
 
 
@@ -90,8 +112,10 @@ class Metadata(BaseModel):
 
     title: str | None = None
 
+    # Specify dynamic injection of tags into the <head>
     metas: list[MetaAttribute] = []
     links: list[LinkAttribute] = []
+    scripts: list[ScriptAttribute] = []
 
     # Allows the client to specify a different response type
     # that should occur on initial render

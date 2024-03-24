@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useServer } from "./_server/useServer";
+import { useServer } from "./_server";
 
 function isPrime(num: number) {
   if (num <= 1) return false;

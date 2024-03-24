@@ -1,9 +1,7 @@
 from uuid import UUID, uuid4
 
 from fastapi import Request
-from mountaineer.actions import passthrough, sideeffect
-from mountaineer.controller import ControllerBase
-from mountaineer.render import Metadata, RenderBase
+from mountaineer import ControllerBase, Metadata, RenderBase, passthrough, sideeffect
 from pydantic import BaseModel
 
 
@@ -38,11 +36,11 @@ class HomeController(ControllerBase):
         self.global_count += payload.count
 
     @passthrough(response_model=GetExternalDataResponse)
-    def get_external_data(self):
+    def get_external_data(self) -> GetExternalDataResponse:
         # Execute a server action without automatically reloading the server state
         # Typically side-effects are the recommended way to get static data to the client
         # but sometimes you need to get data from a third-party API or gated resource
-        return dict(
+        return GetExternalDataResponse(
             first_name="John",
         )
 

@@ -37,13 +37,3 @@ async def get_db_session(
                 f"Error in user code, rolling back uncommitted db changes: {e}"
             )
             raise
-
-
-class DatabaseDependencies(DependenciesBase):
-    """
-    Dependencies for use in API endpoint routes.
-
-    """
-
-    get_db = get_db
-    get_db_session = get_db_session

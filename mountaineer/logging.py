@@ -2,7 +2,7 @@ import logging
 from contextlib import contextmanager
 from json import dumps as json_dumps
 from logging import Formatter, StreamHandler, getLogger
-from time import time
+from time import monotonic_ns
 
 from click import secho
 
@@ -53,9 +53,9 @@ def setup_logger(name, log_level=logging.DEBUG):
 
 @contextmanager
 def log_time_duration(message: str):
-    start = time()
+    start = monotonic_ns()
     yield
-    LOGGER.debug(f"{message} : Took {time() - start:.2f}s")
+    LOGGER.debug(f"{message} : Took {(monotonic_ns() - start)/1e9:.2f}s")
 
 
 LOGGER = setup_logger(__name__)

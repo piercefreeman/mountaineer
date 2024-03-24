@@ -26,12 +26,15 @@ interface FetchParams {
   >;
   body?: Record<string, any>;
   mediaType?: string;
-  outputFormat?: "json" | "text";
+  outputFormat?: "json" | "text" | "raw";
+  eventStreamResponse?: boolean;
 }
 
 const handleOutputFormat = async (response: Response, format?: string) => {
   if (format === "text") {
     return await response.text();
+  } else if (format == "raw") {
+    return response;
   } else {
     // Assume JSON if not specified
     return await response.json();
@@ -62,6 +65,12 @@ export const __request = async (params: FetchParams) => {
     });
 
     if (response.status >= 200 && response.status < 300) {
+      if (params.eventStreamResponse) {
+        if (!response.body) {
+          throw new Error("Response body is undefined");
+        }
+        return handleStreamOutputFormat(response.body, params.outputFormat);
+      }
       return await handleOutputFormat(response, params.outputFormat);
     } else {
       // Try to handle according to our error map
@@ -91,6 +100,55 @@ export const __request = async (params: FetchParams) => {
     error.stack = e.stack;
     throw error;
   }
+};
+
+const handleStreamOutputFormat = async (
+  stream: ReadableStream<Uint8Array>,
+  format?: string,
+) => {
+  /*
+   * Unlike the typical implementation of EventSource (which only supports basic
+   * GET and no custom headers), we'd rather piggyback on fetch() and iteratively parse
+   * the response payload. We should implement reconnection logic in the future to
+   * achieve parity with EventSource.
+   */
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  return (async function* () {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        // If there's any residual data in the buffer when the stream ends,
+        // yield it as the last piece of data.
+        if (buffer.length > 0) {
+          yield format === "text" ? buffer : JSON.parse(buffer);
+        }
+        break;
+      }
+
+      // Decode the current chunk and add it to the buffer.
+      const textChunk = decoder.decode(value, { stream: true });
+      buffer += textChunk;
+
+      // Check for new lines in the buffer, and yield each line as a separate piece of data.
+      let newLineIndex: number;
+      while ((newLineIndex = buffer.indexOf("\n")) !== -1) {
+        // Extract the line including the new line character, and adjust the buffer.
+        let line = buffer.slice(0, newLineIndex + 1);
+        buffer = buffer.slice(newLineIndex + 1);
+
+        // If the line starts with "data:", strip it and trim the line.
+        if (line.startsWith("data:")) {
+          line = line.replace(/^data:/, "").trim();
+        }
+
+        // Yield the line in the requested format.
+        yield format === "text" ? line : JSON.parse(line);
+      }
+    }
+  })();
 };
 
 type ApiFunctionReturnType<S, P> = {

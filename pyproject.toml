@@ -34,6 +34,7 @@ pytest-asyncio = "^0.23.4"
 pyinstrument = "^4.6.2"
 httpx = "^0.27.0"
 types-psycopg2 = "^2.9.21.20240218"
+pyright = "^1.1.352"
 
 [build-system]
 requires = ["maturin>=1.3.0"]
@@ -54,6 +55,9 @@ warn_required_dynamic_aliases = true
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
 # Disable print statements
 select = ["E4", "E7", "E9", "F", "I001", "T201"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
 
 [project]
 # Maintaned just for local installation / testing purposes with venvironments

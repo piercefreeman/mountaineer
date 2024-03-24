@@ -3,6 +3,7 @@ from typing import cast
 
 from pydantic import BaseModel
 
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
 from mountaineer.static import get_static_path
 
@@ -50,8 +51,6 @@ def render_ssr(
     :raises TimeoutError: If the render takes longer than the hard_timeout
 
     """
-    from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-
     polyfill_script = get_static_path("ssr_polyfills.js").read_text()
     data_json = render_data.model_dump_json()
 

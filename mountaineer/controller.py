@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
-from time import time
-from typing import Any, Callable, Coroutine, Iterable
+from time import monotonic_ns
+from typing import Any, Callable, Coroutine, Generic, Iterable, Mapping, ParamSpec, cast
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -13,14 +14,24 @@ from mountaineer.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
+from mountaineer.config import get_config
 from mountaineer.js_compiler.source_maps import SourceMapParser
 from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath
-from mountaineer.render import Metadata, RenderBase, RenderNull
+from mountaineer.paths import ManagedViewPath, resolve_package_path
+from mountaineer.render import (
+    LinkAttribute,
+    MetaAttribute,
+    Metadata,
+    RenderBase,
+    RenderNull,
+    ScriptAttribute,
+)
 from mountaineer.ssr import V8RuntimeError, render_ssr
 
+RenderInput = ParamSpec("RenderInput")
 
-class ControllerBase(ABC):
+
+class ControllerBase(ABC, Generic[RenderInput]):
     url: str
     # Typically, view paths should be a relative path to the local
     # Paths are only used if you need to specify an absolute path to another
@@ -43,16 +54,20 @@ class ControllerBase(ABC):
         """
         # Injected by the build framework
         self.bundled_scripts: list[str] = []
-        self.ssr_path: Path | None = None
         self.initialized = True
         self.slow_ssr_threshold = slow_ssr_threshold
         self.hard_ssr_timeout = hard_ssr_timeout
         self.source_map: SourceMapParser | None = None
 
+        self.view_base_path: Path | None = None
+        self.ssr_path: Path | None = None
+
+        self.resolve_paths()
+
     @abstractmethod
     def render(
-        self, *args, **kwargs
-    ) -> RenderBase | None | Coroutine[Any, Any, RenderBase]:
+        self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
+    ) -> RenderBase | None | Coroutine[Any, Any, RenderBase | None]:
         """
         Client implementations must override render() to define the data that will
         be pushed from the server to the client. This function must be typehinted with
@@ -80,10 +95,6 @@ class ControllerBase(ABC):
         pass
 
     async def _generate_html(self, *args, global_metadata: Metadata | None, **kwargs):
-        if not self.ssr_path:
-            # Try to resolve the path dynamically now
-            raise ValueError("No SSR path set for this controller")
-
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
@@ -114,33 +125,7 @@ class ControllerBase(ABC):
 
         header_str = "\n".join(self.build_header(self.merge_metadatas(metadatas)))
 
-        # Now that we've built the header, we can remove it from the server data
-        # This makes our cache more efficient, since metadata changes don't affect
-        # the actual page contents.
-        server_data = server_data.model_copy(update={"metadata": None})
-
-        # TODO: Provide a function to automatically sniff for the client view folder
-        start = time()
-        try:
-            ssr_html = render_ssr(
-                self.ssr_path.read_text(),
-                server_data,
-                hard_timeout=self.hard_ssr_timeout,
-            )
-        except V8RuntimeError as e:
-            # Try to parse the file sources and re-raise the error with the
-            # maps on the current filesystem
-            if self.source_map is not None:
-                # parse() is a no-op if the source map is already parsed, so we can do it again
-                self.source_map.parse()
-                raise V8RuntimeError(self.source_map.map_exception(str(e)))
-            raise e
-
-        ssr_duration = time() - start
-        if ssr_duration > self.slow_ssr_threshold:
-            LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
-        else:
-            LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
+        ssr_html = self._generate_ssr_html(server_data)
 
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = server_data.model_dump_json()
@@ -168,6 +153,43 @@ class ControllerBase(ABC):
 
         return HTMLResponse(page_contents)
 
+    def _generate_ssr_html(self, server_data: RenderBase) -> str:
+        self.resolve_paths()
+
+        if not self.ssr_path:
+            # Try to resolve the path dynamically now
+            raise ValueError("No SSR path set for this controller")
+
+        # Now that we've built the header, we can remove it from the server data
+        # This makes our cache more efficient, since metadata changes don't affect
+        # the actual page contents.
+        server_data = server_data.model_copy(update={"metadata": None})
+
+        # TODO: Provide a function to automatically sniff for the client view folder
+        start = monotonic_ns()
+        try:
+            ssr_html = render_ssr(
+                self.ssr_path.read_text(),
+                server_data,
+                hard_timeout=self.hard_ssr_timeout,
+            )
+        except V8RuntimeError as e:
+            # Try to parse the file sources and re-raise the error with the
+            # maps on the current filesystem
+            if self.source_map is not None:
+                # parse() is a no-op if the source map is already parsed, so we can do it again
+                self.source_map.parse()
+                raise V8RuntimeError(self.source_map.map_exception(str(e)))
+            raise e
+
+        ssr_duration = (monotonic_ns() - start) / 1e9
+        if ssr_duration > self.slow_ssr_threshold:
+            LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
+        else:
+            LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
+
+        return cast(str, ssr_html)
+
     def build_header(self, metadata: Metadata) -> list[str]:
         """
         Builds the header for this controller. Returns the list of tags that will be injected into the
@@ -176,33 +198,48 @@ class ControllerBase(ABC):
         """
         tags: list[str] = []
 
-        def format_optional_keys(payload: dict[str, str | None]) -> str:
-            return " ".join(
-                [
-                    f'{key}="{value}"'
-                    for key, value in payload.items()
-                    if value is not None
-                ]
-            )
+        def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
+            attributes: list[str] = []
+            for key, value in payload.items():
+                if value is None:
+                    continue
+                elif isinstance(value, bool):
+                    # Boolean attributes can just be represented by just their key
+                    if value:
+                        attributes.append(key)
+                    else:
+                        continue
+                else:
+                    attributes.append(f'{key}="{value}"')
+            return " ".join(attributes)
 
         if metadata.title:
             tags.append(f"<title>{metadata.title}</title>")
 
         for meta_definition in metadata.metas:
-            all_attributes = {
+            meta_attributes = {
                 "name": meta_definition.name,
                 "content": meta_definition.content,
                 **meta_definition.optional_attributes,
             }
-            tags.append(f"<meta {format_optional_keys(all_attributes)} />")
+            tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
+
+        for script_definition in metadata.scripts:
+            script_attributes: dict[str, str | bool] = {
+                "src": script_definition.src,
+                "async": script_definition.asynchronous,
+                "defer": script_definition.defer,
+                **script_definition.optional_attributes,
+            }
+            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
 
         for link_definition in metadata.links:
-            all_attributes = {
+            link_attributes = {
                 "rel": link_definition.rel,
                 "href": link_definition.href,
                 **link_definition.optional_attributes,
             }
-            tags.append(f"<link {format_optional_keys(all_attributes)} />")
+            tags.append(f"<link {format_optional_keys(link_attributes)} />")
 
         return tags
 
@@ -224,13 +261,31 @@ class ControllerBase(ABC):
             except AttributeError:
                 continue
 
-    def resolve_paths(self, view_base: Path):
+    def resolve_paths(self, view_base: Path | None = None, force: bool = True):
         """
         Given the path to the root /view directory, resolve our various
         on-disk paths.
 
         """
+        if not force and self.view_base_path is not None:
+            return
+
+        # Try to resolve the view base path from the global config
+        if view_base is None:
+            try:
+                config = get_config()
+                if config.PACKAGE:
+                    view_base = Path(resolve_package_path(config.PACKAGE)) / "views"
+            except (ValueError, PackageNotFoundError):
+                # Config isn't registered yet
+                pass
+
+        if view_base is None:
+            # Unable to resolve, no-op
+            return
+
         script_name = underscore(self.__class__.__name__)
+        self.view_base_path = view_base
 
         # The SSR path is going to be static
         ssr_path = view_base / "_ssr" / f"{script_name}.js"
@@ -258,12 +313,30 @@ class ControllerBase(ABC):
         take the union (like scripts) - others will prioritize earlier entries (title).
 
         """
-        base_metadata = Metadata()
+        # Keep track of the unique values we've seen already to ensure that we are:
+        # 1. Only including unique values
+        # 2. Ranking them in the same order as they were provided
+        metas: set[MetaAttribute] = set()
+        links: set[LinkAttribute] = set()
+        scripts: set[ScriptAttribute] = set()
+
+        final_metadata = Metadata()
 
         for metadata in metadatas:
-            base_metadata.title = base_metadata.title or metadata.title
+            final_metadata.title = final_metadata.title or metadata.title
 
-            base_metadata.metas.extend(metadata.metas)
-            base_metadata.links.extend(metadata.links)
+            final_metadata.metas.extend(
+                [element for element in metadata.metas if element not in metas]
+            )
+            final_metadata.links.extend(
+                [element for element in metadata.links if element not in links]
+            )
+            final_metadata.scripts.extend(
+                [element for element in metadata.scripts if element not in scripts]
+            )
 
-        return base_metadata
+            metas |= set(metadata.metas)
+            links |= set(metadata.links)
+            scripts |= set(metadata.scripts)
+
+        return final_metadata

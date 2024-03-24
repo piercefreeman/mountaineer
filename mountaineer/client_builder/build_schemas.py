@@ -1,7 +1,7 @@
 """
 Generator for TypeScript interfaces from OpenAPI specifications.
 """
-from typing import Dict, Iterator, Type, get_args, get_origin
+from typing import Any, Dict, Iterator, Type, get_args, get_origin
 
 from inflection import camelize
 from pydantic import BaseModel, create_model
@@ -12,7 +12,11 @@ from mountaineer.client_builder.openapi import (
     OpenAPISchema,
     OpenAPISchemaType,
 )
-from mountaineer.client_builder.typescript import map_openapi_type_to_ts
+from mountaineer.client_builder.typescript import (
+    TSLiteral,
+    map_openapi_type_to_ts,
+    python_payload_to_typescript,
+)
 
 
 class OpenAPIToTypescriptSchemaConverter:
@@ -26,13 +30,6 @@ class OpenAPIToTypescriptSchemaConverter:
     def __init__(self, export_interface: bool = False):
         self.export_interface = export_interface
 
-    def convert(self, model: Type[BaseModel]):
-        self.validate_typescript_candidate(model)
-
-        openapi_spec = self.get_model_json_schema(model)
-        schema = OpenAPISchema(**openapi_spec)
-        return self.convert_to_typescript(schema)
-
     def get_model_json_schema(self, model: Type[BaseModel]):
         """
         By default pydantic will still include exclude=True parameters in the
@@ -40,6 +37,8 @@ class OpenAPIToTypescriptSchemaConverter:
         before conversion so we exclude these unnecessary parameters.
 
         """
+        self.validate_typescript_candidate(model)
+
         include_fields = {
             field: (field_info.annotation, field_info)
             for field, field_info in model.model_fields.items()
@@ -54,15 +53,18 @@ class OpenAPIToTypescriptSchemaConverter:
 
         return synthetic_model.model_json_schema()
 
-    def convert_to_typescript(self, parsed_spec: OpenAPISchema):
-        # components = parsed_spec.get('components', {})
-        # schemas = components.get('schemas', {})
-
+    def convert_schema_to_typescript(
+        self, parsed_spec: OpenAPISchema, defaults_are_required: bool = False
+    ):
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
 
         return {
-            model.title: self.convert_schema_to_interface(model, base=parsed_spec)
+            model.title: self.convert_schema_to_interface(
+                model,
+                base=parsed_spec,
+                defaults_are_required=defaults_are_required,
+            )
             for model in all_models
             if model.title and model.title.strip()
         }
@@ -76,7 +78,10 @@ class OpenAPIToTypescriptSchemaConverter:
         """
 
         def walk_models(property: OpenAPIProperty) -> Iterator[OpenAPIProperty]:
-            if property.variable_type == OpenAPISchemaType.OBJECT:
+            if (
+                property.variable_type == OpenAPISchemaType.OBJECT
+                or property.enum is not None
+            ):
                 yield property
             if property.ref is not None:
                 yield from walk_models(self.resolve_ref(property.ref, base))
@@ -114,7 +119,24 @@ class OpenAPIToTypescriptSchemaConverter:
             raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")
         return current_obj
 
-    def convert_schema_to_interface(self, model: OpenAPIProperty, base: BaseModel):
+    def convert_schema_to_interface(
+        self,
+        model: OpenAPIProperty,
+        base: BaseModel,
+        defaults_are_required: bool,
+    ):
+        if model.variable_type == OpenAPISchemaType.OBJECT:
+            return self._convert_object_to_interface(
+                model, base, defaults_are_required=defaults_are_required
+            )
+        elif model.enum is not None:
+            return self._convert_enum_to_interface(model)
+        else:
+            raise ValueError(f"Unknown model type: {model}")
+
+    def _convert_object_to_interface(
+        self, model: OpenAPIProperty, base: BaseModel, defaults_are_required: bool
+    ):
         fields = []
 
         # We have to support arrays with one and multiple values
@@ -137,7 +159,9 @@ class OpenAPIToTypescriptSchemaConverter:
                 yield map_openapi_type_to_ts(prop.variable_type)
 
         for prop_name, prop_details in model.properties.items():
-            is_required = prop_name in model.required
+            is_required = (prop_name in model.required) or (
+                defaults_are_required and prop_details.default is not None
+            )
             ts_type = (
                 map_openapi_type_to_ts(prop_details.variable_type)
                 if prop_details.variable_type
@@ -164,12 +188,49 @@ class OpenAPIToTypescriptSchemaConverter:
 
         return interface_full
 
+    def _convert_enum_to_interface(self, model: OpenAPIProperty):
+        fields: dict[str, Any] = {}
+
+        if not model.enum:
+            raise ValueError(f"Model {model} is not an enum")
+
+        for enum_value in model.enum:
+            # If the enum is an integer, we need to escape it
+            enum_key: str
+            if isinstance(enum_value, (int, float)):
+                enum_key = f"Value__{enum_value}"
+            elif isinstance(enum_value, str):
+                enum_key = camelize(enum_value, uppercase_first_letter=True)
+            else:
+                raise ValueError(f"Invalid enum value: {enum_value}")
+
+            fields[TSLiteral(enum_key)] = enum_value
+
+        # Enums use an equal assignment syntax
+        interface_body = python_payload_to_typescript(fields).replace(":", " =")
+        interface_full = (
+            f"enum {self.get_typescript_interface_name(model)} {interface_body}"
+        )
+
+        if self.export_interface:
+            interface_full = f"export {interface_full}"
+
+        return interface_full
+
     def get_typescript_interface_name(self, model: OpenAPIProperty):
         if not model.title:
             raise ValueError(
                 f"Model must have a title to retrieve its typescript name: {model}"
             )
-        return camelize(model.title)
+
+        replace_chars = {" ", "[", "]"}
+        values = model.title
+
+        for char in replace_chars:
+            values = values.strip(char)
+            values = values.replace(char, "_")
+
+        return camelize(values)
 
     def validate_typescript_candidate(self, model: Type[BaseModel]):
         """

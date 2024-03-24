@@ -1,6 +1,5 @@
-import * as React from "react";
-import { useEffect } from "react";
-import { useServer } from "./_server/useServer";
+import React from "react";
+import { useServer } from "./_server";
 
 const Page = () => {
   const serverState = useServer();

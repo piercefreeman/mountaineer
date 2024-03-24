@@ -27,7 +27,10 @@
 // DEALINGS IN THE SOFTWARE.
 
 use crate::errors::AppError;
+use crate::logging::StdoutWrapper;
 use std::collections::HashMap;
+use std::io::Write;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ssr<'a> {
@@ -35,6 +38,14 @@ pub struct Ssr<'a> {
     source: String,
     entry_point: &'a str,
 }
+
+struct LoggerData {
+    console_type: String,
+    stdout: Arc<Mutex<dyn Write + 'static>>,
+}
+
+// Ensure that LoggerData can be sent safely across threads.
+unsafe impl Send for LoggerData {}
 
 impl<'a> Ssr<'a> {
     /// Create an instance of the Ssr struct instanciate the v8 platform as well.
@@ -50,6 +61,10 @@ impl<'a> Ssr<'a> {
     fn init_platform() {
         lazy_static! {
           static ref INIT_PLATFORM: () = {
+              // Include ICU data file.
+              // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
+              v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
+
               //Initialize a new V8 platform
               let platform = v8::new_default_platform(0, false).make_shared();
               v8::V8::initialize_platform(platform);
@@ -63,10 +78,20 @@ impl<'a> Ssr<'a> {
     /// Evaluates the JS source code instanciate in the Ssr struct
     /// "enrty_point" is the variable name set from the frontend bundler used. <a href="https://github.com/Valerioageno/ssr-rs/blob/main/client/webpack.ssr.js" target="_blank">Here</a> an example from webpack.
     pub fn render_to_string(&self, params: Option<&str>) -> Result<String, AppError> {
-        Self::render(self.source.clone(), self.entry_point, params)
+        Self::render(
+            self.source.clone(),
+            self.entry_point,
+            params,
+            StdoutWrapper::new().get_arc(),
+        )
     }
 
-    fn render(source: String, entry_point: &str, params: Option<&str>) -> Result<String, AppError> {
+    fn render(
+        source: String,
+        entry_point: &str,
+        params: Option<&str>,
+        stdout: Arc<Mutex<dyn Write + 'static>>,
+    ) -> Result<String, AppError> {
         /*
          * Main entrypoint for rendering, takes a source string (containing one or many functions) and
          * an entry point (ie. function name to execute) and returns the result of the execution as
@@ -75,8 +100,11 @@ impl<'a> Ssr<'a> {
         // let isolate_params = v8::CreateParams::default().heap_limits(0, 2000 * 1024 * 1024);
         let isolate = &mut v8::Isolate::new(Default::default());
         let handle_scope = &mut v8::HandleScope::new(isolate);
-        let context = v8::Context::new(handle_scope);
+        let mut context = v8::Context::new(handle_scope);
         let scope = &mut v8::ContextScope::new(handle_scope, context);
+
+        // Add logging support
+        Self::inject_logger(&mut context, scope, stdout);
 
         // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
         let try_catch = &mut v8::TryCatch::new(scope);
@@ -149,6 +177,82 @@ impl<'a> Ssr<'a> {
         Ok(rendered)
     }
 
+    fn inject_logger(
+        context: &mut v8::Local<'_, v8::Context>,
+        scope: &mut v8::ContextScope<'_, v8::HandleScope<'_>>,
+        stdout: Arc<Mutex<dyn Write + 'static>>,
+    ) {
+        let console_types = vec!["log", "warn", "info", "debug", "error"];
+        let global = context.global(scope);
+        let console_key =
+            v8::String::new(scope, "console").unwrap_or_else(|| v8::String::empty(scope));
+        let console_obj = global
+            .get(scope, console_key.into())
+            .and_then(|v| v.to_object(scope))
+            .unwrap_or_else(|| {
+                let obj = v8::ObjectTemplate::new(scope).new_instance(scope).unwrap();
+                global.set(scope, console_key.into(), obj.into());
+                obj
+            });
+
+        for console_type in console_types {
+            let logger_data = LoggerData {
+                console_type: console_type.to_string(),
+                stdout: stdout.clone(),
+            };
+            let logger_data_external =
+                v8::External::new(scope, Box::into_raw(Box::new(logger_data)) as *mut _);
+
+            // Normally, we'd just use a closure to pass the console data into our handler function.
+            // However, the Function() syntax in V8 relies on us passing a raw function _pointer_ into
+            // the C++ engine. Closures in rust create an AnonymousClosure struct which isn't compatible
+            // with the function interface. We instead pass our necessary variables into a v8::External data
+            // structure and then extract them in our handler function.
+            // If we need to pass other rust-native types in the future, we can do something similar
+            // and just pass the pointers.
+            let logger_fn = v8::Function::builder(
+                move |scope: &mut v8::HandleScope,
+                      args: v8::FunctionCallbackArguments,
+                      mut ret_val: v8::ReturnValue| {
+                    let data = args.data();
+                    let logger_data = if data.is_external() {
+                        let external = unsafe { v8::Local::<v8::External>::cast(data) };
+                        let logger_data_ptr = external.value();
+                        unsafe { &*(logger_data_ptr as *const LoggerData) }
+                    } else {
+                        panic!("Expected logger data to be passed as external data");
+                    };
+
+                    let log_message = (0..args.length())
+                        .map(|i| {
+                            args.get(i)
+                                .to_string(scope)
+                                .unwrap()
+                                .to_rust_string_lossy(scope)
+                        })
+                        .collect::<Vec<String>>()
+                        .join(" ");
+
+                    let mut stdout_lock = logger_data.stdout.lock().unwrap();
+                    writeln!(
+                        stdout_lock,
+                        "ssr console [{}]: {}",
+                        logger_data.console_type, log_message
+                    )
+                    .expect("Failed to write to stdout");
+
+                    ret_val.set_undefined();
+                },
+            )
+            .data(logger_data_external.into())
+            .build(scope)
+            .unwrap();
+
+            let console_type_key = v8::String::new(scope, console_type).unwrap();
+            console_obj.set(scope, console_type_key.into(), logger_fn.into());
+        }
+    }
+
     fn extract_exception_message(
         try_catch: &mut v8::TryCatch<v8::HandleScope>,
         user_msg: &str,
@@ -161,10 +265,9 @@ impl<'a> Ssr<'a> {
             let msg = exception.to_rust_string_lossy(&mut scope);
 
             // Directly use try_catch to get the stack trace if available
-            let maybe_stack = exceptions.map_or_else(
-                || String::new(),
-                |trace| format!("\nStack: {}", trace.to_rust_string_lossy(&mut scope)),
-            );
+            let maybe_stack = exceptions.map_or_else(String::new, |trace| {
+                format!("\nStack: {}", trace.to_rust_string_lossy(&mut scope))
+            });
 
             format!("{}: {}{}", user_msg, msg, maybe_stack)
         } else {
@@ -245,5 +348,72 @@ mod tests {
             result,
             Err(AppError::V8ExceptionError("Error calling function 'x': Error: custom_error_text\nStack: Error: custom_error_text\n    at Object.x (<anonymous>:4:31)".into()))
         )
+    }
+
+    #[test]
+    fn test_render_to_string() {
+        let js = Ssr::new(
+            r##"
+                var SSR = {
+                    x: () => "<html></html>"
+                };"##
+                .to_string(),
+            "SSR",
+        );
+        let result = js.render_to_string(None);
+
+        assert_eq!(result, Ok("<html></html>".to_string()))
+    }
+
+    #[test]
+    fn test_log_to_stdout() {
+        // Create a synthetic stdout that we can inspect
+        let stdout = Arc::new(Mutex::new(Vec::new()));
+
+        Ssr::init_platform();
+        let result = Ssr::render(
+            r##"
+                var SSR = {
+                    x: () => {
+                        console.log('test log');
+                        return "<html></html>"
+                    }
+                };"##
+                .to_string(),
+            "SSR",
+            None,
+            stdout.clone(),
+        );
+
+        let result_vector = stdout.lock().unwrap();
+
+        assert_eq!(result, Ok("<html></html>".to_string()));
+        assert_eq!(
+            String::from_utf8_lossy(&*result_vector),
+            "ssr console [log]: test log\n"
+        );
+    }
+
+    #[test]
+    fn test_timezone_succeeds() {
+        // More context:
+        // https://github.com/denoland/rusty_v8/issues/1444
+        // https://github.com/denoland/rusty_v8/pull/603
+        let js = Ssr::new(
+            r##"
+                var SSR = {
+                    x: () => {
+                        const value = new Intl.DateTimeFormat(void 0, {
+                            timeZone: "America/Los_Angeles",
+                        });
+                        return value;
+                    }
+                };"##
+                .to_string(),
+            "SSR",
+        );
+        let result = js.render_to_string(None);
+
+        assert_eq!(result, Ok("[object Intl.DateTimeFormat]".to_string()))
     }
 }

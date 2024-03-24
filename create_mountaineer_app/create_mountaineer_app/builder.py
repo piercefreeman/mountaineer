@@ -1,4 +1,5 @@
 from pathlib import Path
+from shutil import copytree
 
 from click import secho
 
@@ -16,6 +17,7 @@ IGNORE_FILES = {"__pycache__", "node_modules"}
 ALLOW_HIDDEN_FILES = {
     # A template .env file is explicitly included in our build logic
     ".env",
+    ".gitignore",
 }
 
 
@@ -24,6 +26,15 @@ def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
         return PoetryEnvironment()
     else:
         return VEnvEnvironment()
+
+
+def editor_config_from_metadata(metadata: ProjectMetadata):
+    if metadata.editor_config == "no":
+        return
+
+    config_source = get_template_path("editor_configs") / metadata.editor_config
+    config_destination = metadata.project_path
+    copytree(config_source, config_destination, dirs_exist_ok=True)
 
 
 def should_copy_path(root_path: Path, path: Path):
@@ -99,3 +110,5 @@ def build_project(metadata: ProjectMetadata):
             "npm is not installed and is required to install React dependencies.",
             fg="red",
         )
+
+    editor_config_from_metadata(metadata)

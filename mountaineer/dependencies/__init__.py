@@ -1,2 +1,6 @@
-from .base import DependenciesBase, get_function_dependencies  # noqa: F401
-from .core import CoreDependencies  # noqa: F401
+from . import core as CoreDependencies  # noqa: F401
+from .base import (
+    DependenciesBase as DependenciesBase,
+    get_function_dependencies as get_function_dependencies,
+    isolate_dependency_only_function as isolate_dependency_only_function,
+)

@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-from time import time
+from time import monotonic_ns
 from unittest.mock import patch
 
 import pytest
@@ -37,11 +37,10 @@ def test_markup_sideeffect():
         # We declare as complicated a payload as @sideeffect supports so we can
         # see the full amount of metadata properties that are set
         @sideeffect(
-            response_model=ExamplePassthroughModel,
             reload=tuple([ExampleRenderModel.value_a]),
         )
-        def sideeffect_and_return_data(self):
-            return dict(
+        def sideeffect_and_return_data(self) -> ExamplePassthroughModel:
+            return ExamplePassthroughModel(
                 first_name="John",
             )
 
@@ -65,11 +64,11 @@ class ControllerCommon(ControllerBase):
         self.render_counts = 0
 
     @sideeffect
-    def call_sideeffect(self, payload: dict):
+    def call_sideeffect(self, payload: dict) -> None:
         self.counter += 1
 
     @sideeffect
-    async def call_sideeffect_async(self, payload: dict):
+    async def call_sideeffect_async(self, payload: dict) -> None:
         self.counter += 1
 
 
@@ -94,12 +93,12 @@ async def call_sideeffect_common(controller: ControllerCommon):
         # by the function injected by the sideeffect decorator.
         return_value_sync = await controller.call_sideeffect(
             {},
-            request=Request({"type": "http"}),
+            request=Request({"type": "http"}),  # type: ignore
         )
 
         return_value_async = await controller.call_sideeffect_async(
             {},
-            request=Request({"type": "http"}),
+            request=Request({"type": "http"}),  # type: ignore
         )
 
         # The response payload should be the same both both sync and async endpoints
@@ -253,7 +252,7 @@ def test_limit_codepath_experimental(
             reload=(ExampleRenderModel.value_a,),
             experimental_render_reload=use_experimental,
         )
-        def call_sideeffect(self, payload: dict):
+        def call_sideeffect(self, payload: dict) -> None:
             pass
 
     # We need to load this test controller to an actual application runtime
@@ -262,11 +261,10 @@ def test_limit_codepath_experimental(
     controller = ExampleController()
     app.register(controller)
 
-    sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).url
-    assert isinstance(sideeffect_url, str)
+    sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).get_url()
 
     client = TestClient(app.app)
-    start = time()
+    start = monotonic_ns()
     response = client.post(
         sideeffect_url,
         json={},
@@ -275,7 +273,7 @@ def test_limit_codepath_experimental(
             "referer": "http://example.com/test/5/",
         },
     )
-    elapsed = time() - start
+    elapsed = (monotonic_ns() - start) / 1e9
     assert response.status_code == 200
     assert response.json() == {
         "sideeffect": {

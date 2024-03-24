@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
-from pydantic_settings import BaseSettings
 from starlette.routing import BaseRoute
 
 from mountaineer.actions import (
@@ -18,13 +17,14 @@ from mountaineer.actions import (
     init_function_metadata,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
+from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
 from mountaineer.js_compiler.base import ClientBuilderBase
-from mountaineer.js_compiler.bundler import JavascriptBundler
+from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath
-from mountaineer.render import Metadata
+from mountaineer.paths import ManagedViewPath, resolve_package_path
+from mountaineer.render import Metadata, RenderBase
 
 
 class ControllerDefinition(BaseModel):
@@ -55,10 +55,11 @@ class AppController:
         *,
         name: str = "Mountaineer Webapp",
         version: str = "0.1.0",
-        view_root: Path,
+        view_root: Path | None = None,
         global_metadata: Metadata | None = None,
         custom_builders: list[ClientBuilderBase] | None = None,
-        config: BaseSettings | None = None,
+        config: ConfigBase | None = None,
+        fastapi_args: dict[str, Any] | None = None,
     ):
         """
         :param global_metadata: Script and meta will be applied to every
@@ -67,11 +68,10 @@ class AppController:
         :param config: Application global configuration.
 
         """
-        self.app = FastAPI(title=name, version=version)
+        self.app = FastAPI(title=name, version=version, **(fastapi_args or {}))
         self.controllers: list[ControllerDefinition] = []
         self.name = name
         self.version = version
-        self.view_root = ManagedViewPath.from_view_root(view_root)
         self.global_metadata = global_metadata
         self.builders = [
             # Default builders
@@ -79,6 +79,22 @@ class AppController:
             # Custom builders
             *(custom_builders if custom_builders else []),
         ]
+
+        # If this flag is present, we will re-raise this error during render()
+        # so users can see the error in the browser.
+        # This is useful for debugging, but should not be used in production
+        self.build_exception: Exception | None = None
+
+        # Follow our managed path conventions
+        if config is not None and config.PACKAGE is not None:
+            package_path = resolve_package_path(config.PACKAGE)
+            self.view_root = ManagedViewPath.from_view_root(package_path / "views")
+        elif view_root is not None:
+            self.view_root = ManagedViewPath.from_view_root(view_root)
+        else:
+            raise ValueError(
+                "You must provide either a config.package or a view_root to the AppController"
+            )
 
         # The act of instantiating the config should register it with the
         # global settings registry. We keep a reference to it so we can shortcut
@@ -110,7 +126,7 @@ class AppController:
 
         """
         # Update the paths now that we have access to the runtime package path
-        controller.resolve_paths(self.view_root)
+        controller.resolve_paths(self.view_root, force=True)
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -123,6 +139,9 @@ class AppController:
         # with the dependency injection kwargs
         @wraps(controller.render)
         async def generate_controller_html(*args, **kwargs):
+            if self.build_exception:
+                raise self.build_exception
+
             try:
                 return await controller._generate_html(
                     *args, global_metadata=self.global_metadata, **kwargs
@@ -161,7 +180,7 @@ class AppController:
         # Validate the return model is actually a RenderBase or explicitly marked up as None
         if not (
             return_model is None
-            or (isclass(return_model) and issubclass(return_model, BaseModel))
+            or (isclass(return_model) and issubclass(return_model, RenderBase))
         ):
             raise ValueError(
                 "Controller render() return type annotation is not a RenderBase"
@@ -188,26 +207,38 @@ class AppController:
             f"{self.internal_api_prefix}/{underscore(controller.__class__.__name__)}"
         )
         for _, fn, metadata in controller._get_client_functions():
-            # We need to delay adding the typehint for each function until we are here, adding the view. Since
-            # decorators run before the class is actually mounted, they're isolated from the larger class/controller
-            # context that the action function is being defined within. Here since we have a global view
-            # of the controller (render function + actions) this becomes trivial
-            metadata.return_model = fuse_metadata_to_response_typehint(
-                metadata, render_metadata.get_render_model()
-            )
+            openapi_extra: dict[str, Any] = {
+                "is_raw_response": metadata.get_is_raw_response()
+            }
 
-            # Update the signature of the internal function, which fastapi will sniff for the return declaration
-            # https://github.com/tiangolo/fastapi/blob/a235d93002b925b0d2d7aa650b7ab6d7bb4b24dd/fastapi/dependencies/utils.py#L207
-            method_function: Callable = fn.__func__  # type: ignore
-            method_function.__signature__ = signature(method_function).replace(  # type: ignore
-                return_annotation=metadata.return_model
-            )
+            if not metadata.get_is_raw_response():
+                # We need to delay adding the typehint for each function until we are here, adding the view. Since
+                # decorators run before the class is actually mounted, they're isolated from the larger class/controller
+                # context that the action function is being defined within. Here since we have a global view
+                # of the controller (render function + actions) this becomes trivial
+                metadata.return_model = fuse_metadata_to_response_typehint(
+                    metadata, render_metadata.get_render_model()
+                )
+
+                # Update the signature of the internal function, which fastapi will sniff for the return declaration
+                # https://github.com/tiangolo/fastapi/blob/a235d93002b925b0d2d7aa650b7ab6d7bb4b24dd/fastapi/dependencies/utils.py#L207
+                method_function: Callable = fn.__func__  # type: ignore
+                method_function.__signature__ = signature(method_function).replace(  # type: ignore
+                    return_annotation=metadata.return_model
+                )
+
+                # Pass along relevant tags in the OpenAPI meta struct
+                # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
+                if metadata.get_media_type():
+                    openapi_extra["media_type"] = metadata.get_media_type()
 
             metadata.url = (
                 f"{controller_url_prefix}/{metadata.function_name.strip('/')}"
             )
 
-            controller_api.post(f"/{metadata.function_name}")(fn)
+            controller_api.post(
+                f"/{metadata.function_name}", openapi_extra=openapi_extra
+            )(fn)
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__
         # But the application greedily copies all contents from the router when it's added via `include_router`, so this

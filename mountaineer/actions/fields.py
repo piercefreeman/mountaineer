@@ -1,8 +1,23 @@
+import collections
+import collections.abc
+import typing
+import warnings
 from enum import Enum
-from inspect import ismethod
+from inspect import (
+    isclass,
+    ismethod,
+)
 from json import loads as json_loads
-from typing import Any, Callable, Optional, Type
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    Type,
+    get_args,
+    get_origin,
+)
 
+import starlette.responses
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from inflection import camelize
@@ -18,6 +33,11 @@ class FunctionActionType(Enum):
     RENDER = "render"
     SIDEEFFECT = "sideeffect"
     PASSTHROUGH = "passthrough"
+
+
+class ResponseModelType(Enum):
+    SINGLE_RESPONSE = "SINGLE_RESPONSE"
+    ITERATOR_RESPONSE = "ITERATOR_RESPONSE"
 
 
 class FunctionMetadata(BaseModel):
@@ -39,10 +59,14 @@ class FunctionMetadata(BaseModel):
     exception_models: list[
         Type[APIException]
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    media_type: str | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    is_raw_response: bool = False
 
     # Render type, defines the data model that is returned by the render typehint
     # If "None", the user has explicitly stated that no render model is returned
-    render_model: Type[RenderBase] | MountaineerUnsetValue = MountaineerUnsetValue()
+    render_model: Type[
+        RenderBase
+    ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
 
     # Inserted by the render decorator
     url: str | MountaineerUnsetValue = MountaineerUnsetValue()
@@ -64,7 +88,7 @@ class FunctionMetadata(BaseModel):
             raise ValueError("Reload states not set")
         return self.reload_states
 
-    def get_render_model(self) -> Type[RenderBase]:
+    def get_render_model(self) -> Type[RenderBase] | None:
         if isinstance(self.render_model, MountaineerUnsetValue):
             raise ValueError("Render model not set")
         return self.render_model or RenderNull
@@ -78,6 +102,14 @@ class FunctionMetadata(BaseModel):
         if isinstance(self.exception_models, MountaineerUnsetValue):
             raise ValueError("Exception models not set")
         return self.exception_models
+
+    def get_media_type(self) -> str | None:
+        if isinstance(self.media_type, MountaineerUnsetValue):
+            raise ValueError("Media type not set")
+        return self.media_type
+
+    def get_is_raw_response(self) -> bool:
+        return self.is_raw_response
 
     def get_url(self) -> str:
         if isinstance(self.url, MountaineerUnsetValue):
@@ -132,7 +164,7 @@ def annotation_is_metadata(annotation: type | None):
 
 def fuse_metadata_to_response_typehint(
     metadata: FunctionMetadata,
-    render_model: Type[RenderBase],
+    render_model: Type[RenderBase] | None,
 ) -> Type[BaseModel]:
     """
     Functions can either be marked up with side effects, explicit responses, or both.
@@ -146,7 +178,7 @@ def fuse_metadata_to_response_typehint(
     ):
         passthrough_fields = {**metadata.passthrough_model.model_fields}
 
-    if metadata.action_type == FunctionActionType.SIDEEFFECT:
+    if metadata.action_type == FunctionActionType.SIDEEFFECT and render_model:
         # By default, reload all fields
         sideeffect_fields = {**render_model.model_fields}
 
@@ -212,8 +244,13 @@ def handle_explicit_responses(
     dict_payload: dict[str, Any],
 ):
     """
-    Wrapper to allow actions to respond with an explicit Response, or a dictionary. If it returns
-    with a Response, we will manipulate the output to validate to our expected output schema.
+    Wrapper to allow actions to respond with an explicit JSONResponse, or a dictionary. This lets
+    both sideeffects and passthrough payloads to inject header metadata that otherwise can't be captured
+    in a regular BaseModel.
+
+    Since the eventual result of an action is a combined sideeffect+passthrough payload, we need to
+    merge the final payload into the explicit response.
+
     """
     responses = [
         (key, response)
@@ -222,7 +259,7 @@ def handle_explicit_responses(
     ]
 
     if len(responses) > 1:
-        raise ValueError("Multiple conflicting responses returned")
+        raise ValueError(f"Multiple conflicting responses returned: {responses}")
 
     if len(responses) == 0:
         return dict_payload
@@ -239,4 +276,73 @@ def handle_explicit_responses(
             for key, value in response.headers.items()
             if key not in {"content-length", "content-type"}
         },
+    )
+
+
+def extract_response_model_from_signature(
+    func: Callable, explicit_response: Type[BaseModel] | None = None
+):
+    typehinted_response = func.__annotations__.get("return", MountaineerUnsetValue())
+    if explicit_response:
+        warnings.warn(
+            (
+                "The response_model argument is deprecated. Instead, just typehint your function explicitly:\n"
+                "def my_function() -> MyResponseModel:"
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
+    if explicit_response:
+        return explicit_response, ResponseModelType.SINGLE_RESPONSE
+
+    if isinstance(typehinted_response, MountaineerUnsetValue):
+        # This will be converted into a ValueError in the future
+        # For now, backwards compatible with the old markup
+        warnings.warn(
+            (
+                f"You must typehint the return value of your `{func}` with either a BaseModel or None.\n"
+                "We will stop inferring `None` as a response model in the future."
+            ),
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return None, ResponseModelType.SINGLE_RESPONSE
+
+    return extract_model_from_decorated_types(typehinted_response)
+
+
+def extract_model_from_decorated_types(
+    type_hint: Any,
+) -> tuple[Type[BaseModel] | None, ResponseModelType]:
+    """
+    Support response_model typehints like Iterator[Type[BaseModel]] and AsyncIterator[Type[BaseModel]].
+
+    """
+    origin_type = get_origin(type_hint)
+
+    if type_hint is None:
+        return None, ResponseModelType.SINGLE_RESPONSE
+    elif isclass(type_hint) and issubclass(type_hint, BaseModel):
+        return type_hint, ResponseModelType.SINGLE_RESPONSE
+    elif origin_type in (
+        typing.Iterator,
+        typing.AsyncIterator,
+        # At runtime our types are sometimes instantiated as collections.abc objects
+        collections.abc.Iterator,
+        collections.abc.AsyncIterator,
+    ):
+        args = get_args(type_hint)
+        if args and issubclass(args[0], BaseModel):
+            return args[0], ResponseModelType.ITERATOR_RESPONSE
+        raise ValueError(
+            f"Invalid response_model typehint for iterator action: {type_hint} {origin_type} {args}"
+        )
+    elif isclass(type_hint) and issubclass(type_hint, starlette.responses.Response):
+        # No pydantic model to include in the API schema, instead the endpoint
+        # will just return the raw value
+        return None, ResponseModelType.SINGLE_RESPONSE
+
+    raise ValueError(
+        f"Invalid response_model typehint for standard action: {type_hint}"
     )

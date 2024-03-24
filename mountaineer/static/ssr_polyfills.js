@@ -9,3 +9,5 @@ class TextEncoder {
     return str;
   }
 }
+
+Intl.Locale = undefined;

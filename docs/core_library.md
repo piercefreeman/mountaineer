@@ -29,6 +29,12 @@ You'll also need a system-wide installation of esbuild. If you don't have one wh
     $ make test
     ```
 
+    During testing we also support providing additional test-args that are passed to pytest. This helps you narrow down the scope of tests, add more verbosity, etc.:
+
+    ```bash
+    $ make test test-args="-k test_extracts_iterable"
+    ```
+
 1. Python Linting
 
     ```bash

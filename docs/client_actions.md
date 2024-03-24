@@ -23,7 +23,7 @@ Side-effects work as if you have reloaded the page. They update the server state
 ```python
 # no parameters, refresh all state
 @sideeffect
-def increment_count(self):
+def increment_count(self) -> None:
     self.global_count += 1
 ```
 
@@ -32,17 +32,17 @@ def increment_count(self):
     # only push the updated current_count variable to the client
     reload=(CountRender.current_count,)
 )
-def increment_count(self):
+def increment_count(self) -> None:
     self.global_count += 1
 ```
 
 ```python
-@sideeffect(
-    # execute a sideeffect and then return additional data from a custom data model
-    response_model=CustomDataModel
-)
-def increment_count(self):
+# execute a sideeffect and then return additional data from a custom data model
+@sideeffect
+def increment_count(self) -> CustomDataModel:
     self.global_count += 1
+    ...
+    return CustomDataModel(...)
 ```
 
 Keyword arguments can be chained as you expect to customize the sideeffect behavior.
@@ -92,7 +92,7 @@ def render(
     reload=(ExampleRenderModel.value_a,),
     experimental_render_reload=use_experimental,
 )
-def call_sideeffect(self, payload: dict):
+def call_sideeffect(self, payload: dict) -> None:
     pass
 ```
 
@@ -120,16 +120,14 @@ Passthrough is conceptually much simpler, since it doesn't perform any server->c
 ```python
 # no parameters, no response model
 @passthrough
-def server_action(self):
+def server_action(self) -> None:
     pass
 ```
 
 ```python
-@passthrough(
-    # execute a passthrough and then return additional data from a custom data model
-    response_model=CustomDataModel
-)
-def server_action(self):
+# execute a passthrough and then return additional data from a custom data model
+@passthrough
+def server_action(self) -> CustomDataModel:
     pass
 ```
 
@@ -139,6 +137,56 @@ Like passthrough values in sideeffects, you can access it on the client side lik
 const response = await serverState.server_action({});
 console.log(response.passthrough);
 ```
+
+### Server Events
+
+[Server-event](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) streams are a useful paradigm in webapp design, and increasing utilized to provide realtime Server->Client data for use in user notifications, CI feedback, and model inference.
+
+Mountaineer supports these natively on the server and client side. Simply decorate your response_model with a `typing.AsyncIterator` annotation and implement an async generator like you normally do:
+
+```python
+from typing import AsyncIterator
+from mountaineer import passthrough, ControllerBase
+from pydantic import BaseModel
+
+class MyMetadata(BaseModel):
+    state: int
+
+class MyController(ControllerBase):
+    ...
+
+    @passthrough
+    async def stream_metadata(self) -> AsyncIterator[MyMetadata]:
+        yield MyMetadata(state=1)
+        await asyncio.sleep(10)
+        yield MyMetadata(state=2)
+```
+
+For the time being we only support server-events in `@passthrough` functions, not `@sideeffect`. It's ill-defined whether we should re-render() content every yield or when the iterator has finished.
+
+In your frontend, you can iterate over these responses with an async generator loop. Each response object will be parsed into your typed schema for you, so you can see typehints like you would for any regular Mountaineer action.
+
+```tsx
+import React, { useState, useEffect } from "react";
+
+const Page = () => {
+  const [currentState, setCurrentState] = useState(-1);
+
+  useEffect(() => {
+      const runStream = async () => {
+        const responseStream = await serverState.stream_metadata({});
+        for await (const response of responseStream) {
+          setCurrentState(response.passthrough.state);
+        }
+      };
+      runStream();
+    }, []);
+
+  return <div>{currentState}</div>;
+}
+```
+
+You'll see the first event state `1` for 10 seconds, then it will update to `2`.
 
 ## Action Definitions
 
@@ -163,7 +211,7 @@ async def increment_count(
     payload: IncrementCountRequest,
     query_param: int,
     user: User = Depends(get_current_user)
-):
+) -> None:
     self.global_count += payload.count
 ```
 

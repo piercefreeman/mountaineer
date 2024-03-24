@@ -1,8 +1,10 @@
+import warnings
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from typing import Callable
+from inspect import signature
+from typing import Any, Callable
 
-from fastapi import Request
+from fastapi import Request, params as fastapi_params
 from fastapi.dependencies.utils import get_dependant, solve_dependencies
 
 
@@ -23,6 +25,17 @@ class DependenciesBaseMeta(type):
     """
 
     def __new__(cls, name, bases, namespace, **kwargs):
+        # Flag any child instances as deprecated but not the base model
+        if name != "DependenciesBase":
+            warnings.warn(
+                (
+                    "DependenciesBase is deprecated and will be removed in a future version.\n"
+                    "Import modules to form dependencies. See mountaineer.dependencies.core for an example."
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
         for attr_name, attr_value in namespace.items():
             if isinstance(attr_value, staticmethod):
                 raise TypeError(
@@ -101,3 +114,28 @@ async def get_function_dependencies(
             )
 
         yield values
+
+
+def isolate_dependency_only_function(original_fn: Callable):
+    """
+    Create and return a mocked function that only includes the Depends parameters
+    from the original function. This allows fastapi to resolve dependencies that are
+    specified while allowing our logic to provide other non-dependency injected args.
+
+    """
+    sig = signature(original_fn)
+    parameters = sig.parameters
+
+    dependency_params = {
+        name: param
+        for name, param in parameters.items()
+        if isinstance(param.default, fastapi_params.Depends)
+    }
+
+    # Construct a new function dynamically accepting only the dependencies
+    async def mock_fn(**deps: Any) -> Any:
+        pass
+
+    mock_fn.__signature__ = sig.replace(parameters=dependency_params.values())  # type: ignore
+
+    return mock_fn

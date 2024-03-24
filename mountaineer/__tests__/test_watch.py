@@ -1,10 +1,17 @@
-from json import dumps as json_dumps
 from pathlib import Path
-from unittest.mock import patch
+from threading import Thread
+from time import sleep
 
 import pytest
 
-from mountaineer.watch import ChangeEventHandler, PackageWatchdog
+from mountaineer.watch import (
+    CallbackDefinition,
+    CallbackEvent,
+    CallbackMetadata,
+    CallbackType,
+    ChangeEventHandler,
+    PackageWatchdog,
+)
 
 
 @pytest.mark.parametrize(
@@ -56,62 +63,54 @@ def test_merge_paths(paths: list[str], expected_paths: list[str]):
     }
 
 
-@pytest.mark.parametrize(
-    "package_name, filename",
-    [
-        ("my-awesome-project", "my_awesome_project.pth"),
-        ("MyAwesomeProject", "myawesomeproject.pth"),
-    ],
-)
-def test_resolve_symbolic_links(package_name: str, filename: str, tmpdir: str):
-    # pth files are in txt format and have an explicit link
-    # to the real file
-    tmp_root = Path(tmpdir)
-    (tmp_root / filename).write_text("/path/to/realfile")
+def test_file_notification(tmp_path: Path):
+    callback_events: list[CallbackEvent] = []
 
-    watchdog = PackageWatchdog("mountaineer", [])
-    with patch("importlib.metadata.Distribution") as mock_distribution:
-        mock_distribution.name = package_name
-        mock_distribution.files = [
-            tmp_root / filename,
-            tmp_root / "other_file",
-        ]
-        mock_distribution.locate_file.side_effect = lambda x: x
+    def receive_callback(metadata: CallbackMetadata):
+        callback_events.extend(metadata.events)
 
-        assert watchdog.resolve_package_path(mock_distribution) == "/path/to/realfile"
+    def test_file_lifecycle():
+        # Make sleeps longer than the debounce interval (0.1s)
+        sleep(0.15)
+        (tmp_path / "test.txt").write_text("Original")
+        sleep(0.15)
+        (tmp_path / "test.txt").write_text("Modified")
+        sleep(0.15)
+        (tmp_path / "test.txt").unlink()
+        sleep(0.15)
 
+        assert handler.observer
+        handler.observer.stop()
 
-@pytest.mark.parametrize(
-    "package_name, egg_info_name",
-    [
-        (
-            "my-awesome-project",
-            "my_awesome_project-0.1.0.dist-info",
-        ),
-        (
-            "MyAwesomeProject",
-            "MyAwesomeProject-0.1.0.dist-info",
-        ),
-    ],
-)
-def test_resolve_dist_links(tmpdir: str, package_name: str, egg_info_name: str):
-    # direct_url.json files are located within the application's egginfo
-    # directory within a local venv
-    tmp_root = Path(tmpdir)
-    egg_info_path = tmp_root / egg_info_name
-    egg_info_path.mkdir(exist_ok=True)
-
-    (egg_info_path / "direct_url.json").write_text(
-        json_dumps({"dir_info": {"editable": True}, "url": "file:///path/to/realfile"})
+    handler = PackageWatchdog(
+        "mountaineer",
+        [],
+        callbacks=[
+            CallbackDefinition(
+                action=CallbackType.CREATED
+                | CallbackType.MODIFIED
+                | CallbackType.DELETED,
+                callback=receive_callback,
+            )
+        ],
     )
 
-    watchdog = PackageWatchdog("mountaineer", [])
-    with patch("importlib.metadata.Distribution") as mock_distribution:
-        mock_distribution.name = package_name
-        mock_distribution.files = [
-            egg_info_path / "direct_url.json",
-            tmp_root / "other_file",
-        ]
-        mock_distribution.locate_file.side_effect = lambda x: x
+    # Override the paths found from the package name with our temporary path
+    # where we can write additional files
+    handler.paths = [str(tmp_path)]
 
-        assert watchdog.resolve_package_path(mock_distribution) == "/path/to/realfile"
+    lifecycle_thread = Thread(target=test_file_lifecycle)
+    lifecycle_thread.start()
+
+    handler.start_watching()
+
+    event_actions: list[CallbackType] = []
+    for event in callback_events:
+        if event.action not in event_actions:
+            event_actions.append(event.action)
+
+    assert event_actions == [
+        CallbackType.CREATED,
+        CallbackType.MODIFIED,
+        CallbackType.DELETED,
+    ]

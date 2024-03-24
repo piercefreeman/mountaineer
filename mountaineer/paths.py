@@ -1,6 +1,10 @@
-from os import PathLike
+import importlib.metadata
+import sys
+from json import loads as json_loads
+from os import PathLike, walk as os_walk
 from os.path import relpath
 from pathlib import Path
+from re import search as re_search
 from typing import TYPE_CHECKING, Optional
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
@@ -86,21 +90,29 @@ class ManagedViewPath(type(Path())):  # type: ignore
     def get_managed_code_dir(self):
         return self.get_managed_dir_common("_server")
 
-    def get_managed_static_dir(self):
+    def get_managed_static_dir(self, tmp_build: bool = False):
         # Only root paths can have static directories
         if not self.is_root_link:
             raise ValueError(
                 "Cannot get static directory from a non-root linked view path"
             )
-        return self.get_managed_dir_common("_static")
+        path = self.get_managed_dir_common("_static")
+        if tmp_build:
+            path = path / "tmp"
+            path.mkdir(exist_ok=True)
+        return path
 
-    def get_managed_ssr_dir(self):
+    def get_managed_ssr_dir(self, tmp_build: bool = False):
         # Only root paths can have SSR directories
         if not self.is_root_link:
             raise ValueError(
                 "Cannot get SSR directory from a non-root linked view path"
             )
-        return self.get_managed_dir_common("_ssr")
+        path = self.get_managed_dir_common("_ssr")
+        if tmp_build:
+            path = path / "tmp"
+            path.mkdir(exist_ok=True)
+        return path
 
     def get_managed_dir_common(self, managed_dir: str):
         # If the path is to a file, we want to get the parent directory
@@ -146,19 +158,48 @@ class ManagedViewPath(type(Path())):  # type: ignore
         path.package_root_link = self.package_root_link
         return path
 
-    def rglob(self, pattern: str):
-        # Override the rglob method to return a ManagedViewPath
-        for path in super().rglob(pattern):
-            yield self._inherit_root_link(path)
+    if sys.version_info >= (3, 12):
 
-    def resolve(self):
+        def rglob(self, pattern: str, *, case_sensitive: bool | None = None):
+            for path in super().rglob(pattern, case_sensitive=case_sensitive):
+                yield self._inherit_root_link(path)
+    else:
+
+        def rglob(self, pattern: str):
+            # Override the rglob method to return a ManagedViewPath
+            for path in super().rglob(pattern):
+                yield self._inherit_root_link(path)
+
+    if sys.version_info >= (3, 12):
+
+        def walk(self, top_down=True, on_error=None, follow_symlinks=False):
+            for root, dirs, files in super().walk(
+                top_down=top_down, on_error=on_error, follow_symlinks=follow_symlinks
+            ):
+                yield self._inherit_root_link(root), dirs, files
+
+    else:
+
+        def walk(self):
+            for root, dirs, files in os_walk(str(self)):
+                yield self._inherit_root_link(root), dirs, files
+
+    def resolve(self, strict=False):
         return self._inherit_root_link(super().resolve())
 
     def absolute(self):
         return self._inherit_root_link(super().absolute())
 
-    def relative_to(self, *other):
-        return self._inherit_root_link(super().relative_to(*other))
+    if sys.version_info >= (3, 12):
+
+        def relative_to(self, __other, *_deprecated, walk_up: bool = False):
+            return self._inherit_root_link(
+                super().relative_to(__other, *_deprecated, walk_up=walk_up)
+            )
+    else:
+
+        def relative_to(self, *other):
+            return self._inherit_root_link(super().relative_to(*other))
 
     def with_name(self, name):
         return self._inherit_root_link(super().with_name(name))
@@ -171,10 +212,10 @@ class ManagedViewPath(type(Path())):  # type: ignore
         return self == self.root_link
 
     @property
-    def parent(self):
+    def parent(self):  # type: ignore
         return self._inherit_root_link(super().parent)
 
-    def _inherit_root_link(self, new_path: Path) -> "ManagedViewPath":
+    def _inherit_root_link(self, new_path: Path | str) -> "ManagedViewPath":
         managed_path = ManagedViewPath(new_path)
         managed_path.root_link = self.root_link
         managed_path.package_root_link = self.package_root_link
@@ -229,3 +270,80 @@ def generate_relative_import(
                 relative_path = relative_path.removesuffix(js_extensions)
 
     return relative_path
+
+
+def resolve_package_path(package_name: str):
+    """
+    Given a package distribution, returns the local file directory where the code
+    is located. This is resolved to the original reference if installed with `-e`
+    otherwise is a copy of the package.
+
+    """
+    dist = importlib.metadata.distribution(package_name)
+
+    def normalize_package(package: str):
+        return package.replace("-", "_").lower()
+
+    # Recent versions of poetry install development packages (-e .) as direct URLs
+    # https://the-hitchhikers-guide-to-packaging.readthedocs.io/en/latest/introduction.html
+    # "Path configuration files have an extension of .pth, and each line must
+    # contain a single path that will be appended to sys.path."
+    package_name = normalize_package(dist.name)
+    symbolic_links = [
+        path
+        for path in (dist.files or [])
+        if path.name.lower() == f"{package_name}.pth"
+    ]
+    dist_links = [
+        path
+        for path in (dist.files or [])
+        if path.name == "direct_url.json"
+        and re_search(package_name + r"-[0-9-.]+\.dist-info", path.parent.name.lower())
+    ]
+    explicit_links = [
+        path
+        for path in (dist.files or [])
+        if path.parent.name.lower() == package_name
+        and (
+            # Sanity check that the parent is the high level project directory
+            # by looking for common base files
+            path.name == "__init__.py"
+        )
+    ]
+
+    # The user installed code as an absolute package (ie. with pip install .) instead of
+    # as a reference. There's no need to sniff for the additional package path since
+    # we've already found it
+    if explicit_links:
+        # Right now we have a file pointer to __init__.py. Go up one level
+        # to the main package directory to return a directory
+        explicit_link = explicit_links[0]
+        return Path(str(dist.locate_file(explicit_link.parent)))
+
+    # Raw path will capture the path to the pyproject.toml file directory,
+    # not the actual package code directory
+    # Find the root, then resolve the package directory
+    raw_path: Path | None = None
+
+    if symbolic_links:
+        direct_url_path = symbolic_links[0]
+        raw_path = Path(str(dist.locate_file(direct_url_path.read_text().strip())))
+    elif dist_links:
+        dist_link = dist_links[0]
+        direct_metadata = json_loads(dist_link.read_text())
+        package_path = "/" + direct_metadata["url"].lstrip("file://").lstrip("/")
+        raw_path = Path(str(dist.locate_file(package_path)))
+
+    if not raw_path:
+        raise ValueError(
+            f"Could not find a valid path for package {dist.name}, found files: {dist.files}"
+        )
+
+    # Sniff for the presence of the code directory
+    for path in raw_path.iterdir():
+        if path.is_dir() and normalize_package(path.name) == package_name:
+            return path
+
+    raise ValueError(
+        f"No matching package found in root path: {raw_path} {list(raw_path.iterdir())}"
+    )

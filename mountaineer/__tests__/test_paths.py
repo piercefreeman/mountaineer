@@ -1,4 +1,7 @@
+from json import dumps as json_dumps
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import pytest
 
@@ -7,6 +10,7 @@ from mountaineer.paths import (
     ManagedViewPath,
     generate_relative_import,
     is_path_file,
+    resolve_package_path,
 )
 
 
@@ -176,3 +180,85 @@ def test_copy():
     assert id(path) != id(new_path)
     assert str(path.root_link) == str(new_path.root_link)
     assert str(path.package_root_link) == str(new_path.package_root_link)
+
+
+@pytest.mark.parametrize(
+    "package_name, filename",
+    [
+        ("my-awesome-project", "my_awesome_project.pth"),
+        ("MyAwesomeProject", "myawesomeproject.pth"),
+    ],
+)
+def test_resolve_symbolic_links(package_name: str, filename: str):
+    with (
+        TemporaryDirectory() as site_packages_raw,
+        TemporaryDirectory() as package_dir_raw,
+    ):
+        site_packages_path = Path(site_packages_raw)
+        package_dir_path = Path(package_dir_raw)
+
+        # Original code directory
+        (package_dir_path / package_name).mkdir()
+
+        # pth files are in txt format and have an explicit link
+        # to the root path, not the code package itself
+        (site_packages_path / filename).write_text(str(package_dir_path.absolute()))
+
+        with patch("importlib.metadata.distribution") as mock_distribution:
+            mock_distribution.return_value.name = package_name
+            mock_distribution.return_value.files = [
+                site_packages_path / filename,
+                site_packages_path / "other_file",
+            ]
+            mock_distribution.return_value.locate_file.side_effect = lambda x: x
+
+            assert resolve_package_path(package_name) == package_dir_path / package_name
+
+
+@pytest.mark.parametrize(
+    "package_name, egg_info_name",
+    [
+        (
+            "my-awesome-project",
+            "my_awesome_project-0.1.0.dist-info",
+        ),
+        (
+            "MyAwesomeProject",
+            "MyAwesomeProject-0.1.0.dist-info",
+        ),
+    ],
+)
+def test_resolve_dist_links(package_name: str, egg_info_name: str):
+    with (
+        TemporaryDirectory() as site_packages_raw,
+        TemporaryDirectory() as package_dir_raw,
+    ):
+        site_packages_path = Path(site_packages_raw)
+        package_dir_path = Path(package_dir_raw)
+
+        # Original code directory
+        (package_dir_path / package_name).mkdir()
+
+        # direct_url.json files are located within the application's egginfo
+        # directory within a local venv
+        egg_info_path = site_packages_path / egg_info_name
+        egg_info_path.mkdir(exist_ok=True)
+
+        (egg_info_path / "direct_url.json").write_text(
+            json_dumps(
+                {
+                    "dir_info": {"editable": True},
+                    "url": f"file://{package_dir_path.absolute()}",
+                }
+            )
+        )
+
+        with patch("importlib.metadata.distribution") as mock_distribution:
+            mock_distribution.return_value.name = package_name
+            mock_distribution.return_value.files = [
+                egg_info_path / "direct_url.json",
+                site_packages_path / "other_file",
+            ]
+            mock_distribution.return_value.locate_file.side_effect = lambda x: x
+
+            assert resolve_package_path(package_name) == package_dir_path / package_name

@@ -1,4 +1,4 @@
-![Mountaineer Header](./docs/media/header.png)
+![Mountaineer Header](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/docs/media/header.png)
 
 <p align="center"><i>Move fast. Climb mountains. Don't break things.</i></p>
 
@@ -34,6 +34,7 @@ $ pipx run create-mountaineer-app
 ? Use poetry for dependency management? [Yes] Yes
 ? Create stub MVC files? [Yes] Yes
 ? Use Tailwind CSS? [Yes] Yes
+? Add editor configuration? [vscode] vscode
 ```
 
 Mountaineer projects all follow a similar structure. After running this CLI you should see a new folder called `my_webapp`, with folders like the following:
@@ -67,6 +68,8 @@ If you're starting a new application from scratch, you'll typically want to crea
 docker-compose up -d
 poetry run createdb
 ```
+
+Of course you can also use an existing database instance, simply configure it in the `.env` file in the project root.
 
 Mountaineer relies on watching your project for changes and doing progressive compilation. We provide a few CLI commands to help with this.
 
@@ -191,12 +194,10 @@ from mountaineer.app import AppController
 from mountaineer.js_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
-from my_webapp.views import get_view_path
 from my_webapp.config import AppConfig
 from my_webapp.controllers.home import HomeController
 
 controller = AppController(
-    view_root=get_view_path(""),
     config=AppConfig(),
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
@@ -219,19 +220,17 @@ import { useServer, ServerState } from "./_server/useServer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
-  <div className="flex gap-x-4">
-    <input
-      type="text"
-      className="grow rounded border-2 border-gray-200 px-4 py-2"
-    />
-    <button
-      className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700"
-    >
-      Create
-    </button>
-  </div>
-  )
-}
+    <div className="flex gap-x-4">
+      <input
+        type="text"
+        className="grow rounded border-2 border-gray-200 px-4 py-2"
+      />
+      <button className="rounded bg-blue-500 px-4 py-2 font-bold text-white hover:bg-blue-700">
+        Create
+      </button>
+    </div>
+  );
+};
 
 const Home = () => {
   const serverState = useServer();
@@ -239,7 +238,8 @@ const Home = () => {
   return (
     <div className="mx-auto max-w-2xl space-y-8 p-8 text-2xl">
       <p>
-        Hello {serverState.client_ip}, you have {serverState.todos.length} todo items.
+        Hello {serverState.client_ip}, you have {serverState.todos.length} todo
+        items.
       </p>
       <CreateTodo serverState={serverState} />
       {
@@ -288,7 +288,7 @@ class HomeController(ControllerBase):
         self,
         payload: NewTodoRequest,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
-    ):
+    ) -> None:
         new_todo =  TodoItem(description=payload.description)
         session.add(new_todo)
         await session.commit()
@@ -327,7 +327,6 @@ const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
               },
             });
             setNewTodo("");
-            setShowNew(false);
           }
         }
       >

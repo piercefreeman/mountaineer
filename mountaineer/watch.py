@@ -3,15 +3,15 @@ import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
-from json import loads as json_loads
 from pathlib import Path
-from re import search as re_search
 from threading import Timer
-from typing import Callable
+from typing import Any, Callable
 
 from click import secho
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
+
+from mountaineer.paths import resolve_package_path
 
 
 class CallbackType(Flag):
@@ -21,9 +21,22 @@ class CallbackType(Flag):
 
 
 @dataclass
+class CallbackEvent:
+    action: CallbackType
+    path: Path
+
+
+@dataclass
+class CallbackMetadata:
+    # Since events can be debounced, we need to send all events that occurred
+    # in the batch.
+    events: list[CallbackEvent]
+
+
+@dataclass
 class CallbackDefinition:
     action: CallbackType
-    callback: Callable
+    callback: Callable[[CallbackMetadata], None]
 
 
 class ChangeEventHandler(FileSystemEventHandler):
@@ -46,6 +59,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
         self.debounce_timer: Timer | None = None
+        self.pending_events: list[CallbackEvent] = []
 
     def on_modified(self, event):
         super().on_modified(event)
@@ -53,7 +67,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File modified: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.MODIFIED)
+            self._debounce(CallbackType.MODIFIED, Path(event.src_path))
 
     def on_created(self, event):
         super().on_created(event)
@@ -61,7 +75,7 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File created: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.CREATED)
+            self._debounce(CallbackType.CREATED, Path(event.src_path))
 
     def on_deleted(self, event):
         super().on_deleted(event)
@@ -69,17 +83,21 @@ class ChangeEventHandler(FileSystemEventHandler):
             return
         if not event.is_directory:
             secho(f"File deleted: {event.src_path}", fg="yellow")
-            self._debounce(CallbackType.DELETED)
+            self._debounce(CallbackType.DELETED, Path(event.src_path))
 
-    def _debounce(self, action: CallbackType):
+    def _debounce(self, action: CallbackType, path: Path):
         if self.debounce_timer is not None:
             self.debounce_timer.cancel()
+
+        self.pending_events.append(CallbackEvent(action=action, path=path))
+
         self.debounce_timer = Timer(
-            self.debounce_interval, self.handle_callbacks, [action]
+            self.debounce_interval,
+            self.handle_callbacks,
         )
         self.debounce_timer.start()
 
-    def handle_callbacks(self, action: CallbackType):
+    def handle_callbacks(self):
         """
         Runs all callbacks for the given action. Since callbacks are allowed to make
         modifications to the filesystem, we temporarily disable the event handler to avoid
@@ -87,9 +105,17 @@ class ChangeEventHandler(FileSystemEventHandler):
 
         """
         self.ignore_changes = True
+
         for callback in self.callbacks:
-            if action in callback.action:
-                callback.callback()
+            valid_events = [
+                event
+                for event in self.pending_events
+                if event.action in callback.action
+            ]
+            if valid_events:
+                callback.callback(CallbackMetadata(events=valid_events))
+
+        self.pending_events = []
         self.ignore_changes = False
 
     def should_ignore_path(self, path: Path):
@@ -136,6 +162,9 @@ class PackageWatchdog:
         self.callbacks: list[CallbackDefinition] = callbacks or []
         self.run_on_bootup = run_on_bootup
 
+        self.event_handler: ChangeEventHandler | None = None
+        self.observer: Any | None = None
+
         self.check_packages_installed()
         self.get_package_paths()
 
@@ -143,28 +172,28 @@ class PackageWatchdog:
         with self.acquire_watchdog_lock():
             if self.run_on_bootup:
                 for callback_definition in self.callbacks:
-                    callback_definition.callback()
+                    callback_definition.callback(CallbackMetadata(events=[]))
 
-            event_handler = ChangeEventHandler(callbacks=self.callbacks)
-            observer = Observer()
+            self.event_handler = ChangeEventHandler(callbacks=self.callbacks)
+            self.observer = Observer()
 
             for path in self.paths:
                 secho(f"Watching {path}", fg="green")
                 if os.path.isdir(path):
-                    observer.schedule(event_handler, path, recursive=True)
+                    self.observer.schedule(self.event_handler, path, recursive=True)
                 else:
-                    observer.schedule(
-                        event_handler, os.path.dirname(path), recursive=False
+                    self.observer.schedule(
+                        self.event_handler, os.path.dirname(path), recursive=False
                     )
 
-            observer.start()
+            self.observer.start()
 
             try:
                 secho("Starting observer...")
-                observer.join()
+                self.observer.join()
             except KeyboardInterrupt:
-                observer.stop()
-                observer.join()
+                self.observer.stop()
+                self.observer.join()
 
     def check_packages_installed(self):
         for package in self.packages:
@@ -178,63 +207,9 @@ class PackageWatchdog:
     def get_package_paths(self):
         paths: list[str] = []
         for package in self.packages:
-            dist = importlib.metadata.distribution(package)
-            package_path = self.resolve_package_path(dist)
+            package_path = resolve_package_path(package)
             paths.append(str(package_path))
         self.paths = self.merge_paths(paths)
-
-    def resolve_package_path(self, dist: importlib.metadata.Distribution):
-        """
-        Given a package distribution, returns the local file directory that should be watched
-        """
-        # Recent versions of poetry install development packages (-e .) as direct URLs
-        # https://the-hitchhikers-guide-to-packaging.readthedocs.io/en/latest/introduction.html
-        # "Path configuration files have an extension of .pth, and each line must
-        # contain a single path that will be appended to sys.path."
-        package_name = dist.name.replace("-", "_").lower()
-        symbolic_links = [
-            path
-            for path in (dist.files or [])
-            if path.name.lower() == f"{package_name}.pth"
-        ]
-        dist_links = [
-            path
-            for path in (dist.files or [])
-            if path.name == "direct_url.json"
-            and re_search(
-                package_name + r"-[0-9-.]+\.dist-info", path.parent.name.lower()
-            )
-        ]
-        explicit_links = [
-            path
-            for path in (dist.files or [])
-            if path.parent.name.lower() == package_name
-            and (
-                # Sanity check that the parent is the high level project directory
-                # by looking for common base files
-                path.name == "__init__.py"
-            )
-        ]
-
-        if symbolic_links:
-            direct_url_path = symbolic_links[0]
-            return dist.locate_file(direct_url_path.read_text().strip())
-
-        if dist_links:
-            dist_link = dist_links[0]
-            direct_metadata = json_loads(dist_link.read_text())
-            package_path = "/" + direct_metadata["url"].lstrip("file://").lstrip("/")
-            return dist.locate_file(package_path)
-
-        if explicit_links:
-            # Since we found the __init__.py file for the root, we should be able to go up
-            # to the main path
-            explicit_link = explicit_links[0]
-            return dist.locate_file(explicit_link.parent)
-
-        raise ValueError(
-            f"Could not find a valid path for package {dist.name}, found files: {dist.files}"
-        )
 
     @contextmanager
     def acquire_watchdog_lock(self):
@@ -243,10 +218,9 @@ class PackageWatchdog:
         on each other or having infinitely looping file change notifications.
 
         """
-        dist = importlib.metadata.distribution(self.main_package)
-        package_path = self.resolve_package_path(dist)
+        package_path = resolve_package_path(self.main_package)
 
-        lock_path = (Path(package_path) / ".watchdog.lock").absolute()
+        lock_path = (Path(str(package_path)) / ".watchdog.lock").absolute()
         if lock_path.exists():
             raise WatchdogLockError(lock_path=lock_path)
 

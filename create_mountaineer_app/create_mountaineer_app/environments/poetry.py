@@ -15,13 +15,16 @@ class PoetryEnvironment(EnvironmentBase):
     """
 
     def __init__(self):
+        super().__init__()
+
         # While running our script within poetry, poetry will inject a POETRY_ACTIVE
         # environment variable. This will cause poetry to only install within the
-        # current directory. We want to avoid tthis since the path we're given could be
+        # current directory. We want to avoid this since the path we're given could be
         # anywhere in the system. We'll limit the scope of the new poetry subprocess to
         # only the PATH environment variable.
         self.limited_scope_env = {
             "PATH": environ["PATH"],
+            **self.global_env,
         }
 
     def has_provider(self):

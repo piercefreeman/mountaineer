@@ -1,15 +1,28 @@
 from contextlib import asynccontextmanager
 from functools import partial, wraps
 from inspect import Parameter, isawaitable, signature
-from typing import TYPE_CHECKING, Any, Callable, Type, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Awaitable,
+    Callable,
+    Coroutine,
+    ParamSpec,
+    Type,
+    TypeVar,
+    overload,
+)
 from urllib.parse import urlparse
 
 from fastapi import Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.routing import Match
 
 from mountaineer.actions.fields import (
     FunctionActionType,
+    ResponseModelType,
+    extract_response_model_from_signature,
     get_function_metadata,
     handle_explicit_responses,
     init_function_metadata,
@@ -22,26 +35,29 @@ from mountaineer.render import FieldClassDefinition
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
 
+P = ParamSpec("P")
+R = TypeVar("R", bound=BaseModel | JSONResponse | None)
+
 
 @overload
 def sideeffect(
     *,
-    # We need to typehint reload to be Any, because during typechecking our Model.attribute will just
-    # yield whatever the typehint of that field is. Only at runtime does it become a FieldClassDefinition
     reload: tuple[Any, ...] | None = None,
     response_model: Type[BaseModel] | None = None,
     exception_models: list[Type[APIException]] | None = None,
     experimental_render_reload: bool | None = None,
-) -> Callable[[Callable], Callable]:
+) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
     ...
 
 
 @overload
-def sideeffect(func: Callable) -> Callable:
+def sideeffect(
+    func: Callable[P, R | Coroutine[Any, Any, R]],
+) -> Callable[P, Awaitable[R]]:
     ...
 
 
-def sideeffect(*args, **kwargs):
+def sideeffect(*args, **kwargs):  # type: ignore
     """
     Mark a function as causing a sideeffect to the data. This will force a reload of the full (or partial) server state
     and sync these changes down to the client page.
@@ -66,6 +82,15 @@ def sideeffect(*args, **kwargs):
         experimental_render_reload: bool = False,
     ):
         def wrapper(func: Callable):
+            passthrough_model, response_type = extract_response_model_from_signature(
+                func, response_model
+            )
+
+            if response_type == ResponseModelType.ITERATOR_RESPONSE:
+                raise ValueError(
+                    "Sideeffect functions cannot return an iterator response. Use a normal response model instead."
+                )
+
             original_sig = signature(func)
             function_needs_request = "request" in original_sig.parameters
 
@@ -147,8 +172,9 @@ def sideeffect(*args, **kwargs):
 
             metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
             metadata.reload_states = reload
-            metadata.passthrough_model = response_model
+            metadata.passthrough_model = passthrough_model
             metadata.exception_models = exception_models
+            metadata.media_type = None  # Use the default json response type
             return inner
 
         return wrapper

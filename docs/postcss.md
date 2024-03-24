@@ -8,7 +8,6 @@ PostCSS support is handled as a buildtime plugin with mountaineer. It's disabled
 from mountaineer.js_compiler.postcss import PostCSSBundler
 
 controller = AppController(
-    view_root=get_view_path(""),
     custom_builders=[
         PostCSSBundler(),
     ],

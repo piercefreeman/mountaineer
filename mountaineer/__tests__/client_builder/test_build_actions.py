@@ -16,6 +16,7 @@ from mountaineer.client_builder.openapi import (
     ParameterLocationType,
     URLParameterDefinition,
 )
+from mountaineer.constants import STREAM_EVENT_TYPE
 
 
 def test_convert():
@@ -59,15 +60,17 @@ def test_convert():
 
 EXAMPLE_REQUEST_BODY = ContentBodyDefinition(
     content_type="application/json",
-    content_schema=ContentDefinition(
-        schema_ref=ContentDefinition.Reference(ref="#/components/schemas/ExampleModel")
+    content_schema=ContentDefinition.from_meta(
+        schema_ref=ContentDefinition.Reference.from_meta(
+            ref="#/components/schemas/ExampleModel"
+        )
     ),
 )
 
 EXAMPLE_RESPONSE_200 = ContentBodyDefinition(
     content_type="application/json",
-    content_schema=ContentDefinition(
-        schema_ref=ContentDefinition.Reference(
+    content_schema=ContentDefinition.from_meta(
+        schema_ref=ContentDefinition.Reference.from_meta(
             ref="#/components/schemas/ExampleResponseModel"
         )
     ),
@@ -75,8 +78,8 @@ EXAMPLE_RESPONSE_200 = ContentBodyDefinition(
 
 EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
     content_type="application/json",
-    content_schema=ContentDefinition(
-        schema_ref=ContentDefinition.Reference(
+    content_schema=ContentDefinition.from_meta(
+        schema_ref=ContentDefinition.Reference.from_meta(
             ref="#/components/schemas/HTTPValidationError"
         )
     ),
@@ -136,9 +139,9 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                 },
                 parameters=[
                     # All path parameters are required
-                    URLParameterDefinition(
+                    URLParameterDefinition.from_meta(
                         name="item_id",
-                        schema_ref=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty.from_meta(
                             title="",
                             variable_type=OpenAPISchemaType.STRING,
                         ),
@@ -146,9 +149,9 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         required=True,
                     ),
                     # Required query parameter
-                    URLParameterDefinition(
+                    URLParameterDefinition.from_meta(
                         name="query_param_required_id",
-                        schema_ref=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty.from_meta(
                             title="",
                             variable_type=OpenAPISchemaType.STRING,
                         ),
@@ -156,9 +159,9 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         required=True,
                     ),
                     # Optional query parameter
-                    URLParameterDefinition(
+                    URLParameterDefinition.from_meta(
                         name="query_param_optional_id",
-                        schema_ref=OpenAPIProperty(
+                        schema_ref=OpenAPIProperty.from_meta(
                             title="",
                             variable_type=OpenAPISchemaType.STRING,
                         ),
@@ -223,4 +226,121 @@ def test_build_action(
 
     # Order doesn't matter in the imports. We assume they're all coming from the locally defined
     # /models.ts source file.
+    assert set(build_imports) == set(expected_imports)
+
+
+@pytest.mark.parametrize(
+    "method_name,url,definition,expected_function,expected_imports",
+    [
+        (
+            "my_method_fn",
+            "/testing/url",
+            ActionDefinition(
+                action_type=ActionType.POST,
+                summary="",
+                operationId="",
+                requestBody=EXAMPLE_REQUEST_BODY,
+                responses={
+                    "200": EXAMPLE_RESPONSE_200,
+                    "422": EXAMPLE_RESPONSE_400,
+                },
+                media_type=STREAM_EVENT_TYPE,
+            ),
+            (
+                """
+                export const my_method_fn = (
+                    {requestBody}: {requestBody: ExampleModel}
+                ): Promise<AsyncGenerator<ExampleResponseModel, void, unknown>> => {
+                    return __request({
+                        'method': 'POST',
+                        'url': '/testing/url',
+                        'errors': {
+                            422: HTTPValidationErrorException
+                        },
+                        'body': requestBody,
+                        'mediaType': 'application/json',
+                        'eventStreamResponse': true
+                    });
+                }
+                """
+            ),
+            [
+                "ExampleModel",
+                "ExampleResponseModel",
+            ],
+        ),
+    ],
+)
+def test_build_server_side_event_action(
+    url: str,
+    method_name: str,
+    definition: ActionDefinition,
+    expected_function: str,
+    expected_imports: list[str],
+):
+    builder = OpenAPIToTypescriptActionConverter()
+    built_function, build_imports = builder.build_action(url, definition, method_name)
+    assert re_sub(r"\s+", "", built_function) == re_sub(r"\s+", "", expected_function)
+    assert set(build_imports) == set(expected_imports)
+
+
+@pytest.mark.parametrize(
+    "method_name,url,definition,expected_function,expected_imports",
+    [
+        (
+            "my_method_fn",
+            "/testing/url",
+            ActionDefinition(
+                action_type=ActionType.POST,
+                summary="",
+                operationId="",
+                requestBody=EXAMPLE_REQUEST_BODY,
+                responses={
+                    "200": ContentBodyDefinition(
+                        content_type="application/json",
+                        content_schema=ContentDefinition.from_meta(
+                            schema_ref=ContentDefinition.Reference.from_meta(
+                                # We won't have a response_model for raw responses
+                                ref=""
+                            )
+                        ),
+                    ),
+                    "422": EXAMPLE_RESPONSE_400,
+                },
+                is_raw_response=True,
+            ),
+            (
+                """
+                export const my_method_fn = (
+                    {requestBody}: {requestBody: ExampleModel}
+                ): Promise<Response> => {
+                    return __request({
+                        'method': 'POST',
+                        'url': '/testing/url',
+                        'errors': {
+                            422: HTTPValidationErrorException
+                        },
+                        'body': requestBody,
+                        'mediaType': 'application/json',
+                        'outputFormat': 'raw'
+                    });
+                }
+                """
+            ),
+            [
+                "ExampleModel",
+            ],
+        ),
+    ],
+)
+def test_build_raw_response_action(
+    url: str,
+    method_name: str,
+    definition: ActionDefinition,
+    expected_function: str,
+    expected_imports: list[str],
+):
+    builder = OpenAPIToTypescriptActionConverter()
+    built_function, build_imports = builder.build_action(url, definition, method_name)
+    assert re_sub(r"\s+", "", built_function) == re_sub(r"\s+", "", expected_function)
     assert set(build_imports) == set(expected_imports)

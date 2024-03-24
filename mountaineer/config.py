@@ -1,7 +1,9 @@
 from contextlib import contextmanager
 
 from pydantic._internal._model_construction import ModelMetaclass
+from pydantic.fields import Field
 from pydantic_settings import BaseSettings
+from typing_extensions import dataclass_transform
 
 
 class ConfigMeta(ModelMetaclass):
@@ -11,7 +13,11 @@ class ConfigMeta(ModelMetaclass):
         return instance
 
 
+@dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ConfigBase(BaseSettings, metaclass=ConfigMeta):
+    # Name of the python package
+    PACKAGE: str | None = None
+
     model_config = {"frozen": True}
 
 
