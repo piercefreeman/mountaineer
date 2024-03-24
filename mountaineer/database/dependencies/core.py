@@ -11,21 +11,17 @@ from mountaineer.dependencies import CoreDependencies
 from mountaineer.logging import LOGGER
 
 # We share the connection pool across the entire process
-GLOBAL_ENGINE: AsyncEngine | None = None
+GLOBAL_ENGINE: dict[str, AsyncEngine] = {}
 
 
-async def get_db(
-    config: DatabaseConfig = Depends(
-        CoreDependencies.get_config_with_type(DatabaseConfig)
-    ),
-):
+def engine_from_config(config: DatabaseConfig, force_new: bool = False):
     global GLOBAL_ENGINE
 
     if not config.SQLALCHEMY_DATABASE_URI:
-        raise RuntimeError("No SQLALCHEMY_DATABASE_URI set")
+        raise RuntimeError(f"No SQLALCHEMY_DATABASE_URI set: {config}")
 
-    if GLOBAL_ENGINE is None:
-        GLOBAL_ENGINE = create_async_engine(
+    if force_new or str(config.SQLALCHEMY_DATABASE_URI) not in GLOBAL_ENGINE:
+        GLOBAL_ENGINE[str(config.SQLALCHEMY_DATABASE_URI)] = create_async_engine(
             str(config.SQLALCHEMY_DATABASE_URI),
             poolclass=(
                 NullPool
@@ -33,7 +29,16 @@ async def get_db(
                 else AsyncAdaptedQueuePool
             ),
         )
-    return GLOBAL_ENGINE
+
+    return GLOBAL_ENGINE[str(config.SQLALCHEMY_DATABASE_URI)]
+
+
+async def get_db(
+    config: DatabaseConfig = Depends(
+        CoreDependencies.get_config_with_type(DatabaseConfig)
+    ),
+):
+    return engine_from_config(config)
 
 
 async def get_db_session(
@@ -54,5 +59,6 @@ async def get_db_session(
 async def unregister_global_engine():
     global GLOBAL_ENGINE
     if GLOBAL_ENGINE is not None:
-        await GLOBAL_ENGINE.dispose()
-        GLOBAL_ENGINE = None
+        for engine in GLOBAL_ENGINE.values():
+            await engine.dispose()
+        GLOBAL_ENGINE = {}
