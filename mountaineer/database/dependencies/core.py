@@ -49,3 +49,10 @@ async def get_db_session(
                 f"Error in user code, rolling back uncommitted db changes: {e}"
             )
             raise
+
+
+async def unregister_global_engine():
+    global GLOBAL_ENGINE
+    if GLOBAL_ENGINE is not None:
+        await GLOBAL_ENGINE.dispose()
+        GLOBAL_ENGINE = None
