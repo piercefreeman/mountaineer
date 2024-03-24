@@ -142,3 +142,21 @@ def test_passthrough_fastapi_args():
 
     with TestClient(app.app):
         assert did_run_lifespan
+
+
+def test_unique_controller_names():
+    def make_controller(unique_url: str):
+        class ExampleController(ControllerBase):
+            url = unique_url
+            view_path = unique_url
+
+            def render(self) -> None:
+                pass
+
+        return ExampleController
+
+    app = AppController(view_root=Path(""))
+    app.register(make_controller("/example")())
+
+    with pytest.raises(ValueError, match="already registered"):
+        app.register(make_controller("/example2")())
