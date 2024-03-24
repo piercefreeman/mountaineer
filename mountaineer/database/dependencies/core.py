@@ -1,8 +1,13 @@
 from fastapi import Depends
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
+from sqlalchemy import AdaptedQueuePool, NullPool
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-from mountaineer.database.config import DatabaseConfig
-from mountaineer.dependencies import CoreDependencies, DependenciesBase
+from mountaineer.database.config import DatabaseConfig, PoolType
+from mountaineer.dependencies import CoreDependencies
 from mountaineer.logging import LOGGER
 
 # We share the connection pool across the entire process
@@ -20,7 +25,12 @@ async def get_db(
         raise RuntimeError("No SQLALCHEMY_DATABASE_URI set")
 
     if GLOBAL_ENGINE is None:
-        GLOBAL_ENGINE = create_async_engine(str(config.SQLALCHEMY_DATABASE_URI), poolclass=NullPool)
+        GLOBAL_ENGINE = create_async_engine(
+            str(config.SQLALCHEMY_DATABASE_URI),
+            poolclass=NullPool
+            if config.DATABASE_POOL_TYPE == PoolType.NULL
+            else AdaptedQueuePool,
+        )
     return GLOBAL_ENGINE
 
 
