@@ -188,9 +188,16 @@ def fuse_metadata_to_response_typehint(
         ):
             # Make sure this class actually aligns to the response model
             # If not the user mis-specified the reload states
+            #
+            # We allow the reload state to be a subclass of the render model, in case the method
+            # was originally defined in the superclass. This will result in us sending a subset
+            # of the child controller's fields - but since our differential update is based on the
+            # original state and modified, this will resolve correctly for the client
             reload_classes = {field.root_model for field in metadata.reload_states}
             reload_keys = {field.key for field in metadata.reload_states}
-            if reload_classes != {render_model}:
+            if len(reload_classes) != 1 or not issubclass(
+                render_model, next(iter(reload_classes))
+            ):
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )
