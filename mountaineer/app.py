@@ -1,7 +1,8 @@
+from collections import defaultdict
 from functools import wraps
 from inspect import isclass, signature
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Type
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
@@ -16,6 +17,7 @@ from mountaineer.actions import (
     fuse_metadata_to_response_typehint,
     init_function_metadata,
 )
+from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
@@ -35,9 +37,24 @@ class ControllerDefinition(BaseModel):
     # Dynamically generated function that actually renders the html content
     # This is a hybrid between render() and _generate_html()
     view_route: Callable
+    render_router: APIRouter
 
     model_config = {
         "arbitrary_types_allowed": True,
+    }
+
+    def get_url_for_metadata(self, metadata: FunctionMetadata):
+        return f"{self.url_prefix}/{metadata.function_name.strip('/')}"
+
+
+class ExceptionSchema(BaseModel):
+    status_code: int
+    schema_name: str
+    schema_name_long: str
+    schema_value: dict[str, Any]
+
+    model_config = {
+        "extra": "forbid",
     }
 
 
@@ -207,7 +224,6 @@ class AppController:
         # This is useful in cases where we need to do a render()->FastAPI lookup
         view_router = APIRouter()
         view_router.get(controller.url)(generate_controller_html)
-        render_metadata.render_router = view_router
         self.app.include_router(view_router)
 
         # Create a wrapper router for each controller to hold the side-effects
@@ -241,10 +257,6 @@ class AppController:
                 if metadata.get_media_type():
                     openapi_extra["media_type"] = metadata.get_media_type()
 
-            metadata.url = (
-                f"{controller_url_prefix}/{metadata.function_name.strip('/')}"
-            )
-
             controller_api.post(
                 f"/{metadata.function_name}", openapi_extra=openapi_extra
             )(fn)
@@ -260,14 +272,16 @@ class AppController:
 
         LOGGER.debug(f"Did register controller: {controller_name}")
 
-        self.controllers.append(
-            ControllerDefinition(
-                controller=controller,
-                router=controller_api,
-                view_route=generate_controller_html,
-                url_prefix=controller_url_prefix,
-            )
+        controller_definition = ControllerDefinition(
+            controller=controller,
+            router=controller_api,
+            view_route=generate_controller_html,
+            url_prefix=controller_url_prefix,
+            render_router=view_router,
         )
+        controller.definition = controller_definition
+
+        self.controllers.append(controller_definition)
         self.controller_names.add(controller_name)
 
     async def handle_exception(self, request: Request, exc: APIException):
@@ -289,47 +303,81 @@ class AppController:
             routes=(routes if routes is not None else self.app.routes),
         )
 
-        # Loop over the registered controllers and get the actions
-        exceptions_by_url = {}
+        #
+        # Exception injection
+        #
+
+        # Loop over the registered controllers and get the action exceptions
+        exceptions_by_url: dict[str, list[ExceptionSchema]] = {}
         for controller_definition in self.controllers:
             for (
                 _,
                 _,
                 metadata,
             ) in controller_definition.controller._get_client_functions():
+                url = controller_definition.get_url_for_metadata(metadata)
+                # Not included in the specified routes, we should ignore this controller
+                if url not in openapi_base["paths"]:
+                    continue
+
                 exceptions_models = metadata.get_exception_models()
                 if not exceptions_models:
                     continue
-                exceptions_by_url[metadata.url] = [
-                    (
-                        model.status_code,
-                        model.InternalModel.__name__,
-                        model.InternalModel.model_json_schema(),
-                    )
-                    for model in exceptions_models
+
+                exceptions_by_url[url] = [
+                    self._format_exception_model(exception_model)
+                    for exception_model in exceptions_models
                 ]
 
-        # Add to the schemas dictionary first
-        # TODO: Add validation that throws an error on duplicate names
-        # TODO: Add validation that throws an error for duplicate error codes
-        for url, exception_payloads in exceptions_by_url.items():
-            # Not included in the specified routes, we should ignore this controller
-            if url not in openapi_base["paths"]:
-                continue
+        # Users are allowed to reference the same schema name multiple times so long
+        # as they have the same value. If they use conflicting values we'll have
+        # to use the long name instead of the short module name to avoid conflicting
+        # schema definitions.
+        schema_names_to_long: defaultdict[str, set[str]] = defaultdict(set)
+        for exception_payloads in exceptions_by_url.values():
+            for payload in exception_payloads:
+                schema_names_to_long[payload.schema_name].add(payload.schema_name_long)
 
-            for status_code, schema_name, schema in exception_payloads:
+        duplicate_schema_names = {
+            schema_name
+            for schema_name, schema_name_longs in schema_names_to_long.items()
+            if len(schema_name_longs) > 1
+        }
+
+        for url, exception_payloads in exceptions_by_url.items():
+            existing_status_codes: set[int] = set()
+
+            for payload in exception_payloads:
+                # Validate the exception state doesn't override existing values
+                # Status codes are local to this particular endpoint but schema names
+                # are global because they're placed in the global components section
+                if payload.status_code in existing_status_codes:
+                    raise ValueError(
+                        f"Duplicate status code {payload.status_code} for {url}"
+                    )
+
+                schema_name = (
+                    payload.schema_name
+                    if payload.schema_name not in duplicate_schema_names
+                    else payload.schema_name_long
+                )
+
                 other_definitions = {
                     definition_name: self._update_ref_path(definition)
-                    for definition_name, definition in schema.pop("$defs", {}).items()
+                    for definition_name, definition in payload.schema_value.pop(
+                        "$defs", {}
+                    ).items()
                 }
                 openapi_base["components"]["schemas"].update(other_definitions)
                 openapi_base["components"]["schemas"][
                     schema_name
-                ] = self._update_ref_path(schema)
+                ] = self._update_ref_path(payload.schema_value)
 
                 # All actions are "posts" by definition
-                openapi_base["paths"][url]["post"]["responses"][str(status_code)] = {
-                    "description": f"Custom Error: {schema_name}",
+                openapi_base["paths"][url]["post"]["responses"][
+                    str(payload.status_code)
+                ] = {
+                    "description": f"Custom Error: {payload.schema_name}",
                     "content": {
                         "application/json": {
                             "schema": {"$ref": f"#/components/schemas/{schema_name}"}
@@ -337,7 +385,23 @@ class AppController:
                     },
                 }
 
+                existing_status_codes.add(payload.status_code)
+
         return openapi_base
+
+    def _format_exception_model(self, model: Type[APIException]) -> ExceptionSchema:
+        # By default all fields are optional. Since we are sending them
+        # from the server we are guaranteed they will either be explicitly
+        # provided or fallback to their defaults
+        json_schema = model.InternalModel.model_json_schema()
+        json_schema["required"] = list(json_schema["properties"].keys())
+
+        return ExceptionSchema(
+            status_code=model.status_code,
+            schema_name=model.InternalModel.__name__,
+            schema_name_long=f"{model.InternalModel.__module__}.{model.InternalModel.__name__}",
+            schema_value=json_schema,
+        )
 
     def _update_ref_path(self, schema: Any):
         """
@@ -364,3 +428,11 @@ class AppController:
             return [self._update_ref_path(value) for value in schema]
         else:
             return schema
+
+    def definition_for_controller(
+        self, controller: ControllerBase
+    ) -> ControllerDefinition:
+        for controller_definition in self.controllers:
+            if controller_definition.controller == controller:
+                return controller_definition
+        raise ValueError(f"Controller {controller} not found")

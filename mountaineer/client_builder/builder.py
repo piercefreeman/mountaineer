@@ -138,8 +138,8 @@ class ClientBuilder:
                 ) in self.openapi_schema_converter.convert_schema_to_typescript(
                     render_base,
                     # Render models are sent server -> client, so we know they'll provide all their
-                    # default values in the initial payload
-                    defaults_are_required=True,
+                    # values in the initial payload
+                    all_fields_required=True,
                 ).items():
                     schemas[schema_name] = component
 
@@ -158,6 +158,7 @@ class ClientBuilder:
                     # This is in contrast to the render() where we always know the response
                     # payloads should be force required.
                     defaults_are_required=False,
+                    all_fields_required=False,
                 )
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
@@ -226,7 +227,7 @@ class ClientBuilder:
             root_api_import_path = generate_relative_import(
                 controller_links_path, root_common_handler
             )
-            render_route = get_function_metadata(controller.render).get_render_router()
+            render_route = controller_definition.render_router
             render_openapi = self.app.generate_openapi(
                 routes=render_route.routes,
             )

@@ -23,7 +23,6 @@ from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
     extract_response_model_from_signature,
-    get_function_metadata,
     handle_explicit_responses,
     init_function_metadata,
 )
@@ -222,12 +221,18 @@ async def get_render_parameters(
         }
     )
 
+    if not controller.definition:
+        raise RuntimeError(
+            "Controller definition is not set. This might indicate you're calling a"
+            " sideeffect from outside of an AppController context."
+        )
+
     # Follow starlette's original logic to resolve routes, since this provides us the necessary
     # metadata about URL paths. Unlike in the general-purpose URL resolution case, however,
     # we already know which route should be resolved so we can shortcut having to
     # match non-relevant paths.
     # https://github.com/encode/starlette/blob/5c43dde0ec0917673bb280bcd7ab0c37b78061b7/starlette/routing.py#L544
-    for route in get_function_metadata(controller.render).get_render_router().routes:
+    for route in controller.definition.render_router.routes:
         match, child_scope = route.matches(view_request.scope)
         if match != Match.FULL:
             raise RuntimeError(

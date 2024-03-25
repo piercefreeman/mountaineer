@@ -4,7 +4,18 @@ from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import monotonic_ns
-from typing import Any, Callable, Coroutine, Generic, Iterable, Mapping, ParamSpec, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Coroutine,
+    Generic,
+    Iterable,
+    Mapping,
+    Optional,
+    ParamSpec,
+    cast,
+)
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
@@ -28,6 +39,9 @@ from mountaineer.render import (
 )
 from mountaineer.ssr import V8RuntimeError, render_ssr
 
+if TYPE_CHECKING:
+    from mountaineer.app import ControllerDefinition
+
 RenderInput = ParamSpec("RenderInput")
 
 
@@ -39,6 +53,10 @@ class ControllerBase(ABC, Generic[RenderInput]):
     view_path: str | ManagedViewPath
 
     bundled_scripts: list[str]
+
+    # Upon registration, the AppController will mount a wrapper
+    # with state metadata
+    definition: Optional["ControllerDefinition"] = None
 
     def __init__(
         self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0
@@ -250,6 +268,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         """
         # Iterate over all the functions in this class and see which ones have a _metadata attribute
+        # We specifically traverse through the MRO, except the last one (object class)
         for name, func in getmembers(self, predicate=ismethod):
             try:
                 metadata = get_function_metadata(func)

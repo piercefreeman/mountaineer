@@ -24,6 +24,9 @@ class ParameterLocationType(StrEnum):
     PATH = "path"
     QUERY = "query"
 
+    # https://swagger.io/docs/specification/authentication/cookie-authentication/
+    COOKIE = "cookie"
+
 
 class ActionType(StrEnum):
     GET = "get"

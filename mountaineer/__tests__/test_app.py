@@ -75,6 +75,139 @@ def test_generate_openapi():
     }
 
 
+def test_format_exception_model():
+    class ExampleException(APIException):
+        status_code = 401
+        value: str
+
+    app = AppController(view_root=Path(""))
+    formatted_exception = app._format_exception_model(ExampleException)
+
+    assert formatted_exception.status_code == 401
+    assert formatted_exception.schema_name == "ExampleException"
+    assert (
+        formatted_exception.schema_name_long
+        == "mountaineer.__tests__.test_app.ExampleException"
+    )
+    assert set(formatted_exception.schema_value["required"]) == {
+        "value",
+        # Inherited from the superclass
+        "status_code",
+        "detail",
+        "headers",
+    }
+
+
+def test_handle_conflicting_exception_names():
+    class Obj1(APIException):
+        status_code = 401
+        value: str
+
+    class Obj2(APIException):
+        status_code = 404
+        value: str
+
+    # Since we don't actually want to define these fake
+    # modules we just override it at runtime
+    Obj1.InternalModel.__name__ = "ExampleException"
+    Obj1.InternalModel.__module__ = "mountaineer.__tests__.test_1"
+    Obj2.InternalModel.__name__ = "ExampleException"
+    Obj2.InternalModel.__module__ = "mountaineer.__tests__.test_2"
+
+    class ExampleController(ControllerBase):
+        url = "/example"
+        view_path = "/example.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough(exception_models=[Obj1, Obj2])
+        def test_exception_action(self) -> None:
+            pass
+
+    app = AppController(view_root=Path(""))
+    app.register(ExampleController())
+
+    openapi_spec = app.generate_openapi()
+    openapi_definition = OpenAPIDefinition(**openapi_spec)
+
+    assert openapi_definition.components.schemas.keys() == {
+        "TestExceptionActionResponse",
+        "mountaineer.__tests__.test_1.ExampleException",
+        "mountaineer.__tests__.test_2.ExampleException",
+    }
+
+
+def test_inherit_parent_spec():
+    """
+    Ensure we can sniff client functions from the current class
+    and the superclasses.
+
+    """
+
+    class ExampleException(APIException):
+        status_code = 404
+        value: str
+
+    class ParentController(ControllerBase):
+        url = "/parent"
+        view_path = "/parent.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough(exception_models=[ExampleException])
+        def parent_function(self) -> None:
+            pass
+
+    class ChildController(ParentController):
+        url = "/child"
+        view_path = "/child.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough
+        def client_function(self) -> None:
+            pass
+
+    parent_controller = ParentController()
+    child_controller = ChildController()
+
+    app = AppController(view_root=Path(""))
+    app.register(parent_controller)
+    app.register(child_controller)
+
+    openapi_spec = app.generate_openapi()
+    openapi_definition = OpenAPIDefinition(**openapi_spec)
+
+    # Test that we inherited the parent function
+    assert (
+        "404"
+        in openapi_definition.paths["/internal/api/parent_controller/parent_function"]
+        .actions[0]
+        .responses
+    )
+    assert (
+        "404"
+        in openapi_definition.paths["/internal/api/child_controller/parent_function"]
+        .actions[0]
+        .responses
+    )
+
+    # Test that the controller definitions remain separate
+    assert parent_controller.definition
+    assert child_controller.definition
+
+    parent_routes = parent_controller.definition.render_router.routes
+    child_routes = child_controller.definition.render_router.routes
+
+    assert len(parent_routes) == 1
+    assert parent_routes[0].path == "/parent"  # type: ignore
+    assert len(child_routes) == 1
+    assert child_routes[0].path == "/child"  # type: ignore
+
+
 def test_update_ref_path():
     app = AppController(view_root=Path(""))
 

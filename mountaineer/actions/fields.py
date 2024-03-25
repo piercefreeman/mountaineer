@@ -18,7 +18,6 @@ from typing import (
 )
 
 import starlette.responses
-from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from inflection import camelize
 from pydantic import BaseModel, create_model
@@ -69,9 +68,7 @@ class FunctionMetadata(BaseModel):
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
 
     # Inserted by the render decorator
-    url: str | MountaineerUnsetValue = MountaineerUnsetValue()
     return_model: Type[BaseModel] | MountaineerUnsetValue = MountaineerUnsetValue()
-    render_router: APIRouter | MountaineerUnsetValue = MountaineerUnsetValue()
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -111,20 +108,10 @@ class FunctionMetadata(BaseModel):
     def get_is_raw_response(self) -> bool:
         return self.is_raw_response
 
-    def get_url(self) -> str:
-        if isinstance(self.url, MountaineerUnsetValue):
-            raise ValueError("URL not set")
-        return self.url
-
     def get_return_model(self) -> Type[BaseModel]:
         if isinstance(self.return_model, MountaineerUnsetValue):
             raise ValueError("Return model not set")
         return self.return_model
-
-    def get_render_router(self) -> APIRouter:
-        if isinstance(self.render_router, MountaineerUnsetValue):
-            raise ValueError("Render router not set")
-        return self.render_router
 
 
 METADATA_ATTRIBUTE = "_mountaineer_metadata"
@@ -194,9 +181,16 @@ def fuse_metadata_to_response_typehint(
         ):
             # Make sure this class actually aligns to the response model
             # If not the user mis-specified the reload states
+            #
+            # We allow the reload state to be a subclass of the render model, in case the method
+            # was originally defined in the superclass. This will result in us sending a subset
+            # of the child controller's fields - but since our differential update is based on the
+            # original state and modified, this will resolve correctly for the client
             reload_classes = {field.root_model for field in metadata.reload_states}
             reload_keys = {field.key for field in metadata.reload_states}
-            if reload_classes != {render_model}:
+            if len(reload_classes) != 1 or not issubclass(
+                render_model, next(iter(reload_classes))
+            ):
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )

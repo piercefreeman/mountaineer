@@ -42,9 +42,7 @@ def test_markup_passthrough():
     assert metadata.function_name == "get_external_data"
     assert isinstance(metadata.reload_states, MountaineerUnsetValue)
     assert isinstance(metadata.render_model, MountaineerUnsetValue)
-    assert isinstance(metadata.url, MountaineerUnsetValue)
     assert isinstance(metadata.return_model, MountaineerUnsetValue)
-    assert isinstance(metadata.render_router, MountaineerUnsetValue)
 
 
 class ExampleRenderModel(RenderBase):
@@ -171,7 +169,10 @@ async def test_can_call_iterable():
     assert isinstance(return_value_sync, StreamingResponse)
 
     # StreamingResponses are intended to be read by an ASGI server, so we'll use the TestClient to simulate one instead of calling directly
-    passthrough_url = get_function_metadata(controller.get_data).get_url()
+    controller_definition = app.definition_for_controller(controller)
+    passthrough_url = controller_definition.get_url_for_metadata(
+        get_function_metadata(controller.get_data)
+    )
 
     client = TestClient(app.app)
     lines: list[str] = []
@@ -208,9 +209,13 @@ async def test_raw_response():
     controller = TestController()
     app.register(controller)
 
+    controller_definition = app.definition_for_controller(controller)
+
     client = TestClient(app.app)
     response = client.post(
-        get_function_metadata(controller.call_passthrough).get_url(),
+        controller_definition.get_url_for_metadata(
+            get_function_metadata(controller.call_passthrough)
+        ),
         json={},
     )
     # No "passthrough" wrapping

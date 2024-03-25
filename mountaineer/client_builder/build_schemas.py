@@ -54,7 +54,10 @@ class OpenAPIToTypescriptSchemaConverter:
         return synthetic_model.model_json_schema()
 
     def convert_schema_to_typescript(
-        self, parsed_spec: OpenAPISchema, defaults_are_required: bool = False
+        self,
+        parsed_spec: OpenAPISchema,
+        defaults_are_required: bool = False,
+        all_fields_required: bool = False,
     ):
         # Fetch all the dependent models
         all_models = list(self.gather_all_models(parsed_spec))
@@ -64,6 +67,7 @@ class OpenAPIToTypescriptSchemaConverter:
                 model,
                 base=parsed_spec,
                 defaults_are_required=defaults_are_required,
+                all_fields_required=all_fields_required,
             )
             for model in all_models
             if model.title and model.title.strip()
@@ -124,10 +128,14 @@ class OpenAPIToTypescriptSchemaConverter:
         model: OpenAPIProperty,
         base: BaseModel,
         defaults_are_required: bool,
+        all_fields_required: bool,
     ):
         if model.variable_type == OpenAPISchemaType.OBJECT:
             return self._convert_object_to_interface(
-                model, base, defaults_are_required=defaults_are_required
+                model,
+                base,
+                defaults_are_required=defaults_are_required,
+                all_fields_required=all_fields_required,
             )
         elif model.enum is not None:
             return self._convert_enum_to_interface(model)
@@ -135,7 +143,11 @@ class OpenAPIToTypescriptSchemaConverter:
             raise ValueError(f"Unknown model type: {model}")
 
     def _convert_object_to_interface(
-        self, model: OpenAPIProperty, base: BaseModel, defaults_are_required: bool
+        self,
+        model: OpenAPIProperty,
+        base: BaseModel,
+        defaults_are_required: bool,
+        all_fields_required: bool,
     ):
         fields = []
 
@@ -159,9 +171,12 @@ class OpenAPIToTypescriptSchemaConverter:
                 yield map_openapi_type_to_ts(prop.variable_type)
 
         for prop_name, prop_details in model.properties.items():
-            is_required = (prop_name in model.required) or (
-                defaults_are_required and prop_details.default is not None
+            is_required = (
+                (prop_name in model.required)
+                or (defaults_are_required and prop_details.default is not None)
+                or all_fields_required
             )
+
             ts_type = (
                 map_openapi_type_to_ts(prop_details.variable_type)
                 if prop_details.variable_type

@@ -29,14 +29,19 @@ class OpenAPIToTypescriptLinkConverter:
             )
 
         # Extract metadata from this GET definition to fill our link generation
-        render_url, render_endpoint_definition = list(openapi_spec.paths.items())[0]
-        get_action = next(
-            (
-                endpoint
-                for endpoint in render_endpoint_definition.actions
-                if endpoint.action_type == ActionType.GET
+        # We require a single get action
+        render_payloads = [
+            (render_url, endpoint)
+            for render_url, render_endpoint_definition in openapi_spec.paths.items()
+            for endpoint in render_endpoint_definition.actions
+            if endpoint.action_type == ActionType.GET
+        ]
+        if len(render_payloads) != 1:
+            raise ValueError(
+                f"Expected exactly one GET action in render router, got {render_payloads}"
             )
-        )
+
+        render_url, get_action = render_payloads[0]
 
         input_parameters: dict[str, Any] = {}
         typehint_parameters: dict[str, Any] = {}

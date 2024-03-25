@@ -129,7 +129,10 @@ def test_python_to_typescript_types(
 
     converter = OpenAPIToTypescriptSchemaConverter()
     interface_definition = converter.convert_schema_to_interface(
-        schema, base=schema, defaults_are_required=False
+        schema,
+        base=schema,
+        defaults_are_required=False,
+        all_fields_required=False,
     )
 
     for expected_str in expected_typescript_types:
