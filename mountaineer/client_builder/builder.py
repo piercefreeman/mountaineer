@@ -227,7 +227,7 @@ class ClientBuilder:
             root_api_import_path = generate_relative_import(
                 controller_links_path, root_common_handler
             )
-            render_route = get_function_metadata(controller.render).get_render_router()
+            render_route = controller_definition.render_router
             render_openapi = self.app.generate_openapi(
                 routes=render_route.routes,
             )

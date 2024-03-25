@@ -43,7 +43,6 @@ def test_markup_passthrough():
     assert isinstance(metadata.reload_states, MountaineerUnsetValue)
     assert isinstance(metadata.render_model, MountaineerUnsetValue)
     assert isinstance(metadata.return_model, MountaineerUnsetValue)
-    assert isinstance(metadata.render_router, MountaineerUnsetValue)
 
 
 class ExampleRenderModel(RenderBase):

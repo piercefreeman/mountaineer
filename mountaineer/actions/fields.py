@@ -18,7 +18,6 @@ from typing import (
 )
 
 import starlette.responses
-from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from inflection import camelize
 from pydantic import BaseModel, create_model
@@ -70,7 +69,6 @@ class FunctionMetadata(BaseModel):
 
     # Inserted by the render decorator
     return_model: Type[BaseModel] | MountaineerUnsetValue = MountaineerUnsetValue()
-    render_router: APIRouter | MountaineerUnsetValue = MountaineerUnsetValue()
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -114,11 +112,6 @@ class FunctionMetadata(BaseModel):
         if isinstance(self.return_model, MountaineerUnsetValue):
             raise ValueError("Return model not set")
         return self.return_model
-
-    def get_render_router(self) -> APIRouter:
-        if isinstance(self.render_router, MountaineerUnsetValue):
-            raise ValueError("Render router not set")
-        return self.render_router
 
 
 METADATA_ATTRIBUTE = "_mountaineer_metadata"

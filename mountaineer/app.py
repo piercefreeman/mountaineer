@@ -37,6 +37,7 @@ class ControllerDefinition(BaseModel):
     # Dynamically generated function that actually renders the html content
     # This is a hybrid between render() and _generate_html()
     view_route: Callable
+    render_router: APIRouter
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -223,7 +224,6 @@ class AppController:
         # This is useful in cases where we need to do a render()->FastAPI lookup
         view_router = APIRouter()
         view_router.get(controller.url)(generate_controller_html)
-        render_metadata.render_router = view_router
         self.app.include_router(view_router)
 
         # Create a wrapper router for each controller to hold the side-effects
@@ -272,14 +272,16 @@ class AppController:
 
         LOGGER.debug(f"Did register controller: {controller_name}")
 
-        self.controllers.append(
-            ControllerDefinition(
-                controller=controller,
-                router=controller_api,
-                view_route=generate_controller_html,
-                url_prefix=controller_url_prefix,
-            )
+        controller_definition = ControllerDefinition(
+            controller=controller,
+            router=controller_api,
+            view_route=generate_controller_html,
+            url_prefix=controller_url_prefix,
+            render_router=view_router,
         )
+        controller.definition = controller_definition
+
+        self.controllers.append(controller_definition)
         self.controller_names.add(controller_name)
 
     async def handle_exception(self, request: Request, exc: APIException):

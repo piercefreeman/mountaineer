@@ -138,7 +138,7 @@ def test_handle_conflicting_exception_names():
     }
 
 
-def test_inherit_parent_exceptions():
+def test_inherit_parent_spec():
     """
     Ensure we can sniff client functions from the current class
     and the superclasses.
@@ -171,13 +171,17 @@ def test_inherit_parent_exceptions():
         def client_function(self) -> None:
             pass
 
+    parent_controller = ParentController()
+    child_controller = ChildController()
+
     app = AppController(view_root=Path(""))
-    app.register(ParentController())
-    app.register(ChildController())
+    app.register(parent_controller)
+    app.register(child_controller)
 
     openapi_spec = app.generate_openapi()
     openapi_definition = OpenAPIDefinition(**openapi_spec)
 
+    # Test that we inherited the parent function
     assert (
         "404"
         in openapi_definition.paths["/internal/api/parent_controller/parent_function"]
@@ -190,6 +194,18 @@ def test_inherit_parent_exceptions():
         .actions[0]
         .responses
     )
+
+    # Test that the controller definitions remain separate
+    assert parent_controller.definition
+    assert child_controller.definition
+
+    parent_routes = parent_controller.definition.render_router.routes
+    child_routes = child_controller.definition.render_router.routes
+
+    assert len(parent_routes) == 1
+    assert parent_routes[0].path == "/parent"  # type: ignore
+    assert len(child_routes) == 1
+    assert child_routes[0].path == "/child"  # type: ignore
 
 
 def test_update_ref_path():

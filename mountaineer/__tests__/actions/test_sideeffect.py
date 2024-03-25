@@ -51,7 +51,6 @@ def test_markup_sideeffect():
     assert metadata.reload_states == tuple([ExampleRenderModel.value_a])
     assert isinstance(metadata.render_model, MountaineerUnsetValue)
     assert isinstance(metadata.return_model, MountaineerUnsetValue)
-    assert isinstance(metadata.render_router, MountaineerUnsetValue)
 
 
 class ControllerCommon(ControllerBase):
