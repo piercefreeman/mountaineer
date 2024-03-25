@@ -250,6 +250,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         """
         # Iterate over all the functions in this class and see which ones have a _metadata attribute
+        # We specifically traverse through the MRO, except the last one (object class)
         for name, func in getmembers(self, predicate=ismethod):
             try:
                 metadata = get_function_metadata(func)

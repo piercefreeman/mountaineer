@@ -69,7 +69,6 @@ class FunctionMetadata(BaseModel):
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
 
     # Inserted by the render decorator
-    url: str | MountaineerUnsetValue = MountaineerUnsetValue()
     return_model: Type[BaseModel] | MountaineerUnsetValue = MountaineerUnsetValue()
     render_router: APIRouter | MountaineerUnsetValue = MountaineerUnsetValue()
 
@@ -110,11 +109,6 @@ class FunctionMetadata(BaseModel):
 
     def get_is_raw_response(self) -> bool:
         return self.is_raw_response
-
-    def get_url(self) -> str:
-        if isinstance(self.url, MountaineerUnsetValue):
-            raise ValueError("URL not set")
-        return self.url
 
     def get_return_model(self) -> Type[BaseModel]:
         if isinstance(self.return_model, MountaineerUnsetValue):

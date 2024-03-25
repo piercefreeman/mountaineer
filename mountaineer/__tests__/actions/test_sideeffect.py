@@ -50,7 +50,6 @@ def test_markup_sideeffect():
     assert metadata.function_name == "sideeffect_and_return_data"
     assert metadata.reload_states == tuple([ExampleRenderModel.value_a])
     assert isinstance(metadata.render_model, MountaineerUnsetValue)
-    assert isinstance(metadata.url, MountaineerUnsetValue)
     assert isinstance(metadata.return_model, MountaineerUnsetValue)
     assert isinstance(metadata.render_router, MountaineerUnsetValue)
 
@@ -261,7 +260,10 @@ def test_limit_codepath_experimental(
     controller = ExampleController()
     app.register(controller)
 
-    sideeffect_url = get_function_metadata(ExampleController.call_sideeffect).get_url()
+    controller_definition = app.definition_for_controller(controller)
+    sideeffect_url = controller_definition.get_url_for_metadata(
+        get_function_metadata(ExampleController.call_sideeffect)
+    )
 
     client = TestClient(app.app)
     start = monotonic_ns()

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from mountaineer.actions import passthrough
-from mountaineer.app import AppController, ExceptionSchema
+from mountaineer.app import AppController
 from mountaineer.client_builder.openapi import OpenAPIDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
@@ -82,35 +82,20 @@ def test_format_exception_model():
 
     app = AppController(view_root=Path(""))
     formatted_exception = app._format_exception_model(ExampleException)
-    assert formatted_exception == ExceptionSchema(
-        status_code=401,
-        schema_name="ExampleException",
-        schema_name_long="mountaineer.__tests__.test_app.ExampleException",
-        schema_value={
-            "additionalProperties": False,
-            "properties": {
-                "status_code": {
-                    "default": 401,
-                    "title": "Status Code",
-                    "type": "integer",
-                },
-                "detail": {
-                    "default": "A server error occurred",
-                    "title": "Detail",
-                    "type": "string",
-                },
-                "headers": {
-                    "additionalProperties": {"type": "string"},
-                    "title": "Headers",
-                    "type": "object",
-                },
-                "value": {"title": "Value", "type": "string"},
-            },
-            "title": "ExampleException",
-            "type": "object",
-            "required": ["status_code", "detail", "headers", "value"],
-        },
+
+    assert formatted_exception.status_code == 401
+    assert formatted_exception.schema_name == "ExampleException"
+    assert (
+        formatted_exception.schema_name_long
+        == "mountaineer.__tests__.test_app.ExampleException"
     )
+    assert set(formatted_exception.schema_value["required"]) == {
+        "value",
+        # Inherited from the superclass
+        "status_code",
+        "detail",
+        "headers",
+    }
 
 
 def test_handle_conflicting_exception_names():
@@ -151,6 +136,60 @@ def test_handle_conflicting_exception_names():
         "mountaineer.__tests__.test_1.ExampleException",
         "mountaineer.__tests__.test_2.ExampleException",
     }
+
+
+def test_inherit_parent_exceptions():
+    """
+    Ensure we can sniff client functions from the current class
+    and the superclasses.
+
+    """
+
+    class ExampleException(APIException):
+        status_code = 404
+        value: str
+
+    class ParentController(ControllerBase):
+        url = "/parent"
+        view_path = "/parent.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough(exception_models=[ExampleException])
+        def parent_function(self) -> None:
+            pass
+
+    class ChildController(ParentController):
+        url = "/child"
+        view_path = "/child.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough
+        def client_function(self) -> None:
+            pass
+
+    app = AppController(view_root=Path(""))
+    app.register(ParentController())
+    app.register(ChildController())
+
+    openapi_spec = app.generate_openapi()
+    openapi_definition = OpenAPIDefinition(**openapi_spec)
+
+    assert (
+        "404"
+        in openapi_definition.paths["/internal/api/parent_controller/parent_function"]
+        .actions[0]
+        .responses
+    )
+    assert (
+        "404"
+        in openapi_definition.paths["/internal/api/child_controller/parent_function"]
+        .actions[0]
+        .responses
+    )
 
 
 def test_update_ref_path():

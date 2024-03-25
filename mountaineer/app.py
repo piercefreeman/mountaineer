@@ -17,6 +17,7 @@ from mountaineer.actions import (
     fuse_metadata_to_response_typehint,
     init_function_metadata,
 )
+from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
@@ -40,6 +41,9 @@ class ControllerDefinition(BaseModel):
     model_config = {
         "arbitrary_types_allowed": True,
     }
+
+    def get_url_for_metadata(self, metadata: FunctionMetadata):
+        return f"{self.url_prefix}/{metadata.function_name.strip('/')}"
 
 
 class ExceptionSchema(BaseModel):
@@ -253,10 +257,6 @@ class AppController:
                 if metadata.get_media_type():
                     openapi_extra["media_type"] = metadata.get_media_type()
 
-            metadata.url = (
-                f"{controller_url_prefix}/{metadata.function_name.strip('/')}"
-            )
-
             controller_api.post(
                 f"/{metadata.function_name}", openapi_extra=openapi_extra
             )(fn)
@@ -313,10 +313,16 @@ class AppController:
                 _,
                 metadata,
             ) in controller_definition.controller._get_client_functions():
+                url = controller_definition.get_url_for_metadata(metadata)
+                # Not included in the specified routes, we should ignore this controller
+                if url not in openapi_base["paths"]:
+                    continue
+
                 exceptions_models = metadata.get_exception_models()
                 if not exceptions_models:
                     continue
-                exceptions_by_url[metadata.get_url()] = [
+
+                exceptions_by_url[url] = [
                     self._format_exception_model(exception_model)
                     for exception_model in exceptions_models
                 ]
@@ -337,10 +343,6 @@ class AppController:
         }
 
         for url, exception_payloads in exceptions_by_url.items():
-            # Not included in the specified routes, we should ignore this controller
-            if url not in openapi_base["paths"]:
-                continue
-
             existing_status_codes: set[int] = set()
 
             for payload in exception_payloads:
@@ -424,3 +426,11 @@ class AppController:
             return [self._update_ref_path(value) for value in schema]
         else:
             return schema
+
+    def definition_for_controller(
+        self, controller: ControllerBase
+    ) -> ControllerDefinition:
+        for controller_definition in self.controllers:
+            if controller_definition.controller == controller:
+                return controller_definition
+        raise ValueError(f"Controller {controller} not found")
