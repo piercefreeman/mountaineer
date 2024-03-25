@@ -53,15 +53,8 @@ class PoetryEnvironment(EnvironmentBase):
         )
 
         # Retrieve the location of the new virtualenv
-        result = subprocess.run(
-            ["poetry", "env", "info", "--path"],
-            check=True,
-            capture_output=True,
-            cwd=str(project_path),
-            env=self.limited_scope_env,
-        )
-
-        secho(f"Poetry venv created: {result.stdout.decode().strip()}", fg="green")
+        env_path = self.get_env_path(project_path)
+        secho(f"Poetry venv created: {env_path}", fg="green")
 
     def install_provider(self):
         """
@@ -129,3 +122,14 @@ class PoetryEnvironment(EnvironmentBase):
             cwd=path,
             env=self.limited_scope_env,
         )
+
+    def get_env_path(self, project_path: Path) -> str:
+        result = subprocess.run(
+            ["poetry", "env", "info", "--path"],
+            check=True,
+            capture_output=True,
+            cwd=str(project_path),
+            env=self.limited_scope_env,
+        )
+
+        return result.stdout.decode().strip()

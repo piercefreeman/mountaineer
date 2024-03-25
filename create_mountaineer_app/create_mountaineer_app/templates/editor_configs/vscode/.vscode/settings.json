@@ -1,3 +1,4 @@
+{% if editor_config == 'vscode' %}
 {
   "files.exclude": {
     "_server/": true,
@@ -5,3 +6,4 @@
     "_static/": true
   }
 }
+{% endif %}
