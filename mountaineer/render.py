@@ -26,7 +26,27 @@ class ReturnModelMetaclass(ModelMetaclass):
     if not TYPE_CHECKING:  # pragma: no branch
         # Following the lead of the pydantic superclass, we wrap with a non-TYPE_CHECKING
         # block: "otherwise mypy allows arbitrary attribute access""
+
+        def __new__(
+            self,
+            cls_name: str,
+            bases: tuple[type[Any], ...],
+            namespace: dict[str, Any],
+            *args,
+            **kwargs: Any,
+        ):
+            # Pydantic uses exceptions in the __getattr__ to handle collection of fields
+            # in set_model_fields. While we're still initializing the class we have no
+            # need for our custom accessor logic - so we temporarily turn it off.
+            self.is_constructing = True
+            obj = super().__new__(self, cls_name, bases, namespace, *args, **kwargs)
+            self.is_constructing = False
+            return obj
+
         def __getattr__(self, key: str) -> Any:
+            if self.is_constructing:
+                return super().__getattr__(key)
+
             try:
                 return super().__getattr__(key)
             except AttributeError:
