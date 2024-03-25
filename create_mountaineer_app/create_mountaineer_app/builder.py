@@ -28,8 +28,8 @@ def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
         return VEnvEnvironment()
 
 
-def editor_config_from_metadata(metadata: ProjectMetadata):
-    if metadata.editor_config == "no":
+def copy_editor_config(metadata: ProjectMetadata):
+    if not metadata.editor_config:
         return
 
     config_source = get_template_path("editor_configs") / metadata.editor_config
@@ -57,7 +57,7 @@ def should_copy_path(root_path: Path, path: Path):
     return True
 
 
-def build_project(metadata: ProjectMetadata):
+def build_project(metadata: ProjectMetadata, install_deps: bool = True):
     template_base = get_template_path("project")
     template_paths = list(template_base.glob("**/*"))
 
@@ -96,19 +96,20 @@ def build_project(metadata: ProjectMetadata):
 
     secho(f"Project created at {metadata.project_path}", fg="green")
 
-    environment = environment_from_metadata(metadata)
+    copy_editor_config(metadata)
 
-    try:
-        environment.install_project(metadata.project_path)
-    except Exception as e:
-        secho(f"Error installing python dependencies: {e}", fg="red")
+    if install_deps:
+        environment = environment_from_metadata(metadata)
 
-    if has_npm():
-        npm_install(metadata.project_path / metadata.project_name / "views")
-    else:
-        secho(
-            "npm is not installed and is required to install React dependencies.",
-            fg="red",
-        )
+        try:
+            environment.install_project(metadata.project_path)
+        except Exception as e:
+            secho(f"Error installing python dependencies: {e}", fg="red")
 
-    editor_config_from_metadata(metadata)
+        if has_npm():
+            npm_install(metadata.project_path / metadata.project_name / "views")
+        else:
+            secho(
+                "npm is not installed and is required to install React dependencies.",
+                fg="red",
+            )

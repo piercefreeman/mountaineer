@@ -14,7 +14,7 @@ python = "^3.11"
 {% if mountaineer_dev_path %}
 mountaineer = { path = "{{mountaineer_dev_path}}", develop = true }
 {% else %}
-mountaineer = "^0.2.0"
+mountaineer = "^{{ mountaineer_min_version }}"
 {% endif %}
 
 [build-system]
@@ -44,7 +44,7 @@ dependencies = [
     {% if mountaineer_dev_path %}
     "mountaineer @ file://{{ mountaineer_dev_path }}"
     {% else %}
-    "mountaineer"
+    "mountaineer=={{ mountaineer_min_version }}"
     {% endif %}
 ]
 

@@ -6,7 +6,10 @@ from time import sleep
 from uuid import uuid4
 
 import pytest
+import tomllib
 from click import secho
+from packaging.requirements import Requirement
+from packaging.version import Version
 from requests import get
 
 from create_mountaineer_app.__tests__.common import wait_for_database_to_be_ready
@@ -107,6 +110,9 @@ def test_valid_permutations(
         editor_config=editor_config,
         create_stub_files=create_stub_files,
         postgres_port=postgres_port,
+        # Stub, not used in template generation since we also have
+        # the mountaineer_dev_path
+        mountaineer_min_version="0.1.0",
         mountaineer_dev_path=main_mountaineer_path,
     )
 
@@ -197,3 +203,41 @@ def test_valid_permutations(
             env=docker_compose_env,
         )
         secho("Docker shut down successfully.")
+
+
+@pytest.mark.parametrize(
+    "use_poetry",
+    [False, True],
+)
+def test_build_version_number(use_poetry: bool, tmp_path: Path):
+    metadata = ProjectMetadata(
+        project_name="my_project",
+        author_name="John Appleseed",
+        author_email="test@email.com",
+        project_path=tmp_path,
+        use_poetry=use_poetry,
+        use_tailwind=False,
+        editor_config=None,
+        create_stub_files=False,
+        # Stub, not used in template generation since we also have
+        # the mountaineer_dev_path
+        mountaineer_min_version="0.2.5",
+        mountaineer_dev_path=None,
+    )
+    build_project(metadata, install_deps=False)
+
+    pyproject_contents = (tmp_path / "pyproject.toml").read_text()
+    package_requirements = tomllib.loads(pyproject_contents)
+
+    if use_poetry:
+        # Parse the poetry convention into the PEP 508 specifier format
+        raw_version = package_requirements["tool"]["poetry"]["dependencies"][
+            "mountaineer"
+        ]
+        assert raw_version == "^0.2.5"
+        version = f"mountaineer {raw_version}".replace("^", ">=").replace("~", "~=")
+    else:
+        version = package_requirements["project"]["dependencies"][0]
+
+    req = Requirement(version)
+    assert req.specifier.contains(Version("0.2.5"))

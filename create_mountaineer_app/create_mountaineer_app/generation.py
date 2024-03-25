@@ -12,13 +12,16 @@ class ProjectMetadata(BaseModel):
     author_email: str
     use_poetry: bool
     use_tailwind: bool
-    editor_config: str
+    editor_config: str | None
     project_path: Path
 
     postgres_password: str = "mysecretpassword"
     postgres_port: int = 5432
 
     create_stub_files: bool
+
+    # Current version of mountaineer tied to CMA version
+    mountaineer_min_version: str
 
     # If specified, will install mountaineer in development mode pointing to a local path
     # This is useful for testing changes to mountaineer itself
