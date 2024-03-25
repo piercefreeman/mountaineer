@@ -12,7 +12,9 @@ from mountaineer.actions.fields import (
     annotation_is_metadata,
     extract_response_model_from_signature,
     fuse_metadata_to_response_typehint,
+    get_function_metadata,
 )
+from mountaineer.actions.sideeffect import sideeffect
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -130,6 +132,38 @@ def test_fuse_metadata_to_response_typehint(
         )
 
     assert fused_model.__name__ == expected_model_name
+
+
+class ParentRender(RenderBase):
+    render_value_a: str
+
+
+class ChildRender(ParentRender):
+    render_value_b: int
+
+
+def test_fuse_metadata_to_response_typehint_inherit_render():
+    class ParentController(BaseModel):
+        def render(self) -> ParentRender:
+            return ParentRender(render_value_a="example")
+
+        @sideeffect(reload=(ParentRender.render_value_a,))
+        def sideeffect(self) -> None:
+            pass
+
+    class ChildController(ParentController):
+        def render(self) -> ChildRender:
+            return ChildRender(render_value_a="example", render_value_b=1)
+
+    model_fused = fuse_metadata_to_response_typehint(
+        get_function_metadata(ChildController.sideeffect),
+        ChildRender,
+    )
+    assert set(
+        model_fused.model_json_schema()["$defs"]["SideeffectResponseSideEffect"][
+            "properties"
+        ].keys()
+    ) == {"render_value_a"}
 
 
 def test_annotation_is_metadata():
