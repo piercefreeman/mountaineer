@@ -10,7 +10,7 @@ from create_mountaineer_app.environments.poetry import PoetryEnvironment
 from create_mountaineer_app.external import (
     get_git_user_info,
 )
-from create_mountaineer_app.generation import ProjectMetadata
+from create_mountaineer_app.generation import EditorType, ProjectMetadata
 
 
 def prompt_should_use_poetry():
@@ -106,7 +106,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
     ).unsafe_ask()
     input_editor_config = questionary.rawselect(
         "Add editor configuration? [vscode]",
-        choices=["vscode", "vim", "no"],
+        choices=["vscode", "vim", "zed", "no"],
         default="vscode",
     ).unsafe_ask()
 
@@ -121,7 +121,9 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         author_email=input_author_email,
         use_poetry=input_use_poetry,
         use_tailwind=input_use_tailwind,
-        editor_config=input_editor_config if input_editor_config != "no" else None,
+        editor_config=EditorType(input_editor_config)
+        if input_editor_config != "no"
+        else None,
         project_path=project_path,
         create_stub_files=input_create_stub_files,
         mountaineer_min_version=get_current_version_number(),

@@ -50,3 +50,10 @@ class VEnvEnvironment(EnvironmentBase):
             cwd=path,
             env={"PATH": f"{venv_path}/bin:{environ['PATH']}", **self.global_env},
         )
+
+    def get_env_path(self, project_path: Path) -> str:
+        venv_path = project_path / self.venv_name
+        if not venv_path.exists():
+            raise ValueError(f"Virtual environment not found at: {venv_path}")
+
+        return str(venv_path)

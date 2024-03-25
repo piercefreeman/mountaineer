@@ -1,5 +1,4 @@
 from pathlib import Path
-from shutil import copytree
 
 from click import secho
 
@@ -18,6 +17,8 @@ ALLOW_HIDDEN_FILES = {
     # A template .env file is explicitly included in our build logic
     ".env",
     ".gitignore",
+    ".vimrc",
+    ".vscode",
 }
 
 
@@ -26,15 +27,6 @@ def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
         return PoetryEnvironment()
     else:
         return VEnvEnvironment()
-
-
-def copy_editor_config(metadata: ProjectMetadata):
-    if not metadata.editor_config:
-        return
-
-    config_source = get_template_path("editor_configs") / metadata.editor_config
-    config_destination = metadata.project_path
-    copytree(config_source, config_destination, dirs_exist_ok=True)
 
 
 def should_copy_path(root_path: Path, path: Path):
@@ -57,14 +49,14 @@ def should_copy_path(root_path: Path, path: Path):
     return True
 
 
-def build_project(metadata: ProjectMetadata, install_deps: bool = True):
-    template_base = get_template_path("project")
+def copy_source_to_project(template_base: Path, metadata: ProjectMetadata):
     template_paths = list(template_base.glob("**/*"))
 
     if not template_paths:
         all_template_paths = list(get_template_path("").glob("**/*"))
         secho(
             f"No templates found in {template_base}.\n"
+            f"Local found: {template_paths}\n"
             f"All found: {all_template_paths}\n"
             "This might indicate an issue with your install or the pypi packaging pipeline.",
             fg="red",
@@ -75,10 +67,9 @@ def build_project(metadata: ProjectMetadata, install_deps: bool = True):
         if template_path.is_dir() or not should_copy_path(template_base, template_path):
             continue
 
-        # Internally, format_template will re-look up the template. Convert the full glob path into a relative template path.
-        template_name = str(template_path.relative_to(template_base))
         try:
-            output_bundle = format_template(template_name, metadata)
+            # Internally, format_template will re-look up the template
+            output_bundle = format_template(template_path, template_base, metadata)
         except Exception as e:
             secho(f"Error formatting {template_path}: {e}", fg="red")
             raise e
@@ -94,9 +85,12 @@ def build_project(metadata: ProjectMetadata, install_deps: bool = True):
         full_output.parent.mkdir(parents=True, exist_ok=True)
         full_output.write_text(output_bundle.content)
 
-    secho(f"Project created at {metadata.project_path}", fg="green")
 
-    copy_editor_config(metadata)
+def build_project(metadata: ProjectMetadata, install_deps: bool = True):
+    template_base = get_template_path("project")
+
+    copy_source_to_project(template_base, metadata)
+    secho(f"Project created at {metadata.project_path}", fg="green")
 
     if install_deps:
         environment = environment_from_metadata(metadata)
@@ -113,3 +107,18 @@ def build_project(metadata: ProjectMetadata, install_deps: bool = True):
                 "npm is not installed and is required to install React dependencies.",
                 fg="red",
             )
+
+        # Update the metadata now that we have a valid environment
+        env_path = Path(environment.get_env_path(metadata.project_path))
+        metadata.venv_base = str(env_path.parent)
+        metadata.venv_name = env_path.name
+
+        secho("Environment created successfully", fg="green")
+
+    # Now copy the editor-specific files
+    if metadata.editor_config:
+        editor_template_base = (
+            get_template_path("editor_configs") / metadata.editor_config.value
+        )
+        copy_source_to_project(editor_template_base, metadata)
+        secho(f"Editor config created at {metadata.project_path}", fg="green")

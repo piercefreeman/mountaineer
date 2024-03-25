@@ -44,3 +44,12 @@ class EnvironmentBase(ABC):
 
         """
         pass
+
+    @abstractmethod
+    def get_env_path(self, project_path: Path) -> str:
+        """
+        Get the environment path. Only valid after the installation
+        process has completed. Otherwise will raise an error.
+
+        """
+        pass

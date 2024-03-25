@@ -18,7 +18,7 @@ from create_mountaineer_app.builder import (
     environment_from_metadata,
     should_copy_path,
 )
-from create_mountaineer_app.generation import ProjectMetadata
+from create_mountaineer_app.generation import EditorType, ProjectMetadata
 from create_mountaineer_app.io import get_free_port
 from create_mountaineer_app.templates import get_template_path
 
@@ -63,7 +63,7 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
             # Use tailwind
             [False, True],
             # Editor config
-            ["no", "vscode", "vim"],
+            [None, EditorType.VSCODE, EditorType.VIM, EditorType.ZED],
             # Create stub files
             [False, True],
         )
@@ -74,7 +74,7 @@ def test_valid_permutations(
     tmpdir: str,
     use_poetry: bool,
     use_tailwind: bool,
-    editor_config: str,
+    editor_config: EditorType | None,
     create_stub_files: bool,
 ):
     """
