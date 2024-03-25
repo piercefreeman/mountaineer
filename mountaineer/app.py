@@ -1,7 +1,8 @@
+from collections import defaultdict
 from functools import wraps
 from inspect import isclass, signature
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Type
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
@@ -38,6 +39,17 @@ class ControllerDefinition(BaseModel):
 
     model_config = {
         "arbitrary_types_allowed": True,
+    }
+
+
+class ExceptionSchema(BaseModel):
+    status_code: int
+    schema_name: str
+    schema_name_long: str
+    schema_value: dict[str, Any]
+
+    model_config = {
+        "extra": "forbid",
     }
 
 
@@ -289,8 +301,12 @@ class AppController:
             routes=(routes if routes is not None else self.app.routes),
         )
 
-        # Loop over the registered controllers and get the actions
-        exceptions_by_url = {}
+        #
+        # Exception injection
+        #
+
+        # Loop over the registered controllers and get the action exceptions
+        exceptions_by_url: dict[str, list[ExceptionSchema]] = {}
         for controller_definition in self.controllers:
             for (
                 _,
@@ -300,36 +316,64 @@ class AppController:
                 exceptions_models = metadata.get_exception_models()
                 if not exceptions_models:
                     continue
-                exceptions_by_url[metadata.url] = [
-                    (
-                        model.status_code,
-                        model.InternalModel.__name__,
-                        model.InternalModel.model_json_schema(),
-                    )
-                    for model in exceptions_models
+                exceptions_by_url[metadata.get_url()] = [
+                    self._format_exception_model(exception_model)
+                    for exception_model in exceptions_models
                 ]
 
-        # Add to the schemas dictionary first
-        # TODO: Add validation that throws an error on duplicate names
-        # TODO: Add validation that throws an error for duplicate error codes
+        # Users are allowed to reference the same schema name multiple times so long
+        # as they have the same value. If they use conflicting values we'll have
+        # to use the long name instead of the short module name to avoid conflicting
+        # schema definitions.
+        schema_names_to_long: defaultdict[str, set[str]] = defaultdict(set)
+        for exception_payloads in exceptions_by_url.values():
+            for payload in exception_payloads:
+                schema_names_to_long[payload.schema_name].add(payload.schema_name_long)
+
+        duplicate_schema_names = {
+            schema_name
+            for schema_name, schema_name_longs in schema_names_to_long.items()
+            if len(schema_name_longs) > 1
+        }
+
         for url, exception_payloads in exceptions_by_url.items():
             # Not included in the specified routes, we should ignore this controller
             if url not in openapi_base["paths"]:
                 continue
 
-            for status_code, schema_name, schema in exception_payloads:
+            existing_status_codes: set[int] = set()
+
+            for payload in exception_payloads:
+                # Validate the exception state doesn't override existing values
+                # Status codes are local to this particular endpoint but schema names
+                # are global because they're placed in the global components section
+                if payload.status_code in existing_status_codes:
+                    raise ValueError(
+                        f"Duplicate status code {payload.status_code} for {url}"
+                    )
+
+                schema_name = (
+                    payload.schema_name
+                    if payload.schema_name not in duplicate_schema_names
+                    else payload.schema_name_long
+                )
+
                 other_definitions = {
                     definition_name: self._update_ref_path(definition)
-                    for definition_name, definition in schema.pop("$defs", {}).items()
+                    for definition_name, definition in payload.schema_value.pop(
+                        "$defs", {}
+                    ).items()
                 }
                 openapi_base["components"]["schemas"].update(other_definitions)
                 openapi_base["components"]["schemas"][
                     schema_name
-                ] = self._update_ref_path(schema)
+                ] = self._update_ref_path(payload.schema_value)
 
                 # All actions are "posts" by definition
-                openapi_base["paths"][url]["post"]["responses"][str(status_code)] = {
-                    "description": f"Custom Error: {schema_name}",
+                openapi_base["paths"][url]["post"]["responses"][
+                    str(payload.status_code)
+                ] = {
+                    "description": f"Custom Error: {payload.schema_name}",
                     "content": {
                         "application/json": {
                             "schema": {"$ref": f"#/components/schemas/{schema_name}"}
@@ -337,7 +381,23 @@ class AppController:
                     },
                 }
 
+                existing_status_codes.add(payload.status_code)
+
         return openapi_base
+
+    def _format_exception_model(self, model: Type[APIException]) -> ExceptionSchema:
+        # By default all fields are optional. Since we are sending them
+        # from the server we are guaranteed they will either be explicitly
+        # provided or fallback to their defaults
+        json_schema = model.InternalModel.model_json_schema()
+        json_schema["required"] = list(json_schema["properties"].keys())
+
+        return ExceptionSchema(
+            status_code=model.status_code,
+            schema_name=model.InternalModel.__name__,
+            schema_name_long=f"{model.InternalModel.__module__}.{model.InternalModel.__name__}",
+            schema_value=json_schema,
+        )
 
     def _update_ref_path(self, schema: Any):
         """

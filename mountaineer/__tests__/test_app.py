@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from mountaineer.actions import passthrough
-from mountaineer.app import AppController
+from mountaineer.app import AppController, ExceptionSchema
 from mountaineer.client_builder.openapi import OpenAPIDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
@@ -72,6 +72,84 @@ def test_generate_openapi():
         "TestExceptionActionResponse",
         "ExampleException",
         "ExampleSubModel",
+    }
+
+
+def test_format_exception_model():
+    class ExampleException(APIException):
+        status_code = 401
+        value: str
+
+    app = AppController(view_root=Path(""))
+    formatted_exception = app._format_exception_model(ExampleException)
+    assert formatted_exception == ExceptionSchema(
+        status_code=401,
+        schema_name="ExampleException",
+        schema_name_long="mountaineer.__tests__.test_app.ExampleException",
+        schema_value={
+            "additionalProperties": False,
+            "properties": {
+                "status_code": {
+                    "default": 401,
+                    "title": "Status Code",
+                    "type": "integer",
+                },
+                "detail": {
+                    "default": "A server error occurred",
+                    "title": "Detail",
+                    "type": "string",
+                },
+                "headers": {
+                    "additionalProperties": {"type": "string"},
+                    "title": "Headers",
+                    "type": "object",
+                },
+                "value": {"title": "Value", "type": "string"},
+            },
+            "title": "ExampleException",
+            "type": "object",
+            "required": ["status_code", "detail", "headers", "value"],
+        },
+    )
+
+
+def test_handle_conflicting_exception_names():
+    class Obj1(APIException):
+        status_code = 401
+        value: str
+
+    class Obj2(APIException):
+        status_code = 404
+        value: str
+
+    # Since we don't actually want to define these fake
+    # modules we just override it at runtime
+    Obj1.InternalModel.__name__ = "ExampleException"
+    Obj1.InternalModel.__module__ = "mountaineer.__tests__.test_1"
+    Obj2.InternalModel.__name__ = "ExampleException"
+    Obj2.InternalModel.__module__ = "mountaineer.__tests__.test_2"
+
+    class ExampleController(ControllerBase):
+        url = "/example"
+        view_path = "/example.tsx"
+
+        def render(self) -> None:
+            pass
+
+        @passthrough(exception_models=[Obj1, Obj2])
+        def test_exception_action(self) -> None:
+            pass
+
+    app = AppController(view_root=Path(""))
+    app.register(ExampleController())
+
+    openapi_spec = app.generate_openapi()
+    openapi_definition = OpenAPIDefinition(**openapi_spec)
+
+    assert openapi_definition.components.schemas.keys() == {
+        "TestExceptionActionResponse",
+        "mountaineer.__tests__.test_1.ExampleException",
+        "mountaineer.__tests__.test_2.ExampleException",
     }
 
 

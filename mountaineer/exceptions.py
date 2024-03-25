@@ -46,6 +46,7 @@ class InternalModelMeta(type):
             __base__=APIExceptionInternalModelBase,
             **cast(Any, fields),
         )
+        cls.InternalModel.__module__ = cls.__module__
 
     def __call__(cls, *args, **kwargs):
         # Override the __call__ method to instantiate models like Pydantic does
