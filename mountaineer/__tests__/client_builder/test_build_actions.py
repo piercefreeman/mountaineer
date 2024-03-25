@@ -158,6 +158,16 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         in_location=ParameterLocationType.QUERY,
                         required=True,
                     ),
+                    # Cookies should be skipped
+                    URLParameterDefinition.from_meta(
+                        name="auth_cookie",
+                        schema_ref=OpenAPIProperty.from_meta(
+                            title="",
+                            variable_type=OpenAPISchemaType.STRING,
+                        ),
+                        in_location=ParameterLocationType.COOKIE,
+                        required=True,
+                    ),
                     # Optional query parameter
                     URLParameterDefinition.from_meta(
                         name="query_param_optional_id",
