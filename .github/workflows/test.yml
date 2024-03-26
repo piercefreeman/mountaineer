@@ -231,7 +231,9 @@ jobs:
 
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
-        run: python .github/scripts/update_version.py ${{ github.ref_name }}
+        run: |
+          pip install packaging
+          python .github/scripts/update_version.py ${{ github.ref_name }}
 
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}
