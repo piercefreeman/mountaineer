@@ -263,10 +263,29 @@ jobs:
 
       - run: twine check --strict dist/*
 
+      # Unzip wheel files to directories
+      - name: Unzip Wheels
+        shell: bash
+        run: |
+          mkdir unpacked_wheels
+          for wheel in dist/*.whl; do
+            unzip -d unpacked_wheels/"$(basename "$wheel" .whl)" "$wheel"
+          done
+          rm dist/*.whl # Remove original .whl files to avoid confusion
+
+      - name: List unpacked wheel directories
+        shell: bash
+        run: ls -lh unpacked_wheels/
+
       - uses: actions/upload-artifact@v4
         with:
           name: pypi_files-${{ matrix.os }}-${{ matrix.target }}
-          path: dist
+          path: unpacked_wheels/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi_files_sdist-${{ matrix.os }}-${{ matrix.target }}
+          path: dist/
 
   inspect-pypi-assets:
     needs: [build]
@@ -288,7 +307,19 @@ jobs:
         with:
           pattern: pypi_files-*
           merge-multiple: true
+          path: unpacked_wheels
+
+      - name: get dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pypi_files_sdist-*
+          merge-multiple: true
           path: dist
+
+      - name: list unpacked files
+        run: |
+          ls -lh unpacked_wheels/
+          echo "`ls unpacked_wheels | wc -l` files"
 
       - name: list dist files
         run: |
@@ -301,10 +332,25 @@ jobs:
           tar -xvf dist/*.tar.gz -C sdist-files
           find sdist-files -print
 
-      - name: extract and list wheel file
+      # Unzip wheel files to directories
+      - name: Zip Wheels
         run: |
-          ls dist/*cp311-manylinux*x86_64.whl | head -n 1
-          python -m zipfile --list `ls dist/*cp311-manylinux*x86_64.whl | head -n 1`
+          for dir in unpacked_wheels/*; do
+              # Check if it's a directory
+              if [ -d "$dir" ]; then
+                  # Get the base name of the directory
+                  base_name=$(basename "$dir")
+                  # Zip the directory into a .whl file inside the dist directory
+                  zip -r "dist/${base_name}.whl" "$dir"
+              fi
+          done
+
+      # There is an issue with some builds where the magic number of the wheel
+      # file can't be read in python, but can be read by the OS. We explicitly
+      # decompress the wheel files with the system level handler
+      # and then re-compress them with the python level handler
+      - name: Verify and fix wheels
+        run: python .github/scripts/fix_mac_wheels.py dist
 
       - run: pip install twine
       - run: twine check dist/*
@@ -322,13 +368,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: get dist artifacts
+      - name: get unpacked_wheels artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: pypi_files-*
           merge-multiple: true
+          path: unpacked_wheels
+
+      - name: get dist artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pypi_files_sdist-*
+          merge-multiple: true
           path: dist
 
+      - run: ls -lh unpacked_wheels
+
       - run: ls -lh dist
+
+      # Unzip wheel files to directories
+      - name: Zip Wheels
+        run: |
+          for dir in unpacked_wheels/*; do
+              # Check if it's a directory
+              if [ -d "$dir" ]; then
+                  # Get the base name of the directory
+                  base_name=$(basename "$dir")
+                  # Zip the directory into a .whl file inside the dist directory
+                  zip -r "dist/${base_name}.whl" "$dir"
+              fi
+          done
+
+      # There is an issue with some builds where the magic number of the wheel
+      # file can't be read in python, but can be read by the OS. We explicitly
+      # decompress the wheel files with the system level handler
+      # and then re-compress them with the python level handler
+      - name: Verify and fix wheels
+        run: python .github/scripts/fix_mac_wheels.py dist
 
       - uses: pypa/gh-action-pypi-publish@release/v1
