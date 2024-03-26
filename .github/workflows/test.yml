@@ -395,6 +395,11 @@ jobs:
               fi
           done
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: final_dist
+          path: dist/
+
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   # Tie create-mountaineer-app distribution to the release of the main
