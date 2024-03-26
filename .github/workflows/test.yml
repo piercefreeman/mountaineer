@@ -261,6 +261,14 @@ jobs:
 
       - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
 
+      # There is an issue with some builds where the magic number of the wheel
+      # file can't be read in python, but can be read by the OS. We explicitly
+      # decompress the wheel files with the system level handler
+      # and then re-compress them with the python level handler
+      - name: Verify and fix wheels
+        if: ${{ matrix.os == 'macos' }}
+        run: python .github/scripts/fix_mac_wheels.py dist
+
       - run: twine check --strict dist/*
 
       - uses: actions/upload-artifact@v4
