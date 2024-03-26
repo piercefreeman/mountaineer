@@ -290,9 +290,7 @@ jobs:
   inspect-pypi-assets:
     needs: [build]
 
-    # workaround for mac-compiled wheel files unzipping on other macosx configs
-    # but not on the linux base runner
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -358,7 +356,8 @@ jobs:
   release:
     needs: [check, build, inspect-pypi-assets]
     if: "success() && startsWith(github.ref, 'refs/tags/')"
-    runs-on: macos-latest
+    # pypi release script requires linux runner
+    runs-on: ubuntu-latest
     environment: release
 
     permissions:
