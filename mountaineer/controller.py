@@ -280,14 +280,16 @@ class ControllerBase(ABC, Generic[RenderInput]):
             except AttributeError:
                 continue
 
-    def resolve_paths(self, view_base: Path | None = None, force: bool = True):
+    def resolve_paths(self, view_base: Path | None = None, force: bool = True) -> bool:
         """
         Given the path to the root /view directory, resolve our various
         on-disk paths.
 
+        Returns a boolean for whether we have fully updated the controller state.
+
         """
         if not force and self.view_base_path is not None:
-            return
+            return False
 
         # Try to resolve the view base path from the global config
         if view_base is None:
@@ -301,30 +303,42 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         if view_base is None:
             # Unable to resolve, no-op
-            return
+            return False
 
         script_name = underscore(self.__class__.__name__)
         self.view_base_path = view_base
 
+        # We'll update this bool if we can't find any dependencies
+        found_dependencies = True
+
         # The SSR path is going to be static
         ssr_path = view_base / "_ssr" / f"{script_name}.js"
-        ssr_map_path = ssr_path.with_suffix(".js.map")
-        self.ssr_path = ssr_path if ssr_path.exists() else None
-        self.source_map = (
-            SourceMapParser(ssr_map_path) if ssr_map_path.exists() else None
-        )
+        if ssr_path.exists():
+            self.ssr_path = ssr_path
+            ssr_map_path = ssr_path.with_suffix(".js.map")
+            self.source_map = (
+                SourceMapParser(ssr_map_path) if ssr_map_path.exists() else None
+            )
+        else:
+            found_dependencies = False
 
         # Find the md5-converted cache path
         md5_script_pattern = re_compile(script_name + "-" + "[a-f0-9]{32}" + ".js")
+        if (view_base / "_static").exists():
+            self.bundled_scripts = [
+                path.name
+                for path in (view_base / "_static").iterdir()
+                if md5_script_pattern.match(path.name) and ".js.map" not in path.name
+            ]
+            if not self.bundled_scripts:
+                found_dependencies = False
+            LOGGER.debug(
+                f"[{self.__class__.__name__}] Resolved paths... {self.bundled_scripts}"
+            )
+        else:
+            found_dependencies = False
 
-        self.bundled_scripts = [
-            path.name
-            for path in (view_base / "_static").iterdir()
-            if md5_script_pattern.match(path.name) and ".js.map" not in path.name
-        ]
-        LOGGER.debug(
-            f"[{self.__class__.__name__}] Resolved paths... {self.bundled_scripts}"
-        )
+        return found_dependencies
 
     def merge_metadatas(self, metadatas: list[Metadata]):
         """
