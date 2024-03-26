@@ -17,17 +17,18 @@ Then start your server:
 poetry run runserver
 ```
 {% else %}
-Create a virtual environment to house the project dependencies:
+Create a virtual environment to house the project dependencies. If you've already created an environment through create-mountaineer-app, you can skip this step:
 
 ```bash
-python -m venv {{project_name}}
-source {{project_name}}/bin/activate
+python -m venv venv
+source venv/bin/activate
 pip install -e .
 ```
 
 Then start your server:
 
 ```bash
-python -m runserver
+source venv/bin/activate
+runserver
 ```
 {% endif %}
