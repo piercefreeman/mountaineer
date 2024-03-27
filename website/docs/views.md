@@ -1,6 +1,6 @@
 # Frontend Views
 
-Your React app should be initialized in the `/views` folder of your mountaineer project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger mountaineer project.
+Your React app should be initialized in the `/views` folder of your Mountaineer project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger Mountaineer project and rendered separately.
 
 We expect that all controller views will be labeled as a `page.tsx`, so they'll typically sit in a folder with themselves and other tightly connected React components. These views should have one default export, which is your page constructor:
 
@@ -88,7 +88,7 @@ When rendering `dashboard/home/page.tsx`, the view will be wrapped in the `app/d
 
 ## Typescript Configuration
 
-If you want to customize how mountaineer builds your view files into raw client-side javascript, add a `tsconfig.json` file. The Typescript website includes a [full list](https://www.typescriptlang.org/tsconfig) of the available options here. A good place to start is:
+If you want to customize how Mountaineer builds your view files into raw client-side javascript, add a `tsconfig.json` file. The Typescript website includes a [full list](https://www.typescriptlang.org/tsconfig) of the available options here. A good place to start is:
 
 ```json
 {
@@ -112,7 +112,7 @@ If you want to customize how mountaineer builds your view files into raw client-
 }
 ```
 
-A common extension is wanting to import all your view paths with absolute paths (like `@/components/myfile`) instead of having to do relative imports (`../../../components/myfile`). This can be easily achieved by adding a `paths` key to your `tsconfig.json`. Your import becomes relative to all paths in the root directory.
+A common convention is importing all your view paths with absolute paths (like `@/components/myfile`) instead of having to do relative imports (`../../components/myfile`). This can be easily achieved by adding a `paths` key to your `tsconfig.json`. Your import becomes relative to all paths in the root directory.
 
 ```json
 {

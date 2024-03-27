@@ -2,7 +2,7 @@
 
 Errors are a fundamental part of computer science, but nowhere is that more evident than when building websites. There are so many factors you don't have control over: client latency, malformed payloads, spiky server load, resource contention for the same user. The list goes on. Any one can bring a user experience to its knees.
 
-All that to say - it's not a question of _if_ you'll see errors but _when_. mountaineer provides some handy utilities that make it a bit easier to handle the errors you may encounter in production.
+All that to say - it's not a question of _if_ you'll see errors but _when_. Mountaineer provides some handy utilities that make it a bit easier to handle the errors you may encounter in production.
 
 ## Client->Server exceptions
 
@@ -59,7 +59,7 @@ import { HTTPValidationErrorException } from "./_server/actions";
 </button>
 ```
 
-mountaineer will convert the error into a custom error class and expose it in `_server/actions` for you to import. This class helps you switch logic depending on the type of error that was raised. Using a class here also has the benefit of typeguarding your error handling, so you'll see IDE recommendations specific to that ValidationError.
+Mountaineer will convert the error into a custom error class and expose it in `_server/actions` for you to import. This class helps you switch logic depending on the type of error that was raised. Using a class here also has the benefit of typeguarding your error handling, so you'll see IDE recommendations specific to that ValidationError.
 
 You can find the error payload itself within `error.body`, which will be typehinted with all the metadata (if any) that the server is expected to return as part of this error code. In the above example, that looks like this:
 
@@ -98,7 +98,7 @@ class LoginController(ControllerBase):
 
 Provide all the exceptions that your function may throw to `@passthrough(exception_models=[])`. The `@sideeffect` decorator accepts the same argument.
 
-When specified like this, mountaineer turns your exception into a client-side exception just like `HTTPValidationErrorException`. You can now use it in the same way.
+When specified like this, Mountaineer turns your exception into a client-side exception just like `HTTPValidationErrorException`. You can now use it in the same way.
 
 ## SSR timeouts
 

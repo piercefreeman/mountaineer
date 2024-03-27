@@ -44,7 +44,7 @@
     border-right: 1px solid #f3f3f3 !important;
 }
 
-.md-sidebar--primary ul li a {
+/*.md-sidebar--primary ul li a {
     padding: 2px 10px;
     border-radius: 4px;
 }
@@ -57,7 +57,7 @@
 .md-sidebar--primary ul li a.md-nav__link--active:hover {
     background: #3b82f6;
     color: #FFFFFF;
-}
+    }*/
 
 .mountaineer-footer {
     background-color: #FFFFFF;

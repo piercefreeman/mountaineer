@@ -4,4 +4,3 @@
     options:
       members:
         - register
-      show_source: false

@@ -1,28 +1,8 @@
-![Mountaineer Header](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/docs/media/header.png)
+# Quickstart
 
-<p align="center"><i>Move fast. Climb mountains. Don't break things.</i></p>
+Our quickstart guide walks you through creating a full Mountaineer project. The end application is simple but fully working and ready for deployment.
 
-Mountaineer 🏔️ is a framework to easily build webapps in Python and React. If you've used either of these languages before for development, we think you'll be right at home.
-
-## Main Features
-
-Each framework has its own unique features and tradeoffs. Mountaineer focuses on developer productivity above all else, with production speed a close second.
-
-- 📝 Typehints up and down the stack: frontend, backend, and database
-- 🎙️ Trivially easy client<->server communication, data binding, and function calling
-- 🌎 Optimized server rendering for better accessibility and SEO
-- 🏹 Static analysis of web pages for strong validation: link validity, data access, etc.
-- 🤩 Skip the API or Node.js server just to serve frontend clients
-
-> We built Mountaineer out of a frustration that we were reinventing the webapp wheel time and time again. We love Python for backend development and the interactivity of React for frontend UX. But they don't work seamlessly together without a fair amount of glue. So: we built the glue. While we were at it, we embedded a V8 engine to provide server-side rendering, added conventions for application configuration, built native Typescript integrations, and more. Our vision is for you to import one slim dependency and you're off to the races.
->
-> We're eager for you to give Mountaineer a try, and equally devoted to making you successful if you like it. File an Issue if you see anything unexpected or if there's a steeper learning curve than you expect. There's much more to do - and we're excited to do it together.
->
-> ~ Pierce
-
-## Getting Started
-
-### New Project
+### Getting Started
 
 To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A. Make sure you have pipx [installed](https://pipx.pypa.io/stable/installation/).
 
@@ -37,28 +17,7 @@ $ pipx run create-mountaineer-app
 ? Add editor configuration? [vscode] vscode
 ```
 
-Mountaineer projects all follow a similar structure. After running this CLI you should see a new folder called `my_webapp`, with folders like the following:
-
-```
-my_webapp
-  /controllers
-    /home.py
-  /models
-    /mymodel.py
-  /views
-    /app
-      /home
-        /page.tsx
-      /layout.tsx
-    /package.json
-    /tsconfig.json
-  /app.py
-  /cli.py
-pyproject.toml
-poetry.lock
-```
-
-Every service file is nested under the `my_webapp` root package. Views are defined in a disk-based hierarchy (`views`) where nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`. Controllers are defined nearby in a flat folder (`controllers`) where each route is a separate file. Everything else is just standard Python code for you to modify as needed.
+Mountaineer projects all follow a similar structure. For more on this, see our deep dive on the [structure](structure.md) conventions.
 
 ### Development
 
@@ -102,9 +61,7 @@ For the purposes of this walkthrough we assume your project is generated with `c
 
 Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [SQLModel](https://github.com/tiangolo/sqlmodel).
 
-```python
-# my_webapp/models/todo.py
-
+```python title="my_webapp/models/todo.py"
 from mountaineer.database import SQLModel, Field
 from uuid import UUID, uuid4
 
@@ -117,9 +74,7 @@ class TodoItem(SQLModel, table=True):
 
 Update the index file as well:
 
-```python
-# my_webapp/models/__init__.py
-
+```python title="my_webapp/models/__init__.py"
 from .todo import TodoItem # noqa: F401
 ```
 
@@ -133,9 +88,7 @@ poetry run runserver
 
 Great! At this point we have our database tables created and have a basic server running. We next move to creating a new controller, since this will define which data you can push and pull to your frontend.
 
-```python
-# my_webapp/controllers/home.py
-
+```python title="my_webapp/controllers/home.py"
 from mountaineer import sideeffect, ControllerBase, RenderBase
 from mountaineer.database import DatabaseDependencies
 
@@ -178,8 +131,9 @@ The only three requirements of a controller are setting the:
 
 This `render()` function is a core building block of Mountaineer. All Controllers need to have one. It defines all the data that your frontend will need to resolve its view. This particular controller retrieves all Todo items from the database, alongside the user's current IP.
 
-> [!TIP]
-> render() functions accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
+!!! tip
+
+    render() functions accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
 
 Note that the database session is provided via dependency injection, which plug-and-plays with [FastAPI's](https://github.com/tiangolo/fastapi) Depends syntax. The standard library provides two main dependency providers:
 
@@ -188,8 +142,7 @@ Note that the database session is provided via dependency injection, which plug-
 
 Now that we've newly created this controller, we wire it up to the application. This registers it for display when you load the homepage.
 
-```python
-# my_webapp/app.py
+```python title="my_webapp/app.py"
 from mountaineer.app import AppController
 from mountaineer.js_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
@@ -212,9 +165,7 @@ controller.register(HomeController())
 
 Let's move over to the frontend.
 
-```tsx
-/* my_webapp/views/app/home/page.tsx */
-
+```typescript title="my_webapp/views/app/home/page.tsx"
 import React from "react";
 import { useServer, ServerState } from "./_server/useServer";
 
@@ -261,19 +212,19 @@ We define a simple view to show the data coming from the backend. To accomplish 
 
 Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without any roundtrip fetches. Also - if your IDE supports language servers (which most do these days), you should see the fields auto-suggesting for `serverState` as you type.
 
-<p align="center"><img src="./website/docs/media/ide_typehints.png" alt="IDE Typehints" width="500px" /></p>
+<p align="center"><img src="/media/ide_typehints.png" alt="IDE Typehints" width="500px" /></p>
 
 If you access this in your browser at `localhost:5006/` we can see our welcome message, but we can't really _do_ anything with the todos yet. Let's add some interactivity.
 
-> [!TIP]
-> Try disabling Javascript in your browser. The page will still render as-is with all variables intact, thanks to our server-side rendering.
+!!! tip
 
-<p align="center"><img src="./website/docs/media/server_side_rendering.png" alt="Server-side rendering" height="400px" /></p>
+    Try disabling Javascript in your browser. The page will still render as-is with all variables intact, thanks to our server-side rendering.
+
+<p align="center"><img src="/media/server_side_rendering.png" alt="Server-side rendering" height="400px" /></p>
 
 What good is todo list that doesn't get longer? We define a `add_todo` function that accepts a pydantic model `NewTodoRequest`, which defines the required parameters for a new todo item. We then cast this to a database object and add it to the postgres table.
 
-```python
-# my_webapp/controllers/home.py
+```python title="my_webapp/controllers/home.py"
 
 from pydantic import BaseModel
 
@@ -298,9 +249,7 @@ The important part here is the `@sideeffect`. Once you create a new Todo item, t
 
 Mountaineer detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
 
-```tsx
-/* my_webapp/views/app/home/page.tsx */
-
+```typescript title="my_webapp/views/app/home/page.tsx"
 import React, { useState } from "react";
 import { useServer } from "./_server/useServer";
 
@@ -345,14 +294,10 @@ export default Home;
 
 Go ahead and load it in your browser. If you open up your web tools, you can create a new Todo and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by Mountaineer.
 
-<p align="center"><img src="./website/docs/media/final_todo_list.png" alt="Getting Started Final TODO App" height="400px" /></p>
+![Getting Started Final TODO App](/media/final_todo_list.png){ height="400" }
 
-<p align="center"><img src="./website/docs/media/network_debug.png" alt="Getting Started Final TODO App" height="400px" /></p>
+![Getting Started Final TODO App](/media/network_debug.png){ height="400" }
 
 You can use these serverState variables anywhere you'd use dynamic React state variables (useEffect, useCallback, etc). But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
 
 And that's it. We've just built a fully interactive web application without having to worry about an explicit API. You specify the data model and actions on the server and the appropriate frontend hooks are generated and updated automatically. It gives you the power of server rendered html and the interactivity of a virtual DOM, without having to compromise on complicated data mutations to keep everything in sync.
-
-### Learn More
-
-We have additional documentation that does more of a technical deep dive on different features of Mountaineer.

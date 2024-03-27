@@ -34,6 +34,12 @@ class ColorHandler(StreamHandler):
 
 
 def setup_logger(name, log_level=logging.DEBUG):
+    """
+    Constructor for the main logger used by Mountaineer. Provided
+    convenient defaults for log level and formatting, alongside coloring
+    of stdout/stderr messages and JSON fields for structured parsing.
+
+    """
     # TODO - env driven logging configuration
 
     logger = getLogger(name)
@@ -53,6 +59,16 @@ def setup_logger(name, log_level=logging.DEBUG):
 
 @contextmanager
 def log_time_duration(message: str):
+    """
+    Context manager to time a code block at runtime.
+
+    ```python
+    with log_time_duration("Long computation"):
+        # Simulate work
+        sleep(10)
+    ```
+
+    """
     start = monotonic_ns()
     yield
     LOGGER.debug(f"{message} : Took {(monotonic_ns() - start)/1e9:.2f}s")

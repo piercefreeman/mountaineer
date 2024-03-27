@@ -32,7 +32,9 @@ plugins:
 nav:
   - Mountaineer: index.md
   - Create Mountaineer App: cma.md
+  - Quickstart: quickstart.md
   - Learn:
+    - structure.md
     - client_actions.md
     - views.md
     - metadata.md
@@ -45,10 +47,21 @@ nav:
     - api/controller.md
     - api/actions.md
     - api/cli.md
+    - api/api_exception.md
+    - api/render.md
+    - api/config.md
+    - api/core_dependencies.md
+    - api/logging.md
     - api/watch_server.md
+    - Database:
+      - api/database/config.md
+      - api/database/dependencies.md
   - Internal:
     - internal/core_library.md
+
 markdown_extensions:
   - pymdownx.superfences
   - admonition
   - pymdownx.details
+  - attr_list
+  - md_in_html

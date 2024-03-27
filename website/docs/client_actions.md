@@ -10,9 +10,9 @@ Anytime clients need to modify the server state, we denote these requests as "ac
 
 Your choice of action type depends on how you want to update _client_ data after your _server_ action has been executed.
 
-**@sideeffect:** Update the server data that initialized the client view. Sideeffects are also passthroughs, by definition, so they can pass back arbitrary data that is outside of the scope of the render() data payload.
+**@sideeffect:** Update the server data that initialized the client view. Sideeffects are also passthroughs, by definition, so they can pass back arbitrary data that is outside of the scope of the render() data payload. Use a sideeffect whenever the client modifies some data that lives on the server.
 
-**@passthrough:** Expose an action to the client caller but don't update the server data once the action has been completed.
+**@passthrough:** Expose an action to the client caller but don't update the server data once the action has been completed. Use a passthrough whenever you need to fetch additional data from the server, or the mutation on the server doesn't affect the local frontend state.
 
 ## Side Effect
 
@@ -61,7 +61,7 @@ You can also manually inspect the sideeffect payload by accessing `response.side
 
 If the action has a passthrough, it will be supplied in `response.passthrough`. Otherwise it will be undefined.
 
-### Experimental Render Cropper
+### Experimental Render Reloader
 
 !!! tip
 
@@ -106,7 +106,7 @@ Benchmarked on a Macbook M1, calling this initial render will perform ~1.84s of 
 }
 ```
 
-When `call_sideeffect` is called with `experimental_render_reload=True`, the compute is `0.010s`. It results in:
+When `call_sideeffect` is called with `experimental_render_reload=True`, the compute only takes `0.010s`. It results in:
 
 ```json
 {
@@ -163,7 +163,7 @@ class MyController(ControllerBase):
         yield MyMetadata(state=2)
 ```
 
-For the time being we only support server-events in `@passthrough` functions, not `@sideeffect`. It's ill-defined whether we should re-render() content every yield or when the iterator has finished.
+For the time being we only support server-events in `@passthrough` functions, not `@sideeffect`. It's ill-defined whether we should re-render() content every yield or when the iterator has finished. Yielding in passthrough makes it clear that you just want to stream the yielded value to the client.
 
 In your frontend, you can iterate over these responses with an async generator loop. Each response object will be parsed into your typed schema for you, so you can see typehints like you would for any regular Mountaineer action.
 
@@ -197,23 +197,31 @@ When defining your action functions themselves in your controller, we support ty
 - Pydantic models for JSON payloads
 - Dependency injection via `fastapi.Depends`
 
-We also support both sync and async functions. A common sideeffect pattern might look like this:
+We also support both sync and async functions. Sync functions will be spawned into a thread pool by default - which processes them in parallel but can tax system resources with GIL locking. Where possible, use async functions with libraries that support await constructs.
+
+A common sideeffect pattern might look like this:
 
 ```python
-from fastapi import Depends
+from mountaineer import ControllerBase, Depends
 from my_website.models import User
+from my_website.deps import get_current_user
 
 class IncrementCountRequest:
     count: int
 
-@sideeffect
-async def increment_count(
-    self,
-    payload: IncrementCountRequest,
-    query_param: int,
-    user: User = Depends(get_current_user)
-) -> None:
-    self.global_count += payload.count
+class MyController(ControllerBase):
+    def __init__(self):
+        super().__init__()
+        self.global_count = 0
+
+    @sideeffect
+    async def increment_count(
+        self,
+        payload: IncrementCountRequest,
+        query_param: int,
+        user: User = Depends(get_current_user)
+    ) -> None:
+        self.global_count += payload.count
 ```
 
 !!! warning
