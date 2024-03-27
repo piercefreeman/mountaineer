@@ -1,2 +1,3 @@
 ci_webapp/**/* linguist-detectable=false
 create_mountaineer_app/**/* linguist-detectable=false
+**/fixtures/**/* linguist-detectable=false

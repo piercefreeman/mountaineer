@@ -56,6 +56,10 @@ nav:
     - Database:
       - api/database/config.md
       - api/database/dependencies.md
+    - Build Plugins:
+      - api/build_plugins/javascript.md
+      - api/build_plugins/postcss.md
+      - api/build_plugins/base.md
   - Internal:
     - internal/core_library.md
 

@@ -93,6 +93,7 @@ class ThemeColorMeta(MetaAttribute):
     ```
 
     """
+
     color: str
     media: str | None = None
 
@@ -118,6 +119,7 @@ class ViewportMeta(MetaAttribute):
     ```
 
     """
+
     width: str = "device-width"
     initial_scale: float = 1.0
     maximum_scale: float = 1.0

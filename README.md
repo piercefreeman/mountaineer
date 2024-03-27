@@ -1,4 +1,4 @@
-![Mountaineer Header](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/docs/media/header.png)
+![Mountaineer Header](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/media/header.png)
 
 <p align="center"><i>Move fast. Climb mountains. Don't break things.</i></p>
 

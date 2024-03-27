@@ -26,6 +26,7 @@ def get_config_with_type(required_type: Type[T]):
         application code.
 
     """
+
     def internal_dependency() -> T:
         config = get_config()
         if not isinstance(config, required_type):

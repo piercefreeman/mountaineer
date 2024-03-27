@@ -433,9 +433,6 @@ jobs:
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
-
-      - name: Configure Poetry
-        run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
@@ -483,9 +480,6 @@ jobs:
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
-
-      - name: Configure Poetry
-        run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Update version in pyproject.toml

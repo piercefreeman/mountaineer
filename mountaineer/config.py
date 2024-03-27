@@ -26,6 +26,7 @@ class ConfigBase(BaseSettings, metaclass=ConfigMeta):
     instantiate more than one AppConfig.
 
     """
+
     # Name of the python package
     PACKAGE: str | None = None
 

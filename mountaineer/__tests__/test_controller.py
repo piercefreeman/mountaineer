@@ -106,7 +106,7 @@ class StubController(ControllerBase):
 )
 def test_build_header(metadata: Metadata, expected_tags: list[str]):
     controller = StubController()
-    assert controller.build_header(metadata) == expected_tags
+    assert controller._build_header(metadata) == expected_tags
 
 
 COMPLEX_METADATA = Metadata(
@@ -189,7 +189,7 @@ COMPLEX_METADATA = Metadata(
 )
 def test_merge_metadatas(metadatas: list[Metadata], expected_metadata: Metadata):
     controller = StubController()
-    assert controller.merge_metadatas(metadatas) == expected_metadata
+    assert controller._merge_metadatas(metadatas) == expected_metadata
 
 
 def test_resolve_paths(tmp_path: Path):

@@ -179,3 +179,5 @@ _static
 **/create_mountaineer_app/templates/poetry.lock
 
 .DS_Store
+
+website/site
