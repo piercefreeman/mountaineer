@@ -261,14 +261,14 @@ We define a simple view to show the data coming from the backend. To accomplish 
 
 Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without any roundtrip fetches. Also - if your IDE supports language servers (which most do these days), you should see the fields auto-suggesting for `serverState` as you type.
 
-<p align="center"><img src="./website/docs/media/ide_typehints.png" alt="IDE Typehints" width="500px" /></p>
+<p align="center"><img src="./docs_website/docs/media/ide_typehints.png" alt="IDE Typehints" width="500px" /></p>
 
 If you access this in your browser at `localhost:5006/` we can see our welcome message, but we can't really _do_ anything with the todos yet. Let's add some interactivity.
 
 > [!TIP]
 > Try disabling Javascript in your browser. The page will still render as-is with all variables intact, thanks to our server-side rendering.
 
-<p align="center"><img src="./website/docs/media/server_side_rendering.png" alt="Server-side rendering" height="400px" /></p>
+<p align="center"><img src="./docs_website/docs/media/server_side_rendering.png" alt="Server-side rendering" height="400px" /></p>
 
 What good is todo list that doesn't get longer? We define a `add_todo` function that accepts a pydantic model `NewTodoRequest`, which defines the required parameters for a new todo item. We then cast this to a database object and add it to the postgres table.
 
@@ -345,9 +345,9 @@ export default Home;
 
 Go ahead and load it in your browser. If you open up your web tools, you can create a new Todo and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by Mountaineer.
 
-<p align="center"><img src="./website/docs/media/final_todo_list.png" alt="Getting Started Final TODO App" height="400px" /></p>
+<p align="center"><img src="./docs_website/docs/media/final_todo_list.png" alt="Getting Started Final TODO App" height="400px" /></p>
 
-<p align="center"><img src="./website/docs/media/network_debug.png" alt="Getting Started Final TODO App" height="400px" /></p>
+<p align="center"><img src="./docs_website/docs/media/network_debug.png" alt="Getting Started Final TODO App" height="400px" /></p>
 
 You can use these serverState variables anywhere you'd use dynamic React state variables (useEffect, useCallback, etc). But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
 
