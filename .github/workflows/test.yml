@@ -339,9 +339,9 @@ jobs:
                   # Get the base name of the directory
                   base_name=$(basename "$dir")
                   # Zip the directory into a .whl file inside the dist directory
-                  cd unpacked_wheels
-                  zip -r "../dist/${base_name}.whl" $base_name
-                  cd ..
+                  cd unpacked_wheels/$base_name
+                  zip -r "../../dist/${base_name}.whl" .
+                  cd ../..
               fi
           done
 
@@ -389,9 +389,9 @@ jobs:
                   # Get the base name of the directory
                   base_name=$(basename "$dir")
                   # Zip the directory into a .whl file inside the dist directory
-                  cd unpacked_wheels
-                  zip -r "../dist/${base_name}.whl" $base_name
-                  cd ..
+                  cd unpacked_wheels/$base_name
+                  zip -r "../../dist/${base_name}.whl" .
+                  cd ../..
               fi
           done
 
