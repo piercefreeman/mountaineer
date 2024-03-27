@@ -355,4 +355,4 @@ And that's it. We've just built a fully interactive web application without havi
 
 ### Learn More
 
-We have additional documentation that does more of a technical deep dive on different features of Mountaineer.
+We have additional documentation that does more of a technical deep dive on different features of Mountaineer. Check out [mountaineer.sh](https://mountaineer.sh/).
