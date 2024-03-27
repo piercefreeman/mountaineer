@@ -48,26 +48,7 @@ def render() -> MyRender:
     )
 ```
 
-We have a limited number of helper <meta> constructors, particularly in cases where there are standard definitions of complex meta values:
-
-**ThemeColorMeta:** Customizes the default color that is attached to the page.
-
-```python
-ThemeColorMeta(
-    color="white",
-    media="light",
-)
-```
-
-**ViewportMeta:** Defines the bounds on the current page and how much users are able to zoom.
-
-```python
-ViewportMeta(
-    initial_scale=1.0,
-    maximum_scale=2.0,
-    user_scalable=True,
-)
-```
+We have a limited number of helper <meta> constructors, particularly in cases where there are standard definitions of complex meta values. For more details on the supported Metadata and rendering options, check out the [API Docs](./api/render.md).
 
 ## Global Metadata
 

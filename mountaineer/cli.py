@@ -276,8 +276,13 @@ def handle_watch(
     """
     Watch the file directory and rebuild auto-generated files.
 
-    :param client_package: "ci_webapp"
-    :param client_controller: "ci_webapp.app:controller"
+    :param package: Ex. "ci_webapp"
+    :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param subscribe_to_mountaineer:
+        If True, will subscribe the local build server to changes in
+        the `mountaineer` package. This is useful when doing concurrent
+        development in `mountaineer` and a client package. Rarely
+        used otherwise.
 
     """
     update_multiprocessing_settings()
@@ -330,9 +335,11 @@ def handle_runserver(
     subscribe_to_mountaineer: bool = False,
 ):
     """
-    :param client_package: "ci_webapp"
-    :param client_webservice: "ci_webapp.app:app"
-    :param client_controller: "ci_webapp.app:controller"
+    :param package: Ex. "ci_webapp"
+    :param webservice: Ex. "ci_webapp.app:app"
+    :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param port: Desired port for the webapp while running locally
+    :param subscribe_to_mountaineer: See `handle_watch` for more details.
 
     """
     update_multiprocessing_settings()
@@ -402,6 +409,10 @@ def handle_build(
     *,
     webcontroller: str,
 ):
+    """
+    Handle a one-off build. Most often used in production CI pipelines.
+
+    """
     app_controller = import_from_string(webcontroller)
     js_compiler = ClientBuilder(
         app_controller,

@@ -15,6 +15,18 @@ class ConfigMeta(ModelMetaclass):
 
 @dataclass_transform(kw_only_default=True, field_specifiers=(Field,))
 class ConfigBase(BaseSettings, metaclass=ConfigMeta):
+    """
+    Base class for the running application's configuration. By convention
+    all configuration parameters should be specified here in one payload.
+    You'll often call your subclass `ConfigBase`.
+
+    Users are responsible for instantiating an AppConfig with your desired
+    settings. This instance will be registered into the global space so it's
+    accessible to your controllers. An error will be thrown if you attempt to
+    instantiate more than one AppConfig.
+
+    """
+
     # Name of the python package
     PACKAGE: str | None = None
 

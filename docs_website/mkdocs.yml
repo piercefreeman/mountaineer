@@ -1,0 +1,71 @@
+site_name: "Mountaineer"
+
+theme:
+  name: material
+  custom_dir: overrides
+  font:
+    text: "ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,Noto Sans,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji"
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: sphinx
+            show_root_heading: true
+            show_if_no_docstring: true
+            inherited_members: true
+            members_order: source
+            separate_signature: true
+            unwrap_annotated: true
+            merge_init_into_class: true
+            docstring_section_style: spacy
+            signature_crossrefs: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_source: false
+
+nav:
+  - Mountaineer: index.md
+  - Create Mountaineer App: cma.md
+  - Quickstart: quickstart.md
+  - Learn:
+    - structure.md
+    - client_actions.md
+    - views.md
+    - metadata.md
+    - database.md
+    - error_handling.md
+    - links.md
+    - postcss.md
+  - API:
+    - api/app-controller.md
+    - api/controller.md
+    - api/actions.md
+    - api/cli.md
+    - api/api_exception.md
+    - api/render.md
+    - api/config.md
+    - api/core_dependencies.md
+    - api/logging.md
+    - api/watch_server.md
+    - Database:
+      - api/database/config.md
+      - api/database/dependencies.md
+    - Build Plugins:
+      - api/build_plugins/javascript.md
+      - api/build_plugins/postcss.md
+      - api/build_plugins/base.md
+  - Internal:
+    - internal/core_library.md
+
+markdown_extensions:
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - attr_list
+  - md_in_html

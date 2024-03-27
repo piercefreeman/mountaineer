@@ -38,12 +38,52 @@ async def get_db(
         CoreDependencies.get_config_with_type(DatabaseConfig)
     ),
 ):
+    """
+    Gets the SQLAlchemy engine registered for your application. Since our
+    DatabaseConfig specifies global parameters, by default this engine is
+    shared across the whole application.
+
+    If called via dependency injection, which is the most common case,
+    we will automatically resolve the config for you. Clients just call
+    the main function, which will resolve sub-dependencies.
+
+    ```python
+    from sqlalchemy.ext.asyncio import AsyncEngine
+
+    async def render(
+        self,
+        engine: AsyncEngine = Depends(DatabaseDependencies.get_db)
+    ):
+        ...
+    ```
+
+    """
     return engine_from_config(config)
 
 
 async def get_db_session(
     engine: AsyncEngine = Depends(get_db),
 ):
+    """
+    Gets a new, limited scope async session from the global engine. Anything
+    that occurs within this managed scope is wrapped in a transaction, so you
+    must manually commit your changes with `await session.commit()` when finished.
+
+    Like `get_db`, the engine will be resolved automatically if you call this
+    within a dependency injection context.
+
+
+    ```python
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    async def render(
+        self,
+        db_session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+    ):
+        ...
+    ```
+
+    """
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
     async with session_maker() as session:
         try:

@@ -82,6 +82,18 @@ class MetaAttribute(HashableAttribute, BaseModel):
 
 
 class ThemeColorMeta(MetaAttribute):
+    """
+    Customizes the default color that is attached to the page.
+
+    ```python
+    ThemeColorMeta(
+        color="white",
+        media="light",
+    )
+    ```
+
+    """
+
     color: str
     media: str | None = None
 
@@ -95,6 +107,19 @@ class ThemeColorMeta(MetaAttribute):
 
 
 class ViewportMeta(MetaAttribute):
+    """
+    Defines the bounds on the current page and how much users are able to zoom.
+
+    ```python
+    ViewportMeta(
+        initial_scale=1.0,
+        maximum_scale=2.0,
+        user_scalable=True,
+    )
+    ```
+
+    """
+
     width: str = "device-width"
     initial_scale: float = 1.0
     maximum_scale: float = 1.0

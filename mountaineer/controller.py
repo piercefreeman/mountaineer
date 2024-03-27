@@ -62,6 +62,10 @@ class ControllerBase(ABC, Generic[RenderInput]):
         self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0
     ):
         """
+        One Controller should be created for every frontend page in your webapp. Clients can override
+        this `__init__` function so long as they call `super().__init__()` at the start of their init
+        to setup the internal handlers.
+
         :param slow_ssr_threshold: Each python process has a single V8 runtime associated with
         it, so SSR rendering can become a bottleneck if it requires processing. We log a warning
         if we detect that an SSR render took longer than this threshold.
@@ -87,9 +91,12 @@ class ControllerBase(ABC, Generic[RenderInput]):
         self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
     ) -> RenderBase | None | Coroutine[Any, Any, RenderBase | None]:
         """
-        Client implementations must override render() to define the data that will
-        be pushed from the server to the client. This function must be typehinted with
-        your response type:
+        Render provides the raw data payload that will be sent to the frontend on initial
+        render and during any sideeffect update. In most cases, you should return a RenderBase
+        instance. If you have no data to display you can also return None.
+
+        This function must be explicitly typehinted with your response type, which allows the
+        AppController to generate the correct TypeScript types for the frontend:
 
         ```python
         class MyServerData(RenderBase):
@@ -109,6 +116,23 @@ class ControllerBase(ABC, Generic[RenderInput]):
                 pass
         ```
 
+        Render functions accept any number of arguments and keyword arguments, following the FastAPI
+        route parameter style. This includes query parameters, path parameters, and request bodies.
+
+        ```python
+        class MyController:
+            url = "/my-url/{path_param}"
+
+            def render(
+                self,
+                query_param: str,
+                path_param: int,
+                dependency: MyDependency = Depends(MyDependency),
+            ) -> MyServerData:
+                ...
+        ```
+
+        :return: A RenderBase instance or None
         """
         pass
 
@@ -141,7 +165,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         ):
             metadatas.append(global_metadata)
 
-        header_str = "\n".join(self.build_header(self.merge_metadatas(metadatas)))
+        header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
 
         ssr_html = self._generate_ssr_html(server_data)
 
@@ -208,7 +232,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         return cast(str, ssr_html)
 
-    def build_header(self, metadata: Metadata) -> list[str]:
+    def _build_header(self, metadata: Metadata) -> list[str]:
         """
         Builds the header for this controller. Returns the list of tags that will be injected into the
         <head> tag of the rendered page.
@@ -282,10 +306,11 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     def resolve_paths(self, view_base: Path | None = None, force: bool = True) -> bool:
         """
-        Given the path to the root /view directory, resolve our various
-        on-disk paths.
+        Typically used internally by the Mountaineer build pipeline. Calling this function
+        sets the active `view_base` of the frontend project, which allows us to resolve the
+        built javascripts that are required for this controller.
 
-        Returns a boolean for whether we have fully updated the controller state.
+        :return: Whether we have found all necessary files and fully updated the controller state.
 
         """
         if not force and self.view_base_path is not None:
@@ -340,7 +365,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         return found_dependencies
 
-    def merge_metadatas(self, metadatas: list[Metadata]):
+    def _merge_metadatas(self, metadatas: list[Metadata]):
         """
         Merges a list of metadata objects, sorted by priority. Some fields will
         take the union (like scripts) - others will prioritize earlier entries (title).

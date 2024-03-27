@@ -1,5 +1,5 @@
 """
-Dependencies for use in API endpoint routes.
+Database dependencies for use in API endpoint routes.
 
 """
 

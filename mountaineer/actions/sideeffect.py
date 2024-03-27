@@ -61,14 +61,18 @@ def sideeffect(*args, **kwargs):  # type: ignore
     Mark a function as causing a sideeffect to the data. This will force a reload of the full (or partial) server state
     and sync these changes down to the client page.
 
-    :reload: If provided, will ONLY reload these fields on the client side. By default will reload all fields. Otherwise, why
+    :param reload:
+
+        If provided, will ONLY reload these fields on the client side. By default will reload all fields. Otherwise, why
         specify a sideeffect at all? Note that even if this is provided, we will still regenerate a fully full state on the server
         as if render() is called again. This parameter only controls the data that is streamed back to the client in order to help
         reduce bandwidth of data that won't be changed.
 
-    Experimental options. Disabled by default:
+    :param experimental_render_reload:
 
-    :experimental_render_reload: If True, will attempt to only execute the logic in render() that is required to calculate your
+        Experimental options. Disabled by default.<br/><br/>
+
+        If True, will attempt to only execute the logic in render() that is required to calculate your
         `reload` parameters. Other logic will be short-circuited. If your render function has significant computation for other
         properties this can be a significant performance improvement. However, it is experimental and may not work in all cases.
 

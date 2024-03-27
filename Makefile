@@ -17,6 +17,9 @@ CREATE_MOUNTAINEER_APP_NAME := create_mountaineer_app
 CI_WEBAPP_DIR := ci_webapp
 CI_WEBAPP_NAME := ci_webapp
 
+DOCS_WEBSITE := docs_website
+DOCS_WEBSITE_NAME := docs_website
+
 # Ignore these directories in the local filesystem if they exist
 .PHONY: lint test
 
@@ -47,6 +50,10 @@ install-deps-create-mountaineer-app:
 install-deps-ci-webapp:
 	@echo "Installing dependencies for $(CI_WEBAPP_DIR)..."
 	@(cd $(CI_WEBAPP_DIR) && poetry install)
+
+install-deps-docs-website:
+	@echo "Installing dependencies for $(DOCS_WEBSITE)..."
+	@(cd $(DOCS_WEBSITE) && poetry install --no-root)
 
 # Clean the current poetry.lock files, useful for remote CI machines
 # where we're running on a different base architecture than when

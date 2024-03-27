@@ -64,6 +64,29 @@ class InternalModelMeta(type):
 
 
 class APIException(HTTPException, metaclass=InternalModelMeta):
+    """
+    Base class for user defined APIExceptions that can be thrown
+    in server actions and should provide some metadata back to
+    the client caller.
+
+    ```python
+    class PostNotFound(APIException):
+        status_code: int = 404
+        detail: str = "The post was not found"
+        post_id: int
+        is_deleted: bool
+
+    class MyController(ControllerBase):
+        @passthrough
+        def get_post(self, post_id: int) -> Post:
+            post = self.post_service.get_post(post_id)
+            if not post:
+                raise PostNotFound(post_id=post_id, is_deleted=True)
+            return post
+    ```
+
+    """
+
     status_code: int = 500
     detail: str = "A server error occurred"
     headers: dict[str, str] = Field(default_factory=dict)
