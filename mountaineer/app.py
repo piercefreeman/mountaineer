@@ -139,8 +139,13 @@ class AppController:
     def register(self, controller: ControllerBase):
         """
         Register a new controller. This will:
-            - Mount the html of the controller to the main application service
-            - Mount all actions (ie. @sideeffect and @passthrough decorated functions) to their public API
+
+        - Mount the html of the controller to the main application service
+        - Mount all actions (ie. @sideeffect and @passthrough decorated functions) to their public API
+
+        :param controller: The controller instance that should be added to your webapp. The class accepts a full
+        instance instead of just a class, so you're able to perform any kind of runtime initialization of the
+        kwarg args that you need before it's registered.
 
         """
         # Since the controller name is used to build dependent files, we ensure

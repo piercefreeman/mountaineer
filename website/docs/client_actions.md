@@ -63,8 +63,9 @@ If the action has a passthrough, it will be supplied in `response.passthrough`. 
 
 ### Experimental Render Cropper
 
-> [!TIP]
-> This feature is experimental and only supports relatively simple render() function implementations. If you use it for a more complicated render() function and it doesn't work as expected, report a bug to improve the test coverage.
+!!! tip
+
+    This feature is experimental and only supports relatively simple render() function implementations. If you use it for a more complicated render() function and it doesn't work as expected, report a bug to improve the test coverage.
 
 Render functions sometimes have heavy logic overhead: they need to fetch multiple objects from the database, do some roll-up computation, etc. If you're issuing a sideeffect that only affects a small portion of the initial data, this is wasted computation.
 
@@ -166,7 +167,7 @@ For the time being we only support server-events in `@passthrough` functions, no
 
 In your frontend, you can iterate over these responses with an async generator loop. Each response object will be parsed into your typed schema for you, so you can see typehints like you would for any regular Mountaineer action.
 
-```tsx
+```typescript
 import React, { useState, useEffect } from "react";
 
 const Page = () => {
@@ -215,5 +216,6 @@ async def increment_count(
     self.global_count += payload.count
 ```
 
-> [!CAUTION]
-> Actions are publicly exposed to the Internet by default. It's up to you to secure them with authentication if they should only be accessible by a certain portion of your userbase.
+!!! warning
+
+    Actions are publicly exposed to the Internet by default. It's up to you to secure them with authentication if they should only be accessible by a certain portion of your userbase.

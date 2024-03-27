@@ -1,4 +1,4 @@
-# Error handling
+# Error Handling
 
 Errors are a fundamental part of computer science, but nowhere is that more evident than when building websites. There are so many factors you don't have control over: client latency, malformed payloads, spiky server load, resource contention for the same user. The list goes on. Any one can bring a user experience to its knees.
 
@@ -73,8 +73,9 @@ Internally, we generate `HTTPValidationErrorException` as a subclass of FetchErr
 class HTTPValidationErrorException extends FetchErrorBase<HTTPValidationError> {}
 ```
 
-> [!TIP]
-> For more information on error typehinting and custom handling, see the FastAPI [documentation](https://fastapi.tiangolo.com/tutorial/handling-errors/).
+!!! tip
+
+    For more information on error typehinting and custom handling, see the FastAPI [documentation](https://fastapi.tiangolo.com/tutorial/handling-errors/).
 
 ## Custom Errors
 

@@ -73,8 +73,9 @@ def passthrough(*args, **kwargs):  # type: ignore
     By default, we mask out function return values to avoid leaking any unintended data to client applications. This
     decorator marks a function .
 
-    :response_model: Like in FastAPI, the response model to use for this endpoint. If not provided, will
+    :return: Like in FastAPI, the response model to use for this endpoint. If not provided, will
         try to convert the response object into the proper JSON response as-is.
+    :rtype: BaseModel
 
     """
 

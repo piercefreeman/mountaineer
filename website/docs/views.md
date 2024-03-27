@@ -1,4 +1,4 @@
-# Views
+# Frontend Views
 
 Your React app should be initialized in the `/views` folder of your mountaineer project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger mountaineer project.
 

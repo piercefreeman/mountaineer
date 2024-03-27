@@ -1,9 +1,5 @@
 # Links
 
-> "What is a webapp without links?"</br>
-> "Probably a lineapp or something."</br>
-> &mdash; William Shakespeare
-
 In a typical webapp, you'll have a lot of links. Most will be internal to your site: detail pages, settings, profiles, etc. Traditionally, developers format these links manually and hope they don't break over time as routes update.
 
 In mountaineer, generating links is baked into the client side routes. For every controller you define, we'll generate a link interface that defines the parameters that controller accepts. This interface will update as your route declarations do, so you're guaranteed to always generate the latest links to successfully resolve that controller.

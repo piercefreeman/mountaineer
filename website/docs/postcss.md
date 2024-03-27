@@ -1,4 +1,4 @@
-# postcss
+# PostCSS
 
 [PostCSS](https://postcss.org/) is a compiler for CSS. It enables buildtime transformation of CSS files to convert SCSS, LESS, or other CSS-like languages into standard CSS. It also has utilities for polyfills and browser-specific prefixes. I think of it like a swiss-army knife for CSS: it helps assure that your styling intentions are actually rendered uniformily across browsers.
 
