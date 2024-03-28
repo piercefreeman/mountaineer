@@ -54,6 +54,7 @@ nav:
     - api/core_dependencies.md
     - api/logging.md
     - api/watch_server.md
+    - api/ssr.md
     - Database:
       - api/database/config.md
       - api/database/dependencies.md

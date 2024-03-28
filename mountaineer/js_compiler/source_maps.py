@@ -48,6 +48,12 @@ class SourceMapParser:
         ] | None = None
 
     def parse(self):
+        """
+        Parse the source map file and build up the internal mappings. This is
+        deterministic with respect to the initialized source map path, so this
+        will be a no-op if it's already been run.
+
+        """
         # If we've already parsed this file, don't do it again
         if self.parsed_mappings is not None:
             return
@@ -65,14 +71,28 @@ class SourceMapParser:
         LOGGER.debug(f"Parsed mappings in {(monotonic_ns() - start_parse)/1e9:.2f}s")
 
     def get_original_location(self, line: int, column: int):
+        """
+        For a compiled line and column, return the original line and column where they appeared
+        in the pre-built file.
+
+        :param line: The line number in the compiled file
+        :param column: The column number in the compiled file
+
+        """
         if self.parsed_mappings is None:
             raise ValueError("SourceMapParser has not been parsed yet")
 
         return self.parsed_mappings.get((line, column))
 
-    def map_exception(self, exception: str):
+    def map_exception(self, exception: str) -> str:
         """
         Given a JS stack exception, try to map it to the original files and line numbers
+
+        :param exception: The exception string to map
+
+        :return: The exception string with the original file and line numbers. Note that some
+            exception stack traces may not be mappable, and will be left as-is.
+
         """
         if self.source_map is None or self.parsed_mappings is None:
             raise ValueError("SourceMapParser has not been parsed yet")
@@ -105,8 +125,15 @@ class SourceMapParser:
 
     def convert_relative_path(self, absolute_path: str):
         """
-        If we're within a parent directory of path, make it relative to the current
-        working directory. Otherwise just default to the original absolute path.
+        Absolute paths are convenient for internal use since they fully qualify
+        a given file. However, for display they often get long and repetitive across
+        multiple lines. This function will convert an absolute path to a relative path
+        if it's within the same directory as the current working directory.
+
+        :param absolute_path: The absolute path to convert
+
+        :return: The relative path if it's within the current working directory, otherwise
+            the unmodified absolute path.
 
         """
         source_path = Path(absolute_path)
