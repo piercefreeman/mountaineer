@@ -1,6 +1,6 @@
 # CLI Plugins
 
-CLI Plugins provide default handling for the most common lifecycle events during Mountaineer development. Import these if convenient, otherwise you can follow the implementation approaches to implement your own.
+CLI Plugins provide default handling for the most common lifecycle events during Mountaineer development. Import these if convenient, otherwise you can follow our implementation approaches to implement your own.
 
 ## Webapp CLI
 

@@ -13,6 +13,7 @@ from typing import (
     Awaitable,
     Callable,
     Coroutine,
+    Literal,
     ParamSpec,
     Type,
     TypeVar,
@@ -44,7 +45,7 @@ RawResponseR = TypeVar("RawResponseR", bound=Response)
 @overload
 def passthrough(  # type: ignore
     *,
-    response_model: Type[BaseModel] | None = None,
+    response_model: Type[BaseModel] | None = None,  # Deprecated
     exception_models: list[Type[APIException]] | None = None,
 ) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
     ...
@@ -53,7 +54,7 @@ def passthrough(  # type: ignore
 @overload
 def passthrough(
     *,
-    raw_response: bool = True,
+    raw_response: Literal[True] = True,
 ) -> Callable[
     [Callable[P, RawResponseR | Coroutine[Any, Any, RawResponseR]]],
     Callable[P, Awaitable[RawResponseR]],
@@ -70,12 +71,49 @@ def passthrough(
 
 def passthrough(*args, **kwargs):  # type: ignore
     """
-    By default, we mask out function return values to avoid leaking any unintended data to client applications. This
-    decorator marks a function .
+    Only functions that are explicitly marked as actions will be accessable by the frontend. The
+    @passthrough decorator indicates that this function should be called by the frontend and will
+    return an explicit data payload. It will NOT update the render() state of the frontend.
 
-    :return: Like in FastAPI, the response model to use for this endpoint. If not provided, will
-        try to convert the response object into the proper JSON response as-is.
-    :rtype: BaseModel
+    Decorate functions within your ControllerBase that you want to expose. Each of these functions should specify
+    a return type. Normal passthrough endpoints can return with either a `None`, a `BaseModel` object, or a
+    `JSONResponse` if you need full flexibility on return headers and content structure.
+
+    If you do return a JSONResponse note that we will handle the merging of the response for you - so
+    on the client side you will still access your endpoint contents with:
+
+    ```typescript
+    const response = await serverState.my_action({});
+    console.log(response.passthrough);
+    ```
+
+    Usage:
+
+    ```python
+    from pydantic import BaseModel
+
+    class ResponseModel(BaseModel):
+        pass
+
+    class MyController(ControllerBase):
+        @passthrough
+        async def my_action(self) -> ResponseModel:
+            ...
+    ```
+
+    :param exception_models: List of APIException subclasses that this function is known
+        to throw. These will be parsed and available to frontend clients.
+    :type exception_models: list[Type[APIException]] | None
+
+    :param raw_response: If specified, you can return a generic fastapi.Response object. There's
+        no constraint this endpoint returns JSON - you can return html or a custom protocol. This
+        lets you treat this API as a generic POST endpoint for you to fully control the output.
+    :type raw_response: bool
+
+    :return: The response model to use for this endpoint. If a BaseModel is not provided (you pass
+        a dictionary or a SQLModel object ofr instance), we will try to convert the response object
+        into the proper JSON response based on your typehint.
+    :rtype: BaseModel | None | fastapi.JSONResponse
 
     """
 

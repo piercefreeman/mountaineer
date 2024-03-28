@@ -42,7 +42,7 @@ nav:
     - error_handling.md
     - links.md
     - static_analysis.md
-    - PostCSS & Tailwind: postcss.md
+    - postcss.md
   - API:
     - api/app-controller.md
     - api/controller.md
