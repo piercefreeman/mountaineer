@@ -41,7 +41,8 @@ nav:
     - database.md
     - error_handling.md
     - links.md
-    - postcss.md
+    - static_analysis.md
+    - PostCSS & Tailwind: postcss.md
   - API:
     - api/app-controller.md
     - api/controller.md
