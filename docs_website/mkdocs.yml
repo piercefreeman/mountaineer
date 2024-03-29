@@ -43,6 +43,7 @@ nav:
     - links.md
     - static_analysis.md
     - postcss.md
+    - deploy.md
   - API:
     - api/app-controller.md
     - api/controller.md
