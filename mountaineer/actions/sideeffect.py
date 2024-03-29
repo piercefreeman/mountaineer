@@ -42,7 +42,7 @@ R = TypeVar("R", bound=BaseModel | JSONResponse | None)
 def sideeffect(
     *,
     reload: tuple[Any, ...] | None = None,
-    response_model: Type[BaseModel] | None = None,
+    response_model: Type[BaseModel] | None = None,  # deprecated
     exception_models: list[Type[APIException]] | None = None,
     experimental_render_reload: bool | None = None,
 ) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
@@ -61,12 +61,22 @@ def sideeffect(*args, **kwargs):  # type: ignore
     Mark a function as causing a sideeffect to the data. This will force a reload of the full (or partial) server state
     and sync these changes down to the client page.
 
+    Like passthroughs, @sideeffect accepts return values of None, BaseModel, or a JSONResponse if you need full flexibility
+    on return headers and content structure. Unlike @passthrough, it does not allow you to provide a non-JSON response since we need
+    to internally merge it with render() sideeffect update.
+
+    :param exception_models: List of APIException subclasses that this function is known
+        to throw. These will be parsed and available to frontend clients.
+    :type exception_models: list[Type[APIException]] | None
+
     :param reload:
 
         If provided, will ONLY reload these fields on the client side. By default will reload all fields. Otherwise, why
         specify a sideeffect at all? Note that even if this is provided, we will still regenerate a fully full state on the server
         as if render() is called again. This parameter only controls the data that is streamed back to the client in order to help
         reduce bandwidth of data that won't be changed.
+
+    :type reload: tuple[FieldClassDefinition, ...] | None
 
     :param experimental_render_reload:
 
@@ -75,6 +85,13 @@ def sideeffect(*args, **kwargs):  # type: ignore
         If True, will attempt to only execute the logic in render() that is required to calculate your
         `reload` parameters. Other logic will be short-circuited. If your render function has significant computation for other
         properties this can be a significant performance improvement. However, it is experimental and may not work in all cases.
+
+    :type experimental_render_reload: bool
+
+    :return: The response model to use for this endpoint. If a BaseModel is not provided (you pass
+        a dictionary or a SQLModel object ofr instance), we will try to convert the response object
+        into the proper JSON response based on your typehint.
+    :rtype: BaseModel | None | fastapi.JSONResponse
 
     """
 

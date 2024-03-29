@@ -22,9 +22,14 @@ async def handle_createdb(models: list[SQLModel]) -> None:
 
 async def handle_createdb(*args, **kwargs):
     """
-    Strictly speaking, passing a list of models isn't required. We just encourage
-    an explicit passing of either the models module or the SQLModels themselves to make
-    sure they are in-scope of the table registry when this function is run.
+    Strictly speaking, passing a list of models isn't required for this function. We'll happily
+    accept being called with `handle_createdb()`. We just encourage an explicit passing of either
+    the models module or the SQLModels themselves to make sure they are in-scope of the table
+    registry when this function is run. This is how we determine which tables to create at runtime.
+
+    :param model_module: The module containing the SQLModels to create
+
+    :param models: An explicit list of SQLModels to create
 
     """
 

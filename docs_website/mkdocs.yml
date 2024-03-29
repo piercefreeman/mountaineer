@@ -41,7 +41,9 @@ nav:
     - database.md
     - error_handling.md
     - links.md
+    - static_analysis.md
     - postcss.md
+    - deploy.md
   - API:
     - api/app-controller.md
     - api/controller.md
@@ -53,6 +55,7 @@ nav:
     - api/core_dependencies.md
     - api/logging.md
     - api/watch_server.md
+    - api/ssr.md
     - Database:
       - api/database/config.md
       - api/database/dependencies.md

@@ -9,6 +9,12 @@ from mountaineer.static import get_static_path
 
 
 class V8RuntimeError(Exception):
+    """
+    An exception thrown by the V8 runtime in the case of a permanent failure that
+    involves the content of the script.
+
+    """
+
     pass
 
 
@@ -42,13 +48,21 @@ def render_ssr(
     script: str, render_data: BaseModel, hard_timeout: int | float | None = None
 ) -> str:
     """
-    Render the react component in the provided SSR javascript bundle. This file will
+    Render the React component in the provided SSR javascript bundle. This file will
     be directly executed within the V8 runtime.
 
-    To speed up requests for the same exact content in the same time (ie. same react and same data)
-    we cache the result of the render_ssr_rust call.
+    To speed up requests for the same exact content (ie. same react and same data)
+    we cache the result of the render_ssr_rust call by default for a limited amount of
+    previous calls. We limit the overall size of this cache to 5MB.
+
+    :param script: The raw code of the javascript bundle to execute. Should be pre-compiled into an
+        SSR compatible package with a single entrypoint.
+    :param render_data: The data to inject into the SSR javascript bundle
+    :param hard_timeout: The maximum time to allow the render to take in seconds. If the render takes
+        longer than this time, our thread supervisor will kick in and terminate the rust worker.
 
     :raises TimeoutError: If the render takes longer than the hard_timeout
+    :raises V8RuntimeError: If the V8 runtime throws an exception during the render
 
     """
     polyfill_script = get_static_path("ssr_polyfills.js").read_text()
