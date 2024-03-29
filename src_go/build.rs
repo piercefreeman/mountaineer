@@ -16,6 +16,12 @@ fn main() {
         eprintln!("GOARCH is not set");
     }
 
+    // Print the current working directory
+    eprintln!(
+        "Current working directory: {}",
+        env::current_dir().unwrap().display()
+    );
+
     // Step 1: Compile the Go code into a static library.
     let status = Command::new("go")
         .args([
