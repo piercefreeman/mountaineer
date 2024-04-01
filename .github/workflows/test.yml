@@ -268,6 +268,11 @@ jobs:
             # Log the current glibc version
             ldd --version
 
+            # System configs
+            uname -a
+            cat /etc/os-release
+            cat /proc/version
+
             # Centos: wget for golang downloading, clang for golang build
             yum -y install wget
             yum -y install centos-release-scl
@@ -278,15 +283,37 @@ jobs:
             # find / -name "libclang.so*"
             export LIBCLANG_PATH=/opt/rh/llvm-toolset-7/root/usr/lib64/
 
-            clang --version
+            # Cross-compilation only available through EPEL release
+            # This should already be configured in the manylinux image
+            yum -y install gcc-aarch64-linux-gnu
 
-            uname -a
-            cat /etc/os-release
-            cat /proc/version
+            wget https://mirror.chpc.utah.edu/pub/centos-altarch/7/os/aarch64/Packages/glibc-devel-2.17-317.el7.aarch64.rpm -O /aarch64-devel.rpm
+            wget https://mirror.chpc.utah.edu/pub/centos-altarch/7/os/aarch64/Packages/glibc-common-2.17-317.el7.aarch64.rpm -O /aarch64-common.rpm
+            wget https://mirror.chpc.utah.edu/pub/centos-altarch/7/os/aarch64/Packages/glibc-headers-2.17-317.el7.aarch64.rpm -O /aarch64-headers.rpm
+            wget https://mirror.chpc.utah.edu/pub/centos-altarch/7/os/aarch64/Packages/kernel-headers-4.18.0-193.28.1.el7.aarch64.rpm -O /aarch64-kernel-headers.rpm
+
+            mkdir /usr/aarch64-glibc
+            rpm2cpio /aarch64-devel.rpm | (cd /usr/aarch64-glibc && cpio -idmv)
+            rpm2cpio /aarch64-common.rpm | (cd /usr/aarch64-glibc && cpio -idmv)
+            rpm2cpio /aarch64-headers.rpm | (cd /usr/aarch64-glibc && cpio -idmv)
+            rpm2cpio /aarch64-kernel-headers.rpm | (cd /usr/aarch64-glibc && cpio -idmv)
+
+            cp -r /usr/aarch64-glibc/usr/include /usr/aarch64-linux-gnu/include
+            cp -r /usr/aarch64-glibc/usr/lib64 /usr/aarch64-linux-gnu/lib64
+
+            clang --version
+            aarch64-linux-gnu-gcc --version
+
+            # log header search directories
+            export C_INCLUDE_PATH=$C_INCLUDE_PATH:/usr/aarch64-glibc/usr/include
+            export CPLUS_INCLUDE_PATH=$CPLUS_INCLUDE_PATH:/usr/aarch64-glibc/usr/include
 
             case "${{ matrix.target }}" in
               x86_64) export GOARCH="amd64";;
-              aarch64) export GOARCH="arm64";;
+              aarch64) export GOARCH="arm64";
+                export CC=aarch64-linux-gnu-gcc;
+                export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc;
+                export RUSTFLAGS="-C link-arg=-L/usr/aarch64-linux-gnu/lib64 -C link-args=-Wl,-v ${RUSTFLAGS}";;
               *) echo "Unsupported architecture: ${{ matrix.target }}"; exit 1;;
             esac
             echo "GOARCH=${GOARCH}"
@@ -300,11 +327,13 @@ jobs:
             # despite the build architecture
             wget -q https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz
             tar -C /usr/local -xzf go${GOVERSION}.linux-amd64.tar.gz
-            rm go${GOVERSION}.linux-amd64.tar.gz
+            rm -f go${GOVERSION}.linux-amd64.tar.gz
 
             # Set up Go environment variables
             export GOROOT=/usr/local/go
             export PATH=$PATH:$GOROOT/bin
+
+            go env
 
             go version
             go tool dist list
