@@ -16,6 +16,15 @@ fn main() {
         eprintln!("GOARCH is not set");
     }
 
+    // Print the current working directory
+    eprintln!(
+        "Current working directory: {}",
+        env::current_dir().unwrap().display()
+    );
+
+    // Print the $PATH
+    eprintln!("PATH: {}", env::var("PATH").unwrap());
+
     // Step 1: Compile the Go code into a static library.
     let status = Command::new("go")
         .args([
@@ -31,6 +40,8 @@ fn main() {
         .expect("Failed to execute go build");
 
     assert!(status.success(), "Go build failed");
+
+    eprintln!("Successful golang build");
 
     // Step 2: Generate Rust bindings using bindgen.
     let bindings = bindgen::Builder::default()
