@@ -275,11 +275,20 @@ jobs:
 
       - run: pip install -U twine
 
-      # Required for version updates
+      #
+      # Bump release version - poetry is required to run this step
+      #
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Add Poetry to PATH (Unix)
+        if: runner.os != 'Windows'
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Add Poetry to PATH (Windows)
+        if: runner.os == 'Windows'
+        run: echo "C:\Users\runneradmin\AppData\Roaming\Python\Scripts" >> $GITHUB_PATH
 
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -289,6 +298,9 @@ jobs:
           export SCRIPTS_PYTHON=$(cd .github/scripts && poetry run which python)
           $SCRIPTS_PYTHON .github/scripts/update_version.py ${{ github.ref_name }}
 
+      #
+      # Build pipeline
+      #
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}
         uses: PyO3/maturin-action@v1
