@@ -165,6 +165,8 @@ class JavascriptBundler(ClientBuilderBase):
             ssr_dir = root_path.get_managed_ssr_dir(tmp_build=True)
 
             # Client entrypoint config
+            # All these tuple arguments map to the input __init__ arguments
+            # for mountaineer_rs.BuildContextParams
             build_params.append(
                 (
                     str(payload.client_entrypoint_path),

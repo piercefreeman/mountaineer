@@ -27,8 +27,13 @@ class ConfigBase(BaseSettings, metaclass=ConfigMeta):
 
     """
 
-    # Name of the python package
+    # Name of the python package. Will be used to sniff for the installed
+    # codebase in the current virtualenv.
     PACKAGE: str | None = None
+
+    # Environment flag. Set to anything you want. Only if set to "development" will
+    # we include frontend artifacts for the hot-reloading server.
+    ENVIRONMENT: str = "development"
 
     model_config = {"frozen": True}
 
