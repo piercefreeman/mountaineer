@@ -166,6 +166,47 @@ jobs:
         with:
           jobs: ${{ toJSON(needs) }}
 
+  rust-tests:
+    # Test the OS specific rust hooks
+    name: build os=${{ matrix.os }} release=${{ matrix.release || 'latest' }}
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+          - os: macos
+          - os: windows
+
+    runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-${{ matrix.release || 'latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.21.2"
+
+      - name: Log go env
+        run: |
+          go env
+
+      - name: Get GOROOT
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
+      # Before we start building, validate that the Rust code compiles
+      # This helps to detect errors on different underlying architectures, since
+      # these wheel builds are representative of our deployment platforms
+      - name: Rust tests
+        run: cargo test --all
+
+      # Run basic benchmarks to make sure these still compile
+      - name: Rust benchmarks
+        run: cargo check --benches
+
   build:
     name: build os=${{ matrix.os }} target=${{ matrix.target }} int=${{ matrix.interpreter || 'all' }} ml=${{ matrix.manylinux || 'auto' }} release=${{ matrix.release || 'latest' }}
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
@@ -207,6 +248,21 @@ jobs:
         with:
           go-version: "1.21.2"
 
+      - name: Set golang build architecture
+        shell: bash
+        run: |
+          case "${{ matrix.target }}" in
+            x86_64) export GOARCH="amd64";;
+            aarch64) export GOARCH="arm64";;
+            *) echo "Unsupported architecture: ${{ matrix.target }}"; exit 1;;
+          esac
+          echo "GOARCH=${GOARCH}"
+          echo "GOARCH=${GOARCH}" >> $GITHUB_ENV
+
+          # Must be explicitly specified for cross-compilation
+          # Otherwise it causes the misleading "go: no Go source files" error
+          echo "CGO_ENABLED=1" >> $GITHUB_ENV
+
       - name: Log go env
         run: |
           go env
@@ -218,16 +274,6 @@ jobs:
           echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
 
       - run: pip install -U twine
-
-      # Before we start building, validate that the Rust code compiles
-      # This helps to detect errors on different underlying architectures, since
-      # these wheel builds are representative of our deployment platforms
-      - name: Rust tests
-        run: cargo test --all
-
-      # Run basic benchmarks to make sure these still compile
-      - name: Rust benchmarks
-        run: cargo bench
 
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -249,7 +295,7 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           args: -vv --release --out dist --interpreter ${{ matrix.interpreter || '3.11 3.12' }}
           rust-toolchain: stable
-          docker-options: -e CI -e CI_TARGET=${{ matrix.target }}
+          docker-options: -e CI -e CI_TARGET=${{ matrix.target }} -e GOARCH=${{ env.GOARCH }} -e CGO_ENABLED=${{ env.CGO_ENABLED }}
           # Already defaults to build, but we make explicit here. Any arguments should
           # be added to args above and not here - otherwise we will affect the switch()
           # condition handling of maturin-action.
@@ -293,9 +339,8 @@ jobs:
             ls -ls /usr/bin
 
             case "${{ matrix.target }}" in
-              x86_64) export GOARCH="amd64";;
+              x86_64) ;;
               aarch64)
-              export GOARCH="arm64";
               export PATH=$PATH:/usr/aarch64-unknown-linux-gnu/bin;
               aarch64-unknown-linux-gnu-gcc --version;
               export CC=aarch64-unknown-linux-gnu-gcc;;
@@ -304,10 +349,6 @@ jobs:
             echo "GOARCH=${GOARCH}"
 
             GOVERSION="1.22.1"
-
-            # Must be explicitly specified for cross-compilation
-            # Otherwise it causes the misleading "go: no Go source files" error
-            export CGO_ENABLED=1
 
             # Download and Install Go - we will always be running on a x86_64 runner
             # despite the build architecture
