@@ -3,11 +3,11 @@ Update the version for the regular Mountaineer rust project.
 
 """
 
-import re
 import sys
 from pathlib import Path
 from sys import stdout
 
+import toml
 from packaging.version import parse
 
 
@@ -17,21 +17,19 @@ def update_version_rust(new_version: str):
         stdout.write("Cargo.toml not found, skipping version update")
         return
 
-    filedata = cargo_path.read_text()
+    filedata = toml.loads(cargo_path.read_text())
 
     # If the new version is a pre-release version, we need to reformat it
     # to align with Cargo standards
     # pip format uses "0.1.0.dev1" while Cargo uses "0.1.0-dev1"
     cargo_version = format_cargo_version(new_version)
 
-    # Update the version in the file
-    filedata = re.sub(
-        r'^version = ".*"$',
-        f'version = "{cargo_version}"',
-        filedata,
-        flags=re.MULTILINE,
-    )
-    cargo_path.write_text(filedata)
+    if "package" not in filedata:
+        raise ValueError("Cargo.toml is missing the [package] section")
+
+    filedata["package"]["version"] = cargo_version
+
+    cargo_path.write_text(toml.dumps(filedata))
 
 
 def format_cargo_version(new_version: str) -> str:
@@ -57,20 +55,17 @@ def update_version_python(new_version: str):
         stdout.write("pyproject.toml not found, skipping version update")
         return
 
-    filedata = pyproject_path.read_text()
+    filedata = toml.loads(pyproject_path.read_text())
 
     # Parse the new version to ensure it's valid and potentially reformat
     python_version = format_python_version(new_version)
 
-    # Update the version in the filedata
-    # This regex targets the version field under the [project] table, assuming it's formatted as expected
-    filedata = re.sub(
-        r'version = ".*?"',
-        f'version = "{python_version}"',
-        filedata,
-        flags=re.MULTILINE,
-    )
-    pyproject_path.write_text(filedata)
+    if "tool" not in filedata or "poetry" not in filedata["tool"]:
+        raise ValueError("pyproject.toml is missing the [tool.poetry] section")
+
+    filedata["tool"]["poetry"]["version"] = python_version
+
+    pyproject_path.write_text(toml.dumps(filedata))
 
 
 def format_python_version(new_version: str) -> str:
