@@ -232,7 +232,7 @@ jobs:
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          pip install packaging
+          make install-deps-scripts
           python .github/scripts/update_version.py ${{ github.ref_name }}
 
       - name: build sdist
