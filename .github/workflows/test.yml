@@ -166,6 +166,47 @@ jobs:
         with:
           jobs: ${{ toJSON(needs) }}
 
+  rust-tests:
+    # Test the OS specific rust hooks
+    name: build os=${{ matrix.os }} release=${{ matrix.release || 'latest' }}
+    if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+          - os: macos
+          - os: windows
+
+    runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-${{ matrix.release || 'latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install golang
+        uses: actions/setup-go@v3
+        with:
+          go-version: "1.21.2"
+
+      - name: Log go env
+        run: |
+          go env
+
+      - name: Get GOROOT
+        run: |
+          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
+          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
+          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
+      # Before we start building, validate that the Rust code compiles
+      # This helps to detect errors on different underlying architectures, since
+      # these wheel builds are representative of our deployment platforms
+      - name: Rust tests
+        run: cargo test --all
+
+      # Run basic benchmarks to make sure these still compile
+      - name: Rust benchmarks
+        run: cargo check --benches
+
   build:
     name: build os=${{ matrix.os }} target=${{ matrix.target }} int=${{ matrix.interpreter || 'all' }} ml=${{ matrix.manylinux || 'auto' }} release=${{ matrix.release || 'latest' }}
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
@@ -233,16 +274,6 @@ jobs:
           echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
 
       - run: pip install -U twine
-
-      # Before we start building, validate that the Rust code compiles
-      # This helps to detect errors on different underlying architectures, since
-      # these wheel builds are representative of our deployment platforms
-      - name: Rust tests
-        run: cargo test --all
-
-      # Run basic benchmarks to make sure these still compile
-      - name: Rust benchmarks
-        run: cargo check --benches
 
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
