@@ -168,7 +168,7 @@ jobs:
 
   rust-tests:
     # Test the OS specific rust hooks
-    name: build os=${{ matrix.os }} release=${{ matrix.release || 'latest' }}
+    name: rust-tests os=${{ matrix.os }} release=${{ matrix.release || 'latest' }}
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
     strategy:
       fail-fast: false
@@ -283,10 +283,11 @@ jobs:
 
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
         run: |
           make install-deps-scripts
-          (cd .github/scripts && poetry shell)
-          python .github/scripts/update_version.py ${{ github.ref_name }}
+          export SCRIPTS_PYTHON=$(cd .github/scripts && poetry run which python)
+          $SCRIPTS_PYTHON .github/scripts/update_version.py ${{ github.ref_name }}
 
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}
