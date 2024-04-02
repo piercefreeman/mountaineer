@@ -27,13 +27,13 @@ SCRIPTS_NAME := scripts
 .PHONY: lint test
 
 # Main lint target
-lint: lint-lib lint-create-mountaineer-app lint-ci-webapp lint-docs-website lint-scripts
+lint: lint-lib lint-create-mountaineer-app lint-ci-webapp lint-scripts
 
 # Lint validation target
-lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint-validation-ci-webapp lint-validation-docs-website lint-validation-scripts
+lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint-validation-ci-webapp lint-validation-scripts
 
 # Testing target
-test: test-lib test-create-mountaineer-app
+test: test-lib test-create-mountaineer-app test-scripts
 
 # Integration testing target
 test-integrations: test-create-mountaineer-app-integrations
@@ -101,6 +101,8 @@ test-create-mountaineer-app:
 	$(call test-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
 test-create-mountaineer-app-integrations:
 	$(call test-common-integrations,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
+test-scripts:
+	$(call test-common,$(SCRIPTS_DIR),$(SCRIPTS_NAME))
 
 #
 # Common helper functions
