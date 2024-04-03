@@ -3,7 +3,7 @@ name = "scripts"
 version = "0.1.0"
 description = ""
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
-readme = "README.md"
+readme = "README_SCRIPTS.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
