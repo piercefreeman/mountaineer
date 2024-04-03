@@ -93,7 +93,11 @@ class AppController:
         self.global_metadata = global_metadata
         self.builders = [
             # Default builders
-            JavascriptBundler(),
+            JavascriptBundler(
+                environment=(
+                    config.ENVIRONMENT if config is not None else "development"
+                )
+            ),
             # Custom builders
             *(custom_builders if custom_builders else []),
         ]
