@@ -12,6 +12,7 @@ class JsonFormatter(Formatter):
         log_record = {
             "level": record.levelname,
             "name": record.name,
+            "timestamp": self.formatTime(record, self.datefmt),
             "message": record.getMessage(),
         }
         if record.exc_info:
