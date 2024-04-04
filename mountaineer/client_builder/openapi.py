@@ -21,11 +21,13 @@ class OpenAPISchemaType(StrEnum):
 
 
 class ParameterLocationType(StrEnum):
+    # https://swagger.io/specification: Parameter Object
     PATH = "path"
     QUERY = "query"
 
     # https://swagger.io/docs/specification/authentication/cookie-authentication/
     COOKIE = "cookie"
+    HEADER = "header"
 
 
 class ActionType(StrEnum):

@@ -134,7 +134,10 @@ class OpenAPIToTypescriptActionConverter:
 
         for parameter in action.parameters:
             typehint_key, typehint_value = get_typehint_for_parameter(parameter)
-            if parameter.in_location == ParameterLocationType.COOKIE:
+            if parameter.in_location in {
+                ParameterLocationType.COOKIE,
+                ParameterLocationType.HEADER,
+            }:
                 continue
             parameters_dict[parameter.name] = TSLiteral(parameter.name)
             typehint_dict[typehint_key] = typehint_value
@@ -182,7 +185,10 @@ class OpenAPIToTypescriptActionConverter:
                     common_params["path"][parameter.name] = TSLiteral(parameter.name)
                 elif parameter.in_location == ParameterLocationType.QUERY:
                     common_params["query"][parameter.name] = TSLiteral(parameter.name)
-                elif parameter.in_location == ParameterLocationType.COOKIE:
+                elif parameter.in_location in {
+                    ParameterLocationType.COOKIE,
+                    ParameterLocationType.HEADER,
+                }:
                     # No-op, cookies will be sent automatically by fetch()
                     continue
                 else:
