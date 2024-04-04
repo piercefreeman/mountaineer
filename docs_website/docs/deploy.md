@@ -7,10 +7,10 @@ This page contains a reasonable default configuration to get you started. We mak
 First, add the following to your `.dockerignore` file. This will prevent Docker from trying to copy over heavy artifacts that aren't needed for the build.
 
 ```title=".dockerignore"
-node_modules
-_server
-_ssr
-_static
+**/node_modules
+**/_server
+**/_ssr
+**/_static
 ```
 
 ### Image 1: Frontend Dependencies
@@ -103,8 +103,7 @@ ENV PATH="/venv/bin:$PATH"
 WORKDIR /usr/src/app
 
 COPY --from=venv-dependencies /venv /venv
-COPY {my_webapp} ./{my_webapp}
-COPY --from=server-hooks-builder /usr/src/app/{my_webapp}/views/_* ./{my_webapp}/views/
+COPY --from=server-hooks-builder /usr/src/app/{my_webapp}/views /venv/lib/python3.11/site-packages/{my_webapp}/views
 
 # Run the application
 CMD ["/venv/bin/uvicorn", "{my_webapp}.main:app", "--host", "0.0.0.0", "--port", "3000"]
