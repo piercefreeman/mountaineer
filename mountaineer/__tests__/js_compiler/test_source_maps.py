@@ -13,7 +13,7 @@ from mountaineer.test_utilities import benchmark_function
 
 
 @pytest.mark.asyncio
-@benchmark_function(0.2)
+@benchmark_function(0.2, time_budget_seconds=10)
 async def test_parse_source_map_parse(
     start_timing,
     end_timing,

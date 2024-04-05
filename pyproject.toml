@@ -77,3 +77,13 @@ dependencies = [
     "asyncpg",
     "sqlalchemy[asyncio]",
 ]
+
+# Excluded in sdist packaging
+exclude = [
+    "fixtures",
+    "ci_webapp",
+    "create_mountaineer_app",
+    "media",
+    "docs_website",
+    "benchmarking",
+]
