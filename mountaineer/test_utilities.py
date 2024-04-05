@@ -5,6 +5,7 @@ from functools import wraps
 from inspect import isawaitable, iscoroutinefunction, signature
 from tempfile import NamedTemporaryFile
 from time import monotonic_ns
+from typing import Any
 
 import pytest
 from sqlalchemy import text
@@ -19,12 +20,18 @@ class ExecutionTooLong(Exception):
     pass
 
 
-def benchmark_function(max_time_seconds: int | float):
+def benchmark_function(
+    max_time_seconds: int | float, time_budget_seconds: int | float = 5
+):
     """
     Wrap test functions in a timer that will enforce that the core logic completes
     in less than `max_time_seconds` seconds. Injects `start_timing` and `end_timing` into
     the function kwargs that will be called. Client callers should call these to scope
     where they want us to measure the core logic.
+
+    :param time_budget_seconds: How many seconds we have to run benchmarking. This function will run
+      at least 1 benchmark always, but the time budget allows users to better calibrate benchmark duration
+      by taking the average of multiple runs.
 
     """
     import pyinstrument
@@ -48,13 +55,10 @@ def benchmark_function(max_time_seconds: int | float):
                 f"Test function {test_func.__name__} is not a coroutine function. Please decorate it with pytest.mark.asyncio"
             )
 
-        @wraps(test_func)
-        async def wrapper(*args, **kwargs):
-            bound = new_sig.bind(*args, **kwargs)
-            bound.apply_defaults()
-
+        async def single_time_test(fn, *args, **kwargs):
             # Try to run the test function regularly, and time it
-            # Instrumenting profilers at this point typically will slow down execution time
+            # Instrumenting profilers typically will slow down execution time so we want
+            # to take time of the raw, non-instrumented function for benchmarking
             start: float | None = None
             end: float | None = None
 
@@ -66,31 +70,58 @@ def benchmark_function(max_time_seconds: int | float):
                 nonlocal end
                 end = monotonic_ns()
 
+            result = test_func(
+                *args, **kwargs, start_timing=start_timing, end_timing=end_timing
+            )
+            if isawaitable(result):
+                result = await result
+
+            return (start, end, result)
+
+        @wraps(test_func)
+        async def wrapper(*args, **kwargs):
+            bound = new_sig.bind(*args, **kwargs)
+            bound.apply_defaults()
+
+            average_duration: float | None = None
+
             try:
-                result = test_func(
-                    *args, **kwargs, start_timing=start_timing, end_timing=end_timing
+                timed_durations: list[tuple[int, int]] = []
+                results: list[Any] = []
+                global_start = monotonic_ns()
+
+                while monotonic_ns() - global_start < time_budget_seconds * 1e9:
+                    start, end, result = await single_time_test(
+                        test_func, *args, **kwargs
+                    )
+
+                    if start is None:
+                        raise Exception("Test function did not call start_timing")
+                    if end is None:
+                        raise Exception("Test function did not call end_timing")
+
+                    timed_durations.append((start, end))
+                    results.append(result)
+
+                average_duration = sum(
+                    (end - start) for start, end in timed_durations
+                ) / len(timed_durations)
+
+                LOGGER.info(
+                    f"Collected {len(results)} timed durations in {(monotonic_ns() - global_start) / 1e9}"
                 )
-                if isawaitable(result):
-                    result = await result
+                LOGGER.info(f"Test function took average: {average_duration / 1e9}")
 
-                if start is None:
-                    raise Exception("Test function did not call start_timing")
-                if end is None:
-                    raise Exception("Test function did not call end_timing")
-
-                LOGGER.info(f"Test function took: {(end - start) / 1e9}")
-
-                if (end - start) / 1e9 > max_time_seconds:
+                if average_duration / 1e9 > max_time_seconds:
                     raise ExecutionTooLong()
 
-                return result
+                return results[0]
 
             except ExecutionTooLong as e:
                 LOGGER.error(f"Test function failed due to: {e}")
 
                 # This should already be true, but we want to be explicit to help mypy
-                assert start is not None
-                assert end is not None
+                assert average_duration is not None
 
                 profiler = pyinstrument.Profiler()
                 output_filename: str | None = None
@@ -115,7 +146,7 @@ def benchmark_function(max_time_seconds: int | float):
                     await result
 
                 pytest.fail(
-                    f"Test function failed in {end-start}s and profiles generated; Pyinstrument: {output_filename}"
+                    f"Test function failed in {average_duration/1e9}s and profiles generated; Pyinstrument: {output_filename}"
                 )
 
         wrapper.__signature__ = new_sig  # type: ignore
