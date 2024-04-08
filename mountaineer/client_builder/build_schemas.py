@@ -8,6 +8,7 @@ from pydantic import BaseModel, create_model
 
 from mountaineer.annotation_helpers import get_value_by_alias, yield_all_subtypes
 from mountaineer.client_builder.openapi import (
+    EmptyAPIProperty,
     OpenAPIProperty,
     OpenAPISchema,
     OpenAPISchemaType,
@@ -81,7 +82,12 @@ class OpenAPIToTypescriptSchemaConverter:
         :param base: The core OpenAPI Schema
         """
 
-        def walk_models(property: OpenAPIProperty) -> Iterator[OpenAPIProperty]:
+        def walk_models(
+            property: OpenAPIProperty | EmptyAPIProperty,
+        ) -> Iterator[OpenAPIProperty]:
+            if isinstance(property, EmptyAPIProperty):
+                return
+
             if (
                 property.variable_type == OpenAPISchemaType.OBJECT
                 or property.enum is not None
@@ -152,8 +158,17 @@ class OpenAPIToTypescriptSchemaConverter:
         fields = []
 
         # We have to support arrays with one and multiple values
-        def walk_array_types(prop: OpenAPIProperty) -> Iterator[str]:
-            if prop.ref:
+        def walk_array_types(prop: OpenAPIProperty | EmptyAPIProperty) -> Iterator[str]:
+            if isinstance(prop, EmptyAPIProperty):
+                yield "any"
+                return
+
+            if prop.variable_type == OpenAPISchemaType.ARRAY:
+                array_types: list[str] = (
+                    sorted(set(walk_array_types(prop.items))) if prop.items else ["any"]
+                )
+                yield f"Array<{' | '.join(array_types)}>"
+            elif prop.ref:
                 yield self.get_typescript_interface_name(
                     self.resolve_ref(prop.ref, base=base)
                 )
@@ -177,16 +192,8 @@ class OpenAPIToTypescriptSchemaConverter:
                 or all_fields_required
             )
 
-            ts_type = (
-                map_openapi_type_to_ts(prop_details.variable_type)
-                if prop_details.variable_type
-                else None
-            )
-
-            annotation_str = " | ".join(set(walk_array_types(prop_details)))
-            ts_type = (
-                ts_type.format(types=annotation_str) if ts_type else annotation_str
-            )
+            # Sort types for determinism in tests and built code
+            ts_type = " | ".join(sorted(set(walk_array_types(prop_details))))
 
             if prop_details.description:
                 fields.append("  /**")

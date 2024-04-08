@@ -111,6 +111,10 @@ def test_model_gathering_enum_models():
         (MyStrEnum, ["value: MyStrEnum"]),
         (MyIntEnum, ["value: MyIntEnum"]),
         (MyEnum, ["value: MyEnum"]),
+        (str | None, ["value: null | string"]),
+        (list[str] | None, ["value: Array<string> | null"]),
+        (list[str | int] | None, ["value: Array<number | string> | null"]),
+        (list | None, ["value: Array<any> | null"]),
     ],
 )
 def test_python_to_typescript_types(

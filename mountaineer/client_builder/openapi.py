@@ -1,8 +1,8 @@
 import json
 from enum import StrEnum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 #
 # Enum definitions
@@ -43,6 +43,12 @@ class ActionType(StrEnum):
 #
 
 
+class EmptyAPIProperty(BaseModel):
+    # Ensure our model has exactly zero items for it to be
+    # an empty dict
+    model_config = ConfigDict(extra="forbid")
+
+
 class OpenAPIProperty(BaseModel):
     """
     A property is the core wrapper for OpenAPI model objects. It allows users to recursively
@@ -65,7 +71,7 @@ class OpenAPIProperty(BaseModel):
     # Reference to another type
     ref: str | None = Field(alias="$ref", default=None)
     # Array of another type
-    items: Optional["OpenAPIProperty"] = None
+    items: Union["OpenAPIProperty", EmptyAPIProperty, None] = None
     # Enum type
     enum: list[Any] | None = None
 
@@ -288,12 +294,15 @@ class OpenAPIDefinition(BaseModel):
 #
 
 
-def get_types_from_parameters(schema: OpenAPIProperty):
+def get_types_from_parameters(schema: OpenAPIProperty | EmptyAPIProperty):
     """
     Handle potentially complex types from the parameter schema, like the case
     of optional fields.
 
     """
+    if isinstance(schema, EmptyAPIProperty):
+        return "any"
+
     # Recursively gather all of the types that might be nested
     if schema.variable_type:
         yield schema.variable_type
