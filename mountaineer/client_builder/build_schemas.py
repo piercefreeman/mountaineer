@@ -164,6 +164,15 @@ class OpenAPIToTypescriptSchemaConverter:
                 return
 
             if prop.variable_type == OpenAPISchemaType.ARRAY:
+                # Special case for arrays where we shouldn't use the Array syntax
+                if prop.prefixItems:
+                    tuple_values = [
+                        " | ".join(sorted(set(walk_array_types(item))))
+                        for item in prop.prefixItems
+                    ]
+                    yield f"[{', '.join(tuple_values)}]"
+                    return
+
                 array_types: list[str] = (
                     sorted(set(walk_array_types(prop.items))) if prop.items else ["any"]
                 )
@@ -180,7 +189,9 @@ class OpenAPIToTypescriptSchemaConverter:
             elif prop.additionalProperties:
                 # OpenAPI doesn't specify the type of the keys since JSON forces them to be strings
                 # By the time we get to this function we should have called validate_typescript_candidate
-                sub_types = " | ".join(walk_array_types(prop.additionalProperties))
+                sub_types = " | ".join(
+                    sorted(set(walk_array_types(prop.additionalProperties)))
+                )
                 yield f"Record<{map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
             elif prop.variable_type:
                 yield map_openapi_type_to_ts(prop.variable_type)

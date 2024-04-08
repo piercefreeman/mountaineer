@@ -115,6 +115,14 @@ def test_model_gathering_enum_models():
         (list[str] | None, ["value: Array<string> | null"]),
         (list[str | int] | None, ["value: Array<number | string> | null"]),
         (list | None, ["value: Array<any> | null"]),
+        (
+            dict[str, str | None | int | float],
+            ["value: Record<string, null | number | string>"],
+        ),
+        (list[str | None] | None, ["value: Array<null | string> | null"]),
+        (tuple[str, str], ["value: [string, string]"]),
+        (tuple[str, int | None], ["value: [string, null | number]"]),
+        (list[tuple[str, int] | str], ["value: Array<[string, number] | string>"]),
     ],
 )
 def test_python_to_typescript_types(

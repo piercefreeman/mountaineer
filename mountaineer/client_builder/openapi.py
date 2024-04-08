@@ -18,6 +18,8 @@ class OpenAPISchemaType(StrEnum):
     ARRAY = "array"
     # Typically used to indicate an optional type within an anyOf statement
     NULL = "null"
+    # Used in some cases when endpoints can accept multiple number types (like integers and floats)
+    NUMBER = "number"
 
 
 class ParameterLocationType(StrEnum):
@@ -79,6 +81,10 @@ class OpenAPIProperty(BaseModel):
 
     # Pointer to multiple possible subtypes
     anyOf: list["OpenAPIProperty"] = []
+
+    # Supported by OpenAPI 3.1+, allows for definition of arrays that only accept
+    # certain quantity of item/type combinations (like a tuple)
+    prefixItems: list["OpenAPIProperty"] = []
 
     model_config = {"populate_by_name": True}
 
