@@ -81,8 +81,6 @@ def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType):
         "number": "number",
         "boolean": "boolean",
         "null": "null",
-        "array": "Array<{types}>",
-        "object": "{types}",
     }
     return mapping[openapi_type]
 

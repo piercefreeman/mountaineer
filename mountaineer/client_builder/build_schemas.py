@@ -8,6 +8,7 @@ from pydantic import BaseModel, create_model
 
 from mountaineer.annotation_helpers import get_value_by_alias, yield_all_subtypes
 from mountaineer.client_builder.openapi import (
+    EmptyAPIProperty,
     OpenAPIProperty,
     OpenAPISchema,
     OpenAPISchemaType,
@@ -17,6 +18,7 @@ from mountaineer.client_builder.typescript import (
     map_openapi_type_to_ts,
     python_payload_to_typescript,
 )
+from mountaineer.logging import LOGGER
 
 
 class OpenAPIToTypescriptSchemaConverter:
@@ -81,7 +83,12 @@ class OpenAPIToTypescriptSchemaConverter:
         :param base: The core OpenAPI Schema
         """
 
-        def walk_models(property: OpenAPIProperty) -> Iterator[OpenAPIProperty]:
+        def walk_models(
+            property: OpenAPIProperty | EmptyAPIProperty,
+        ) -> Iterator[OpenAPIProperty]:
+            if isinstance(property, EmptyAPIProperty):
+                return
+
             if (
                 property.variable_type == OpenAPISchemaType.OBJECT
                 or property.enum is not None
@@ -152,8 +159,26 @@ class OpenAPIToTypescriptSchemaConverter:
         fields = []
 
         # We have to support arrays with one and multiple values
-        def walk_array_types(prop: OpenAPIProperty) -> Iterator[str]:
-            if prop.ref:
+        def walk_array_types(prop: OpenAPIProperty | EmptyAPIProperty) -> Iterator[str]:
+            if isinstance(prop, EmptyAPIProperty):
+                yield "any"
+                return
+
+            if prop.variable_type == OpenAPISchemaType.ARRAY:
+                # Special case for arrays where we shouldn't use the Array syntax
+                if prop.prefixItems:
+                    tuple_values = [
+                        " | ".join(sorted(set(walk_array_types(item))))
+                        for item in prop.prefixItems
+                    ]
+                    yield f"[{', '.join(tuple_values)}]"
+                    return
+
+                array_types: list[str] = (
+                    sorted(set(walk_array_types(prop.items))) if prop.items else ["any"]
+                )
+                yield f"Array<{' | '.join(array_types)}>"
+            elif prop.ref:
                 yield self.get_typescript_interface_name(
                     self.resolve_ref(prop.ref, base=base)
                 )
@@ -165,10 +190,16 @@ class OpenAPIToTypescriptSchemaConverter:
             elif prop.additionalProperties:
                 # OpenAPI doesn't specify the type of the keys since JSON forces them to be strings
                 # By the time we get to this function we should have called validate_typescript_candidate
-                sub_types = " | ".join(walk_array_types(prop.additionalProperties))
+                sub_types = " | ".join(
+                    sorted(set(walk_array_types(prop.additionalProperties)))
+                )
                 yield f"Record<{map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
             elif prop.variable_type:
                 yield map_openapi_type_to_ts(prop.variable_type)
+            elif prop.const:
+                yield python_payload_to_typescript(prop.const)
+            else:
+                LOGGER.warning(f"Unknown property type: {prop}")
 
         for prop_name, prop_details in model.properties.items():
             is_required = (
@@ -177,16 +208,8 @@ class OpenAPIToTypescriptSchemaConverter:
                 or all_fields_required
             )
 
-            ts_type = (
-                map_openapi_type_to_ts(prop_details.variable_type)
-                if prop_details.variable_type
-                else None
-            )
-
-            annotation_str = " | ".join(set(walk_array_types(prop_details)))
-            ts_type = (
-                ts_type.format(types=annotation_str) if ts_type else annotation_str
-            )
+            # Sort types for determinism in tests and built code
+            ts_type = " | ".join(sorted(set(walk_array_types(prop_details))))
 
             if prop_details.description:
                 fields.append("  /**")
