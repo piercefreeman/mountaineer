@@ -1,6 +1,6 @@
 from enum import Enum, IntEnum, StrEnum
 from json import dumps as json_dumps
-from typing import Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 import pytest
 from pydantic import BaseModel, Field, create_model
@@ -10,6 +10,7 @@ from mountaineer.client_builder.build_schemas import (
     OpenAPIToTypescriptSchemaConverter,
 )
 from mountaineer.client_builder.openapi import OpenAPIProperty, OpenAPISchemaType
+from mountaineer.logging import LOGGER
 
 T = TypeVar("T")
 
@@ -123,6 +124,18 @@ def test_model_gathering_enum_models():
         (tuple[str, str], ["value: [string, string]"]),
         (tuple[str, int | None], ["value: [string, null | number]"]),
         (list[tuple[str, int] | str], ["value: Array<[string, number] | string>"]),
+        (Literal["my_value"], ["value: 'my_value'"]),
+        (Literal["my_value"] | Literal[True], ["value: 'my_value' | true"]),  # type: ignore
+        (bool, ["value: boolean"]),
+        (float, ["value: number"]),
+        (Any, ["value: any"]),
+        # We don't consider types that would encompass other types, so right now
+        # we just parse separately
+        (Any | None, ["value: any | null"]),  # type: ignore
+        # OpenAPI doesn't support bytes, so it casts them as strings
+        (bytes, ["value: string"]),
+        # OpenAPI doesn't support sets, so it casts them as arrays
+        (set[str], ["value: Array<string>"]),
     ],
 )
 def test_python_to_typescript_types(
@@ -137,6 +150,7 @@ def test_python_to_typescript_types(
         value=(python_type, Field()),
     )
 
+    LOGGER.debug(f"Raw schema: {fake_model.model_json_schema()}")
     schema = OpenAPISchema(**fake_model.model_json_schema())
 
     converter = OpenAPIToTypescriptSchemaConverter()

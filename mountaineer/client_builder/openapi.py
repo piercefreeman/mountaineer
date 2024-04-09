@@ -48,6 +48,17 @@ class ActionType(StrEnum):
 class EmptyAPIProperty(BaseModel):
     # Ensure our model has exactly zero items for it to be
     # an empty dict
+    #
+    # Sometimes this is used explicitly as an "any", sometimes it is derived
+    # that any is the only value that can match the type constraints
+    # and it's inserted by our OpenAPI generator automatically
+    #
+    # It can also optionally have a "title" and description in case it was
+    # defined explicitly
+    title: str | None = None
+    description: str | None = None
+    default: Any | None = None
+
     model_config = ConfigDict(extra="forbid")
 
 
@@ -61,8 +72,8 @@ class OpenAPIProperty(BaseModel):
 
     title: str | None = None
     description: str | None = None
-    properties: dict[str, "OpenAPIProperty"] = {}
-    additionalProperties: Optional["OpenAPIProperty"] = None
+    properties: dict[str, Union["OpenAPIProperty", EmptyAPIProperty]] = {}
+    additionalProperties: Union["OpenAPIProperty", EmptyAPIProperty, None] = None
     required: list[str] = []
 
     # Just specified on the leaf object
@@ -76,24 +87,35 @@ class OpenAPIProperty(BaseModel):
     items: Union["OpenAPIProperty", EmptyAPIProperty, None] = None
     # Enum type
     enum: list[Any] | None = None
+    # Literal objects that require a static value
+    const: Any | None = None
 
     default: Any | None = None
 
     # Pointer to multiple possible subtypes
-    anyOf: list["OpenAPIProperty"] = []
+    anyOf: list[Union["OpenAPIProperty", EmptyAPIProperty]] = []
 
     # Supported by OpenAPI 3.1+, allows for definition of arrays that only accept
     # certain quantity of item/type combinations (like a tuple)
-    prefixItems: list["OpenAPIProperty"] = []
+    prefixItems: list[Union["OpenAPIProperty", EmptyAPIProperty]] = []
 
     model_config = {"populate_by_name": True}
 
     # Validator to ensure that one of the optional values is set
     @model_validator(mode="after")
     def check_provided_value(self: "OpenAPIProperty") -> "OpenAPIProperty":
-        if not any([self.variable_type, self.ref, self.items, self.anyOf, self.enum]):
+        if not any(
+            [
+                self.variable_type,
+                self.ref,
+                self.items,
+                self.anyOf,
+                self.enum,
+                self.const,
+            ]
+        ):
             raise ValueError(
-                "One of variable_type, $ref, anyOf, enum, or items must be set"
+                "One of variable_type, $ref, anyOf, enum, const, or items must be set"
             )
         return self
 
@@ -109,6 +131,7 @@ class OpenAPIProperty(BaseModel):
         variable_type: OpenAPISchemaType | None = None,
         ref: str | None = None,
         items: Optional["OpenAPIProperty"] = None,
+        const: Any | None = None,
         enum: list[Any] | None = None,
         anyOf: list["OpenAPIProperty"] = [],
     ) -> "OpenAPIProperty":
@@ -124,6 +147,7 @@ class OpenAPIProperty(BaseModel):
                 "$ref": ref,
                 "items": items,
                 "enum": enum,
+                "const": const,
                 "anyOf": anyOf,
             }
         )

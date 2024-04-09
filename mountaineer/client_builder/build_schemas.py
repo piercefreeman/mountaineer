@@ -18,6 +18,7 @@ from mountaineer.client_builder.typescript import (
     map_openapi_type_to_ts,
     python_payload_to_typescript,
 )
+from mountaineer.logging import LOGGER
 
 
 class OpenAPIToTypescriptSchemaConverter:
@@ -195,6 +196,10 @@ class OpenAPIToTypescriptSchemaConverter:
                 yield f"Record<{map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
             elif prop.variable_type:
                 yield map_openapi_type_to_ts(prop.variable_type)
+            elif prop.const:
+                yield python_payload_to_typescript(prop.const)
+            else:
+                LOGGER.warning(f"Unknown property type: {prop}")
 
         for prop_name, prop_details in model.properties.items():
             is_required = (
