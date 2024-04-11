@@ -296,3 +296,24 @@ def test_get_typescript_interface_name(model_title: str, expected_interface: str
         )
         == expected_interface
     )
+
+
+class ChildNode(BaseModel):
+    siblings: list["ChildNode"]
+
+
+def test_gather_all_models_recursive():
+    """
+    Ensure that schemas can be specified recursively for nested elements.
+
+    """
+    converter = OpenAPIToTypescriptSchemaConverter()
+    openapi_spec = OpenAPISchema(**converter.get_model_json_schema(ChildNode))
+
+    found_models = converter.gather_all_models(openapi_spec)
+    assert len(found_models) == 1
+
+    js_interfaces = converter.convert_schema_to_typescript(openapi_spec)
+    assert js_interfaces == {
+        "ChildNode": "interface ChildNode {\n  siblings: Array<ChildNode>;\n}"
+    }

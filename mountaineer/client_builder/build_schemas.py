@@ -83,11 +83,19 @@ class OpenAPIToTypescriptSchemaConverter:
         :param base: The core OpenAPI Schema
         """
 
+        seen_models: set[str] = set()
+
         def walk_models(
             property: OpenAPIProperty | EmptyAPIProperty,
         ) -> Iterator[OpenAPIProperty]:
             if isinstance(property, EmptyAPIProperty):
                 return
+
+            if property.title in seen_models:
+                # We've already parsed this model
+                return
+            elif property.title:
+                seen_models.add(property.title)
 
             if (
                 property.variable_type == OpenAPISchemaType.OBJECT
