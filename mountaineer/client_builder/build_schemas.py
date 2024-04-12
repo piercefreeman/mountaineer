@@ -83,11 +83,19 @@ class OpenAPIToTypescriptSchemaConverter:
         :param base: The core OpenAPI Schema
         """
 
+        seen_models: set[str] = set()
+
         def walk_models(
             property: OpenAPIProperty | EmptyAPIProperty,
         ) -> Iterator[OpenAPIProperty]:
             if isinstance(property, EmptyAPIProperty):
                 return
+
+            if property.title in seen_models:
+                # We've already parsed this model
+                return
+            elif property.title:
+                seen_models.add(property.title)
 
             if (
                 property.variable_type == OpenAPISchemaType.OBJECT
@@ -194,10 +202,12 @@ class OpenAPIToTypescriptSchemaConverter:
                     sorted(set(walk_array_types(prop.additionalProperties)))
                 )
                 yield f"Record<{map_openapi_type_to_ts(OpenAPISchemaType.STRING)}, {sub_types}>"
-            elif prop.variable_type:
-                yield map_openapi_type_to_ts(prop.variable_type)
             elif prop.const:
                 yield python_payload_to_typescript(prop.const)
+            elif prop.variable_type:
+                # Should be the very last type to parsed, since all the other switch
+                # statements are more specific than a simple variable type
+                yield map_openapi_type_to_ts(prop.variable_type)
             else:
                 LOGGER.warning(f"Unknown property type: {prop}")
 
