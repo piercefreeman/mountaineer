@@ -1,5 +1,7 @@
+from enum import StrEnum
 from re import sub as re_sub
 from typing import Callable
+from uuid import UUID
 
 import pytest
 from fastapi import APIRouter
@@ -17,6 +19,20 @@ def view_endpoint_path_params(path_a: str, path_b: int):
 
 
 def view_endpoint_query_params(query_a: str, query_b: int | None = None):
+    pass
+
+
+class RouteType(StrEnum):
+    ROUTE_A = "route_a"
+    ROUTE_B = "route_b"
+
+
+def enum_view_url(model_type: RouteType, model_id: UUID):
+    """
+    Model view paths like /{model_type}/{model_id} where we want a flexible
+    string to be captured in the model_type path.
+
+    """
     pass
 
 
@@ -89,6 +105,35 @@ def view_endpoint_query_params(query_a: str, query_b: int | None = None):
                         query_b
                     };
                     const pathParameters: Record<string,any> = {};
+                    return __getLink({
+                        rawUrl: url,
+                        queryParameters,
+                        pathParameters
+                    });
+                };
+                """
+            ),
+        ),
+        # Path with enum path variables - we should typehint explicitly
+        # as the enum based values
+        (
+            "/enum_view/{model_type}/{model_id}",
+            enum_view_url,
+            (
+                """
+                export const getLink = ({
+                    model_type,
+                    model_id
+                }:{
+                    model_type: 'route_a' | 'route_b',
+                    model_id: string
+                }) => {
+                    const url = `/enum_view/{model_type}/{model_id}`;
+                    const queryParameters: Record<string,any> = {};
+                    const pathParameters: Record<string,any> = {
+                        model_type,
+                        model_id
+                    };
                     return __getLink({
                         rawUrl: url,
                         queryParameters,
