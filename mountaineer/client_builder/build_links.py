@@ -58,7 +58,9 @@ class OpenAPIToTypescriptLinkConverter:
             }:
                 continue
 
-            typehint_key, typehint_value = get_typehint_for_parameter(parameter)
+            typehint_key, typehint_value = get_typehint_for_parameter(
+                parameter, openapi_spec
+            )
             input_parameters[TSLiteral(parameter.name)] = TSLiteral(parameter.name)
             typehint_parameters[typehint_key] = typehint_value
 

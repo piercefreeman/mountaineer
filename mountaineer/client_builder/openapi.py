@@ -4,6 +4,8 @@ from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from mountaineer.annotation_helpers import get_value_by_alias
+
 #
 # Enum definitions
 #
@@ -324,33 +326,24 @@ class OpenAPIDefinition(BaseModel):
 #
 
 
-def get_types_from_parameters(schema: OpenAPIProperty | EmptyAPIProperty):
+def resolve_ref(ref: str, base: BaseModel) -> OpenAPIProperty:
     """
-    Handle potentially complex types from the parameter schema, like the case
-    of optional fields.
+    Resolve a $ref that points to a propery-compliant schema in the same document. If this
+    ref points somewhere else in the document (that is valid but not a data model) than we
+    raise a ValueError.
 
     """
-    if isinstance(schema, EmptyAPIProperty):
-        return "any"
-
-    # Recursively gather all of the types that might be nested
-    if schema.variable_type:
-        yield schema.variable_type
-
-    for property in schema.properties.values():
-        yield from get_types_from_parameters(property)
-
-    if schema.additionalProperties:
-        yield from get_types_from_parameters(schema.additionalProperties)
-
-    if schema.items:
-        yield from get_types_from_parameters(schema.items)
-
-    if schema.anyOf:
-        for one_of in schema.anyOf:
-            yield from get_types_from_parameters(one_of)
-
-    # We don't expect $ref values in the URL schema, if we do then the parsing
-    # is likely incorrect
-    if schema.ref:
-        raise ValueError(f"Unexpected $ref in URL schema: {schema.ref}")
+    current_obj = base
+    for part in ref.split("/"):
+        if part == "#":
+            current_obj = base
+        else:
+            try:
+                current_obj = get_value_by_alias(current_obj, part)
+            except AttributeError as e:
+                raise AttributeError(
+                    f"Invalid $ref, couldn't resolve path: {ref}"
+                ) from e
+    if not isinstance(current_obj, OpenAPIProperty):
+        raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")
+    return current_obj

@@ -6,12 +6,13 @@ from typing import Any, Dict, Iterator, Type, get_args, get_origin
 from inflection import camelize
 from pydantic import BaseModel, create_model
 
-from mountaineer.annotation_helpers import get_value_by_alias, yield_all_subtypes
+from mountaineer.annotation_helpers import yield_all_subtypes
 from mountaineer.client_builder.openapi import (
     EmptyAPIProperty,
     OpenAPIProperty,
     OpenAPISchema,
     OpenAPISchemaType,
+    resolve_ref,
 )
 from mountaineer.client_builder.typescript import (
     TSLiteral,
@@ -103,7 +104,7 @@ class OpenAPIToTypescriptSchemaConverter:
             ):
                 yield property
             if property.ref is not None:
-                yield from walk_models(self.resolve_ref(property.ref, base))
+                yield from walk_models(resolve_ref(property.ref, base))
             if property.items:
                 yield from walk_models(property.items)
             if property.anyOf:
@@ -115,28 +116,6 @@ class OpenAPIToTypescriptSchemaConverter:
                 yield from walk_models(property.additionalProperties)
 
         return list(set(walk_models(base)))
-
-    def resolve_ref(self, ref: str, base: BaseModel) -> OpenAPIProperty:
-        """
-        Resolve a $ref that points to a propery-compliant schema in the same document. If this
-        ref points somewhere else in the document (that is valid but not a data model) than we
-        raise a ValueError.
-
-        """
-        current_obj = base
-        for part in ref.split("/"):
-            if part == "#":
-                current_obj = base
-            else:
-                try:
-                    current_obj = get_value_by_alias(current_obj, part)
-                except AttributeError as e:
-                    raise AttributeError(
-                        f"Invalid $ref, couldn't resolve path: {ref}"
-                    ) from e
-        if not isinstance(current_obj, OpenAPIProperty):
-            raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")
-        return current_obj
 
     def convert_schema_to_interface(
         self,
@@ -188,7 +167,7 @@ class OpenAPIToTypescriptSchemaConverter:
                 yield f"Array<{' | '.join(array_types)}>"
             elif prop.ref:
                 yield self.get_typescript_interface_name(
-                    self.resolve_ref(prop.ref, base=base)
+                    resolve_ref(prop.ref, base=base)
                 )
             elif prop.items:
                 yield from walk_array_types(prop.items)

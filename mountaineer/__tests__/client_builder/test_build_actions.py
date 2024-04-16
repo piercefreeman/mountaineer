@@ -1,4 +1,6 @@
+from datetime import datetime
 from re import sub as re_sub
+from uuid import UUID
 
 import pytest
 from fastapi import APIRouter
@@ -122,6 +124,37 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
             ),
             [
                 "ExampleModel",
+                "ExampleResponseModel",
+            ],
+        ),
+        # No request body parameter
+        (
+            "my_method_fn",
+            "/testing/url",
+            ActionDefinition(
+                action_type=ActionType.POST,
+                summary="",
+                operationId="",
+                requestBody=None,
+                responses={
+                    "200": EXAMPLE_RESPONSE_200,
+                    "422": EXAMPLE_RESPONSE_400,
+                },
+            ),
+            (
+                """
+                export const my_method_fn = (): Promise<ExampleResponseModel> => {
+                    return __request({
+                        'method': 'POST',
+                        'url': '/testing/url',
+                        'errors': {
+                            422: HTTPValidationErrorException
+                        }
+                    });
+                }
+                """
+            ),
+            [
                 "ExampleResponseModel",
             ],
         ),
@@ -363,3 +396,30 @@ def test_build_raw_response_action(
     built_function, build_imports = builder.build_action(url, definition, method_name)
     assert re_sub(r"\s+", "", built_function) == re_sub(r"\s+", "", expected_function)
     assert set(build_imports) == set(expected_imports)
+
+
+AnyType = None | bool | str | int | datetime | UUID
+DictParamItem = dict[str, AnyType]
+
+
+def test_build_invalid_action_api():
+    """
+    Ensure that we throw an error if the user has provided a schema payload
+    that is technically valid, but doesn't allow typehinting with pydantic. All non-raw
+    JSON requests should be Pydantic methods.
+
+    https://github.com/piercefreeman/mountaineer/issues/94
+
+    """
+
+    def fn1(payload: DictParamItem, item_id: str, other_id: str) -> None:
+        pass
+
+    router = APIRouter()
+    router.post("/fn1")(fn1)
+
+    builder = OpenAPIToTypescriptActionConverter()
+    openapi_spec = get_openapi(title="", version="", routes=router.routes)
+
+    with pytest.raises(ValueError):
+        builder.convert(openapi_spec)
