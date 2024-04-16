@@ -204,12 +204,16 @@ class OpenAPIToTypescriptActionConverter:
                 if not action.is_raw_response:
                     response_types.append(
                         self.get_typescript_name_from_content_definition(
-                            response_definition.content_schema
+                            response_definition.content_schema,
+                            url=url,
+                            status_code=status_int,
                         )
                     )
             else:
                 error_typehint = self.get_typescript_name_from_content_definition(
-                    response_definition.content_schema
+                    response_definition.content_schema,
+                    url=url,
+                    status_code=status_int,
                 )
                 common_params["errors"][status_int] = TSLiteral(
                     # Provide a mapping to the error class
@@ -253,11 +257,18 @@ class OpenAPIToTypescriptActionConverter:
         return method_names
 
     def get_typescript_name_from_content_definition(
-        self, definition: ContentDefinition
+        self,
+        definition: ContentDefinition,
+        # Url and status are provided for more context about where the error
+        # is being thrown. Can pass None if not available.
+        url: str | None = None,
+        status_code: int | None = None,
     ):
         if not definition.schema_ref.ref:
             raise ValueError(
-                f"Content definition {definition} does not have a schema reference"
+                f"Content definition {definition} does not have a schema reference.\n"
+                f"Double check your action definition for {url} with response code {status_code}.\n"
+                "Are you typehinting your response with a Pydantic BaseModel?"
             )
         return definition.schema_ref.ref.split("/")[-1]
 
