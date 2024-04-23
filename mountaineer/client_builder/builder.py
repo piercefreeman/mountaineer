@@ -3,7 +3,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
-from shutil import rmtree
+from shutil import move as shutil_move, rmtree
 from tempfile import TemporaryDirectory
 from time import monotonic_ns
 from typing import Any
@@ -492,8 +492,15 @@ class ClientBuilder:
 
             # Since the tmp builds are within their parent folder, we need to move
             # them out of the way before we clear
-            self.view_root.get_managed_static_dir(tmp_build=True).rename(tmp_static_dir)
-            self.view_root.get_managed_ssr_dir(tmp_build=True).rename(tmp_ssr_dir)
+            # Unlike the standard rename operation, shutil will treat this move as a rename if the files
+            # exist within the same OS and will do a copy/replace if they live across volumes
+            # This is necessary for some docker build pipelines where /tmp is auto-mounted
+            # as a shared volume between stages and therefore the act of building temporary files
+            # would cause a "Invalid cross-device link" when we try to copy
+            shutil_move(
+                self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
+            )
+            shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
 
             static_dir = self.view_root.get_managed_static_dir()
             ssr_dir = self.view_root.get_managed_ssr_dir()
@@ -503,8 +510,8 @@ class ClientBuilder:
                 clear_dir.mkdir(parents=True)
 
             # Final move
-            tmp_static_dir.rename(self.view_root.get_managed_static_dir())
-            tmp_ssr_dir.rename(self.view_root.get_managed_ssr_dir())
+            shutil_move(tmp_static_dir, self.view_root.get_managed_static_dir())
+            shutil_move(tmp_ssr_dir, self.view_root.get_managed_ssr_dir())
 
     def cache_is_outdated(self):
         """
