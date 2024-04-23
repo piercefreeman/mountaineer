@@ -3,7 +3,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
-from shutil import move as shutil_move, rmtree
+from shutil import move as shutil_move, rmtree as shutil_rmtree
 from tempfile import TemporaryDirectory
 from time import monotonic_ns
 from typing import Any
@@ -506,12 +506,17 @@ class ClientBuilder:
             ssr_dir = self.view_root.get_managed_ssr_dir()
             for clear_dir in [static_dir, ssr_dir]:
                 if clear_dir.exists():
-                    rmtree(clear_dir)
-                clear_dir.mkdir(parents=True)
+                    shutil_rmtree(clear_dir)
 
-            # Final move
-            shutil_move(tmp_static_dir, self.view_root.get_managed_static_dir())
-            shutil_move(tmp_ssr_dir, self.view_root.get_managed_ssr_dir())
+            # Final move - shutil requires the destination directory to not exist, otherwise
+            # it will place the folder within the given folder. Since we just want a regular
+            # rename, we make sure to not create the destination directory
+            shutil_move(
+                tmp_static_dir, self.view_root.get_managed_static_dir(create_dir=False)
+            )
+            shutil_move(
+                tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
+            )
 
     def cache_is_outdated(self):
         """

@@ -87,34 +87,38 @@ class ManagedViewPath(type(Path())):  # type: ignore
             )
         return self.package_root_link
 
-    def get_managed_code_dir(self):
-        return self.get_managed_dir_common("_server")
+    def get_managed_code_dir(self, create_dir: bool = True):
+        return self.get_managed_dir_common("_server", create_dir=create_dir)
 
-    def get_managed_static_dir(self, tmp_build: bool = False):
+    def get_managed_static_dir(self, tmp_build: bool = False, create_dir: bool = True):
         # Only root paths can have static directories
         if not self.is_root_link:
             raise ValueError(
                 "Cannot get static directory from a non-root linked view path"
             )
-        path = self.get_managed_dir_common("_static")
+        path = self.get_managed_dir_common("_static", create_dir=create_dir)
         if tmp_build:
             path = path / "tmp"
             path.mkdir(exist_ok=True)
         return path
 
-    def get_managed_ssr_dir(self, tmp_build: bool = False):
+    def get_managed_ssr_dir(self, tmp_build: bool = False, create_dir: bool = True):
         # Only root paths can have SSR directories
         if not self.is_root_link:
             raise ValueError(
                 "Cannot get SSR directory from a non-root linked view path"
             )
-        path = self.get_managed_dir_common("_ssr")
+        path = self.get_managed_dir_common("_ssr", create_dir=create_dir)
         if tmp_build:
             path = path / "tmp"
             path.mkdir(exist_ok=True)
         return path
 
-    def get_managed_dir_common(self, managed_dir: str):
+    def get_managed_dir_common(
+        self,
+        managed_dir: str,
+        create_dir: bool = True,
+    ):
         # If the path is to a file, we want to get the parent directory
         # so that we can create the managed code directory
         # We also create the managed code directory if it doesn't exist so all subsequent
@@ -123,7 +127,8 @@ class ManagedViewPath(type(Path())):  # type: ignore
         if path.is_file():
             path = path.parent
         managed_code_dir = path / managed_dir
-        managed_code_dir.mkdir(exist_ok=True)
+        if create_dir:
+            managed_code_dir.mkdir(exist_ok=True)
         return managed_code_dir
 
     def get_controller_view_path(self, controller: "ControllerBase"):
