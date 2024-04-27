@@ -23,6 +23,9 @@ DOCS_WEBSITE_NAME := docs_website
 SCRIPTS_DIR := .github
 SCRIPTS_NAME := scripts
 
+BENCHMARKING_DIR := benchmarking
+BENCHMARKING_NAME := benchmarking
+
 # Ignore these directories in the local filesystem if they exist
 .PHONY: lint test
 
@@ -39,7 +42,9 @@ test: test-lib test-create-mountaineer-app test-scripts
 test-integrations: test-create-mountaineer-app-integrations
 
 # Install all sub-project dependencies with poetry
-install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-ci-webapp install-deps-scripts
+install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-ci-webapp install-deps-scripts install-deps-docs-website install-benchmarking-scripts
+
+clean: clean-poetry-lock clean-poetry-venv clean-caches
 
 install-deps-lib:
 	@echo "Installing dependencies for $(LIB_DIR)..."
@@ -62,6 +67,10 @@ install-deps-scripts:
 	@echo "Installing dependencies for $(SCRIPTS_DIR)..."
 	@(cd $(SCRIPTS_DIR) && poetry install)
 
+install-benchmarking-scripts:
+	@echo "Installing dependencies for $(SCRIPTS_DIR)..."
+	@(cd $(SCRIPTS_DIR) && poetry install)
+
 # Clean the current poetry.lock files, useful for remote CI machines
 # where we're running on a different base architecture than when
 # developing locally
@@ -72,6 +81,33 @@ clean-poetry-lock:
 	@rm -f $(CI_WEBAPP_DIR)/poetry.lock
 	@rm -f $(DOCS_WEBSITE_DIR)/poetry.lock
 	@rm -f $(SCRIPTS_DIR)/poetry.lock
+	@rm -f $(BENCHMARKING_DIR)/poetry.lock
+
+clean-poetry-venv:
+	@echo "Cleaning .venv folders..."
+	@rm -rf .venv
+	@rm -rf $(CREATE_MOUNTAINEER_APP_DIR)/.venv
+	@rm -rf $(CI_WEBAPP_DIR)/.venv
+	@rm -rf $(DOCS_WEBSITE_DIR)/.venv
+	@rm -rf $(SCRIPTS_DIR)/.venv
+	@rm -rf $(BENCHMARKING_DIR)/.venv
+
+clean-caches:
+	@echo "Cleaning python cache folders..."
+	@find . -name .mypy_cache -type d -exec rm -rf {} +
+	@find . -name .pytest_cache -type d -exec rm -rf {} +
+	@find . -name .ruff_cache -type d -exec rm -rf {} +
+	@find . -name __pycache__ -type d -exec rm -rf {} +
+	@rm -rf $(LIB_DIR)/target
+
+poetry-relock:
+	@echo "Relocking poetry.lock files..."
+	@(cd $(LIB_DIR) && poetry lock)
+	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && poetry lock)
+	@(cd $(CI_WEBAPP_DIR) && poetry lock)
+	@(cd $(DOCS_WEBSITE_DIR) && poetry lock)
+	@(cd $(SCRIPTS_DIR) && poetry lock)
+	@(cd $(BENCHMARKING_DIR) && poetry lock)
 
 # Standard linting - local development, with fixing enabled
 lint-lib:
@@ -103,6 +139,14 @@ test-create-mountaineer-app-integrations:
 	$(call test-common-integrations,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
 test-scripts:
 	$(call test-common,$(SCRIPTS_DIR),$(SCRIPTS_NAME))
+
+# Vermin
+vermin-all:
+	$(call vermin-common,$(LIB_DIR),$(LIB_NAME))
+	$(call vermin-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
+	$(call vermin-common,$(CI_WEBAPP_DIR),$(CI_WEBAPP_NAME))
+	$(call vermin-common,$(DOCS_WEBSITE_DIR),$(DOCS_WEBSITE_NAME))
+	$(call vermin-common,$(SCRIPTS_DIR),$(SCRIPTS_NAME))
 
 #
 # Common helper functions
@@ -158,4 +202,14 @@ define wait-for-postgres
 		sleep 1; \
 	done; \
 	echo "PostgreSQL is ready on port $(2)."
+endef
+
+define vermin-common
+    @echo "Checking for Python version compatibility in directory $(1)/$(2)..."
+    -vermin -t=3.10 --violations --eval-annotations --backport argparse --backport asyncio --backport contextvars --backport dataclasses --backport enum --backport importlib --backport statistics --backport typing --backport typing_extensions 62$(1)/$(2)
+	@echo "  Done."
+	@echo "     "
+	@echo "     "
+	@echo "     "
+	@echo "     "
 endef
