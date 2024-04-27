@@ -6,7 +6,7 @@ authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 pydantic = "^2.5.3"
 fastapi = "^0.109.0"
 inflection = "^0.5.1"
@@ -17,6 +17,7 @@ pydantic-settings = "^2.1.0"
 sqlmodel = "^0.0.14"
 asyncpg = "^0.29.0"
 sqlalchemy = { extras = ["asyncio"], version = "^2.0.26" }
+backports-strenum = { version = "^1.3.1", python = ">=3.8.6,<3.11" }
 
 # TODO: Move to optional dependencies, since release configurations
 # will not need these.

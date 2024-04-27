@@ -1,4 +1,4 @@
-from enum import StrEnum
+import sys
 from re import sub as re_sub
 from typing import Callable
 from uuid import UUID
@@ -6,6 +6,11 @@ from uuid import UUID
 import pytest
 from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from backports.strenum import StrEnum
 
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 

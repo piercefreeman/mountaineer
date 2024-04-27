@@ -1,8 +1,13 @@
-from enum import StrEnum
+import sys
 from pathlib import Path
 
 from jinja2 import Template
 from pydantic import BaseModel
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from backports.strenum import StrEnum
 
 
 class EditorType(StrEnum):

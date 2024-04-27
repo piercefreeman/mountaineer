@@ -1,8 +1,13 @@
 import json
-from enum import StrEnum
+import sys
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from backports.strenum import StrEnum
 
 from mountaineer.annotation_helpers import get_value_by_alias
 
