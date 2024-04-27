@@ -10,7 +10,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-
+toml = "^0.10.2"
 {% if mountaineer_dev_path %}
 mountaineer = { path = "{{mountaineer_dev_path}}", develop = true }
 {% else %}

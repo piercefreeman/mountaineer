@@ -6,7 +6,7 @@ from time import sleep
 from uuid import uuid4
 
 import pytest
-import tomllib
+import toml
 from click import secho
 from packaging.requirements import Requirement
 from packaging.version import Version
@@ -227,7 +227,7 @@ def test_build_version_number(use_poetry: bool, tmp_path: Path):
     build_project(metadata, install_deps=False)
 
     pyproject_contents = (tmp_path / "pyproject.toml").read_text()
-    package_requirements = tomllib.loads(pyproject_contents)
+    package_requirements = toml.loads(pyproject_contents)
 
     if use_poetry:
         # Parse the poetry convention into the PEP 508 specifier format

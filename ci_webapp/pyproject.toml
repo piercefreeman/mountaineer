@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-
+toml = "^0.10.2"
 # While in development, link to the local path
 mountaineer = { path = "../", develop = true }
 
@@ -17,6 +17,7 @@ watch = "ci_webapp.cli:watch"
 
 [tool.poetry.group.dev.dependencies]
 types-setuptools = "^69.0.0.20240125"
+types-toml = "^0.10.8.20240310"
 mypy = "^1.8.0"
 ruff = "^0.1.14"
 pyright = "^1.1.352"
