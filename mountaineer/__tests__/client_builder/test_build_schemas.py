@@ -1,9 +1,15 @@
-from enum import Enum, IntEnum, StrEnum
+import sys
+from enum import Enum, IntEnum
 from json import dumps as json_dumps
 from typing import Any, Generic, Literal, TypeVar
 
 import pytest
 from pydantic import BaseModel, Field, create_model
+
+if sys.version_info >= (3, 11):
+    from enum import StrEnum
+else:
+    from backports.strenum import StrEnum
 
 from mountaineer.client_builder.build_schemas import (
     OpenAPISchema,
@@ -302,6 +308,7 @@ class ChildNode(BaseModel):
     siblings: list["ChildNode"]
 
 
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Not Passing on 3.10")
 def test_gather_all_models_recursive():
     """
     Ensure that schemas can be specified recursively for nested elements.

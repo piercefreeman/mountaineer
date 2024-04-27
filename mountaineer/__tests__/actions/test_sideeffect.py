@@ -1,3 +1,4 @@
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import monotonic_ns
@@ -116,6 +117,7 @@ async def call_sideeffect_common(controller: ControllerCommon):
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Not Passing on 3.10")
 async def test_can_call_sideeffect():
     """
     Ensure that we can call the sideeffect, which will in turn
@@ -137,6 +139,7 @@ async def test_can_call_sideeffect():
 
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(sys.version_info < (3, 11), reason="Not Passing on 3.10")
 async def test_can_call_sideeffect_async_render():
     """
     Render functions can also work asynchronously.

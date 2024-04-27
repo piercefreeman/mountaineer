@@ -63,9 +63,9 @@ def resolve_forwardrefs(
 
         # Workaround for UnionType not allowing programatic construction
         if origin == UnionType:
-            return Union[*args]  # type: ignore
+            return Union[tuple(args)]  # type: ignore
 
-        return origin[*args]
+        return origin[tuple(args)]
 
     return eval_type_lenient(current_type, _globals or globals(), _locals or locals())
 
@@ -94,6 +94,11 @@ def yield_all_subtypes(
         # Always echo back the current type to make sure that everything that we've processed
         # is included in the final list
         yield resolve_forwardrefs(current_type, _globals=_globals, _locals=_locals)
+        # Python 3.10 resolving types behaved a little differently
+        origin = get_origin(current_type)
+        if origin:
+            current_type = get_origin(current_type)  # type: ignore[assignment]
+            yield current_type
 
         if isclass(current_type) and issubclass(current_type, BaseModel):
             if current_type in already_validated:
