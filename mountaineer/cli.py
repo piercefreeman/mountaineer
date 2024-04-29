@@ -18,6 +18,7 @@ from typing import Any, Callable, MutableMapping
 
 from click import secho
 from fastapi import Request
+from rich.traceback import install as rich_traceback_install
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
@@ -362,6 +363,8 @@ def handle_runserver(
 
     """
     update_multiprocessing_settings()
+
+    rich_traceback_install()
 
     current_process: IsolatedEnvProcess | None = None
 

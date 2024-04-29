@@ -7,10 +7,10 @@ from pathlib import Path
 from threading import Timer
 from typing import Any, Callable
 
-from click import secho
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from mountaineer.console import CONSOLE
 from mountaineer.paths import resolve_package_path
 
 
@@ -66,7 +66,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         if self.should_ignore_path(event.src_path):
             return
         if not event.is_directory:
-            secho(f"File modified: {event.src_path}", fg="yellow")
+            CONSOLE.print(f"[yellow]File modified: {event.src_path}")
             self._debounce(CallbackType.MODIFIED, Path(event.src_path))
 
     def on_created(self, event):
@@ -74,7 +74,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         if self.should_ignore_path(event.src_path):
             return
         if not event.is_directory:
-            secho(f"File created: {event.src_path}", fg="yellow")
+            CONSOLE.print(f"[yellow]File created: {event.src_path}")
             self._debounce(CallbackType.CREATED, Path(event.src_path))
 
     def on_deleted(self, event):
@@ -82,7 +82,7 @@ class ChangeEventHandler(FileSystemEventHandler):
         if self.should_ignore_path(event.src_path):
             return
         if not event.is_directory:
-            secho(f"File deleted: {event.src_path}", fg="yellow")
+            CONSOLE.print(f"[yellow]File deleted: {event.src_path}")
             self._debounce(CallbackType.DELETED, Path(event.src_path))
 
     def _debounce(self, action: CallbackType, path: Path):
@@ -178,7 +178,7 @@ class PackageWatchdog:
             self.observer = Observer()
 
             for path in self.paths:
-                secho(f"Watching {path}", fg="green")
+                CONSOLE.print(f"[green]Watching {path}")
                 if os.path.isdir(path):
                     self.observer.schedule(self.event_handler, path, recursive=True)
                 else:
@@ -189,7 +189,7 @@ class PackageWatchdog:
             self.observer.start()
 
             try:
-                secho("Starting observer...")
+                CONSOLE.print("Starting observer...")
                 self.observer.join()
             except KeyboardInterrupt:
                 self.observer.stop()
