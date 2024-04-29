@@ -75,4 +75,5 @@ def log_time_duration(message: str):
     LOGGER.debug(f"{message} : Took {(monotonic_ns() - start)/1e9:.2f}s")
 
 
-LOGGER = setup_logger(__name__)
+# Our global logger should only surface warnings and above by default
+LOGGER = setup_logger(__name__, log_level=logging.WARNING)

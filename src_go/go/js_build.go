@@ -1,16 +1,17 @@
 package main
 
 import (
-	"C"
 	"fmt"
-	"sync"
-)
-import (
 	"os"
-	"unsafe"
+	"sync"
 
 	"github.com/evanw/esbuild/pkg/api"
 )
+
+// #include <stdint.h>
+//
+// extern void rust_callback(int32_t);
+import "C"
 
 var (
 	mutex    sync.Mutex
@@ -88,7 +89,6 @@ func GetBuildContext(
 		Filename: filename,
 		Context:  ctx,
 	}
-	fmt.Printf("Created context with ID %d for %s\n", id, filename)
 	return C.int(id), nil
 }
 
@@ -114,16 +114,8 @@ func RebuildContext(id C.int) (returnError *C.char) {
 		return C.CString(errorString)
 	}
 
-	// fmt.Printf("#### START ####\n")
-	// fmt.Printf("Filename: %s (output: %d)\n", context.Filename, len(result.OutputFiles))
-
 	for i := range result.OutputFiles {
 		outputFile := result.OutputFiles[i]
-		// fmt.Printf("------------\n")
-		// fmt.Printf("Output file: %s\n", outputFile)
-		// fmt.Printf("Path: %s\n", outputFile.Path)
-		// fmt.Printf("Contents: %s\n", outputFile.Contents)
-
 		// Write the output to a file
 		err := os.WriteFile(outputFile.Path, outputFile.Contents, 0644)
 		if err != nil {
@@ -133,48 +125,7 @@ func RebuildContext(id C.int) (returnError *C.char) {
 		}
 	}
 
-	// fmt.Printf("#### DONE ####\n")
 	return nil
-}
-
-//export RebuildContexts
-func RebuildContexts(ids *C.int, count C.int) (returnErrors **C.char, returnErrorCount C.int) {
-	// Convert C array to Go slice
-	goIDs := make([]int, count)
-	for i := 0; i < int(count); i++ {
-		goIDs[i] = int(*(*C.int)(unsafe.Pointer(uintptr(unsafe.Pointer(ids)) + uintptr(i)*unsafe.Sizeof(*ids))))
-	}
-
-	// Semaphore channel to limit concurrency
-	var sem = make(chan struct{}, 25)
-
-	errors := make([]*C.char, 0)
-	var wg sync.WaitGroup
-	for _, id := range goIDs {
-		wg.Add(1)
-		sem <- struct{}{} // Acquire semaphore
-
-		// Launch a goroutine for each id
-		go func(id int) {
-			defer wg.Done()
-			defer func() { <-sem }() // Release semaphore
-
-			err := RebuildContext(C.int(id))
-			if err != nil {
-				errors = append(errors, err)
-			}
-		}(id)
-	}
-
-	wg.Wait()
-
-	// Convert slice to C array
-	errorsArray := (**C.char)(C.malloc(C.size_t(len(errors)) * C.size_t(unsafe.Sizeof(uintptr(0)))))
-	for i, err := range errors {
-		*(**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(errorsArray)) + uintptr(i)*unsafe.Sizeof(uintptr(0)))) = err
-	}
-
-	return errorsArray, C.int(len(errors))
 }
 
 //export RemoveContext
