@@ -151,7 +151,7 @@ class IsolatedEnvProcess(Process):
             thread.stop()
             thread.join()
 
-            LOGGER.debug("IsolatedEnvProcess finished")
+        LOGGER.debug("IsolatedEnvProcess finished")
 
     def rebuild_js(self):
         LOGGER.debug("JS-Only rebuild started")
