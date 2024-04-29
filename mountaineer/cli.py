@@ -1,25 +1,28 @@
 import asyncio
 import socket
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
 from functools import partial
 from importlib import import_module
 from importlib.metadata import distributions
+from io import StringIO
 from multiprocessing import Event, Process, Queue, get_start_method, set_start_method
 from multiprocessing.queues import Queue as QueueType
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from threading import Thread
-from time import sleep, time
+from time import monotonic_ns, sleep, time
 from traceback import format_exception
 from typing import Any, Callable, MutableMapping
 
 from click import secho
 from fastapi import Request
+from rich.traceback import install as rich_traceback_install
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.console import CONSOLE, ERROR_CONSOLE
 from mountaineer.controllers.exception_controller import ExceptionController
 from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
@@ -89,7 +92,23 @@ class IsolatedEnvProcess(Process):
             f"Starting isolated environment process with\nbuild_config: {self.build_config}\nrunserver_config: {self.runserver_config}"
         )
 
-        app_controller = import_from_string(self.build_config.webcontroller)
+        CONSOLE.rule("[bold red]Mountaineer Build Started")
+
+        with (
+            # We don't want to print stdout on the initial import, since this will just duplicate
+            # the init code / logging of the app. We use our error console to avoid
+            # capturing the stdout of our logging
+            ERROR_CONSOLE.status("[bold blue]Loading app...", spinner="dots"),
+            StringIO() as buf,
+            redirect_stdout(buf),
+        ):
+            start = monotonic_ns()
+            app_controller = import_from_string(self.build_config.webcontroller)
+            LOGGER.debug(f"Load app logs: {buf.getvalue()}")
+        CONSOLE.print(
+            f"[bold green]🎒 Loaded app in {(monotonic_ns() - start) / 1e9:.2f}s"
+        )
+
         if not isinstance(app_controller, AppController):
             raise ValueError(
                 f"Expected {self.build_config.webcontroller} to be an instance of AppController"
@@ -200,7 +219,6 @@ class IsolatedEnvProcess(Process):
         rebuild_thread.start()
 
     def run_build(self, app_controller: AppController):
-        secho("Starting build...", fg="yellow")
         start = time()
         js_compiler = ClientBuilder(
             app_controller,
@@ -213,14 +231,16 @@ class IsolatedEnvProcess(Process):
         )
         try:
             js_compiler.build()
-            secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
+            CONSOLE.print(
+                f"[bold green]🚀 App launched in {time() - start:.2f} seconds"
+            )
 
             # Completed successfully
             app_controller.build_exception = None
 
             self.alert_notification_channel()
         except BuildProcessException as e:
-            secho(f"Build failed: {e}", fg="red")
+            CONSOLE.print(f"[bold red]⚠️ Build failed: {e}")
             app_controller.build_exception = e
 
     def stop(self, hard_timeout: float = 5.0):
@@ -344,6 +364,8 @@ def handle_runserver(
     """
     update_multiprocessing_settings()
 
+    rich_traceback_install()
+
     current_process: IsolatedEnvProcess | None = None
 
     # The global cache will let us keep cache files warm across
@@ -420,7 +442,7 @@ def handle_build(
     )
     start = time()
     js_compiler.build()
-    secho(f"Build finished in {time() - start:.2f} seconds", fg="green")
+    CONSOLE.print(f"[bold green]App built in {time() - start:.2f}s")
 
 
 def update_multiprocessing_settings():
@@ -516,12 +538,20 @@ def build_common_watchdog(
 def init_global_state(webcontroller: str):
     """
     Initialize global state: signal to each builder that they can
-    initialize global state before the fork.
+    set up their own global state before the fork.
 
     """
     global_state: dict[Any, Any] = {}
 
-    app_controller = import_from_string(webcontroller)
+    with (
+        ERROR_CONSOLE.status(
+            "[bold blue]Setting up global state before fork...", spinner="dots"
+        ),
+        StringIO() as buf,
+        redirect_stdout(buf),
+    ):
+        app_controller = import_from_string(webcontroller)
+        LOGGER.debug(f"init_global_state Load app logs: {buf.getvalue()}")
 
     if not isinstance(app_controller, AppController):
         raise ValueError(f"Unknown app controller: {app_controller}")

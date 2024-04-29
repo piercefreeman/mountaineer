@@ -25,6 +25,7 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
+from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.io import gather_with_concurrency
 from mountaineer.js_compiler.base import ClientBundleMetadata
@@ -70,26 +71,30 @@ class ClientBuilder:
     async def async_build(self):
         # Avoid rebuilding if we don't need to
         if self.cache_is_outdated():
-            secho("Building useServer, cache outdated...", fg="green")
+            start = monotonic_ns()
 
-            # Make sure our application definitions are in a valid state before we start
-            # to build the client code
-            self.validate_unique_paths()
+            with CONSOLE.status("Building useServer", spinner="dots"):
+                # Make sure our application definitions are in a valid state before we start
+                # to build the client code
+                self.validate_unique_paths()
 
-            # Static files that don't depend on client code
-            self.generate_static_files()
+                # Static files that don't depend on client code
+                self.generate_static_files()
 
-            # The order of these generators don't particularly matter since most TSX linters
-            # won't refresh until they're all complete. However, this ordering better aligns
-            # with semantic dependencies so we keep the linearity where possible.
-            self.generate_model_definitions()
-            self.generate_action_definitions()
-            self.generate_link_shortcuts()
-            self.generate_link_aggregator()
-            self.generate_view_servers()
-            self.generate_index_file()
+                # The order of these generators don't particularly matter since most TSX linters
+                # won't refresh until they're all complete. However, this ordering better aligns
+                # with semantic dependencies so we keep the linearity where possible.
+                self.generate_model_definitions()
+                self.generate_action_definitions()
+                self.generate_link_shortcuts()
+                self.generate_link_aggregator()
+                self.generate_view_servers()
+                self.generate_index_file()
+            CONSOLE.print(
+                f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
+            )
         else:
-            secho("useServer up to date", fg="green")
+            CONSOLE.print("[bold green]useServer up to date")
 
         await self.build_javascript_chunks()
 

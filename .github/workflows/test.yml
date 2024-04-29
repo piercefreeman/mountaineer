@@ -339,6 +339,14 @@ jobs:
                 # Clang is already installed as part of the base image
                 apt-get update
                 apt-get -y install wget
+
+                # The maturin environment includes the gcc cross-compilers for aarch64, but it
+                # doesn't include the necessary headers
+                # This causes issues when rust / bindgen tries to run clang, which will fail with
+                # missing headers like 'bits/libc-header-start.h' file not found
+                # We install the headers here to fix this issue
+                apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+                find /usr -name libc-header-start.h
             else
                 echo "Unsupported distribution: $DISTRO"
                 exit 1

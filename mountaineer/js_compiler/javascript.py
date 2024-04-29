@@ -6,8 +6,10 @@ from time import monotonic_ns
 from typing import Any
 
 from inflection import underscore
+from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
+from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
 from mountaineer.js_compiler.exceptions import BuildProcessException
@@ -105,23 +107,47 @@ class JavascriptBundler(ClientBuilderBase):
             ]
 
             start = monotonic_ns()
-            try:
-                # TODO: Right now this raises pyo3_runtime.PanicException, which isn't caught
-                # appropriately. Our try/except block should be catching this.
-                mountaineer_rs.build_javascript(build_params)
-            except Exception as e:
-                LOGGER.error(f"Error building JS: {e}")
-                output_queue.put(
-                    CompiledOutput(
-                        success=False,
-                        exception_type=e.__class__.__name__,
-                        exception_message=str(e),
-                    )
-                )
-                continue
 
-            LOGGER.debug(
-                f"Processed payload in {(monotonic_ns() - start) / 1e9} seconds"
+            with Progress(
+                SpinnerColumn(),
+                *Progress.get_default_columns(),
+                TimeElapsedColumn(),
+                console=CONSOLE,
+                transient=True,
+            ) as progress:
+                build_task = progress.add_task(
+                    "[cyan]Compiling...", total=len(build_params)
+                )
+
+                try:
+
+                    def build_complete_callback(callback_args: tuple[int]):
+                        """
+                        Callback called when each individual file build is complete. For a successful
+                        build this callback |N| should match the input build_params.
+
+                        """
+                        progress.advance(build_task, 1)
+
+                    # Right now this raises pyo3_runtime.PanicException, which isn't caught
+                    # appropriately. Our try/except block should be catching this.
+                    mountaineer_rs.build_javascript(
+                        build_params, build_complete_callback
+                    )
+
+                except Exception as e:
+                    LOGGER.error(f"Error building JS: {e}")
+                    output_queue.put(
+                        CompiledOutput(
+                            success=False,
+                            exception_type=e.__class__.__name__,
+                            exception_message=str(e),
+                        )
+                    )
+                    continue
+
+            CONSOLE.print(
+                f"[bold green]📬 Compiled frontend in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
 
             output_queue.put(CompiledOutput(success=True))

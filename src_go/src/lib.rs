@@ -6,8 +6,9 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 extern crate libc;
 
-use libc::free;
 use std::ffi::{c_int, CString};
+use std::sync::{mpsc, Arc};
+use std::thread;
 
 pub fn get_build_context(
     filename: &str,
@@ -59,27 +60,59 @@ pub fn rebuild_context(context_ptr: c_int) -> Result<(), String> {
     }
 }
 
-pub fn rebuild_contexts(ids: Vec<c_int>) -> Result<(), Vec<String>> {
-    unsafe {
-        let result = RebuildContexts(ids.as_ptr() as *mut i32, ids.len() as c_int);
-        let errors_ptr = result.r0;
-        let errors_count = result.r1;
+type Callback = dyn Fn(c_int) + Send + Sync;
 
-        if errors_count == 0 {
-            Ok(())
-        } else {
-            let mut errors = Vec::with_capacity(errors_count as usize);
-            let errors_slice = std::slice::from_raw_parts(errors_ptr, errors_count as usize);
-            for &error in errors_slice {
-                let error_str = CString::from_raw(error);
-                let error_string = error_str
-                    .into_string()
-                    .unwrap_or_else(|_| String::from("Unknown error"));
-                errors.push(error_string);
+pub fn rebuild_contexts(ids: Vec<c_int>, callback: Arc<Box<Callback>>) -> Result<(), Vec<String>> {
+    let (tx, rx) = mpsc::channel();
+    let mut handles = Vec::new();
+
+    for id in ids.clone().into_iter() {
+        let tx = tx.clone();
+
+        let handle = thread::spawn(move || {
+            unsafe {
+                let error_ptr = RebuildContext(id);
+                let result = if !error_ptr.is_null() {
+                    let error_cstr = CString::from_raw(error_ptr);
+                    let error_string = error_cstr
+                        .into_string()
+                        .unwrap_or_else(|_| String::from("Unknown error"));
+                    Some(error_string)
+                } else {
+                    None
+                };
+
+                // Send both the ID and result to the main thread via channel
+                tx.send((id, result.clone())).unwrap();
             }
-            free(errors_ptr as *mut _);
-            Err(errors)
+        });
+        handles.push(handle);
+    }
+
+    // Cleanup handles and collect errors
+    let mut errors = Vec::new();
+
+    // Collect results in the order they are completed
+    for _ in 0..ids.len() {
+        if let Ok((id, err)) = rx.recv() {
+            if let Some(error) = err {
+                errors.push(error);
+            } else {
+                // Call the callback with the ID
+                callback(id);
+            }
         }
+    }
+
+    // Close out the workers
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
     }
 }
 

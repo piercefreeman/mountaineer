@@ -1,9 +1,11 @@
 use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 use std::ffi::c_int;
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 mod errors;
@@ -141,7 +143,11 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(name = "build_javascript")]
     // PyRef to support borrow checking: https://github.com/PyO3/pyo3/issues/1177
-    fn build_javascript(_py: Python, params: Vec<PyRef<BuildContextParams>>) -> PyResult<bool> {
+    fn build_javascript(
+        _py: Python,
+        params: Vec<PyRef<BuildContextParams>>,
+        callback: PyObject,
+    ) -> PyResult<bool> {
         #[allow(clippy::print_stdout)]
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
@@ -168,7 +174,23 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
             }
         }
 
-        let rebuild_result = src_go::rebuild_contexts(context_ids);
+        let callback_arc = Arc::new(Mutex::new(callback));
+        let rebuild_result = _py.allow_threads(move || {
+            let callback_cloned = Arc::clone(&callback_arc);
+            fn callback(id: c_int, cb: Arc<Mutex<PyObject>>) {
+                let _ = Python::with_gil(|py| -> PyResult<()> {
+                    let args = PyTuple::new(py, &[id.to_object(py)]);
+                    let cb_lock = cb.lock().unwrap();
+                    cb_lock.call1(py, args)?;
+                    Ok(())
+                });
+            }
+            src_go::rebuild_contexts(
+                context_ids,
+                Arc::new(Box::new(move |id| callback(id, callback_cloned.clone()))),
+            )
+        });
+
         if let Err(err) = rebuild_result {
             println!("Error rebuilding contexts: {:?}", err);
             return Err(PyErr::new::<PyValueError, _>(err.join("\n")));
