@@ -63,13 +63,11 @@ pub fn rebuild_context(context_ptr: c_int) -> Result<(), String> {
 type Callback = dyn Fn(c_int) + Send + Sync;
 
 pub fn rebuild_contexts(ids: Vec<c_int>, callback: Arc<Box<Callback>>) -> Result<(), Vec<String>> {
-    // Prepare for multi-threading
     let (tx, rx) = mpsc::channel();
     let mut handles = Vec::new();
 
     for id in ids.clone().into_iter() {
         let tx = tx.clone();
-        let callback = callback.clone();
 
         let handle = thread::spawn(move || {
             unsafe {
@@ -100,7 +98,7 @@ pub fn rebuild_contexts(ids: Vec<c_int>, callback: Arc<Box<Callback>>) -> Result
             if let Some(error) = err {
                 errors.push(error);
             } else {
-                // Call the callback with the ID and error information
+                // Call the callback with the ID
                 callback(id);
             }
         }

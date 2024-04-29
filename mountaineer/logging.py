@@ -2,9 +2,17 @@ import logging
 from contextlib import contextmanager
 from json import dumps as json_dumps
 from logging import Formatter, StreamHandler, getLogger
+from os import environ
 from time import monotonic_ns
 
 from click import secho
+
+VERBOSITY_MAPPING = {
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+}
 
 
 class JsonFormatter(Formatter):
@@ -41,8 +49,6 @@ def setup_logger(name, log_level=logging.DEBUG):
     of stdout/stderr messages and JSON fields for structured parsing.
 
     """
-    # TODO - env driven logging configuration
-
     logger = getLogger(name)
     logger.setLevel(log_level)
 
@@ -76,4 +82,7 @@ def log_time_duration(message: str):
 
 
 # Our global logger should only surface warnings and above by default
-LOGGER = setup_logger(__name__, log_level=logging.WARNING)
+LOGGER = setup_logger(
+    __name__,
+    log_level=VERBOSITY_MAPPING[environ.get("MOUNTAINEER_LOG_LEVEL", "WARNING")],
+)

@@ -541,7 +541,9 @@ def init_global_state(webcontroller: str):
     global_state: dict[Any, Any] = {}
 
     with (
-        ERROR_CONSOLE.status("[bold blue]Setting up global state before fork...", spinner="dots"),
+        ERROR_CONSOLE.status(
+            "[bold blue]Setting up global state before fork...", spinner="dots"
+        ),
         StringIO() as buf,
         redirect_stdout(buf),
     ):
