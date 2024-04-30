@@ -85,11 +85,30 @@ class WatcherWebservice:
 
         self.has_started = True
 
-    def stop(self):
+    def stop(self, wait_for_completion: int = 1) -> bool:
+        """
+        Attempts to stop the separate WatcherWebservice threads. We will send a termination
+        signal to the threads and wait the desired interval for full completion. If the threads
+        haven't exited after the interval, we will return False. Clients can then decide whether
+        to send a harder termination signal to terminate the threads on the OS level.
+
+        """
+        success : bool = True
         if self.webservice_thread is not None:
             self.webservice_thread.stop()
-            self.webservice_thread.join()
+            self.webservice_thread.join(wait_for_completion)
         if self.monitor_build_thread is not None:
             self.notification_queue.put(None)
-            self.monitor_build_thread.join()
-        LOGGER.info("WatcherWebservice has stopped")
+            self.monitor_build_thread.join(wait_for_completion)
+
+        if (
+            self.webservice_thread and self.webservice_thread.is_alive()
+        ) or (
+            self.monitor_build_thread and self.monitor_build_thread.is_alive()
+        ):
+            success = False
+            LOGGER.info(f"WatcherWebservice still has outstanding threads: {self.webservice_thread} {self.monitor_build_thread}")
+        else:
+            LOGGER.info("WatcherWebservice has fully stopped")
+
+        return success
