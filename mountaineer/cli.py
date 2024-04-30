@@ -16,7 +16,6 @@ from time import monotonic_ns, sleep, time
 from traceback import format_exception
 from typing import Any, Callable, MutableMapping
 
-from click import secho
 from fastapi import Request
 from rich.traceback import install as rich_traceback_install
 

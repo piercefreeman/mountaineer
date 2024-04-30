@@ -71,6 +71,7 @@ class WatcherWebservice:
         if self.has_started:
             raise Exception("WatcherWebservice has already started")
 
+        # UvicornThreads are daemon threads by default
         self.webservice_thread = UvicornThread(
             app=self.app,
             port=self.port,
@@ -80,7 +81,7 @@ class WatcherWebservice:
         LOGGER.debug("Starting WatcherWebservice on port %d", self.port)
         self.webservice_thread.start()
 
-        self.monitor_build_thread = Thread(target=self.monitor_builds)
+        self.monitor_build_thread = Thread(target=self.monitor_builds, daemon=True)
         self.monitor_build_thread.start()
 
         self.has_started = True
@@ -93,7 +94,7 @@ class WatcherWebservice:
         to send a harder termination signal to terminate the threads on the OS level.
 
         """
-        success : bool = True
+        success: bool = True
         if self.webservice_thread is not None:
             self.webservice_thread.stop()
             self.webservice_thread.join(wait_for_completion)
@@ -101,13 +102,13 @@ class WatcherWebservice:
             self.notification_queue.put(None)
             self.monitor_build_thread.join(wait_for_completion)
 
-        if (
-            self.webservice_thread and self.webservice_thread.is_alive()
-        ) or (
+        if (self.webservice_thread and self.webservice_thread.is_alive()) or (
             self.monitor_build_thread and self.monitor_build_thread.is_alive()
         ):
             success = False
-            LOGGER.info(f"WatcherWebservice still has outstanding threads: {self.webservice_thread} {self.monitor_build_thread}")
+            LOGGER.info(
+                f"WatcherWebservice still has outstanding threads: {self.webservice_thread} {self.monitor_build_thread}"
+            )
         else:
             LOGGER.info("WatcherWebservice has fully stopped")
 
