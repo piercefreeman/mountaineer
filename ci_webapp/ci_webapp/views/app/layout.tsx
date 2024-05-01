@@ -6,7 +6,7 @@ const Layout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div>
-      <h1>Layout State: {serverState.client_ip}</h1>
+      <h1>Layout State: {serverState.layout_value}</h1>
       <div>{children}</div>
     </div>
   );

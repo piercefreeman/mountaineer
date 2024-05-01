@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import wraps
-from inspect import isclass, signature
+from inspect import isawaitable, isclass, signature
 from pathlib import Path
 from typing import Any, Callable, Type
 
@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.dependencies.base import get_function_dependencies
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
 
@@ -27,7 +28,7 @@ from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
-from mountaineer.render import Metadata, RenderBase
+from mountaineer.render import Metadata, RenderBase, RenderNull
 
 
 class ControllerDefinition(BaseModel):
@@ -180,9 +181,55 @@ class AppController:
             if self.build_exception:
                 raise self.build_exception
 
+            # Assemble all the layout controllers that will have to be rendered alongside
+            # the main controller
+            # We need access to the controller metadata to determine which layouts to render
+            if not controller.build_metadata:
+                raise ValueError("Controller metadata not built before rendering")
+
+            layout_controllers = [
+                candidate_layout_controller
+                for candidate_layout_controller in self.controllers
+                if (
+                    candidate_layout_controller.controller.build_metadata
+                    and candidate_layout_controller.controller.build_metadata.view_path in controller.build_metadata.layout_view_paths
+                )
+            ]
+            print("LAYOUT CONTROLLERS", layout_controllers)
+
+            # Perform their initial rendering, we only need their data to hydrate
+            # the controller view
+            layout_metadata : dict[str, Any] = {}
+            for definition in layout_controllers:
+                # We won't be able to rely on fastapi to get the required params, because the function
+                # signature of the render function just applies to the page itself. We could create
+                # a synthetic signature here where they're all aggregated, but this would require us
+                # to wait until we have registered all of the layout controllers to then register the
+                # page render function - and this would come at the expense of allowing dynamic
+                # registration of page controllers. We would need to "lock" the app controller to know when
+                # we expect to have complete coverage of pages.
+                #
+                # For now we assume that the render method of layouts will specify no URL parameters
+                # and can be leveraged in an isoltaed context.
+                async with get_function_dependencies(
+                    callable=definition.controller.render, url=controller.url
+                ) as values:
+                    server_data = definition.controller.render(**values)
+                    if isawaitable(server_data):
+                        server_data = await server_data
+                    if server_data is None:
+                        server_data = RenderNull()
+
+                layout_metadata[definition.controller.__class__.__name__] = server_data
+
+            print("Layout metadata", layout_metadata)
+
             try:
                 return await controller._generate_html(
-                    *args, global_metadata=self.global_metadata, **kwargs
+                    *args,
+                    global_metadata=self.global_metadata,
+                    other_render_contexts=layout_metadata,
+                    **kwargs
                 )
             except Exception as e:
                 # If a user explicitly is raising an APIException, we don't want to log it

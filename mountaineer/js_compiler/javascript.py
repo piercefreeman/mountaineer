@@ -176,7 +176,7 @@ class JavascriptBundler(ClientBuilderBase):
         # we have the file location context
         controller_base = underscore(controller.__class__.__name__)
         root_path = file_path.get_package_root_link()
-        metadata_dir = root_path.get_managed_ssr_dir(tmp_build=True)
+        metadata_dir = root_path.get_managed_metadata_dir(tmp_build=True)
         metadata_payload = self.build_metadata_archive(page_path=file_path, controller=controller)
         (metadata_dir / f"{controller_base}.json").write_text(metadata_payload)
 
@@ -339,7 +339,7 @@ class JavascriptBundler(ClientBuilderBase):
             page_path=page_path, view_root_path=page_path.get_root_link()
         )
         metadata = BuildMetadata(
-            view_path=controller.view_path,
+            view_path=page_path,
             layout_view_paths=layout_paths,
         )
         return metadata.model_dump_json()

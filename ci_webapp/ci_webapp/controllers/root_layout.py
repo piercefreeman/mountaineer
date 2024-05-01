@@ -5,7 +5,7 @@ from mountaineer import LayoutControllerBase, Metadata, RenderBase
 
 
 class RootLayoutRender(RenderBase):
-    client_ip: str
+    layout_value: int
 
 
 class RootLayoutController(LayoutControllerBase):
@@ -13,9 +13,9 @@ class RootLayoutController(LayoutControllerBase):
 
     def __init__(self):
         super().__init__()
+        self.layout_value = 0
 
-    def render(self, detail_id: UUID, request: Request) -> RootLayoutRender:
+    def render(self) -> RootLayoutRender:
         return RootLayoutRender(
-            client_ip=request.client.host if request.client else "unknown",
-            metadata=Metadata(title=f"Detail: {detail_id}"),
+            layout_value=self.layout_value,
         )

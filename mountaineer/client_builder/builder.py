@@ -504,6 +504,7 @@ class ClientBuilder:
             tmp_path = Path(tmp_dir)
             tmp_static_dir = tmp_path / "static"
             tmp_ssr_dir = tmp_path / "ssr"
+            tmp_metadata_dir = tmp_path / "metadata"
 
             # Since the tmp builds are within their parent folder, we need to move
             # them out of the way before we clear
@@ -516,10 +517,12 @@ class ClientBuilder:
                 self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
             )
             shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
+            shutil_move(self.view_root.get_managed_metadata_dir(tmp_build=True), tmp_metadata_dir)
 
             static_dir = self.view_root.get_managed_static_dir()
             ssr_dir = self.view_root.get_managed_ssr_dir()
-            for clear_dir in [static_dir, ssr_dir]:
+            metadata_dir = self.view_root.get_managed_metadata_dir()
+            for clear_dir in [static_dir, ssr_dir, metadata_dir]:
                 if clear_dir.exists():
                     shutil_rmtree(clear_dir)
 
@@ -531,6 +534,9 @@ class ClientBuilder:
             )
             shutil_move(
                 tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
+            )
+            shutil_move(
+                tmp_metadata_dir, self.view_root.get_managed_metadata_dir(create_dir=False)
             )
 
     def cache_is_outdated(self):

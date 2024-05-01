@@ -4,6 +4,7 @@ from inspect import getmembers, isawaitable, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from time import monotonic_ns
+from json import dumps as json_dumps
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -53,6 +54,8 @@ class BuildMetadata(BaseModel):
     relative to the controllers.
 
     """
+    # All paths in the metadata should be absolute paths, since they are consistent
+    # with regard to the builder filesystem but might be different when deployed
     view_path: Path
 
     # Organized by hierarchy, first index is the outermost layout
@@ -151,7 +154,22 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         pass
 
-    async def _generate_html(self, *args, global_metadata: Metadata | None, **kwargs):
+    async def _generate_html(
+        self,
+        *args,
+        global_metadata: Metadata | None,
+        other_render_contexts: dict[str, RenderBase | RenderNull] | None = None,
+        **kwargs,
+    ):
+        """
+        Generate the HTML that will populate the loaded page of the controller.
+
+        :param other_render_contexts: The dictionary should be constructed in the order of
+        precedence, with the first element being the most hierarchical related element to
+        this controller. This is used by our metadata resolution layer to figure out what
+        is the best metadata attribute to fall back to.
+
+        """
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
@@ -174,6 +192,13 @@ class ControllerBase(ABC, Generic[RenderInput]):
         metadatas: list[Metadata] = []
         if server_data.metadata:
             metadatas.append(server_data.metadata)
+        if other_render_contexts and (
+            server_data.metadata is None
+            or not server_data.metadata.ignore_global_metadata
+        ):
+            for other_render_context in other_render_contexts.values():
+                if other_render_context.metadata:
+                    metadatas.append(other_render_context.metadata)
         if global_metadata and (
             server_data.metadata is None
             or not server_data.metadata.ignore_global_metadata
@@ -185,7 +210,14 @@ class ControllerBase(ABC, Generic[RenderInput]):
         ssr_html = self._generate_ssr_html(server_data)
 
         # Client-side react scripts that will hydrate the server side contents on load
-        server_data_json = server_data.model_dump_json()
+        server_data_json = {
+            render_key: context.model_dump(mode="json")
+            for render_key, context in [
+                (self.__class__.__name__, server_data),
+                *list(other_render_contexts.items() if other_render_contexts else []),
+            ]
+        }
+
         optional_scripts = "\n".join(
             [
                 f"<script src='/static/{script_name}'></script>"
@@ -201,7 +233,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         <body>
         <div id="root">{ssr_html}</div>
         <script type="text/javascript">
-        const SERVER_DATA = {server_data_json};
+        const SERVER_DATA = {json_dumps(server_data_json)};
         </script>
         {optional_scripts}
         </body>
@@ -381,7 +413,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # Find the metadata
         metadata_path = view_base / "_metadata" / f"{script_name}.json"
         if metadata_path.exists():
-            metadata = BuildMetadata.model_validate(metadata_path.read_text())
+            metadata = BuildMetadata.model_validate_json(metadata_path.read_text())
             self.build_metadata = metadata
         else:
             found_dependencies = False
