@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
 from mountaineer.static import get_static_path
+from json import dumps as json_dumps
+from typing import Any
 
 
 class V8RuntimeError(Exception):
@@ -45,7 +47,7 @@ def fix_exception_lines(*, exception: str, injected_script: str):
 
 @extended_lru_cache(maxsize=128, max_size_mb=5)
 def render_ssr(
-    script: str, render_data: BaseModel, hard_timeout: int | float | None = None
+    script: str, render_data: dict[str, Any], hard_timeout: int | float | None = None
 ) -> str:
     """
     Render the React component in the provided SSR javascript bundle. This file will
@@ -66,7 +68,7 @@ def render_ssr(
 
     """
     polyfill_script = get_static_path("ssr_polyfills.js").read_text()
-    data_json = render_data.model_dump_json()
+    data_json = json_dumps(render_data)
 
     injected_script = f"const SERVER_DATA = {data_json};\n{polyfill_script}\n"
     full_script = f"{injected_script}{script}"

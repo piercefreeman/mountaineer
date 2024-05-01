@@ -207,8 +207,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
 
-        ssr_html = self._generate_ssr_html(server_data)
-
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = {
             render_key: context.model_dump(mode="json")
@@ -217,6 +215,8 @@ class ControllerBase(ABC, Generic[RenderInput]):
                 *list(other_render_contexts.items() if other_render_contexts else []),
             ]
         }
+
+        ssr_html = self._generate_ssr_html(server_data_json)
 
         optional_scripts = "\n".join(
             [
@@ -242,19 +242,13 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         return HTMLResponse(page_contents)
 
-    def _generate_ssr_html(self, server_data: RenderBase) -> str:
+    def _generate_ssr_html(self, server_data: dict[str, Any]) -> str:
         self.resolve_paths()
 
         if not self.ssr_path:
             # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
 
-        # Now that we've built the header, we can remove it from the server data
-        # This makes our cache more efficient, since metadata changes don't affect
-        # the actual page contents.
-        server_data = server_data.model_copy(update={"metadata": None})
-
-        # TODO: Provide a function to automatically sniff for the client view folder
         start = monotonic_ns()
         try:
             ssr_html = render_ssr(

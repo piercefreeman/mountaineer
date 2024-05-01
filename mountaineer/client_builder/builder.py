@@ -305,6 +305,7 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
+            controller_key = controller.__class__.__name__
 
             chunks: list[str] = []
 
@@ -373,7 +374,7 @@ class ClientBuilder:
             # server state that's only relevant to this controller
             chunks.append(
                 "export const useServer = () : ServerState => {\n"
-                + f"const [ serverState, setServerState ] = useState(SERVER_DATA as {render_model_name});\n"
+                + f"const [ serverState, setServerState ] = useState(SERVER_DATA['{controller_key}'] as {render_model_name});\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update
@@ -389,7 +390,7 @@ class ClientBuilder:
                 + ",\n".join(
                     [
                         (
-                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
+                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState, '{controller_key}')"
                             if metadata.action_type == FunctionActionType.SIDEEFFECT
                             else f"{metadata.function_name}: {metadata.function_name}"
                         )
