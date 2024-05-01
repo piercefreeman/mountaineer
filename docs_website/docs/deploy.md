@@ -11,6 +11,7 @@ First, add the following to your `.dockerignore` file. This will prevent Docker 
 **/_server
 **/_ssr
 **/_static
+**/_metadata
 ```
 
 ### Image 1: Frontend Dependencies

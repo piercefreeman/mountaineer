@@ -27,6 +27,7 @@ from mountaineer.client_builder.typescript import (
 )
 from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.io import gather_with_concurrency
 from mountaineer.js_compiler.base import ClientBundleMetadata
 from mountaineer.js_compiler.exceptions import BuildProcessException
@@ -37,7 +38,7 @@ from mountaineer.static import get_static_path
 
 @dataclass
 class RenderSpec:
-    url: str
+    url: str | None
     view_path: str
     spec: dict[Any, Any] | None
 
@@ -233,6 +234,15 @@ class ClientBuilder:
                 controller_links_path, root_common_handler
             )
             render_route = controller_definition.render_router
+
+            # This controller isn't accessible via a URL so shouldn't have a
+            # link associated with it
+            # This file still needs to exist for downstream exports so we write
+            # a blank file
+            if render_route is None:
+                controller_links_path.write_text("")
+                continue
+
             render_openapi = self.app.generate_openapi(
                 routes=render_route.routes,
             )
@@ -295,6 +305,7 @@ class ClientBuilder:
         """
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
+            controller_key = controller.__class__.__name__
 
             chunks: list[str] = []
 
@@ -363,7 +374,7 @@ class ClientBuilder:
             # server state that's only relevant to this controller
             chunks.append(
                 "export const useServer = () : ServerState => {\n"
-                + f"const [ serverState, setServerState ] = useState(SERVER_DATA as {render_model_name});\n"
+                + f"const [ serverState, setServerState ] = useState(SERVER_DATA['{controller_key}'] as {render_model_name});\n"
                 # Local function to just override the current controller
                 # We make sure to wait for the previous state to be set, in case of a
                 # differential update
@@ -379,7 +390,7 @@ class ClientBuilder:
                 + ",\n".join(
                     [
                         (
-                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
+                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState, '{controller_key}')"
                             if metadata.action_type == FunctionActionType.SIDEEFFECT
                             else f"{metadata.function_name}: {metadata.function_name}"
                         )
@@ -494,6 +505,7 @@ class ClientBuilder:
             tmp_path = Path(tmp_dir)
             tmp_static_dir = tmp_path / "static"
             tmp_ssr_dir = tmp_path / "ssr"
+            tmp_metadata_dir = tmp_path / "metadata"
 
             # Since the tmp builds are within their parent folder, we need to move
             # them out of the way before we clear
@@ -506,10 +518,15 @@ class ClientBuilder:
                 self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
             )
             shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
+            shutil_move(
+                self.view_root.get_managed_metadata_dir(tmp_build=True),
+                tmp_metadata_dir,
+            )
 
             static_dir = self.view_root.get_managed_static_dir()
             ssr_dir = self.view_root.get_managed_ssr_dir()
-            for clear_dir in [static_dir, ssr_dir]:
+            metadata_dir = self.view_root.get_managed_metadata_dir()
+            for clear_dir in [static_dir, ssr_dir, metadata_dir]:
                 if clear_dir.exists():
                     shutil_rmtree(clear_dir)
 
@@ -521,6 +538,10 @@ class ClientBuilder:
             )
             shutil_move(
                 tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
+            )
+            shutil_move(
+                tmp_metadata_dir,
+                self.view_root.get_managed_metadata_dir(create_dir=False),
             )
 
     def cache_is_outdated(self):
@@ -557,7 +578,7 @@ class ClientBuilder:
         return False
 
     def get_static_files(self):
-        ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
+        ignore_directories = ["_ssr", "_static", "_server", "_metadata", "node_modules"]
 
         for view_root in self.get_all_root_views():
             for dir_path, _, filenames in view_root.walk():
@@ -578,6 +599,11 @@ class ClientBuilder:
 
         """
         # Validation 1: Ensure that all view paths are unique
+        # This applies to both exact equivalence (two controllers pointing to the
+        # same page.tsx) as well as conflicting folder structures (one controller pointing
+        # to a page and another pointing to a layout in the same directory).
+        # Both of these causes would cause conflicting _server files to be generated
+        # which we need to avoid
         view_counts = defaultdict(list)
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
@@ -704,7 +730,9 @@ class ClientBuilder:
                     else None
                 )
                 self._openapi_render_specs[controller] = RenderSpec(
-                    url=controller.url,
+                    url=None
+                    if isinstance(controller, LayoutControllerBase)
+                    else controller.url,
                     view_path=str(controller.view_path),
                     spec=spec,
                 )

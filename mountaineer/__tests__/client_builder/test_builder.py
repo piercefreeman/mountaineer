@@ -8,6 +8,7 @@ import pytest
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
 
 
 class ExampleHomeController(ControllerBase):
@@ -169,3 +170,51 @@ def test_cache_is_outdated_url_change(
     )
 
     assert builder.cache_is_outdated() is True
+
+
+def test_validate_unique_paths_exact_definition(
+    builder: ClientBuilder,
+):
+    """
+    Two controllers can't manage the same view path.
+
+    """
+
+    class ConflictingDetailController(ControllerBase):
+        url = "/detail/other_url/"
+        view_path = "/detail/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    builder.app.register(ConflictingDetailController())
+
+    # Raises for the same exact view path
+    with pytest.raises(
+        ValueError, match="duplicate view paths under controller management"
+    ):
+        builder.validate_unique_paths()
+
+
+def test_validate_unique_paths_conflicting_layout(
+    builder: ClientBuilder,
+):
+    """
+    Layouts need to be placed in their own directory. Even if the literal paths
+    under management are different we still need to throw a validation error.
+
+    """
+
+    class ConflictingLayoutController(LayoutControllerBase):
+        view_path = "/detail/layout.tsx"
+
+        def render(self) -> None:
+            return None
+
+    builder.app.register(ConflictingLayoutController())
+
+    # Raises for the same exact view path
+    with pytest.raises(
+        ValueError, match="duplicate view paths under controller management"
+    ):
+        builder.validate_unique_paths()

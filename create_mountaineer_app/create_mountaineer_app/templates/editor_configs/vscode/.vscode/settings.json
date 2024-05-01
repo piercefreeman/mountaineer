@@ -3,6 +3,7 @@
   "files.exclude": {
     "_server/": true,
     "_ssr/": true,
+    "_metadata/": true,
     "_static/": true
   }
 }

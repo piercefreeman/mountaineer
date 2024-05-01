@@ -1,6 +1,6 @@
 from collections import defaultdict
 from functools import wraps
-from inspect import isclass, signature
+from inspect import isawaitable, isclass, signature
 from pathlib import Path
 from typing import Any, Callable, Type
 
@@ -21,12 +21,14 @@ from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.dependencies.base import get_function_dependencies
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
 from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.js_compiler.javascript import JavascriptBundler
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
-from mountaineer.render import Metadata, RenderBase
+from mountaineer.render import Metadata, RenderBase, RenderNull
 
 
 class ControllerDefinition(BaseModel):
@@ -37,7 +39,9 @@ class ControllerDefinition(BaseModel):
     # Dynamically generated function that actually renders the html content
     # This is a hybrid between render() and _generate_html()
     view_route: Callable
-    render_router: APIRouter
+    # Render router is provided for all pages, only None for layouts that can't
+    # be independently rendered as a webpage
+    render_router: APIRouter | None
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -177,9 +181,53 @@ class AppController:
             if self.build_exception:
                 raise self.build_exception
 
+            # Assemble all the layout controllers that will have to be rendered alongside
+            # the main controller
+            # We need access to the controller metadata to determine which layouts to render
+            if not controller.build_metadata:
+                raise ValueError("Controller metadata not built before rendering")
+
+            layout_controllers = [
+                candidate_layout_controller
+                for candidate_layout_controller in self.controllers
+                if (
+                    candidate_layout_controller.controller.build_metadata
+                    and candidate_layout_controller.controller.build_metadata.view_path
+                    in controller.build_metadata.layout_view_paths
+                )
+            ]
+
+            # Perform their initial rendering, we only need their data to hydrate
+            # the controller view
+            layout_metadata: dict[str, Any] = {}
+            for definition in layout_controllers:
+                # We won't be able to rely on fastapi to get the required params, because the function
+                # signature of the render function just applies to the page itself. We could create
+                # a synthetic signature here where they're all aggregated, but this would require us
+                # to wait until we have registered all of the layout controllers to then register the
+                # page render function - and this would come at the expense of allowing dynamic
+                # registration of page controllers. We would need to "lock" the app controller to know when
+                # we expect to have complete coverage of pages.
+                #
+                # For now we assume that the render method of layouts will specify no URL parameters
+                # and can be leveraged in an isoltaed context.
+                async with get_function_dependencies(
+                    callable=definition.controller.render, url=controller.url
+                ) as values:
+                    server_data = definition.controller.render(**values)
+                    if isawaitable(server_data):
+                        server_data = await server_data
+                    if server_data is None:
+                        server_data = RenderNull()
+
+                layout_metadata[definition.controller.__class__.__name__] = server_data
+
             try:
                 return await controller._generate_html(
-                    *args, global_metadata=self.global_metadata, **kwargs
+                    *args,
+                    global_metadata=self.global_metadata,
+                    other_render_contexts=layout_metadata,
+                    **kwargs,
                 )
             except Exception as e:
                 # If a user explicitly is raising an APIException, we don't want to log it
@@ -231,9 +279,19 @@ class AppController:
         # Register the rendering view to an isolated APIRoute, so we can keep track of its
         # the resulting router independently of the rest of the application
         # This is useful in cases where we need to do a render()->FastAPI lookup
-        view_router = APIRouter()
-        view_router.get(controller.url)(generate_controller_html)
-        self.app.include_router(view_router)
+        #
+        # We only mount standard controllers, we don't expect LayoutControllers to have
+        # a directly accessible URL
+        if isinstance(controller, LayoutControllerBase):
+            if hasattr(controller, "url"):
+                raise ValueError(
+                    f"LayoutControllers are not directly mountable to the router. {controller} should not have a url specified."
+                )
+            view_router = None
+        else:
+            view_router = APIRouter()
+            view_router.get(controller.url)(generate_controller_html)
+            self.app.include_router(view_router)
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
@@ -251,7 +309,7 @@ class AppController:
                 # context that the action function is being defined within. Here since we have a global view
                 # of the controller (render function + actions) this becomes trivial
                 metadata.return_model = fuse_metadata_to_response_typehint(
-                    metadata, render_metadata.get_render_model()
+                    metadata, controller, render_metadata.get_render_model()
                 )
 
                 # Update the signature of the internal function, which fastapi will sniff for the return declaration

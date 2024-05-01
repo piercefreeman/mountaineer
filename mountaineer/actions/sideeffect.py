@@ -23,9 +23,10 @@ from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
     extract_response_model_from_signature,
-    handle_explicit_responses,
+    format_final_action_response,
     init_function_metadata,
 )
+from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.cropper import crop_function_for_return_keys
 from mountaineer.dependencies import get_function_dependencies
 from mountaineer.exceptions import APIException
@@ -169,11 +170,12 @@ def sideeffect(*args, **kwargs):  # type: ignore
                     if isawaitable(server_data):
                         server_data = await server_data
 
-                    return handle_explicit_responses(
+                    return format_final_action_response(
+                        self,
                         dict(
                             sideeffect=server_data,
                             passthrough=passthrough_values,
-                        )
+                        ),
                     )
 
             # Update the signature of 'inner' to include 'request: Request'
@@ -253,7 +255,11 @@ async def get_render_parameters(
     # we already know which route should be resolved so we can shortcut having to
     # match non-relevant paths.
     # https://github.com/encode/starlette/blob/5c43dde0ec0917673bb280bcd7ab0c37b78061b7/starlette/routing.py#L544
-    for route in controller.definition.render_router.routes:
+    for route in (
+        controller.definition.render_router.routes
+        if controller.definition.render_router is not None
+        else []
+    ):
         match, child_scope = route.matches(view_request.scope)
         if match != Match.FULL:
             raise RuntimeError(
@@ -268,7 +274,13 @@ async def get_render_parameters(
 
     try:
         async with get_function_dependencies(
-            callable=controller.render, url=controller.url, request=view_request
+            callable=controller.render,
+            url=controller.url
+            if not isinstance(controller, LayoutControllerBase)
+            else None,
+            request=view_request
+            if not isinstance(controller, LayoutControllerBase)
+            else None,
         ) as values:
             yield values
     except RuntimeError as e:

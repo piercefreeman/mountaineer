@@ -151,19 +151,24 @@ const handleStreamOutputFormat = async (
   })();
 };
 
-type ApiFunctionReturnType<S, P> = {
-  sideeffect: S;
-  passthrough?: P;
+type ApiFunctionReturnType<S, P, K extends PropertyKey> = {
+  // Generic typehint for any key parameter
+  [key in K]: {
+    sideeffect: S;
+    passthrough?: P;
+  };
 };
 
 export function applySideEffect<
   ARG extends any[],
   S,
   P,
-  RE extends ApiFunctionReturnType<S, P>,
+  K extends PropertyKey,
+  RE extends ApiFunctionReturnType<S, P, K>,
 >(
   apiFunction: (...args: ARG) => Promise<RE>,
   setControllerState: (payload: S) => void,
+  controllerKey: K,
 ): (...args: ARG) => Promise<RE> {
   /*
    * Executes an API server function, triggering any appropriate exceptions.
@@ -171,7 +176,7 @@ export function applySideEffect<
    */
   return async (...args: ARG) => {
     const result = await apiFunction(...args);
-    setControllerState(result.sideeffect);
+    setControllerState(result[controllerKey].sideeffect);
     return result;
   };
 }

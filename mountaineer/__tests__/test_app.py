@@ -12,6 +12,7 @@ from mountaineer.app import AppController
 from mountaineer.client_builder.openapi import OpenAPIDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException
 
 
@@ -43,6 +44,26 @@ def test_requires_render_return_value():
     app.register(TestControllerWithRenderMarkup())
 
 
+def test_validates_layouts_exclude_urls():
+    """
+    The app controller should reject the registration of layouts that specify
+    a url.
+
+    """
+
+    class TestLayoutController(LayoutControllerBase):
+        # Not allowed, but might typehint correctly because the ControllerBase
+        # superclass supports it.
+        url = "/layout_url"
+
+        async def render(self) -> None:
+            pass
+
+    app_controller = AppController(view_root=Path(""))
+    with pytest.raises(ValueError, match="are not directly mountable to the router"):
+        app_controller.register(TestLayoutController())
+
+
 def test_generate_openapi():
     class ExampleSubModel(BaseModel):
         sub_value: str
@@ -72,6 +93,7 @@ def test_generate_openapi():
         "TestExceptionActionResponse",
         "ExampleException",
         "ExampleSubModel",
+        "TestExceptionActionResponseRaw",
     }
 
 
@@ -133,6 +155,7 @@ def test_handle_conflicting_exception_names():
 
     assert openapi_definition.components.schemas.keys() == {
         "TestExceptionActionResponse",
+        "TestExceptionActionResponseRaw",
         "mountaineer.__tests__.test_1.ExampleException",
         "mountaineer.__tests__.test_2.ExampleException",
     }
@@ -198,6 +221,9 @@ def test_inherit_parent_spec():
     # Test that the controller definitions remain separate
     assert parent_controller.definition
     assert child_controller.definition
+
+    assert parent_controller.definition.render_router
+    assert child_controller.definition.render_router
 
     parent_routes = parent_controller.definition.render_router.routes
     child_routes = child_controller.definition.render_router.routes

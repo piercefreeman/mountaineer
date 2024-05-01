@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isawaitable, ismethod
+from json import dumps as json_dumps
 from pathlib import Path
 from re import compile as re_compile
 from time import monotonic_ns
@@ -19,6 +20,7 @@ from typing import (
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
+from pydantic import BaseModel
 
 from mountaineer.actions import (
     FunctionActionType,
@@ -43,6 +45,23 @@ if TYPE_CHECKING:
     from mountaineer.app import ControllerDefinition
 
 RenderInput = ParamSpec("RenderInput")
+
+
+class BuildMetadata(BaseModel):
+    """
+    Controller metadata that is established during build-time and might be stripped
+    during the final output. For instance, layout.tsx files might not be included
+    in production payloads but this metadata object still stores their hierarchy
+    relative to the controllers.
+
+    """
+
+    # All paths in the metadata should be absolute paths, since they are consistent
+    # with regard to the builder filesystem but might be different when deployed
+    view_path: Path
+
+    # Organized by hierarchy, first index is the outermost layout
+    layout_view_paths: list[Path] = []
 
 
 class ControllerBase(ABC, Generic[RenderInput]):
@@ -81,8 +100,10 @@ class ControllerBase(ABC, Generic[RenderInput]):
         self.hard_ssr_timeout = hard_ssr_timeout
         self.source_map: SourceMapParser | None = None
 
+        # Set by the path resolution layer
         self.view_base_path: Path | None = None
         self.ssr_path: Path | None = None
+        self.build_metadata: BuildMetadata | None = None
 
         self.resolve_paths()
 
@@ -136,7 +157,22 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         pass
 
-    async def _generate_html(self, *args, global_metadata: Metadata | None, **kwargs):
+    async def _generate_html(
+        self,
+        *args,
+        global_metadata: Metadata | None,
+        other_render_contexts: dict[str, RenderBase | RenderNull] | None = None,
+        **kwargs,
+    ):
+        """
+        Generate the HTML that will populate the loaded page of the controller.
+
+        :param other_render_contexts: The dictionary should be constructed in the order of
+        precedence, with the first element being the most hierarchical related element to
+        this controller. This is used by our metadata resolution layer to figure out what
+        is the best metadata attribute to fall back to.
+
+        """
         # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
         # insert it into the page.
         server_data = self.render(*args, **kwargs)
@@ -159,6 +195,13 @@ class ControllerBase(ABC, Generic[RenderInput]):
         metadatas: list[Metadata] = []
         if server_data.metadata:
             metadatas.append(server_data.metadata)
+        if other_render_contexts and (
+            server_data.metadata is None
+            or not server_data.metadata.ignore_global_metadata
+        ):
+            for other_render_context in other_render_contexts.values():
+                if other_render_context.metadata:
+                    metadatas.append(other_render_context.metadata)
         if global_metadata and (
             server_data.metadata is None
             or not server_data.metadata.ignore_global_metadata
@@ -167,10 +210,17 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
 
-        ssr_html = self._generate_ssr_html(server_data)
-
         # Client-side react scripts that will hydrate the server side contents on load
-        server_data_json = server_data.model_dump_json()
+        server_data_json = {
+            render_key: context.model_dump(mode="json")
+            for render_key, context in [
+                (self.__class__.__name__, server_data),
+                *list(other_render_contexts.items() if other_render_contexts else []),
+            ]
+        }
+
+        ssr_html = self._generate_ssr_html(server_data_json)
+
         optional_scripts = "\n".join(
             [
                 f"<script src='/static/{script_name}'></script>"
@@ -186,7 +236,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         <body>
         <div id="root">{ssr_html}</div>
         <script type="text/javascript">
-        const SERVER_DATA = {server_data_json};
+        const SERVER_DATA = {json_dumps(server_data_json)};
         </script>
         {optional_scripts}
         </body>
@@ -195,19 +245,13 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         return HTMLResponse(page_contents)
 
-    def _generate_ssr_html(self, server_data: RenderBase) -> str:
+    def _generate_ssr_html(self, server_data: dict[str, Any]) -> str:
         self.resolve_paths()
 
         if not self.ssr_path:
             # Try to resolve the path dynamically now
             raise ValueError("No SSR path set for this controller")
 
-        # Now that we've built the header, we can remove it from the server data
-        # This makes our cache more efficient, since metadata changes don't affect
-        # the actual page contents.
-        server_data = server_data.model_copy(update={"metadata": None})
-
-        # TODO: Provide a function to automatically sniff for the client view folder
         start = monotonic_ns()
         try:
             ssr_html = render_ssr(
@@ -360,6 +404,14 @@ class ControllerBase(ABC, Generic[RenderInput]):
             LOGGER.debug(
                 f"[{self.__class__.__name__}] Resolved paths... {self.bundled_scripts}"
             )
+        else:
+            found_dependencies = False
+
+        # Find the metadata
+        metadata_path = view_base / "_metadata" / f"{script_name}.json"
+        if metadata_path.exists():
+            metadata = BuildMetadata.model_validate_json(metadata_path.read_text())
+            self.build_metadata = metadata
         else:
             found_dependencies = False
 

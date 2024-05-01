@@ -294,9 +294,9 @@ export default Home;
 
 Go ahead and load it in your browser. If you open up your web tools, you can create a new Todo and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by Mountaineer.
 
-![Getting Started Final TODO App](/media/final_todo_list.png){ height="400" }
+![Getting Started Final TODO App](media/final_todo_list.png){ height="400" }
 
-![Getting Started Final TODO App](/media/network_debug.png){ height="400" }
+![Getting Started Final TODO App](media/network_debug.png){ height="400" }
 
 You can use these serverState variables anywhere you'd use dynamic React state variables (useEffect, useCallback, etc). But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
 

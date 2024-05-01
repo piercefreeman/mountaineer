@@ -26,7 +26,7 @@ def test_ssr_speed_baseline():
         start = monotonic_ns()
         render_ssr(
             js_contents,
-            FakeModel(random_id=uuid4()),
+            FakeModel(random_id=uuid4()).model_dump(mode="json"),
             hard_timeout=1,
         )
         all_measurements.append((monotonic_ns() - start) / 1e9)
@@ -54,7 +54,9 @@ def test_ssr_timeout():
     with pytest.raises(TimeoutError):
         render_ssr(
             script=js_contents,
-            render_data=FakeWaitDurationModel(delay_loops=5, random_id=uuid4()),
+            render_data=FakeWaitDurationModel(
+                delay_loops=5, random_id=uuid4()
+            ).model_dump(mode="json"),
             hard_timeout=0.5,
         )
     assert ((monotonic_ns() - start) / 1e9) < 1.0
@@ -84,7 +86,7 @@ def test_ssr_exception_context():
     try:
         render_ssr(
             script=js_contents,
-            render_data=FakeModel(random_id=uuid4()),
+            render_data=FakeModel(random_id=uuid4()).model_dump(mode="json"),
             hard_timeout=0,
         )
     except V8RuntimeError as e:

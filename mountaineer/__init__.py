@@ -6,6 +6,7 @@ from mountaineer.actions import passthrough as passthrough, sideeffect as sideef
 from mountaineer.app import AppController as AppController
 from mountaineer.config import ConfigBase as ConfigBase
 from mountaineer.controller import ControllerBase as ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.dependencies import CoreDependencies as CoreDependencies
 from mountaineer.exceptions import APIException as APIException
 from mountaineer.js_compiler.postcss import PostCSSBundler as PostCSSBundler

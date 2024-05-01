@@ -114,6 +114,20 @@ class ManagedViewPath(type(Path())):  # type: ignore
             path.mkdir(exist_ok=True)
         return path
 
+    def get_managed_metadata_dir(
+        self, tmp_build: bool = False, create_dir: bool = True
+    ):
+        # Only root paths can have metadata directories
+        if not self.is_root_link:
+            raise ValueError(
+                "Cannot get metadata directory from a non-root linked view path"
+            )
+        path = self.get_managed_dir_common("_metadata", create_dir=create_dir)
+        if tmp_build:
+            path = path / "tmp"
+            path.mkdir(exist_ok=True)
+        return path
+
     def get_managed_dir_common(
         self,
         managed_dir: str,

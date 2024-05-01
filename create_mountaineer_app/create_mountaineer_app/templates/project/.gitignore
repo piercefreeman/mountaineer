@@ -13,6 +13,7 @@ node_modules
 _server
 _ssr
 _static
+_metadata
 .watchdog.lock
 
 # General Python excludes

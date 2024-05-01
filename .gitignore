@@ -173,6 +173,7 @@ test-project
 _server
 _ssr
 _static
+_metadata
 
 # Ignore template files that might be used locally for testing
 # but shouldn't be added to the downstream templates
