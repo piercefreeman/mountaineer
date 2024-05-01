@@ -599,6 +599,11 @@ class ClientBuilder:
 
         """
         # Validation 1: Ensure that all view paths are unique
+        # This applies to both exact equivalence (two controllers pointing to the
+        # same page.tsx) as well as conflicting folder structures (one controller pointing
+        # to a page and another pointing to a layout in the same directory).
+        # Both of these causes would cause conflicting _server files to be generated
+        # which we need to avoid
         view_counts = defaultdict(list)
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller

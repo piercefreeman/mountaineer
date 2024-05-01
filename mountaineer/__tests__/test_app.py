@@ -12,6 +12,7 @@ from mountaineer.app import AppController
 from mountaineer.client_builder.openapi import OpenAPIDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException
 
 
@@ -41,6 +42,26 @@ def test_requires_render_return_value():
         app.register(TestControllerWithoutRenderMarkup())
 
     app.register(TestControllerWithRenderMarkup())
+
+
+def test_validates_layouts_exclude_urls():
+    """
+    The app controller should reject the registration of layouts that specify
+    a url.
+
+    """
+
+    class TestLayoutController(LayoutControllerBase):
+        # Not allowed, but might typehint correctly because the ControllerBase
+        # superclass supports it.
+        url = "/layout_url"
+
+        async def render(self) -> None:
+            pass
+
+    app_controller = AppController(view_root=Path(""))
+    with pytest.raises(ValueError, match="are not directly mountable to the router"):
+        app_controller.register(TestLayoutController())
 
 
 def test_generate_openapi():

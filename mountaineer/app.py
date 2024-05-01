@@ -285,7 +285,7 @@ class AppController:
         if isinstance(controller, LayoutControllerBase):
             if hasattr(controller, "url"):
                 raise ValueError(
-                    f"LayoutControllers are not directly mountable. {controller} should not have a url specified."
+                    f"LayoutControllers are not directly mountable to the router. {controller} should not have a url specified."
                 )
             view_router = None
         else:
