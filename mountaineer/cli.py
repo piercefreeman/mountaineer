@@ -16,7 +16,6 @@ from time import monotonic_ns, sleep, time
 from traceback import format_exception
 from typing import Any, Callable, MutableMapping
 
-from click import secho
 from fastapi import Request
 from rich.traceback import install as rich_traceback_install
 
@@ -263,9 +262,8 @@ class IsolatedEnvProcess(Process):
             hard_timeout -= 1
 
         if hard_timeout == 0:
-            secho(
-                f"Server shutdown reached hard timeout deadline: {self.is_alive()}",
-                fg="red",
+            CONSOLE.print(
+                f"[bold red]Server shutdown reached hard timeout deadline: {self.is_alive()}",
             )
 
         # As a last resort we send a hard termination signal
@@ -413,7 +411,7 @@ def handle_runserver(
             current_process.stop()
         if watcher_webservice is not None:
             watcher_webservice.stop()
-        secho("Services shutdown, now exiting...", fg="yellow")
+        CONSOLE.print("[yellow]Services shutdown, now exiting...")
         exit(0)
 
     signal(SIGINT, graceful_shutdown)
