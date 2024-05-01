@@ -23,7 +23,7 @@ from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
     extract_response_model_from_signature,
-    handle_explicit_responses,
+    format_final_action_response,
     init_function_metadata,
 )
 from mountaineer.cropper import crop_function_for_return_keys
@@ -169,7 +169,8 @@ def sideeffect(*args, **kwargs):  # type: ignore
                     if isawaitable(server_data):
                         server_data = await server_data
 
-                    return handle_explicit_responses(
+                    return format_final_action_response(
+                        self,
                         dict(
                             sideeffect=server_data,
                             passthrough=passthrough_values,

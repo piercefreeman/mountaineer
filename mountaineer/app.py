@@ -9,6 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
+from mountaineer.controller_layout import LayoutControllerBase
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
 
@@ -37,7 +38,9 @@ class ControllerDefinition(BaseModel):
     # Dynamically generated function that actually renders the html content
     # This is a hybrid between render() and _generate_html()
     view_route: Callable
-    render_router: APIRouter
+    # Render router is provided for all pages, only None for layouts that can't
+    # be independently rendered as a webpage
+    render_router: APIRouter | None
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -231,9 +234,19 @@ class AppController:
         # Register the rendering view to an isolated APIRoute, so we can keep track of its
         # the resulting router independently of the rest of the application
         # This is useful in cases where we need to do a render()->FastAPI lookup
-        view_router = APIRouter()
-        view_router.get(controller.url)(generate_controller_html)
-        self.app.include_router(view_router)
+        #
+        # We only mount standard controllers, we don't expect LayoutControllers to have
+        # a directly accessible URL
+        if isinstance(controller, LayoutControllerBase):
+            if hasattr(controller, "url"):
+                raise ValueError(
+                    f"LayoutControllers are not directly mountable. {controller} should not have a url specified."
+                )
+            view_router = None
+        else:
+            view_router = APIRouter()
+            view_router.get(controller.url)(generate_controller_html)
+            self.app.include_router(view_router)
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
@@ -251,7 +264,7 @@ class AppController:
                 # context that the action function is being defined within. Here since we have a global view
                 # of the controller (render function + actions) this becomes trivial
                 metadata.return_model = fuse_metadata_to_response_typehint(
-                    metadata, render_metadata.get_render_model()
+                    metadata, controller, render_metadata.get_render_model()
                 )
 
                 # Update the signature of the internal function, which fastapi will sniff for the return declaration

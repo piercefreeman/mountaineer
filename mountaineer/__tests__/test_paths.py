@@ -143,6 +143,7 @@ def test_managed_view_paths_code_directories(tmpdir):
     assert root_path.get_managed_code_dir() == root_path / "_server"
     assert root_path.get_managed_static_dir() == root_path / "_static"
     assert root_path.get_managed_ssr_dir() == root_path / "_ssr"
+    assert root_path.get_managed_metadata_dir() == root_path / "_metadata"
 
     # Non-root paths should only yield the server directory
     non_root_path = root_path / "subdir"

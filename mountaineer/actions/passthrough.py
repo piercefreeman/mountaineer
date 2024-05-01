@@ -27,7 +27,7 @@ from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
     extract_response_model_from_signature,
-    handle_explicit_responses,
+    format_final_action_response,
     init_function_metadata,
 )
 from mountaineer.constants import STREAM_EVENT_TYPE
@@ -157,7 +157,7 @@ def passthrough(*args, **kwargs):  # type: ignore
                 if isasyncgen(response):
                     return wrap_passthrough_generator(response)
 
-                return handle_explicit_responses(dict(passthrough=response))
+                return format_final_action_response(dict(passthrough=response))
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model

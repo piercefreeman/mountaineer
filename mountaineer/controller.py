@@ -38,12 +38,25 @@ from mountaineer.render import (
     ScriptAttribute,
 )
 from mountaineer.ssr import V8RuntimeError, render_ssr
+from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from mountaineer.app import ControllerDefinition
 
 RenderInput = ParamSpec("RenderInput")
 
+class BuildMetadata(BaseModel):
+    """
+    Controller metadata that is established during build-time and might be stripped
+    during the final output. For instance, layout.tsx files might not be included
+    in production payloads but this metadata object still stores their hierarchy
+    relative to the controllers.
+
+    """
+    view_path: Path
+
+    # Organized by hierarchy, first index is the outermost layout
+    layout_view_paths: list[Path] = []
 
 class ControllerBase(ABC, Generic[RenderInput]):
     url: str
@@ -81,8 +94,10 @@ class ControllerBase(ABC, Generic[RenderInput]):
         self.hard_ssr_timeout = hard_ssr_timeout
         self.source_map: SourceMapParser | None = None
 
+        # Set by the path resolution layer
         self.view_base_path: Path | None = None
         self.ssr_path: Path | None = None
+        self.build_metadata: BuildMetadata | None = None
 
         self.resolve_paths()
 
@@ -360,6 +375,14 @@ class ControllerBase(ABC, Generic[RenderInput]):
             LOGGER.debug(
                 f"[{self.__class__.__name__}] Resolved paths... {self.bundled_scripts}"
             )
+        else:
+            found_dependencies = False
+
+        # Find the metadata
+        metadata_path = view_base / "_metadata" / f"{script_name}.json"
+        if metadata_path.exists():
+            metadata = BuildMetadata.model_validate(metadata_path.read_text())
+            self.build_metadata = metadata
         else:
             found_dependencies = False
 

@@ -27,6 +27,7 @@ from mountaineer.client_builder.typescript import (
 )
 from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.io import gather_with_concurrency
 from mountaineer.js_compiler.base import ClientBundleMetadata
 from mountaineer.js_compiler.exceptions import BuildProcessException
@@ -37,7 +38,7 @@ from mountaineer.static import get_static_path
 
 @dataclass
 class RenderSpec:
-    url: str
+    url: str | None
     view_path: str
     spec: dict[Any, Any] | None
 
@@ -233,6 +234,15 @@ class ClientBuilder:
                 controller_links_path, root_common_handler
             )
             render_route = controller_definition.render_router
+
+            # This controller isn't accessible via a URL so shouldn't have a
+            # link associated with it
+            # This file still needs to exist for downstream exports so we write
+            # a blank file
+            if render_route is None:
+                controller_links_path.write_text("")
+                continue
+
             render_openapi = self.app.generate_openapi(
                 routes=render_route.routes,
             )
@@ -557,7 +567,7 @@ class ClientBuilder:
         return False
 
     def get_static_files(self):
-        ignore_directories = ["_ssr", "_static", "_server", "node_modules"]
+        ignore_directories = ["_ssr", "_static", "_server", "_metadata", "node_modules"]
 
         for view_root in self.get_all_root_views():
             for dir_path, _, filenames in view_root.walk():
@@ -704,7 +714,7 @@ class ClientBuilder:
                     else None
                 )
                 self._openapi_render_specs[controller] = RenderSpec(
-                    url=controller.url,
+                    url=None if isinstance(controller, LayoutControllerBase) else controller.url,
                     view_path=str(controller.view_path),
                     spec=spec,
                 )

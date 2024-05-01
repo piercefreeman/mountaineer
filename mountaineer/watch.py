@@ -43,7 +43,7 @@ class ChangeEventHandler(FileSystemEventHandler):
     def __init__(
         self,
         callbacks: list[CallbackDefinition],
-        ignore_list=["__pycache__", "_ssr", "_static", "_server"],
+        ignore_list=["__pycache__", "_ssr", "_static", "_server", "_metadata"],
         ignore_hidden=True,
         debounce_interval=0.1,
     ):

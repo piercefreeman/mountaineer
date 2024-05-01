@@ -240,7 +240,7 @@ class IsolatedEnvProcess(Process):
 
             self.alert_notification_channel()
         except BuildProcessException as e:
-            CONSOLE.print(f"[bold red]⚠️ Build failed: {e}")
+            CONSOLE.print(f"[bold red]🪲 Build failed: {e}")
             app_controller.build_exception = e
 
     def stop(self, hard_timeout: float = 5.0):

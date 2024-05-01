@@ -6,6 +6,7 @@ from ci_webapp.controllers.complex import ComplexController
 from ci_webapp.controllers.detail import DetailController
 from ci_webapp.controllers.home import HomeController
 from ci_webapp.controllers.stream import StreamController
+from ci_webapp.controllers.root_layout import RootLayoutController
 
 controller = AppController(
     global_metadata=Metadata(
@@ -20,3 +21,4 @@ controller.register(HomeController())
 controller.register(DetailController())
 controller.register(ComplexController())
 controller.register(StreamController())
+controller.register(RootLayoutController())

@@ -10,7 +10,7 @@ from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.console import CONSOLE
-from mountaineer.controller import ControllerBase
+from mountaineer.controller import BuildMetadata, ControllerBase
 from mountaineer.js_compiler.base import ClientBuilderBase, ClientBundleMetadata
 from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
@@ -172,6 +172,14 @@ class JavascriptBundler(ClientBuilderBase):
             # We only know how to parse tsx and jsx files
             return None
 
+        # Build the metadata archive for this controller now that
+        # we have the file location context
+        controller_base = underscore(controller.__class__.__name__)
+        root_path = file_path.get_package_root_link()
+        metadata_dir = root_path.get_managed_ssr_dir(tmp_build=True)
+        metadata_payload = self.build_metadata_archive(page_path=file_path, controller=controller)
+        (metadata_dir / f"{controller_base}.json").write_text(metadata_payload)
+
         # Now we can process the files in bulk
         payload = self.generate_js_bundle(
             file_path=file_path, controller=controller, metadata=metadata
@@ -324,6 +332,18 @@ class JavascriptBundler(ClientBuilderBase):
 
         return "\n".join(lines)
 
+    def build_metadata_archive(
+        self, *, page_path: ManagedViewPath, controller: ControllerBase
+    ):
+        layout_paths = self.sniff_for_layouts(
+            page_path=page_path, view_root_path=page_path.get_root_link()
+        )
+        metadata = BuildMetadata(
+            view_path=controller.view_path,
+            layout_view_paths=layout_paths,
+        )
+        return metadata.model_dump_json()
+
     def build_synthetic_endpoint(
         self, *, page_path: ManagedViewPath, layout_paths: list[Path], output_path: Path
     ):
@@ -433,9 +453,9 @@ class JavascriptBundler(ClientBuilderBase):
 
     def validate_page(self, *, page_path: Path, view_root_path: Path):
         # Validate that we're actually calling on a path file
-        if page_path.name not in {"page.tsx", "page.jsx"}:
+        if page_path.name not in {"page.tsx", "page.jsx", "layout.tsx", "layout.jsx"}:
             raise ValueError(
-                f"Invalid page path; view need to be specified in a `page.tsx` file: {page_path}"
+                f"Invalid page path. View needs to be specified in a `page.tsx` or `layout.tsx` file: {page_path}"
             )
 
         # Validate that the page_path is within the view root. The following
