@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import Request
 from mountaineer import LayoutControllerBase, Metadata, RenderBase
+from mountaineer.actions import sideeffect
 
 
 class RootLayoutRender(RenderBase):
@@ -19,3 +20,7 @@ class RootLayoutController(LayoutControllerBase):
         return RootLayoutRender(
             layout_value=self.layout_value,
         )
+
+    @sideeffect
+    async def increment_layout_value(self) -> None:
+        self.layout_value += 1

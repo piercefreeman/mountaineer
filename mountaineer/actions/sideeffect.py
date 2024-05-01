@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from mountaineer.controller_layout import LayoutControllerBase
 from pydantic import BaseModel
 from starlette.routing import Match
 
@@ -254,7 +255,7 @@ async def get_render_parameters(
     # we already know which route should be resolved so we can shortcut having to
     # match non-relevant paths.
     # https://github.com/encode/starlette/blob/5c43dde0ec0917673bb280bcd7ab0c37b78061b7/starlette/routing.py#L544
-    for route in controller.definition.render_router.routes:
+    for route in (controller.definition.render_router.routes if controller.definition.render_router is not None else []):
         match, child_scope = route.matches(view_request.scope)
         if match != Match.FULL:
             raise RuntimeError(
@@ -269,7 +270,9 @@ async def get_render_parameters(
 
     try:
         async with get_function_dependencies(
-            callable=controller.render, url=controller.url, request=view_request
+            callable=controller.render,
+            url=controller.url if not isinstance(controller, LayoutControllerBase) else None,
+            request=view_request if not isinstance(controller, LayoutControllerBase) else None,
         ) as values:
             yield values
     except RuntimeError as e:

@@ -5,9 +5,19 @@ const Layout = ({ children }: { children: ReactNode }) => {
   const serverState = useServer();
 
   return (
-    <div>
+    <div className="p-6">
       <h1>Layout State: {serverState.layout_value}</h1>
       <div>{children}</div>
+      <div>
+        <button
+          className="rounded-md bg-indigo-500 p-2 text-white"
+          onClick={async () => {
+            await serverState.increment_layout_value();
+          }}
+        >
+          Layout increment
+        </button>
+      </div>
     </div>
   );
 };
