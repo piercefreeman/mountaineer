@@ -9,8 +9,6 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
-from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.dependencies.base import get_function_dependencies
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
 
@@ -23,6 +21,8 @@ from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.dependencies.base import get_function_dependencies
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
 from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.js_compiler.javascript import JavascriptBundler
@@ -192,14 +192,14 @@ class AppController:
                 for candidate_layout_controller in self.controllers
                 if (
                     candidate_layout_controller.controller.build_metadata
-                    and candidate_layout_controller.controller.build_metadata.view_path in controller.build_metadata.layout_view_paths
+                    and candidate_layout_controller.controller.build_metadata.view_path
+                    in controller.build_metadata.layout_view_paths
                 )
             ]
-            print("LAYOUT CONTROLLERS", layout_controllers)
 
             # Perform their initial rendering, we only need their data to hydrate
             # the controller view
-            layout_metadata : dict[str, Any] = {}
+            layout_metadata: dict[str, Any] = {}
             for definition in layout_controllers:
                 # We won't be able to rely on fastapi to get the required params, because the function
                 # signature of the render function just applies to the page itself. We could create
@@ -222,14 +222,12 @@ class AppController:
 
                 layout_metadata[definition.controller.__class__.__name__] = server_data
 
-            print("Layout metadata", layout_metadata)
-
             try:
                 return await controller._generate_html(
                     *args,
                     global_metadata=self.global_metadata,
                     other_render_contexts=layout_metadata,
-                    **kwargs
+                    **kwargs,
                 )
             except Exception as e:
                 # If a user explicitly is raising an APIException, we don't want to log it

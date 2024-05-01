@@ -199,6 +199,9 @@ def test_inherit_parent_spec():
     assert parent_controller.definition
     assert child_controller.definition
 
+    assert parent_controller.definition.render_router
+    assert child_controller.definition.render_router
+
     parent_routes = parent_controller.definition.render_router.routes
     child_routes = child_controller.definition.render_router.routes
 

@@ -1,13 +1,10 @@
+from json import dumps as json_dumps
 from re import finditer as re_finditer
-from typing import cast
-
-from pydantic import BaseModel
+from typing import Any, cast
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
 from mountaineer.static import get_static_path
-from json import dumps as json_dumps
-from typing import Any
 
 
 class V8RuntimeError(Exception):

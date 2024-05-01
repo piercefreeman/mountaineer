@@ -518,7 +518,10 @@ class ClientBuilder:
                 self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
             )
             shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
-            shutil_move(self.view_root.get_managed_metadata_dir(tmp_build=True), tmp_metadata_dir)
+            shutil_move(
+                self.view_root.get_managed_metadata_dir(tmp_build=True),
+                tmp_metadata_dir,
+            )
 
             static_dir = self.view_root.get_managed_static_dir()
             ssr_dir = self.view_root.get_managed_ssr_dir()
@@ -537,7 +540,8 @@ class ClientBuilder:
                 tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
             )
             shutil_move(
-                tmp_metadata_dir, self.view_root.get_managed_metadata_dir(create_dir=False)
+                tmp_metadata_dir,
+                self.view_root.get_managed_metadata_dir(create_dir=False),
             )
 
     def cache_is_outdated(self):
@@ -721,7 +725,9 @@ class ClientBuilder:
                     else None
                 )
                 self._openapi_render_specs[controller] = RenderSpec(
-                    url=None if isinstance(controller, LayoutControllerBase) else controller.url,
+                    url=None
+                    if isinstance(controller, LayoutControllerBase)
+                    else controller.url,
                     view_path=str(controller.view_path),
                     spec=spec,
                 )

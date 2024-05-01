@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Iterator, Optional, Type
+from typing import AsyncIterator, Iterator, Optional, Type, cast
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -15,6 +15,7 @@ from mountaineer.actions.fields import (
     get_function_metadata,
 )
 from mountaineer.actions.sideeffect import sideeffect
+from mountaineer.controller import ControllerBase
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -25,6 +26,11 @@ class ExampleRenderModel(RenderBase):
 
 class ExamplePassthroughModel(BaseModel):
     passthrough_value_a: str
+
+
+class ExampleController(ControllerBase):
+    async def render(self) -> None:
+        pass
 
 
 def basic_compare_model_fields(
@@ -113,8 +119,16 @@ def test_fuse_metadata_to_response_typehint(
     expected_sideeffect_fields: dict[str, FieldInfo],
     expected_passthrough_fields: dict[str, FieldInfo],
 ):
-    fused_model = fuse_metadata_to_response_typehint(metadata, render_model)
+    sample_controller = ExampleController()
+    raw_model = fuse_metadata_to_response_typehint(
+        metadata, sample_controller, render_model
+    )
 
+    assert "ExampleController" in raw_model.model_fields.keys()
+
+    fused_model = cast(
+        BaseModel, raw_model.model_fields["ExampleController"].annotation
+    )
     if expected_sideeffect_fields:
         assert "sideeffect" in fused_model.model_fields.keys()
         assert fused_model.model_fields["sideeffect"].annotation
@@ -131,7 +145,7 @@ def test_fuse_metadata_to_response_typehint(
             expected_passthrough_fields,
         )
 
-    assert fused_model.__name__ == expected_model_name
+    assert raw_model.__name__ == expected_model_name
 
 
 class ParentRender(RenderBase):
@@ -143,7 +157,7 @@ class ChildRender(ParentRender):
 
 
 def test_fuse_metadata_to_response_typehint_inherit_render():
-    class ParentController(BaseModel):
+    class ParentController(ControllerBase):
         def render(self) -> ParentRender:
             return ParentRender(render_value_a="example")
 
@@ -157,6 +171,7 @@ def test_fuse_metadata_to_response_typehint_inherit_render():
 
     model_fused = fuse_metadata_to_response_typehint(
         get_function_metadata(ChildController.sideeffect),
+        ChildController(),
         ChildRender,
     )
     assert set(

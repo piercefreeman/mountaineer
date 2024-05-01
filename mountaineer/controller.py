@@ -1,10 +1,10 @@
 from abc import ABC, abstractmethod
 from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isawaitable, ismethod
+from json import dumps as json_dumps
 from pathlib import Path
 from re import compile as re_compile
 from time import monotonic_ns
-from json import dumps as json_dumps
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -20,6 +20,7 @@ from typing import (
 
 from fastapi.responses import HTMLResponse
 from inflection import underscore
+from pydantic import BaseModel
 
 from mountaineer.actions import (
     FunctionActionType,
@@ -39,12 +40,12 @@ from mountaineer.render import (
     ScriptAttribute,
 )
 from mountaineer.ssr import V8RuntimeError, render_ssr
-from pydantic import BaseModel
 
 if TYPE_CHECKING:
     from mountaineer.app import ControllerDefinition
 
 RenderInput = ParamSpec("RenderInput")
+
 
 class BuildMetadata(BaseModel):
     """
@@ -54,12 +55,14 @@ class BuildMetadata(BaseModel):
     relative to the controllers.
 
     """
+
     # All paths in the metadata should be absolute paths, since they are consistent
     # with regard to the builder filesystem but might be different when deployed
     view_path: Path
 
     # Organized by hierarchy, first index is the outermost layout
     layout_view_paths: list[Path] = []
+
 
 class ControllerBase(ABC, Generic[RenderInput]):
     url: str

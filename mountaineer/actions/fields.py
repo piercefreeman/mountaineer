@@ -9,6 +9,7 @@ from inspect import (
 )
 from json import loads as json_loads
 from typing import (
+    TYPE_CHECKING,
     Any,
     Callable,
     Optional,
@@ -26,11 +27,9 @@ from pydantic.fields import FieldInfo
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.exceptions import APIException
 from mountaineer.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
-
 
 
 class FunctionActionType(Enum):
@@ -240,11 +239,9 @@ def fuse_metadata_to_response_typehint(
 
     # Each action also includes the controller type in the response
     # signature so the frontend can differentiate between different controllers
-    wrapper_model : Type[BaseModel] = create_model(
+    wrapper_model: Type[BaseModel] = create_model(
         base_response_name,
-        **{
-            controller.__class__.__name__: (model, FieldInfo())
-        },
+        **{controller.__class__.__name__: (model, FieldInfo())},  # type: ignore
     )
 
     return wrapper_model
@@ -272,24 +269,19 @@ def format_final_action_response(
     if len(responses) > 1:
         raise ValueError(f"Multiple conflicting responses returned: {responses}")
 
-
     # The final transformation should include our controller name
     # This signals to the frontend which state subset we want to update
     action_root = controller.__class__.__name__
 
     if len(responses) == 0:
-        return {
-            action_root: dict_payload
-        }
+        return {action_root: dict_payload}
 
     response_key, response = responses[0]
     dict_payload[response_key] = json_loads(response.body)
 
     # Now inject the newly formatted response into the response object
     return JSONResponse(
-        content={
-            action_root: dict_payload
-        },
+        content={action_root: dict_payload},
         status_code=response.status_code,
         headers={
             key: value

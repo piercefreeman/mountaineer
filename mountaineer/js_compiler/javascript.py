@@ -177,7 +177,9 @@ class JavascriptBundler(ClientBuilderBase):
         controller_base = underscore(controller.__class__.__name__)
         root_path = file_path.get_package_root_link()
         metadata_dir = root_path.get_managed_metadata_dir(tmp_build=True)
-        metadata_payload = self.build_metadata_archive(page_path=file_path, controller=controller)
+        metadata_payload = self.build_metadata_archive(
+            page_path=file_path, controller=controller
+        )
         (metadata_dir / f"{controller_base}.json").write_text(metadata_payload)
 
         # Now we can process the files in bulk
