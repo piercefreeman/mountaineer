@@ -100,9 +100,11 @@ async def test_can_call_passthrough():
 
     # The response payload should be the same both both sync and async endpoints
     expected_response = {
-        "passthrough": ExamplePassthroughModel(
-            status="success",
-        )
+        "TestController": {
+            "passthrough": ExamplePassthroughModel(
+                status="success",
+            )
+        }
     }
 
     assert return_value_sync == expected_response

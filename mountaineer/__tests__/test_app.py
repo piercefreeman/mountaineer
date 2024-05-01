@@ -72,6 +72,7 @@ def test_generate_openapi():
         "TestExceptionActionResponse",
         "ExampleException",
         "ExampleSubModel",
+        "TestExceptionActionResponseRaw",
     }
 
 
@@ -133,6 +134,7 @@ def test_handle_conflicting_exception_names():
 
     assert openapi_definition.components.schemas.keys() == {
         "TestExceptionActionResponse",
+        "TestExceptionActionResponseRaw",
         "mountaineer.__tests__.test_1.ExampleException",
         "mountaineer.__tests__.test_2.ExampleException",
     }

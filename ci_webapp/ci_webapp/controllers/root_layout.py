@@ -1,7 +1,4 @@
-from uuid import UUID
-
-from fastapi import Request
-from mountaineer import LayoutControllerBase, Metadata, RenderBase
+from mountaineer import LayoutControllerBase, RenderBase
 from mountaineer.actions import sideeffect
 
 

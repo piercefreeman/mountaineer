@@ -100,7 +100,7 @@ def test_dev_thrown_exception_on_get(env_process: IsolatedEnvProcess):
         response = test_client.get("/")
         assert response.status_code == 500
         assert (
-            '<div id="root">Passthrough: {"exception":"This is a test",'
+            '<div id="root">Passthrough: {"ExceptionController":{"exception":"This is a test",'
             in response.text
         )
 

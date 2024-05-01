@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mountaineer.controller import ControllerBase
+from mountaineer.controller import BuildMetadata, ControllerBase
 from mountaineer.render import (
     LinkAttribute,
     MetaAttribute,
@@ -196,6 +196,7 @@ def test_resolve_paths(tmp_path: Path):
     view_base = tmp_path / "views"
     ssr_base = view_base / "_ssr"
     static_base = view_base / "_static"
+    metadata_base = view_base / "_metadata"
 
     controller = StubController()
     assert not controller.resolve_paths(view_base)
@@ -212,12 +213,18 @@ def test_resolve_paths(tmp_path: Path):
     (ssr_base / "stub_controller.js.map").touch()
     assert not controller.resolve_paths(view_base)
 
-    # Finally, create the static script file
     # Our hash has to be exactly 32 digits to match the regex
     static_base.mkdir()
     random_hash = "b5ecd0c4405374100d6ef93088b86898"
     (static_base / f"stub_controller-{random_hash}.js").touch()
     (static_base / f"stub_controller-{random_hash}.js.map").touch()
+    assert not controller.resolve_paths(view_base)
+
+    # Finally, create the metadata file
+    metadata_base.mkdir()
+    (metadata_base / "stub_controller.json").write_text(
+        BuildMetadata(view_path=Path()).model_dump_json()
+    )
     assert controller.resolve_paths(view_base)
 
     # Now ensure that the paths are correctly set
