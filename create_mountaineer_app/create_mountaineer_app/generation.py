@@ -1,11 +1,11 @@
-from enum import StrEnum
+from enum import Enum
 from pathlib import Path
 
 from jinja2 import Template
 from pydantic import BaseModel
 
 
-class EditorType(StrEnum):
+class EditorType(Enum):
     VSCODE = "vscode"
     VIM = "vim"
     ZED = "zed"

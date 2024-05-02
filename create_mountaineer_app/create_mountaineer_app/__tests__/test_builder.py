@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from itertools import product
 from os import environ
 from pathlib import Path
@@ -6,11 +7,15 @@ from time import sleep
 from uuid import uuid4
 
 import pytest
-import tomllib
 from click import secho
 from packaging.requirements import Requirement
 from packaging.version import Version
 from requests import get
+
+if sys.version_info >= (3, 11):
+    from tomllib import loads as toml_loads
+else:
+    from toml import loads as toml_loads
 
 from create_mountaineer_app.__tests__.common import wait_for_database_to_be_ready
 from create_mountaineer_app.builder import (
@@ -227,7 +232,7 @@ def test_build_version_number(use_poetry: bool, tmp_path: Path):
     build_project(metadata, install_deps=False)
 
     pyproject_contents = (tmp_path / "pyproject.toml").read_text()
-    package_requirements = tomllib.loads(pyproject_contents)
+    package_requirements = toml_loads(pyproject_contents)
 
     if use_poetry:
         # Parse the poetry convention into the PEP 508 specifier format
