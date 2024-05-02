@@ -1,4 +1,4 @@
-from enum import Enum, IntEnum, StrEnum
+from enum import Enum, IntEnum
 from json import dumps as json_dumps
 from typing import Any, Generic, Literal, TypeVar
 
@@ -10,6 +10,7 @@ from mountaineer.client_builder.build_schemas import (
     OpenAPIToTypescriptSchemaConverter,
 )
 from mountaineer.client_builder.openapi import OpenAPIProperty, OpenAPISchemaType
+from mountaineer.compat import StrEnum
 from mountaineer.logging import LOGGER
 
 T = TypeVar("T")

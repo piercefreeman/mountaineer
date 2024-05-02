@@ -2,7 +2,8 @@
 # be used across projects
 from fastapi import Depends as Depends
 
-from mountaineer.actions import passthrough as passthrough, sideeffect as sideeffect
+from mountaineer.actions.passthrough_dec import passthrough as passthrough
+from mountaineer.actions.sideeffect_dec import sideeffect as sideeffect
 from mountaineer.app import AppController as AppController
 from mountaineer.config import ConfigBase as ConfigBase
 from mountaineer.controller import ControllerBase as ControllerBase

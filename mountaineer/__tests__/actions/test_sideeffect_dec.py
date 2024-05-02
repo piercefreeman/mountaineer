@@ -11,7 +11,7 @@ from starlette.datastructures import Headers
 
 from mountaineer.__tests__.common import calculate_primes
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
-from mountaineer.actions.sideeffect import sideeffect
+from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
@@ -83,7 +83,7 @@ async def call_sideeffect_common(controller: ControllerCommon):
     # After our wrapper is called, our function is now async
     # Avoid the dependency resolution logic since that's tested separately
     with patch(
-        "mountaineer.actions.sideeffect.get_render_parameters"
+        "mountaineer.actions.sideeffect_dec.get_render_parameters"
     ) as patched_get_render_params:
         patched_get_render_params.side_effect = mock_get_render_parameters
 
@@ -165,7 +165,7 @@ async def test_get_render_parameters():
     function for dependencies and resolve them.
 
     """
-    from mountaineer.actions.sideeffect import get_render_parameters
+    from mountaineer.actions.sideeffect_dec import get_render_parameters
 
     found_cookie = None
 

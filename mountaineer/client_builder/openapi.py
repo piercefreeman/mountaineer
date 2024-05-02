@@ -1,10 +1,10 @@
 import json
-from enum import StrEnum
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mountaineer.annotation_helpers import get_value_by_alias
+from mountaineer.compat import StrEnum
 
 #
 # Enum definitions
@@ -96,6 +96,7 @@ class OpenAPIProperty(BaseModel):
 
     # Pointer to multiple possible subtypes
     anyOf: list[Union["OpenAPIProperty", EmptyAPIProperty]] = []
+    allOf: list[Union["OpenAPIProperty", EmptyAPIProperty]] = []
 
     # Supported by OpenAPI 3.1+, allows for definition of arrays that only accept
     # certain quantity of item/type combinations (like a tuple)
@@ -112,12 +113,13 @@ class OpenAPIProperty(BaseModel):
                 self.ref,
                 self.items,
                 self.anyOf,
+                self.allOf,
                 self.enum,
                 self.const,
             ]
         ):
             raise ValueError(
-                "One of variable_type, $ref, anyOf, enum, const, or items must be set"
+                "One of variable_type, $ref, anyOf, allOf, enum, const, or items must be set"
             )
         return self
 
@@ -136,6 +138,7 @@ class OpenAPIProperty(BaseModel):
         const: Any | None = None,
         enum: list[Any] | None = None,
         anyOf: list["OpenAPIProperty"] = [],
+        allOf: list["OpenAPIProperty"] = [],
     ) -> "OpenAPIProperty":
         return cls.model_validate(
             {
@@ -151,6 +154,7 @@ class OpenAPIProperty(BaseModel):
                 "enum": enum,
                 "const": const,
                 "anyOf": anyOf,
+                "allOf": allOf,
             }
         )
 

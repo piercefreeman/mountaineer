@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
-from mountaineer.actions.passthrough import (
+from mountaineer.actions.passthrough_dec import (
     passthrough,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue

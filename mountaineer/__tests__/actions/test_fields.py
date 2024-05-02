@@ -14,7 +14,7 @@ from mountaineer.actions.fields import (
     fuse_metadata_to_response_typehint,
     get_function_metadata,
 )
-from mountaineer.actions.sideeffect import sideeffect
+from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.controller import ControllerBase
 from mountaineer.render import Metadata, RenderBase
 

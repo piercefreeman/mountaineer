@@ -1,4 +1,3 @@
-from enum import StrEnum
 from re import sub as re_sub
 from typing import Callable
 from uuid import UUID
@@ -8,6 +7,7 @@ from fastapi import APIRouter
 from fastapi.openapi.utils import get_openapi
 
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
+from mountaineer.compat import StrEnum
 
 
 def view_endpoint_regular():

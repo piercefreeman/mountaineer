@@ -6,7 +6,7 @@ authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.10"
 pydantic = "^2.5.3"
 fastapi = "^0.109.0"
 inflection = "^0.5.1"
