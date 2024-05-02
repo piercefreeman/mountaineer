@@ -5,5 +5,5 @@ from .fields import (
     get_function_metadata as get_function_metadata,
     init_function_metadata as init_function_metadata,
 )
-from .passthrough import passthrough as passthrough
-from .sideeffect import sideeffect as sideeffect
+from .passthrough_dec import passthrough as passthrough
+from .sideeffect_dec import sideeffect as sideeffect

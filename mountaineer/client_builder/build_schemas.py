@@ -110,6 +110,9 @@ class OpenAPIToTypescriptSchemaConverter:
             if property.anyOf:
                 for prop in property.anyOf:
                     yield from walk_models(prop)
+            if property.allOf:
+                for prop in property.allOf:
+                    yield from walk_models(prop)
             for prop in property.properties.values():
                 yield from walk_models(prop)
             if property.additionalProperties:

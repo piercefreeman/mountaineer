@@ -37,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12"]
 
     services:
       docker:
@@ -96,14 +96,20 @@ jobs:
           GOMODCACHE: ${{ env.GOMODCACHE }}
 
   lint:
+    name: lint py${{ matrix.python-version }}
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: install rust
         uses: dtolnay/rust-toolchain@stable
@@ -303,7 +309,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux || 'auto' }}
-          args: -vv --release --out dist --interpreter ${{ matrix.interpreter || '3.11 3.12' }}
+          args: -vv --release --out dist --interpreter ${{ matrix.interpreter || '3.10 3.11 3.12' }}
           rust-toolchain: stable
           docker-options: -e CI -e CI_TARGET=${{ matrix.target }} -e GOARCH=${{ env.GOARCH }} -e CGO_ENABLED=${{ env.CGO_ENABLED }}
           # Already defaults to build, but we make explicit here. Any arguments should
@@ -534,14 +540,21 @@ jobs:
   # package, since if the main package fails we shouldn't yet bump the
   # create-mountaineer-app version.
   cma-test:
+    name: CMA Test - py${{ matrix.python-version }}
     runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: install golang
         uses: actions/setup-go@v3
