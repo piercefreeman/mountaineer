@@ -1,4 +1,4 @@
-# Frontend Views & Layouts
+# Views & Layouts
 
 Your React app should be initialized in the `/views` folder of your Mountaineer project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger Mountaineer project and rendered separately.
 
@@ -42,6 +42,92 @@ const Home = () => {
 export default Home;
 ```
 
+## Controllers
+
+A controller backs a view in a 1:1 relationship. It provides the backend plumbing to render the view, and can also provide sideeffects and passthroughs actions. The main entrypoint into this is the `render` function, which is called on your initial view to serialize all the data that your frontend will need when displaying the initial state of the page. All your data heavy lifting (database queries, manipulation, etc) should go here.
+
+```python title="/controllers/home.py"
+
+from mountaineer import sideeffect, ControllerBase, RenderBase
+from mountaineer.database import DatabaseDependencies
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+
+from myapp.models import TodoItem
+
+class HomeRender(RenderBase):
+    todos: list[TodoItem]
+
+class HomeController(ControllerBase):
+    url = "/"
+    view_path = "/app/home/page.tsx"
+
+    async def render(
+        self,
+        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+    ) -> HomeRender:
+        todos = await session.execute(select(TodoItem))
+
+        return HomeRender(
+            todos=todos.scalars().all()
+        )
+```
+
+### Path Parameters
+
+The `render` function signature is inspected to provide the full URL that can be called. To provide a URL parameter that extracts a given ID identifier and matches the following:
+
+```
+/details/a687566b-db3e-42e3-9053-4f679abe8277
+/details/4a4c26bc-554a-40dd-aecd-916abd3bc475
+```
+
+You can do:
+
+```python
+class DetailController(ControllerBase):
+    url = "/details/{item_id}"
+    view_path = "/app/details/page.tsx"
+
+    async def render(
+        self,
+        item_id: UUID,
+    ) -> HomeRender:
+        ...
+```
+
+### Query Parameters
+
+Query parameters are also supported. We support both simple types (str, float, UUID, etc) alongside lists of simple types. To provide a query parameter that matches the following:
+
+```
+/search?name=Apple&cost=30&cost=50
+/search?name=Banana
+```
+
+You can do:
+
+```python
+from typing import Annotated
+from fastapi import Query
+
+class SearchController(ControllerBase):
+    url = "/search"
+    view_path = "/app/search/page.tsx"
+
+    async def render(
+        self,
+        name: str,
+        cost: Annotated[list[int] | None, Query()] = None,
+    ) -> HomeRender:
+        ...
+```
+
+!!! tip
+
+    Both path and query parameters are validated by FastAPI, so you can use the same validation techniques. For more details, see the FastAPI [guide](https://fastapi.tiangolo.com/tutorial/query-params-str-validations/).
+
 ## Layouts
 
 We also support the Next.js `layout.tsx` convention, which is a special file that will be used to wrap all containing views in a common layout. This is useful for things like headers, footers, and other common elements.
@@ -73,22 +159,22 @@ export default Layout;
 This allows you to chain layouts before rendering the final, most specific page:
 
 ```
-/views
-  /app
-    /dashboard
-      /layout.tsx
-      /home
-        /page.tsx
-      /settings
-        /page.tsx
-    /layout.tsx
+views/
+└── app/
+    ├── dashboard/
+    │   ├── layout.tsx
+    │   ├── home/
+    │   │   └── page.tsx
+    │   └── settings/
+    │       └── page.tsx
+    └── layout.tsx
 ```
 
 When rendering `dashboard/home/page.tsx`, the view will be wrapped in the `app/dashboard/layout.tsx` layout alongside `app/layout.tsx`. These layout files will be automatically found by Mountaineer during the build process. They don't require any explicit declaration in your Python backend if you're just using them for styling.
 
 If you need more server side power and want to define them in Python, you can add a LayoutController that backs the layout.
 
-## Layout Controllers
+### Layout Controllers
 
 Layouts support most of the same controller logic that regular pages do. They can specify their own actions, both sideeffects and passthroughs, which will re-render the layout as required.
 
