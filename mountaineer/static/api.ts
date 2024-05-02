@@ -192,7 +192,16 @@ export const __getLink = (params: GetLinkParams) => {
   // access to the URLSearchParams API.
   const parsedParams = Object.entries(params.queryParameters).reduce(
     (acc, [key, value]) => {
-      if (value !== undefined) {
+      if (value === undefined) {
+        return acc;
+      }
+
+      // If we've been given an array, we want separate key-value pairs for each element
+      if (Array.isArray(value)) {
+        for (const element of value) {
+          acc.push(`${key}=${element}`);
+        }
+      } else {
         acc.push(`${key}=${value}`);
       }
       return acc;
