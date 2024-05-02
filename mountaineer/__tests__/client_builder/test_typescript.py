@@ -104,6 +104,7 @@ def test_collapse_repeated_literals(
 @pytest.mark.parametrize(
     "url_parameter, expected_ts_key, expected_ts_type",
     [
+        # Single typed URL parameter
         (
             URLParameterDefinition.from_meta(
                 name="test",
@@ -117,6 +118,7 @@ def test_collapse_repeated_literals(
             "test",
             "string",
         ),
+        # Multiple types for a single URL parameter
         (
             URLParameterDefinition.from_meta(
                 name="test",
@@ -136,6 +138,22 @@ def test_collapse_repeated_literals(
             ),
             "test",
             "number | string",
+        ),
+        # Support for list-based values in the URL string
+        (
+            URLParameterDefinition.from_meta(
+                name="test",
+                required=True,
+                schema_ref=OpenAPIProperty.from_meta(
+                    variable_type=OpenAPISchemaType.ARRAY,
+                    items=OpenAPIProperty.from_meta(
+                        variable_type=OpenAPISchemaType.STRING
+                    ),
+                ),
+                in_location=ParameterLocationType.PATH,
+            ),
+            "test",
+            "Array<string>",
         ),
     ],
 )
