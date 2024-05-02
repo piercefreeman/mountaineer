@@ -1,10 +1,10 @@
 from enum import StrEnum
 from re import sub as re_sub
-from typing import Callable
+from typing import Annotated, Callable
 from uuid import UUID
 
 import pytest
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.openapi.utils import get_openapi
 
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
@@ -18,7 +18,11 @@ def view_endpoint_path_params(path_a: str, path_b: int):
     pass
 
 
-def view_endpoint_query_params(query_a: str, query_b: int | None = None):
+def view_endpoint_query_params(
+    query_a: str,
+    query_b: int | None = None,
+    query_c: Annotated[list[int] | None, Query()] = None,
+):
     pass
 
 
@@ -94,15 +98,18 @@ def enum_view_url(model_type: RouteType, model_id: UUID):
                 """
                 export const getLink = ({
                     query_a,
-                    query_b
+                    query_b,
+                    query_c
                 }:{
                     query_a: string,
-                    query_b?: null | number
+                    query_b?: null | number,
+                    query_c?: Array<number> | null
                 }) => {
                     const url = `/query_params`;
                     const queryParameters: Record<string,any> = {
                         query_a,
-                        query_b
+                        query_b,
+                        query_c
                     };
                     const pathParameters: Record<string,any> = {};
                     return __getLink({

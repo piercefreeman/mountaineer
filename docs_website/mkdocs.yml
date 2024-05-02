@@ -35,8 +35,8 @@ nav:
   - Quickstart: quickstart.md
   - Learn:
     - structure.md
-    - client_actions.md
     - views.md
+    - client_actions.md
     - metadata.md
     - database.md
     - error_handling.md

@@ -100,6 +100,26 @@ def get_types_from_parameters(
     if isinstance(schema, EmptyAPIProperty):
         return "any"
 
+    # Mutually exclusive definitions
+    if schema.enum:
+        yield " | ".join([f"'{enum_value}'" for enum_value in schema.enum])
+    elif schema.variable_type:
+        if schema.variable_type == OpenAPISchemaType.ARRAY:
+            child_typehint = " | ".join(
+                str(value)
+                for value in (
+                    get_types_from_parameters(schema.items, base_openapi_spec)
+                    if schema.items
+                    else ["any"]
+                )
+            )
+            yield f"Array<{child_typehint}>"
+            # This call should completely wrap all of the sub-types, so we don't
+            # allow ourselves to continue down the tree.
+            return
+        else:
+            yield map_openapi_type_to_ts(schema.variable_type)
+
     # Recursively gather all of the types that might be nested
     for property in schema.properties.values():
         yield from get_types_from_parameters(property, base_openapi_spec)
@@ -115,12 +135,6 @@ def get_types_from_parameters(
     if schema.anyOf:
         for one_of in schema.anyOf:
             yield from get_types_from_parameters(one_of, base_openapi_spec)
-
-    # Mutually exclusive definitions
-    if schema.enum:
-        yield " | ".join([f"'{enum_value}'" for enum_value in schema.enum])
-    elif schema.variable_type:
-        yield map_openapi_type_to_ts(schema.variable_type)
 
     # If we're able to resolve the ref, do so. Some clients call this to get a limited
     # scope of known parameters, so this value is optional.
