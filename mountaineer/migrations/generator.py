@@ -1,5 +1,6 @@
 from collections import defaultdict
 from dataclasses import asdict, is_dataclass
+from datetime import datetime
 from enum import Enum
 from inspect import ismodule
 from json import dumps as json_dumps
@@ -21,6 +22,12 @@ MIGRATION_TEMPLATE = """
 {header_imports}
 
 class MigrationRevision(MigrationRevisionBase):
+    \"""
+    Migration auto-generated on {timestamp}.
+
+    Context: {user_message}
+
+    \"""
     up_revision: str = {rev}
     down_revision: str | None = {prev_rev}
 
@@ -57,6 +64,7 @@ class MigrationGenerator:
             tuple[DBObject, list[DBObject | DBObjectPointer]]
         ],
         down_revision: str | None,
+        user_message: str | None,
     ) -> tuple[str, str]:
         self.import_tracker.clear()
         revision = str(int(time()))
@@ -116,6 +124,8 @@ class MigrationGenerator:
             up_code=self.indent_code(up_code, 2),
             down_code=self.indent_code(down_code, 2),
             header_imports="\n".join(imports),
+            timestamp=datetime.now().isoformat(),
+            user_message=user_message or "None",
         )
 
         return code, revision

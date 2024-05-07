@@ -82,6 +82,7 @@ async def handle_generate(message: str | None = None):
             db_objects,
             up_objects,
             down_revision=current_revision,
+            user_message=message,
         )
 
         # Create the migration file. The change of a conflict with this timestamp is very low, but we make sure

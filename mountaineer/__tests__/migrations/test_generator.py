@@ -7,9 +7,47 @@ from pydantic import BaseModel
 
 from mountaineer.migrations.actions import ColumnType, DatabaseActions, DryRunAction
 from mountaineer.migrations.db_memory_serializer import DatabaseMemorySerializer
+from mountaineer.migrations.db_stubs import DBTable
 from mountaineer.migrations.dependency import MigrationDependencies
 from mountaineer.migrations.generator import MigrationGenerator
 from mountaineer.migrations.migration import MigrationRevisionBase
+
+
+@pytest.mark.asyncio
+async def test_new_migration():
+    migration_generator = MigrationGenerator()
+
+    code, up_revision = await migration_generator.new_migration(
+        down_objects_with_dependencies=[
+            (
+                DBTable(
+                    table_name="test_table_a",
+                ),
+                [],
+            )
+        ],
+        up_objects_with_dependencies=[
+            (
+                DBTable(
+                    table_name="test_table_b",
+                ),
+                [],
+            )
+        ],
+        down_revision="test_down_revision",
+        user_message="test_user_message",
+    )
+
+    # Expected up
+    assert 'await migrator.actor.add_table(table_name="test_table_b")' in code
+    assert 'await migrator.actor.drop_table(table_name="test_table_a")' in code
+
+    # Expected down
+    assert 'await migrator.actor.drop_table(table_name="test_table_b")' in code
+    assert 'await migrator.actor.add_table(table_name="test_table_a")' in code
+
+    assert "Context: test_user_message" in code
+    assert 'down_revision: str | None = "test_down_revision"' in code
 
 
 def test_actions_to_code():
