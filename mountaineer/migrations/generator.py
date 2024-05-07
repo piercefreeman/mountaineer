@@ -11,8 +11,8 @@ from pydantic import BaseModel
 
 from mountaineer import Depends
 from mountaineer.migrations.actions import DatabaseActions, DryRunAction, DryRunComment
-from mountaineer.migrations.constructors import DBObject, DBObjectPointer
 from mountaineer.migrations.db_memory_serializer import DatabaseMemorySerializer
+from mountaineer.migrations.db_stubs import DBObject, DBObjectPointer
 from mountaineer.migrations.dependency import MigrationDependencies
 from mountaineer.migrations.migration import MigrationRevisionBase
 from mountaineer.migrations.migrator import Migrator

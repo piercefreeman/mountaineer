@@ -7,7 +7,7 @@ from mountaineer.migrations.actions import (
     ConstraintType,
     ForeignKeyConstraint,
 )
-from mountaineer.migrations.constructors import (
+from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,

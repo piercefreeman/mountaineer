@@ -13,7 +13,8 @@ from mountaineer.migrations.actions import (
     ConstraintType,
     ForeignKeyConstraint,
 )
-from mountaineer.migrations.constructors import (
+from mountaineer.migrations.db_serializer import DatabaseSerializer
+from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,
@@ -22,7 +23,6 @@ from mountaineer.migrations.constructors import (
     DBTable,
     DBType,
 )
-from mountaineer.migrations.db_serializer import DatabaseSerializer
 
 
 class ValueEnumStandard(Enum):

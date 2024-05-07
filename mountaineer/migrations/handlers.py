@@ -21,7 +21,7 @@ from mountaineer.migrations.actions import (
     DatabaseActions,
     ForeignKeyConstraint,
 )
-from mountaineer.migrations.constructors import (
+from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,

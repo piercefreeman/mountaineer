@@ -8,13 +8,13 @@ from mountaineer.migrations.actions import (
     ConstraintType,
     ForeignKeyConstraint,
 )
-from mountaineer.migrations.constructors import (
+from mountaineer.migrations.db_memory_serializer import DatabaseMemorySerializer
+from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,
     DBTable,
 )
-from mountaineer.migrations.db_memory_serializer import DatabaseMemorySerializer
 
 
 def test_sa_foreign_key(isolated_sqlalchemy):

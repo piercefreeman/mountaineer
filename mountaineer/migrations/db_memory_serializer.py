@@ -6,7 +6,7 @@ from mountaineer.generics import get_typevar_mapping
 from mountaineer.migrations.actions import (
     DatabaseActions,
 )
-from mountaineer.migrations.constructors import DBObject, DBObjectPointer
+from mountaineer.migrations.db_stubs import DBObject, DBObjectPointer
 from mountaineer.migrations.generics import (
     is_type_compatible,
 )
