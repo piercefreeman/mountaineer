@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:latest
+    environment:
+      POSTGRES_USER: mountaineer
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: mountaineer_test_db
+    ports:
+      - "5438:5432"
+    volumes:
+      - postgres_data_test:/var/lib/postgresql/data
+
+volumes:
+  postgres_data_test:
