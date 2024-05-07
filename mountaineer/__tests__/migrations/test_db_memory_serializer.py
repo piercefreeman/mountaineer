@@ -1,0 +1,194 @@
+from enum import Enum
+from unittest.mock import ANY
+
+import pytest
+from sqlmodel import Field, SQLModel
+
+from mountaineer.migrations.actions import (
+    ColumnType,
+    ConstraintType,
+    DatabaseActions,
+    DryRunAction,
+    DryRunComment,
+)
+from mountaineer.migrations.db_memory_serializer import DatabaseMemorySerializer
+
+
+@pytest.mark.asyncio
+async def test_from_scratch_migration():
+    """
+    Test a migration from scratch.
+
+    """
+
+    class OldValues(Enum):
+        A = "A"
+
+    class ModelA(SQLModel):
+        id: int = Field(primary_key=True)
+        animal: OldValues
+        was_nullable: str | None
+
+    migrator = DatabaseMemorySerializer()
+
+    db_objects = list(migrator.delegate([ModelA], context=None))
+    next_ordering = migrator.order_db_objects(db_objects)
+
+    actor = DatabaseActions()
+    actions = await migrator.build_actions(
+        actor, [], {}, [obj for obj, _ in db_objects], next_ordering
+    )
+
+    assert actions == [
+        DryRunComment(
+            text="\n" "NEW TABLE: modela\n",
+        ),
+        DryRunAction(
+            fn=actor.add_table,
+            kwargs={
+                "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "id",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.INTEGER,
+                "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_type,
+            kwargs={
+                "type_name": "oldvalues",
+                "values": [
+                    "A",
+                ],
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "was_nullable",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.VARCHAR,
+                "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_constraint,
+            kwargs={
+                "columns": [
+                    "id",
+                ],
+                "constraint": ConstraintType.PRIMARY_KEY,
+                "constraint_args": None,
+                "constraint_name": "modela_pkey",
+                "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "animal",
+                "custom_data_type": "oldvalues",
+                "explicit_data_is_list": False,
+                "explicit_data_type": None,
+                "table_name": "modela",
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_diff_migration():
+    """
+    Test the diff migration between two schemas.
+
+    """
+
+    class OldValues(Enum):
+        A = "A"
+
+    class NewValues(Enum):
+        A = "A"
+        B = "B"
+
+    class ModelA(SQLModel):
+        id: int = Field(primary_key=True)
+        animal: OldValues
+        was_nullable: str | None
+
+    class ModelANew(SQLModel):
+        __tablename__ = "modela"  # type: ignore
+        id: int = Field(primary_key=True)
+        name: str
+        animal: NewValues
+        was_nullable: str
+
+    actor = DatabaseActions()
+    migrator = DatabaseMemorySerializer()
+
+    db_objects = list(migrator.delegate([ModelA], context=None))
+    db_objects_previous = [obj for obj, _ in db_objects]
+    previous_ordering = migrator.order_db_objects(db_objects)
+
+    db_objects_new = list(migrator.delegate([ModelANew], context=None))
+    db_objects_next = [obj for obj, _ in db_objects_new]
+    next_ordering = migrator.order_db_objects(db_objects_new)
+
+    actor = DatabaseActions()
+    actions = await migrator.build_actions(
+        actor, db_objects_previous, previous_ordering, db_objects_next, next_ordering
+    )
+    assert actions == [
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "name",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.VARCHAR,
+                "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_type,
+            kwargs={
+                "type_name": "newvalues",
+                "values": [
+                    "A",
+                    "B",
+                ],
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={
+                "column_name": "was_nullable",
+                "table_name": "modela",
+            },
+        ),
+        DryRunComment(
+            text=ANY,
+        ),
+        DryRunAction(
+            fn=actor.modify_column_type,
+            kwargs={
+                "column_name": "animal",
+                "custom_data_type": "newvalues",
+                "explicit_data_is_list": False,
+                "explicit_data_type": None,
+                "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.drop_type,
+            kwargs={
+                "type_name": "oldvalues",
+            },
+        ),
+    ]

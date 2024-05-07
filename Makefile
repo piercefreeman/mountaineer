@@ -95,7 +95,11 @@ lint-validation-scripts:
 
 # Tests
 test-lib:
+	(cd $(LIB_DIR) && docker-compose -f docker-compose.test.yml up -d)
+	@$(call wait-for-postgres,30,5438)
+	@set -e; \
 	$(call test-common,$(LIB_DIR),$(LIB_NAME))
+	(cd $(LIB_DIR) && docker-compose -f docker-compose.test.yml down)
 	$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
 test-create-mountaineer-app:
 	$(call test-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))

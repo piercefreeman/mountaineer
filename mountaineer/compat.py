@@ -1,7 +1,8 @@
 import sys
 
 if sys.version_info >= (3, 11):
-    from enum import StrEnum
+    from enum import StrEnum  # noqa
+    from typing import Self  # noqa
 else:
     """
     Full implementation of StrEnum, lifted from the Python 3.11 source code.
@@ -12,6 +13,8 @@ else:
 
     """
     from enum import Enum
+
+    from typing_extensions import Self  # noqa
 
     class StrEnum(str, Enum):
         """
