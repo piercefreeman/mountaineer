@@ -1,8 +1,9 @@
 from abc import abstractmethod
-from typing import Self, Union
+from typing import Union
 
 from pydantic import BaseModel, Field, model_validator
 
+from mountaineer.compat import Self
 from mountaineer.migrations.actions import (
     ColumnType,
     ConstraintType,

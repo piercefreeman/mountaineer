@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
-from enum import Enum, IntEnum, StrEnum
+from enum import Enum, IntEnum
 from typing import TYPE_CHECKING, Any, Generator, Generic, Type, TypeVar
 from uuid import UUID
 
@@ -14,6 +14,7 @@ from sqlmodel._compat import is_field_noneable
 from sqlmodel.main import FieldInfo as SQLModelFieldInfo
 from sqlmodel.sql import sqltypes
 
+from mountaineer.compat import StrEnum
 from mountaineer.migrations.actions import (
     ColumnType,
     ConstraintType,

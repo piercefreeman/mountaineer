@@ -1,4 +1,4 @@
-from enum import Enum, IntEnum, StrEnum
+from enum import Enum, IntEnum
 
 import pytest
 import sqlalchemy as sa
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlmodel import Field, SQLModel
 from sqlmodel.main import FieldInfo
 
+from mountaineer.compat import StrEnum
 from mountaineer.migrations.actions import (
     ColumnType,
     ConstraintType,
