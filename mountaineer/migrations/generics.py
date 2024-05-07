@@ -49,9 +49,6 @@ def is_type_compatible(obj_type: Type, target_type: Type) -> float:
     if get_origin(target_type) == type:
         return is_type_compatible(obj_type, get_args(target_type)[0])
 
-    if isinstance(target_type, type):
-        return mro_distance(obj_type, target_type)
-
     # Handle dict[str, str] like typehints
     # We assume that each arg in order must be matched with the target type
     obj_origin = get_origin(obj_type)
@@ -68,9 +65,14 @@ def is_type_compatible(obj_type: Type, target_type: Type) -> float:
     # For lists, sets, and tuple objects make sure that each object matches
     # the target type
     if isinstance(obj_type, (list, set, tuple)):
+        if type(obj_type) != get_origin(target_type):
+            return float("inf")
         return max(
             is_type_compatible(obj, get_args(target_type)[0]) for obj in obj_type
         )
+
+    if isinstance(target_type, type):
+        return mro_distance(obj_type, target_type)
 
     # Default case
     return float("inf")
