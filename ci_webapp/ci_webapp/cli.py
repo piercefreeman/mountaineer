@@ -1,5 +1,5 @@
 from click import command
-from mountaineer.cli import handle_runserver, handle_watch
+from mountaineer.cli import handle_build, handle_runserver, handle_watch
 
 
 @command()
@@ -19,4 +19,11 @@ def watch():
         package="ci_webapp",
         webcontroller="ci_webapp.app:controller",
         subscribe_to_mountaineer=True,
+    )
+
+
+@command()
+def build():
+    handle_build(
+        webcontroller="ci_webapp.app:controller",
     )

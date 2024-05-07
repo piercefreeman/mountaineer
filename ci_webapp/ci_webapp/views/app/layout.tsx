@@ -6,7 +6,9 @@ const Layout = ({ children }: { children: ReactNode }) => {
 
   return (
     <div className="p-6">
-      <h1>Layout State: {serverState.layout_value}</h1>
+      <h1>
+        Layout State: {serverState.layout_value} : {serverState.layout_arg}
+      </h1>
       <div>{children}</div>
       <div>
         <button

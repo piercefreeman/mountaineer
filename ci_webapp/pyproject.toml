@@ -14,6 +14,7 @@ mountaineer = { path = "../", develop = true }
 [tool.poetry.scripts]
 runserver = "ci_webapp.cli:runserver"
 watch = "ci_webapp.cli:watch"
+build = "ci_webapp.cli:build"
 
 [tool.poetry.group.dev.dependencies]
 types-setuptools = "^69.0.0.20240125"
