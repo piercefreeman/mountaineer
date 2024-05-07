@@ -21,7 +21,7 @@ from mountaineer.actions import (
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
-from mountaineer.console import CONSOLE, ERROR_CONSOLE
+from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
@@ -448,9 +448,18 @@ class AppController:
                     )
                 )
             else:
-                ERROR_CONSOLE.print(
-                    f"[red]Duplicate parameter {parameter.name} in {target_controller.controller} and {reference_controller.controller}, ignoring..."
-                )
+                # We only throw an error if the types are different. If they're the same we assume
+                # that the resolution is intended to be shared.
+                target_annotation_type = target_signature.parameters[
+                    parameter.name
+                ].annotation
+                reference_annotation_type = parameter.annotation
+
+                if target_annotation_type != reference_annotation_type:
+                    raise ValueError(
+                        f"Duplicate parameter {parameter.name} in {target_controller.controller} and {reference_controller.controller}.\n"
+                        f"Conflicting types: {target_annotation_type} vs {reference_annotation_type}"
+                    )
 
         target_controller.view_route.__signature__ = target_signature.replace(  # type: ignore
             parameters=target_parameters
