@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from inspect import Parameter, signature
+from re import fullmatch as re_fullmatch
 from typing import Any, Callable, Literal, overload
 
 from pydantic import BaseModel
@@ -137,11 +138,41 @@ class DryRunComment:
     text: str
 
 
+def assert_is_safe_sql_identifier(identifier: str):
+    """
+    Check if the provided identifier is a safe SQL identifier. Since our code
+    pulls these directly from the SQLModel definitions, there shouldn't
+    be any issues with SQL injection, but it's good to be safe.
+
+    """
+    is_valid = re_fullmatch(r"^[A-Za-z_][A-Za-z0-9_]*$", identifier) is not None
+    if not is_valid:
+        raise ValueError(f"{identifier} is not a valid SQL identifier.")
+
+
+def format_sql_values(values: list[str]):
+    """
+    Safely formats string values for SQL insertion by escaping single quotes.
+
+    """
+    escaped_values = [
+        value.replace("'", "''") for value in values
+    ]  # Escaping single quotes in SQL
+    formatted_values = ", ".join(f"'{value}'" for value in escaped_values)
+    return formatted_values
+
+
 class DatabaseActions:
     """
     Track the actions that need to be executed to the database. Provides
     a shallow, typed ORM on top of the raw SQL commands that we'll execute
     through sqlalchemy.
+
+    This class manually builds up the SQL strings that will be executed against
+    postgres. We intentionally avoid using the ORM or variable-insertion modes
+    here because most table-schema operations don't permit parameters to
+    specify top-level SQL syntax. To keep things consistent, we'll use the
+    same SQL string interpolation for all operations.
 
     """
 
@@ -161,15 +192,19 @@ class DatabaseActions:
         self.prod_sqls: list[str] = []
 
     async def add_table(self, table_name: str):
+        assert_is_safe_sql_identifier(table_name)
+
         await self._record_signature(
             self.add_table,
             dict(table_name=table_name),
             f"""
-            CREATE TABLE {table_name}
+            CREATE TABLE {table_name} ();
             """,
         )
 
     async def drop_table(self, table_name: str):
+        assert_is_safe_sql_identifier(table_name)
+
         await self._record_signature(
             self.drop_table,
             dict(table_name=table_name),
@@ -195,11 +230,16 @@ class DatabaseActions:
                 "Cannot provide both an explicit data type and a custom data type."
             )
 
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         column_type = self._get_column_type(
             explicit_data_type=explicit_data_type,
             explicit_data_is_list=explicit_data_is_list,
             custom_data_type=custom_data_type,
         )
+
+        assert_is_safe_sql_identifier(column_type)
 
         await self._record_signature(
             self.add_column,
@@ -217,6 +257,9 @@ class DatabaseActions:
         )
 
     async def drop_column(self, table_name: str, column_name: str):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         await self._record_signature(
             self.drop_column,
             dict(table_name=table_name, column_name=column_name),
@@ -229,6 +272,10 @@ class DatabaseActions:
     async def rename_column(
         self, table_name: str, old_column_name: str, new_column_name: str
     ):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(old_column_name)
+        assert_is_safe_sql_identifier(new_column_name)
+
         await self._record_signature(
             self.rename_column,
             dict(
@@ -259,11 +306,16 @@ class DatabaseActions:
                 "Cannot provide both an explicit data type and a custom data type."
             )
 
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         column_type = self._get_column_type(
             explicit_data_type=explicit_data_type,
             explicit_data_is_list=explicit_data_is_list,
             custom_data_type=custom_data_type,
         )
+
+        assert_is_safe_sql_identifier(column_type)
 
         await self._record_signature(
             self.modify_column_type,
@@ -343,8 +395,11 @@ class DatabaseActions:
         constraint_name: str,
         constraint_args: BaseModel | None = None,
     ):
-        columns_formatted = ", ".join(columns)
+        assert_is_safe_sql_identifier(table_name)
+        for column_name in columns:
+            assert_is_safe_sql_identifier(column_name)
 
+        columns_formatted = ", ".join(columns)
         sql = f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} "
 
         if constraint == ConstraintType.PRIMARY_KEY:
@@ -354,6 +409,11 @@ class DatabaseActions:
                 raise ValueError(
                     f"Constraint type FOREIGN_KEY must have ForeignKeyConstraint args, received: {constraint_args}"
                 )
+
+            assert_is_safe_sql_identifier(constraint_args.target_table)
+            for column_name in constraint_args.target_columns:
+                assert_is_safe_sql_identifier(column_name)
+
             ref_cols_formatted = ", ".join(constraint_args.target_columns)
             sql += f"FOREIGN KEY ({columns_formatted}) REFERENCES {constraint_args.target_table} ({ref_cols_formatted})"
         elif constraint == ConstraintType.UNIQUE:
@@ -391,6 +451,9 @@ class DatabaseActions:
         table_name: str,
         constraint_name: str,
     ):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(constraint_name)
+
         await self._record_signature(
             self.drop_constraint,
             dict(
@@ -404,6 +467,9 @@ class DatabaseActions:
         )
 
     async def add_not_null(self, table_name: str, column_name: str):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         await self._record_signature(
             self.add_not_null,
             dict(table_name=table_name, column_name=column_name),
@@ -415,6 +481,9 @@ class DatabaseActions:
         )
 
     async def drop_not_null(self, table_name: str, column_name: str):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         await self._record_signature(
             self.drop_not_null,
             dict(table_name=table_name, column_name=column_name),
@@ -426,8 +495,9 @@ class DatabaseActions:
         )
 
     async def add_type(self, type_name: str, values: list[str]):
-        formatted_values = ", ".join(f"'{value}'" for value in values)
+        assert_is_safe_sql_identifier(type_name)
 
+        formatted_values = format_sql_values(values)
         await self._record_signature(
             self.add_type,
             dict(type_name=type_name, values=values),
@@ -437,24 +507,36 @@ class DatabaseActions:
         )
 
     async def add_type_value(self, type_name: str, value: str):
+        assert_is_safe_sql_identifier(type_name)
+
+        # Use the same escape functionality as we use for lists, since
+        # there's only one object it won't add any commas
+        formatted_value = format_sql_values([value])
+
         await self._record_signature(
             self.add_type_value,
             dict(type_name=type_name, value=value),
             f"""
-            ALTER TYPE {type_name} ADD VALUE '{value}'
+            ALTER TYPE {type_name} ADD VALUE '{formatted_value}'
             """,
         )
 
     async def drop_type_value(self, type_name: str, value: str):
+        assert_is_safe_sql_identifier(type_name)
+
+        formatted_value = format_sql_values([value])
+
         await self._record_signature(
             self.drop_type_value,
             dict(type_name=type_name, value=value),
             f"""
-            ALTER TYPE {type_name} DROP VALUE '{value}'
+            ALTER TYPE {type_name} DROP VALUE '{formatted_value}'
             """,
         )
 
     async def drop_type(self, type_name: str):
+        assert_is_safe_sql_identifier(type_name)
+
         await self._record_signature(
             self.drop_type,
             dict(type_name=type_name),
