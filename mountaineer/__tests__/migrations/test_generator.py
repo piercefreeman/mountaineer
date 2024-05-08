@@ -104,6 +104,8 @@ class ExampleDataclass:
         ),
         (ExampleModel(value="test"), 'ExampleModel(value="test")'),
         (ExampleDataclass(value="test"), 'ExampleDataclass(value="test")'),
+        (True, "True"),
+        (False, "False"),
     ],
 )
 def test_format_arg(value: Any, expected_value: str):
