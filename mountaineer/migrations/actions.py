@@ -233,13 +233,16 @@ class DatabaseActions:
         assert_is_safe_sql_identifier(table_name)
         assert_is_safe_sql_identifier(column_name)
 
+        # We only need to check the custom data type, since we know
+        # the explicit data types come from the enum and are safe.
+        if custom_data_type:
+            assert_is_safe_sql_identifier(custom_data_type)
+
         column_type = self._get_column_type(
             explicit_data_type=explicit_data_type,
             explicit_data_is_list=explicit_data_is_list,
             custom_data_type=custom_data_type,
         )
-
-        assert_is_safe_sql_identifier(column_type)
 
         await self._record_signature(
             self.add_column,
@@ -309,13 +312,16 @@ class DatabaseActions:
         assert_is_safe_sql_identifier(table_name)
         assert_is_safe_sql_identifier(column_name)
 
+        # We only need to check the custom data type, since we know
+        # the explicit data types come from the enum and are safe.
+        if custom_data_type:
+            assert_is_safe_sql_identifier(custom_data_type)
+
         column_type = self._get_column_type(
             explicit_data_type=explicit_data_type,
             explicit_data_is_list=explicit_data_is_list,
             custom_data_type=custom_data_type,
         )
-
-        assert_is_safe_sql_identifier(column_type)
 
         await self._record_signature(
             self.modify_column_type,

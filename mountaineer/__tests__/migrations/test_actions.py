@@ -1,12 +1,16 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import text
 
 from mountaineer.migrations.actions import (
+    ColumnType,
+    ConstraintType,
     DatabaseActions,
     DryRunAction,
+    ForeignKeyConstraint,
     assert_is_safe_sql_identifier,
     format_sql_values,
 )
@@ -152,3 +156,199 @@ async def test_add_table(
 
     # We should have a table in the database
     assert await db_session.execute(text("SELECT * FROM test_table"))
+
+
+@pytest.mark.asyncio
+async def test_drop_table(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    # Set up a table for us to drop first
+    await db_session.execute(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
+    await db_session.commit()
+
+    await db_backed_actions.drop_table("test_table")
+
+    # We should not have a table in the database
+    # SQLAlchemy re-raises the exception as a ProgrammingError, but includes
+    # the original exception as a string representation that we can match against
+    with pytest.raises(ProgrammingError, match="UndefinedTableError"):
+        await db_session.execute(text("SELECT * FROM test_table"))
+
+
+@pytest.mark.asyncio
+async def test_add_column(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    # Set up a table for us to drop first
+    await db_session.execute(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
+    await db_session.commit()
+
+    # Standard type
+    await db_backed_actions.add_column(
+        "test_table",
+        "test_column",
+        explicit_data_type=ColumnType.VARCHAR,
+    )
+
+    # Standard, list type
+    await db_backed_actions.add_column(
+        "test_table",
+        "test_column_list",
+        explicit_data_type=ColumnType.VARCHAR,
+        explicit_data_is_list=True,
+    )
+
+    # We should now have columns in the table
+    # Insert an object with the expected columns
+    await db_session.execute(
+        text(
+            "INSERT INTO test_table (test_column, test_column_list) VALUES (:column_value, :list_values)"
+        ),
+        {
+            "column_value": "test_value",
+            "list_values": ["value_1", "value_2"],
+        },
+    )
+
+    await db_session.commit()
+
+    # Make sure that we can retrieve the object
+    result = await db_session.execute(text("SELECT * FROM test_table"))
+    row = result.fetchone()
+    assert row[1] == "test_value"
+    assert row[2] == ["value_1", "value_2"]
+
+
+@pytest.mark.asyncio
+async def test_drop_column(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    # Set up a table for us to drop first
+    await db_session.execute(
+        text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
+    )
+    await db_session.commit()
+
+    await db_backed_actions.drop_column("test_table", "test_column")
+
+    # We should not have a column in the table
+    with pytest.raises(ProgrammingError, match="UndefinedColumn"):
+        await db_session.execute(text("SELECT test_column FROM test_table"))
+
+
+@pytest.mark.asyncio
+async def test_rename_column(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    # Set up a table for us to drop first
+    await db_session.execute(
+        text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
+    )
+    await db_session.commit()
+
+    await db_backed_actions.rename_column("test_table", "test_column", "new_column")
+
+    # We should have a column in the table
+    assert await db_session.execute(text("SELECT new_column FROM test_table"))
+
+    # We should not have a column in the table
+    with pytest.raises(ProgrammingError, match="UndefinedColumn"):
+        await db_session.execute(text("SELECT test_column FROM test_table"))
+
+
+@pytest.mark.asyncio
+async def modify_column_type(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    # Set up a table with the old types
+    await db_session.execute(
+        text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
+    )
+    await db_session.commit()
+
+    # Modify the column type, since nothing is in the column we should
+    # be able to do this without any issues
+    await db_backed_actions.modify_column_type(
+        "test_table", "test_column", ColumnType.INTEGER
+    )
+
+    # We should now be able to inject an integer value
+    await db_session.execute(
+        text("INSERT INTO test_table (test_column) VALUES (:column_value)"),
+        {
+            "column_value": 1,
+        },
+    )
+
+    await db_session.commit()
+
+    # Make sure that we can retrieve the object
+    result = await db_session.execute(text("SELECT * FROM test_table"))
+    row = result.fetchone()
+    assert row[1] == 1
+
+
+@pytest.mark.asyncio
+async def test_add_constraint_foreign_key(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    # Set up two tables since we need a table target
+    await db_session.execute(
+        text(
+            "CREATE TABLE external_table (id SERIAL PRIMARY KEY, external_column VARCHAR)"
+        )
+    )
+    await db_session.execute(
+        text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column_id INTEGER)")
+    )
+
+    # Insert an existing object into the external table
+    await db_session.execute(
+        text(
+            "INSERT INTO external_table (id, external_column) VALUES (:id, :column_value)",
+        ),
+        {
+            "id": 1,
+            "column_value": "test_value",
+        },
+    )
+
+    # Add a foreign_key
+    await db_backed_actions.add_constraint(
+        "test_table",
+        ["test_column_id"],
+        ConstraintType.FOREIGN_KEY,
+        "test_foreign_key_constraint",
+        constraint_args=ForeignKeyConstraint(
+            target_table="external_table",
+            target_columns=["id"],
+        ),
+    )
+
+    # We should now have a foreign key constraint
+    # Insert an object that links to our known external object
+    await db_session.execute(
+        text(
+            "INSERT INTO test_table (test_column_id) VALUES (:column_value)",
+        ),
+        {
+            "column_value": 1,
+        },
+    )
+
+    # We should not be able to insert an object that does not link to the external object
+    with pytest.raises(IntegrityError, match="foreign key constraint"):
+        await db_session.execute(
+            text(
+                "INSERT INTO test_table (test_column_id) VALUES (:column_value)",
+            ),
+            {
+                "column_value": 2,
+            },
+        )
