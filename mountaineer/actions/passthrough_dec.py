@@ -157,7 +157,7 @@ def passthrough(*args, **kwargs):  # type: ignore
                 if isasyncgen(response):
                     return wrap_passthrough_generator(response)
 
-                return format_final_action_response(self, dict(passthrough=response))
+                return format_final_action_response(dict(passthrough=response))
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model

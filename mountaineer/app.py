@@ -1,12 +1,13 @@
 from collections import defaultdict
 from functools import wraps
-from inspect import isawaitable, isclass, signature
+from inspect import Parameter, Signature, isawaitable, isclass, signature
 from pathlib import Path
 from typing import Any, Callable, Type
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
@@ -20,9 +21,9 @@ from mountaineer.actions import (
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
+from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.dependencies.base import get_function_dependencies
 from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
 from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.js_compiler.javascript import JavascriptBundler
@@ -211,23 +212,27 @@ class AppController:
                 #
                 # For now we assume that the render method of layouts will specify no URL parameters
                 # and can be leveraged in an isoltaed context.
-                async with get_function_dependencies(
-                    callable=definition.controller.render, url=controller.url
-                ) as values:
-                    server_data = definition.controller.render(**values)
-                    if isawaitable(server_data):
-                        server_data = await server_data
-                    if server_data is None:
-                        server_data = RenderNull()
+                layout_values = self.get_value_mask_for_signature(
+                    signature(definition.controller.render), kwargs
+                )
+                server_data = definition.controller.render(**layout_values)
+                if isawaitable(server_data):
+                    server_data = await server_data
+                if server_data is None:
+                    server_data = RenderNull()
 
                 layout_metadata[definition.controller.__class__.__name__] = server_data
 
             try:
+                render_values = self.get_value_mask_for_signature(
+                    signature(controller.render), kwargs
+                )
                 return await controller._generate_html(
-                    *args,
+                    # *args,
                     global_metadata=self.global_metadata,
                     other_render_contexts=layout_metadata,
-                    **kwargs,
+                    # **kwargs,
+                    **render_values,
                 )
             except Exception as e:
                 # If a user explicitly is raising an APIException, we don't want to log it
@@ -351,11 +356,146 @@ class AppController:
         self.controllers.append(controller_definition)
         self.controller_names.add(controller_name)
 
+        # Handle the resolution of the full signature of the render function
+        self.greedy_merge_signatures(controller_definition)
+
     async def handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.internal_model.model_dump(),
         )
+
+    def greedy_merge_signatures(
+        self,
+        controller_def: ControllerDefinition,
+    ):
+        """
+        As soon as a new controller is mounted, we try to determine whether the new resolution of this
+        controller modifies (or is modified by) existing controllers.
+
+        Specifically:
+
+        - If the new controller is a LayoutController, it might modify controllers that are already
+            mounted. We need to back-fill the relationship between the layout and the controllers.
+        - If the new controller is a standard controller, it might be modified by a LayoutController
+            that is already mounted. We should back-fill in the same way.
+
+        """
+        # Too early in the build lifecycle, hasn't yet built artifacts
+        if not controller_def.controller.build_metadata:
+            CONSOLE.print(
+                "[red]No metadata found for controller on disk. Skipping layout merging until after first build is completed."
+            )
+            return
+
+        # Exclude the self reference
+        other_controllers = [
+            definition
+            for definition in self.controllers
+            if definition is not controller_def
+        ]
+
+        if isinstance(controller_def.controller, LayoutControllerBase):
+            # Go back through the existing controllers and back-fill
+            # the relationship
+            for existing_controller_def in other_controllers:
+                if (
+                    existing_controller_def.controller.build_metadata
+                    and controller_def.controller.build_metadata.view_path
+                    in existing_controller_def.controller.build_metadata.layout_view_paths
+                ):
+                    self.merge_render_signatures(
+                        existing_controller_def,
+                        reference_controller=controller_def,
+                    )
+        else:
+            for candidate_layout_controller in other_controllers:
+                if candidate_layout_controller.controller.build_metadata and (
+                    candidate_layout_controller.controller.build_metadata.view_path
+                    in controller_def.controller.build_metadata.layout_view_paths
+                ):
+                    self.merge_render_signatures(
+                        controller_def,
+                        reference_controller=candidate_layout_controller,
+                    )
+
+    def merge_render_signatures(
+        self,
+        target_controller: ControllerDefinition,
+        *,
+        reference_controller: ControllerDefinition,
+    ):
+        """
+        Collects the signature from the "reference_controller" and replaces the active render endpoint
+        with this new signature. We require all these new parameters to be kwargs so they
+        can be injected into the render function by name alone.
+
+        """
+        reference_signature = signature(reference_controller.view_route)
+        target_signature = signature(target_controller.view_route)
+
+        reference_parameters = reference_signature.parameters.values()
+        target_parameters = list(target_signature.parameters.values())
+
+        # For any additional arguments provided by the reference, inject them into
+        # the target controller
+        # For duplicate ones, the target controller should win
+        for parameter in reference_parameters:
+            if parameter.name not in target_signature.parameters:
+                target_parameters.append(
+                    parameter.replace(
+                        kind=Parameter.KEYWORD_ONLY,
+                    )
+                )
+            else:
+                # We only throw an error if the types are different. If they're the same we assume
+                # that the resolution is intended to be shared.
+                target_annotation_type = target_signature.parameters[
+                    parameter.name
+                ].annotation
+                reference_annotation_type = parameter.annotation
+
+                if target_annotation_type != reference_annotation_type:
+                    raise TypeError(
+                        f"Duplicate parameter {parameter.name} in {target_controller.controller} and {reference_controller.controller}.\n"
+                        f"Conflicting types: {target_annotation_type} vs {reference_annotation_type}"
+                    )
+
+        target_controller.view_route.__signature__ = target_signature.replace(  # type: ignore
+            parameters=target_parameters
+        )
+
+        # Re-mount the controller exactly as it was first mounted
+        if target_controller.render_router:
+            # Clear the previous definition before re-adding it
+            # Both the app route is required (for the actual page resolution) and the render router
+            # (to avoid conflicts in the OpenAPI generation)
+            for route_list in [self.app.routes, target_controller.render_router.routes]:
+                for route in list(route_list):
+                    if (
+                        isinstance(route, APIRoute)
+                        and route.path == target_controller.controller.url
+                        and route.methods == {"GET"}
+                    ):
+                        route_list.remove(route)
+
+            target_controller.render_router.get(target_controller.controller.url)(
+                target_controller.view_route
+            )
+            self.app.include_router(target_controller.render_router)
+
+    def get_value_mask_for_signature(
+        self,
+        signature: Signature,
+        values: dict[str, Any],
+    ):
+        # Assume the values match the parameters specified in the signature
+        passthrough_names = {
+            parameter.name for parameter in signature.parameters.values()
+        }
+        return {
+            name: value for name, value in values.items() if name in passthrough_names
+        }
 
     def generate_openapi(self, routes: list[BaseRoute] | None = None):
         """

@@ -239,13 +239,9 @@ app_controller = AppController(...)
 app_controller.register(RootLayoutController())
 ```
 
-In general you can implement layout controllers just like you do for pages. But since they're shared across multiple pages there are a few important differences to keep in mind:
+In general you can implement layout controllers just like you do for pages. But since they're shared across multiple child controllers, make sure the keyword arguments you use in your `render` signature don't have any conflicts. Mountaineer will merge these signatures at runtime and check for duplicate keyword names across the layout's child pages. Arguments are allowed to share the same name _and_ type, in which case they will be resolved to the same value. Arguments with conflicting types will raise a `TypeError`.
 
-- Layout controllers will be rendered in an isolated scope. Sideeffects in one layout controller won't affect the others.
-- Dependency injections are similarly isolated. They are run in an isolated, synthetic context and not with the same dependency injection parameters that the page uses.
-- Layout controllers don't modify the page signature. Query params on layouts won't be extracted, for instance.
-
-As long as you write your layout controllers without directly referencing the page that they might be wrapping, which is the case for most layouts, you should be good to go.
+It's also worth noting that layout controllers will resolve their dependencies in the same scope as the page controllers. So if you need database access within your layout, you'll receive the same underlying transaction as the page controller. This makes dependency injection a powerful way to save on resources, but be careful to not treat them as isolated objects.
 
 ## Typescript Configuration
 

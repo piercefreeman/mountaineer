@@ -171,7 +171,6 @@ def sideeffect(*args, **kwargs):  # type: ignore
                         server_data = await server_data
 
                     return format_final_action_response(
-                        self,
                         dict(
                             sideeffect=server_data,
                             passthrough=passthrough_values,
