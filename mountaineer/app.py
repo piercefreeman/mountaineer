@@ -456,7 +456,7 @@ class AppController:
                 reference_annotation_type = parameter.annotation
 
                 if target_annotation_type != reference_annotation_type:
-                    raise ValueError(
+                    raise TypeError(
                         f"Duplicate parameter {parameter.name} in {target_controller.controller} and {reference_controller.controller}.\n"
                         f"Conflicting types: {target_annotation_type} vs {reference_annotation_type}"
                     )
