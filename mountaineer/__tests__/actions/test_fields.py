@@ -1,4 +1,4 @@
-from typing import AsyncIterator, Iterator, Optional, Type, cast
+from typing import AsyncIterator, Iterator, Optional, Type
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -124,24 +124,19 @@ def test_fuse_metadata_to_response_typehint(
         metadata, sample_controller, render_model
     )
 
-    assert "ExampleController" in raw_model.model_fields.keys()
-
-    fused_model = cast(
-        BaseModel, raw_model.model_fields["ExampleController"].annotation
-    )
     if expected_sideeffect_fields:
-        assert "sideeffect" in fused_model.model_fields.keys()
-        assert fused_model.model_fields["sideeffect"].annotation
+        assert "sideeffect" in raw_model.model_fields.keys()
+        assert raw_model.model_fields["sideeffect"].annotation
         basic_compare_model_fields(
-            fused_model.model_fields["sideeffect"].annotation.model_fields,
+            raw_model.model_fields["sideeffect"].annotation.model_fields,
             expected_sideeffect_fields,
         )
 
     if expected_passthrough_fields:
-        assert "passthrough" in fused_model.model_fields.keys()
-        assert fused_model.model_fields["passthrough"].annotation
+        assert "passthrough" in raw_model.model_fields.keys()
+        assert raw_model.model_fields["passthrough"].annotation
         basic_compare_model_fields(
-            fused_model.model_fields["passthrough"].annotation.model_fields,
+            raw_model.model_fields["passthrough"].annotation.model_fields,
             expected_passthrough_fields,
         )
 

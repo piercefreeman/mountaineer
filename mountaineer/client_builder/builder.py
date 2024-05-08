@@ -390,7 +390,7 @@ class ClientBuilder:
                 + ",\n".join(
                     [
                         (
-                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState, '{controller_key}')"
+                            f"{metadata.function_name}: applySideEffect({metadata.function_name}, setControllerState)"
                             if metadata.action_type == FunctionActionType.SIDEEFFECT
                             else f"{metadata.function_name}: {metadata.function_name}"
                         )

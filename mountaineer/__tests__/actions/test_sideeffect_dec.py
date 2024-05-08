@@ -101,13 +101,11 @@ async def call_sideeffect_common(controller: ControllerCommon):
 
         # The response payload should be the same both both sync and async endpoints
         expected_response = {
-            controller.__class__.__name__: {
-                "sideeffect": ExampleRenderModel(
-                    value_a="Hello",
-                    value_b="World",
-                ),
-                "passthrough": None,
-            }
+            "sideeffect": ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            ),
+            "passthrough": None,
         }
 
         assert return_value_sync == expected_response
@@ -279,10 +277,8 @@ def test_limit_codepath_experimental(
     elapsed = (monotonic_ns() - start) / 1e9
     assert response.status_code == 200
     assert response.json() == {
-        "ExampleController": {
-            "sideeffect": {
-                "value_a": "Hello 1229",
-            }
+        "sideeffect": {
+            "value_a": "Hello 1229",
         }
     }
 

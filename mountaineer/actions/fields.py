@@ -233,24 +233,14 @@ def fuse_metadata_to_response_typehint(
         )
 
     model: Type[BaseModel] = create_model(
-        base_response_name + "Raw",
+        base_response_name,
         **base_response_params,  # type: ignore
     )
 
-    # Each action also includes the controller type in the response
-    # signature so the frontend can differentiate between different controllers
-    wrapper_model: Type[BaseModel] = create_model(
-        base_response_name,
-        **{controller.__class__.__name__: (model, FieldInfo())},  # type: ignore
-    )
-
-    return wrapper_model
+    return model
 
 
-def format_final_action_response(
-    controller: "ControllerBase",
-    dict_payload: dict[str, Any],
-):
+def format_final_action_response(dict_payload: dict[str, Any]):
     """
     Wrapper to allow actions to respond with an explicit JSONResponse, or a dictionary. This lets
     both sideeffects and passthrough payloads to inject header metadata that otherwise can't be captured
@@ -269,19 +259,15 @@ def format_final_action_response(
     if len(responses) > 1:
         raise ValueError(f"Multiple conflicting responses returned: {responses}")
 
-    # The final transformation should include our controller name
-    # This signals to the frontend which state subset we want to update
-    action_root = controller.__class__.__name__
-
     if len(responses) == 0:
-        return {action_root: dict_payload}
+        return dict_payload
 
     response_key, response = responses[0]
     dict_payload[response_key] = json_loads(response.body)
 
     # Now inject the newly formatted response into the response object
     return JSONResponse(
-        content={action_root: dict_payload},
+        content=dict_payload,
         status_code=response.status_code,
         headers={
             key: value
