@@ -160,6 +160,23 @@ async def test_add_table(
 
 
 @pytest.mark.asyncio
+async def test_add_table_reserved_keyword(
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    """
+    Confirm that table migrations will wrap the table name in double quotes
+    to avoid conflicts with reserved keywords.
+
+    """
+    await db_backed_actions.add_table("user")
+    await db_session.commit()
+
+    # We should have a table in the database
+    assert await db_session.execute(text("SELECT * FROM user"))
+
+
+@pytest.mark.asyncio
 async def test_drop_table(
     db_backed_actions: DatabaseActions,
     db_session: AsyncSession,

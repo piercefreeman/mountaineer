@@ -201,7 +201,7 @@ class DatabaseActions:
             self.add_table,
             dict(table_name=table_name),
             f"""
-            CREATE TABLE {table_name} ();
+            CREATE TABLE "{table_name}" ();
             """,
         )
 
@@ -212,7 +212,7 @@ class DatabaseActions:
             self.drop_table,
             dict(table_name=table_name),
             f"""
-            DROP TABLE {table_name}
+            DROP TABLE "{table_name}"
             """,
         )
 
@@ -257,7 +257,7 @@ class DatabaseActions:
                 custom_data_type=custom_data_type,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             ADD COLUMN {column_name} {column_type}
             """,
         )
@@ -270,7 +270,7 @@ class DatabaseActions:
             self.drop_column,
             dict(table_name=table_name, column_name=column_name),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             DROP COLUMN {column_name}
             """,
         )
@@ -290,7 +290,7 @@ class DatabaseActions:
                 new_column_name=new_column_name,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             RENAME COLUMN {old_column_name} TO {new_column_name}
             """,
         )
@@ -336,7 +336,7 @@ class DatabaseActions:
                 custom_data_type=custom_data_type,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             MODIFY COLUMN {column_name} {column_type}
             """,
         )
@@ -388,7 +388,7 @@ class DatabaseActions:
             assert_is_safe_sql_identifier(column_name)
 
         columns_formatted = ", ".join(columns)
-        sql = f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} "
+        sql = f'ALTER TABLE "{table_name}" ADD CONSTRAINT {constraint_name} '
 
         if constraint == ConstraintType.PRIMARY_KEY:
             sql += f"PRIMARY KEY ({columns_formatted})"
@@ -443,7 +443,7 @@ class DatabaseActions:
                 constraint_name=constraint_name,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             DROP CONSTRAINT {constraint_name}
             """,
         )
@@ -456,7 +456,7 @@ class DatabaseActions:
             self.add_not_null,
             dict(table_name=table_name, column_name=column_name),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             ALTER COLUMN {column_name}
             SET NOT NULL
             """,
@@ -470,7 +470,7 @@ class DatabaseActions:
             self.drop_not_null,
             dict(table_name=table_name, column_name=column_name),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             ALTER COLUMN {column_name}
             DROP NOT NULL
             """,
@@ -498,7 +498,7 @@ class DatabaseActions:
             formatted_value = format_sql_values([value])
             sql_commands.append(
                 f"""
-            ALTER TYPE {type_name} ADD VALUE {formatted_value}
+            ALTER TYPE "{type_name}" ADD VALUE {formatted_value}
             """
             )
 
@@ -533,7 +533,7 @@ class DatabaseActions:
             [
                 (
                     # The "USING" param is required for enum migration
-                    f"EXECUTE 'ALTER TABLE {table_name} ALTER COLUMN {column_name} TYPE {type_name}"
+                    f'EXECUTE \'ALTER TABLE "{table_name}" ALTER COLUMN {column_name} TYPE "{type_name}"'
                     f" USING {column_name}::text::{type_name}'"
                 )
                 for table_name, column_name in target_columns
@@ -551,7 +551,7 @@ class DatabaseActions:
                 vals text;
             BEGIN
                 -- Move the current enum to a temporary type
-                EXECUTE 'ALTER TYPE {type_name} RENAME TO {type_name}_old';
+                EXECUTE 'ALTER TYPE "{type_name}" RENAME TO "{type_name}_old"';
 
                 -- Retrieve all current enum values except those to be excluded
                 SELECT string_agg('''' || unnest || '''', ', ' ORDER BY unnest) INTO vals
@@ -559,13 +559,13 @@ class DatabaseActions:
                 WHERE unnest NOT IN ({values_to_remove});
 
                 -- Create and populate our new type with the desired changes
-                EXECUTE format('CREATE TYPE {type_name} AS ENUM (%s)', vals);
+                EXECUTE format('CREATE TYPE "{type_name}" AS ENUM (%s)', vals);
 
                 -- Switch over affected columns to the new type
                 {column_modifications}
 
                 -- Drop the old type
-                EXECUTE 'DROP TYPE {type_name}_old';
+                EXECUTE 'DROP TYPE "{type_name}_old"';
             END $$;
             """,
         )
@@ -577,7 +577,7 @@ class DatabaseActions:
             self.drop_type,
             dict(type_name=type_name),
             f"""
-            DROP TYPE {type_name}
+            DROP TYPE "{type_name}"
             """,
         )
 
