@@ -64,6 +64,7 @@ class DBObject(BaseModel):
             )
         return self
 
+
 class DBObjectPointer(BaseModel):
     """
     A pointer to an object that was already created elsewhere. Used only for DAG comparisons. Make sure
@@ -285,6 +286,7 @@ class DBConstraint(DBObject):
             await self.destroy(actor)
             await self.create(actor)
 
+
 class DBTypeBase(BaseModel):
     name: str
 
@@ -292,8 +294,10 @@ class DBTypeBase(BaseModel):
         # Type definitions are global by nature
         return self.name
 
+
 class DBTypePointer(DBTypeBase, DBObjectPointer):
     pass
+
 
 class DBType(DBTypeBase, DBObject):
     values: frozenset[str]
@@ -335,7 +339,9 @@ class DBType(DBTypeBase, DBObject):
         # but might have different reference columns since they might be produced by
         # different parts of the pipeline.
         if self.name != other.name or self.values != other.values:
-            raise ValueError("Cannot merge types with different core values: {self.name}({self.values}) != {other.name}({other.values})")
+            raise ValueError(
+                "Cannot merge types with different core values: {self.name}({self.values}) != {other.name}({other.values})"
+            )
 
         return DBType(
             name=self.name,

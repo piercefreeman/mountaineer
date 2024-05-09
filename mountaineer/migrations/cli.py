@@ -61,6 +61,7 @@ async def handle_generate(message: str | None = None):
         # Get the current revision from the database, this should represent the "down" revision
         # for the new migration
         migrator = Migrator(db_session)
+        await migrator.init_db()
         current_revision = await migrator.get_active_revision()
 
         # Make sure there's not a duplicate revision that already have this down revision. If so that means
@@ -124,6 +125,7 @@ async def handle_apply():
 
         # Get the current revision from the database
         migrator = Migrator(db_session)
+        await migrator.init_db()
         current_revision = await migrator.get_active_revision()
 
         # Find the item in the sequence that has down_revision equal to the current_revision
@@ -172,6 +174,7 @@ async def handle_rollback():
 
         # Get the current revision from the database
         migrator = Migrator(db_session)
+        await migrator.init_db()
         current_revision = await migrator.get_active_revision()
 
         # Find the item in the sequence that has down_revision equal to the current_revision
