@@ -1,22 +1,7 @@
 from abc import abstractmethod
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from mountaineer.dependencies import get_function_dependencies
 from mountaineer.migrations.migrator import Migrator
-
-
-class MigrationAsyncSession(AsyncSession):
-    """
-    Internal Mountaineer session to disallow clients from using
-    the commit() method.
-
-    """
-
-    async def commit(self):
-        raise NotImplementedError(
-            "Commit isn't supported during migrations, since we need to wrap the whole transaction chain in a single transaction."
-        )
 
 
 class MigrationRevisionBase:
@@ -32,6 +17,9 @@ class MigrationRevisionBase:
     down_revision: str | None
 
     async def handle_up(self):
+        """
+        Internal method to handle the up migration.
+        """
         async with get_function_dependencies(
             callable=self.up,
         ) as values:
@@ -46,6 +34,9 @@ class MigrationRevisionBase:
             await migrator.set_active_revision(self.up_revision)
 
     async def handle_down(self):
+        """
+        Internal method to handle the down migration.
+        """
         async with get_function_dependencies(
             callable=self.down,
         ) as values:
@@ -61,8 +52,18 @@ class MigrationRevisionBase:
 
     @abstractmethod
     async def up(self, migrator: Migrator):
+        """
+        Perform the migration "up" action. Clients should place their
+        migration logic here.
+
+        """
         pass
 
     @abstractmethod
     async def down(self, migrator: Migrator):
+        """
+        Perform the migration "down" action. Clients should place their
+        migration logic here.
+
+        """
         pass

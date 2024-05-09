@@ -63,7 +63,7 @@ If the action has a passthrough, it will be supplied in `response.passthrough`. 
 
 ### Experimental Render Reloader
 
-!!! tip
+!!! warning
 
     This feature is experimental and only supports relatively simple render() function implementations. If you use it for a more complicated render() function and it doesn't work as expected, report a bug to improve the test coverage.
 
