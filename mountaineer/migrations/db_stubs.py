@@ -45,6 +45,24 @@ class DBObject(BaseModel):
     async def destroy(self, actor: DatabaseActions):
         pass
 
+    def merge(self, other: Self):
+        """
+        If there is another object with the same .reference() as this object
+        this function is in charge of merging the two objects. By default
+        we will just use an equality check to ensure that the objects are the
+        same and return the current object.
+
+        If clients override this function, ensure that the result is the same regardless
+        of the order that the merge is called in. Callers make no guarantee about the
+        resolution order.
+
+        """
+        if self != other:
+            raise ValueError(
+                f"Conflicting definitions for {self.representation()}\n{self} != {other}"
+            )
+        return self
+
 
 class DBObjectPointer(BaseModel):
     """
@@ -255,6 +273,11 @@ class DBType(DBObject):
     name: str
     values: frozenset[str]
 
+    # Captures the columns that use this type value, (table_name, column_name)
+    # so we can migrate them properly to new types. Type dropping in Postgres
+    # isn't supported.
+    reference_columns: frozenset[tuple[str, str]]
+
     def representation(self):
         # Type definitions are global by nature
         return self.name
@@ -272,7 +295,31 @@ class DBType(DBObject):
         # We need to update the enum with the new values
         new_values = set(next_values) - set(previous_values)
         deleted_values = set(previous_values) - set(next_values)
-        for value in sorted(new_values):
-            await actor.add_type_value(next.__name__, value)
-        for value in sorted(deleted_values):
-            await actor.drop_type_value(next.__name__, value)
+
+        if new_values:
+            await actor.add_type_values(
+                self.name,
+                sorted(new_values),
+            )
+
+        if deleted_values:
+            await actor.drop_type_values(
+                self.name,
+                sorted(deleted_values),
+                list(self.reference_columns),
+            )
+
+    def merge(self, other: "DBType") -> "DBType":
+        # We should only be merged with other types that are basically the same
+        # but might have different reference columns since they might be produced by
+        # different parts of the pipeline.
+        if self.name != other.name or self.values != other.values:
+            raise ValueError(
+                "Cannot merge types with different core values: {self.name}({self.values}) != {other.name}({other.values})"
+            )
+
+        return DBType(
+            name=self.name,
+            values=self.values,
+            reference_columns=self.reference_columns | other.reference_columns,
+        )

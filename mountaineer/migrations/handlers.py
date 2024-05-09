@@ -606,6 +606,9 @@ class EnumHandler(HandlerBase[ALL_ENUM_TYPES]):
                 custom_type=DBType(
                     name=next.__name__.lower(),
                     values=frozenset([value.name for value in next]),
+                    reference_columns=frozenset(
+                        {(context.current_table, context.current_column)}
+                    ),
                 ),
                 is_list=False,
             ),

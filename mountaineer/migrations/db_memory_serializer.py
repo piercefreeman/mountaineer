@@ -125,16 +125,16 @@ class DatabaseMemorySerializer:
             if isinstance(db_object, DBObjectPointer):
                 continue
 
-            # If the object is already in the dictionary, make sure the values
-            # are equal. Otherwise this indicates that there is a conflicting
+            # If the object is already in the dictionary, try to merge the two
+            # different values. Otherwise this indicates that there is a conflicting
             # name with a different definition which we don't allow
             if db_object.representation() in db_objects_by_name:
-                ground_truth_obj = db_objects_by_name[db_object.representation()]
-                if ground_truth_obj != db_object:
-                    raise ValueError(
-                        f"Conflicting definitions for {db_object.representation()}\n{ground_truth_obj} != {db_object}"
-                    )
-            db_objects_by_name[db_object.representation()] = db_object
+                current_obj = db_objects_by_name[db_object.representation()]
+                db_objects_by_name[db_object.representation()] = current_obj.merge(
+                    db_object
+                )
+            else:
+                db_objects_by_name[db_object.representation()] = db_object
 
         # Make sure all the pointers can be resolved by full objects
         # Otherwise we want a verbose error that gives more context

@@ -378,7 +378,7 @@ class DatabaseActions:
         columns: list[str],
         constraint: Literal[ConstraintType.EXCLUDE],
         constraint_name: str,
-        constraint_args: None = None,
+        constraint_args: ExcludeConstraint,
     ):
         ...
 
@@ -389,7 +389,7 @@ class DatabaseActions:
         columns: list[str],
         constraint: Literal[ConstraintType.CHECK],
         constraint_name: str,
-        constraint_args: None = None,
+        constraint_args: CheckConstraint,
     ):
         ...
 
@@ -512,31 +512,85 @@ class DatabaseActions:
             """,
         )
 
-    async def add_type_value(self, type_name: str, value: str):
+    async def add_type_values(self, type_name: str, values: list[str]):
         assert_is_safe_sql_identifier(type_name)
 
-        # Use the same escape functionality as we use for lists, since
-        # there's only one object it won't add any commas
-        formatted_value = format_sql_values([value])
+        sql_commands: list[str] = []
+        for value in values:
+            # Use the same escape functionality as we use for lists, since
+            # there's only one object it won't add any commas
+            formatted_value = format_sql_values([value])
+            sql_commands.append(
+                f"""
+            ALTER TYPE {type_name} ADD VALUE {formatted_value}
+            """
+            )
 
         await self._record_signature(
-            self.add_type_value,
-            dict(type_name=type_name, value=value),
-            f"""
-            ALTER TYPE {type_name} ADD VALUE '{formatted_value}'
-            """,
+            self.add_type_values,
+            dict(type_name=type_name, values=values),
+            ";\n".join(sql_commands),
         )
 
-    async def drop_type_value(self, type_name: str, value: str):
-        assert_is_safe_sql_identifier(type_name)
+    async def drop_type_values(
+        self,
+        type_name: str,
+        values: list[str],
+        target_columns: list[tuple[str, str]],
+    ):
+        """
+        Dropping values from an existing type isn't natively supported by Postgres. We work
+        around this limitation by specifying the "target_columns" that already reference the
+        enum type that we want to drop.
 
-        formatted_value = format_sql_values([value])
+        :param target_columns: Specified tuples of (table_name, column_name) pairs that
+        should be migrated to the new enum value.
+
+        """
+        assert_is_safe_sql_identifier(type_name)
+        for table_name, column_name in target_columns:
+            assert_is_safe_sql_identifier(table_name)
+            assert_is_safe_sql_identifier(column_name)
+
+        values_to_remove = format_sql_values(values)
+        column_modifications = ";\n".join(
+            [
+                (
+                    # The "USING" param is required for enum migration
+                    f"EXECUTE 'ALTER TABLE {table_name} ALTER COLUMN {column_name} TYPE {type_name}"
+                    f" USING {column_name}::text::{type_name}'"
+                )
+                for table_name, column_name in target_columns
+            ]
+        )
+        if column_modifications:
+            column_modifications += ";"
 
         await self._record_signature(
-            self.drop_type_value,
-            dict(type_name=type_name, value=value),
+            self.drop_type_values,
+            dict(type_name=type_name, values=values, target_columns=target_columns),
             f"""
-            ALTER TYPE {type_name} DROP VALUE '{formatted_value}'
+            DO $$
+            DECLARE
+                vals text;
+            BEGIN
+                -- Move the current enum to a temporary type
+                EXECUTE 'ALTER TYPE {type_name} RENAME TO {type_name}_old';
+
+                -- Retrieve all current enum values except those to be excluded
+                SELECT string_agg('''' || unnest || '''', ', ' ORDER BY unnest) INTO vals
+                FROM unnest(enum_range(NULL::{type_name}_old)) AS unnest
+                WHERE unnest NOT IN ({values_to_remove});
+
+                -- Create and populate our new type with the desired changes
+                EXECUTE format('CREATE TYPE {type_name} AS ENUM (%s)', vals);
+
+                -- Switch over affected columns to the new type
+                {column_modifications}
+
+                -- Drop the old type
+                EXECUTE 'DROP TYPE {type_name}_old';
+            END $$;
             """,
         )
 

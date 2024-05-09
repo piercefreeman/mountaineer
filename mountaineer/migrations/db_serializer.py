@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 from sqlalchemy import text
 from sqlalchemy.engine.result import Result
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -193,8 +195,12 @@ class DatabaseSerializer:
         )
         return list(result.scalars().all())
 
+    # Enum values are not expected to change within one session, cache the same
+    # type if we see it within the same session
+    @lru_cache(maxsize=None)
     async def fetch_custom_type(self, session: AsyncSession, type_name: str):
-        query = text(
+        # Get the values in this enum
+        values_query = text(
             """
         SELECT enumlabel
         FROM pg_enum
@@ -202,6 +208,35 @@ class DatabaseSerializer:
         WHERE pg_type.typname = :type_name
         """
         )
-        result = await session.execute(query, {"type_name": type_name})
-        values = frozenset(result.scalars().all())
-        return DBType(name=type_name, values=values), []
+        values_result = await session.execute(values_query, {"type_name": type_name})
+        values = frozenset(values_result.scalars().all())
+
+        # Determine all the columns where this type is referenced
+        reference_columns_query = text(
+            """
+            SELECT
+                n.nspname AS schema_name,
+                c.relname AS table_name,
+                a.attname AS column_name
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_attribute a ON a.atttypid = t.oid
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            WHERE
+                t.typname = :type_name
+                AND a.attnum > 0
+                AND NOT a.attisdropped;
+            """
+        )
+        reference_columns_results = await session.execute(
+            reference_columns_query, {"type_name": type_name}
+        )
+        reference_columns = frozenset(
+            {
+                (row.table_name, row.column_name)
+                for row in reference_columns_results.fetchall()
+            }
+        )
+        return DBType(
+            name=type_name, values=values, reference_columns=reference_columns
+        ), []
