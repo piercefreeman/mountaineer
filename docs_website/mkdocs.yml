@@ -39,6 +39,7 @@ nav:
     - client_actions.md
     - metadata.md
     - database.md
+    - database_migrations.md
     - error_handling.md
     - links.md
     - static_analysis.md
@@ -59,6 +60,7 @@ nav:
     - Database:
       - api/database/config.md
       - api/database/dependencies.md
+      - api/database/migrations.md
     - Build Plugins:
       - api/build_plugins/javascript.md
       - api/build_plugins/postcss.md

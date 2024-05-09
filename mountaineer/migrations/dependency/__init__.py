@@ -1,1 +1,3 @@
-import mountaineer.migrations.dependency.core as MigrationDependencies  # noqa: F401
+from mountaineer.migrations.dependency import (
+    core as MigrationDependencies,  # noqa: F401
+)

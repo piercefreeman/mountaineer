@@ -63,7 +63,13 @@ def compare_db_objects(
             Field(),
             [
                 (
-                    DBType(name="valueenumstandard", values=frozenset({"A"})),
+                    DBType(
+                        name="valueenumstandard",
+                        values=frozenset({"A"}),
+                        reference_columns=frozenset(
+                            {("exampledbmodel", "standard_enum")}
+                        ),
+                    ),
                     [
                         DBTable(table_name="exampledbmodel"),
                     ],
@@ -73,13 +79,23 @@ def compare_db_objects(
                         table_name="exampledbmodel",
                         column_name="standard_enum",
                         column_type=DBType(
-                            name="valueenumstandard", values=frozenset({"A"})
+                            name="valueenumstandard",
+                            values=frozenset({"A"}),
+                            reference_columns=frozenset(
+                                {("exampledbmodel", "standard_enum")}
+                            ),
                         ),
                         column_is_list=False,
                         nullable=False,
                     ),
                     [
-                        DBType(name="valueenumstandard", values=frozenset({"A"})),
+                        DBType(
+                            name="valueenumstandard",
+                            values=frozenset({"A"}),
+                            reference_columns=frozenset(
+                                {("exampledbmodel", "standard_enum")}
+                            ),
+                        ),
                         DBTable(table_name="exampledbmodel"),
                     ],
                 ),
@@ -91,7 +107,11 @@ def compare_db_objects(
             Field(),
             [
                 (
-                    DBType(name="valueenumstr", values=frozenset({"A"})),
+                    DBType(
+                        name="valueenumstr",
+                        values=frozenset({"A"}),
+                        reference_columns=frozenset({("exampledbmodel", "str_enum")}),
+                    ),
                     [
                         DBTable(table_name="exampledbmodel"),
                     ],
@@ -101,13 +121,23 @@ def compare_db_objects(
                         table_name="exampledbmodel",
                         column_name="str_enum",
                         column_type=DBType(
-                            name="valueenumstr", values=frozenset({"A"})
+                            name="valueenumstr",
+                            values=frozenset({"A"}),
+                            reference_columns=frozenset(
+                                {("exampledbmodel", "str_enum")}
+                            ),
                         ),
                         column_is_list=False,
                         nullable=False,
                     ),
                     [
-                        DBType(name="valueenumstr", values=frozenset({"A"})),
+                        DBType(
+                            name="valueenumstr",
+                            values=frozenset({"A"}),
+                            reference_columns=frozenset(
+                                {("exampledbmodel", "str_enum")}
+                            ),
+                        ),
                         DBTable(table_name="exampledbmodel"),
                     ],
                 ),
@@ -119,7 +149,11 @@ def compare_db_objects(
             Field(),
             [
                 (
-                    DBType(name="valueenumint", values=frozenset({"A"})),
+                    DBType(
+                        name="valueenumint",
+                        values=frozenset({"A"}),
+                        reference_columns=frozenset({("exampledbmodel", "int_enum")}),
+                    ),
                     [
                         DBTable(table_name="exampledbmodel"),
                     ],
@@ -129,13 +163,23 @@ def compare_db_objects(
                         table_name="exampledbmodel",
                         column_name="int_enum",
                         column_type=DBType(
-                            name="valueenumint", values=frozenset({"A"})
+                            name="valueenumint",
+                            values=frozenset({"A"}),
+                            reference_columns=frozenset(
+                                {("exampledbmodel", "int_enum")}
+                            ),
                         ),
                         column_is_list=False,
                         nullable=False,
                     ),
                     [
-                        DBType(name="valueenumint", values=frozenset({"A"})),
+                        DBType(
+                            name="valueenumint",
+                            values=frozenset({"A"}),
+                            reference_columns=frozenset(
+                                {("exampledbmodel", "int_enum")}
+                            ),
+                        ),
                         DBTable(table_name="exampledbmodel"),
                     ],
                 ),

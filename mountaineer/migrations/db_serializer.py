@@ -1,8 +1,11 @@
+from functools import lru_cache
+
 from sqlalchemy import text
 from sqlalchemy.engine.result import Result
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mountaineer.migrations.actions import (
+    CheckConstraint,
     ColumnType,
     ConstraintType,
     ForeignKeyConstraint,
@@ -144,7 +147,9 @@ class DatabaseSerializer:
             )
 
             # Handle foreign key specifics
-            fk_constraint = None
+            fk_constraint: ForeignKeyConstraint | None = None
+            check_constraint: CheckConstraint | None = None
+
             if ctype == ConstraintType.FOREIGN_KEY:
                 # Fetch target table
                 fk_query = text("SELECT relname FROM pg_class WHERE oid = :oid")
@@ -167,6 +172,21 @@ class DatabaseSerializer:
                 fk_constraint = ForeignKeyConstraint(
                     target_table=target_table, target_columns=frozenset(target_columns)
                 )
+            elif ctype == ConstraintType.CHECK:
+                # Retrieve the check constraint expression
+                check_query = text(
+                    """
+                    SELECT pg_get_constraintdef(c.oid) AS consrc
+                    FROM pg_constraint c
+                    WHERE c.oid = :oid
+                    """
+                )
+                check_result = await session.execute(check_query, {"oid": row.oid})
+                check_constraint_expr = check_result.scalar_one()
+
+                check_constraint = CheckConstraint(
+                    check_condition=check_constraint_expr,
+                )
 
             yield (
                 DBConstraint(
@@ -175,6 +195,7 @@ class DatabaseSerializer:
                     columns=frozenset(columns),
                     constraint_type=ctype,
                     foreign_key_constraint=fk_constraint,
+                    check_constraint=check_constraint,
                 ),
                 [
                     # We require the columns to be created first
@@ -193,8 +214,12 @@ class DatabaseSerializer:
         )
         return list(result.scalars().all())
 
+    # Enum values are not expected to change within one session, cache the same
+    # type if we see it within the same session
+    @lru_cache(maxsize=None)
     async def fetch_custom_type(self, session: AsyncSession, type_name: str):
-        query = text(
+        # Get the values in this enum
+        values_query = text(
             """
         SELECT enumlabel
         FROM pg_enum
@@ -202,6 +227,35 @@ class DatabaseSerializer:
         WHERE pg_type.typname = :type_name
         """
         )
-        result = await session.execute(query, {"type_name": type_name})
-        values = frozenset(result.scalars().all())
-        return DBType(name=type_name, values=values), []
+        values_result = await session.execute(values_query, {"type_name": type_name})
+        values = frozenset(values_result.scalars().all())
+
+        # Determine all the columns where this type is referenced
+        reference_columns_query = text(
+            """
+            SELECT
+                n.nspname AS schema_name,
+                c.relname AS table_name,
+                a.attname AS column_name
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_attribute a ON a.atttypid = t.oid
+            JOIN pg_catalog.pg_class c ON c.oid = a.attrelid
+            WHERE
+                t.typname = :type_name
+                AND a.attnum > 0
+                AND NOT a.attisdropped;
+            """
+        )
+        reference_columns_results = await session.execute(
+            reference_columns_query, {"type_name": type_name}
+        )
+        reference_columns = frozenset(
+            {
+                (row.table_name, row.column_name)
+                for row in reference_columns_results.fetchall()
+            }
+        )
+        return DBType(
+            name=type_name, values=values, reference_columns=reference_columns
+        ), []

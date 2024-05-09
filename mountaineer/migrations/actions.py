@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from inspect import Parameter, signature
+from re import fullmatch as re_fullmatch
 from typing import Any, Callable, Literal, overload
 
 from pydantic import BaseModel
@@ -98,7 +99,10 @@ class ConstraintType(StrEnum):
     FOREIGN_KEY = "FOREIGN KEY"
     UNIQUE = "UNIQUE"
     CHECK = "CHECK"
-    EXCLUDE = "EXCLUDE"
+
+    # Exclude constraints aren't well-supported in SQLAlchemy since they
+    # are postgres-specific, so we don't have built-in handling for them.
+    # EXCLUDE = "EXCLUDE"
 
 
 class ForeignKeyConstraint(BaseModel):
@@ -137,11 +141,41 @@ class DryRunComment:
     text: str
 
 
+def assert_is_safe_sql_identifier(identifier: str):
+    """
+    Check if the provided identifier is a safe SQL identifier. Since our code
+    pulls these directly from the SQLModel definitions, there shouldn't
+    be any issues with SQL injection, but it's good to be safe.
+
+    """
+    is_valid = re_fullmatch(r"^[A-Za-z_][A-Za-z0-9_]*$", identifier) is not None
+    if not is_valid:
+        raise ValueError(f"{identifier} is not a valid SQL identifier.")
+
+
+def format_sql_values(values: list[str]):
+    """
+    Safely formats string values for SQL insertion by escaping single quotes.
+
+    """
+    escaped_values = [
+        value.replace("'", "''") for value in values
+    ]  # Escaping single quotes in SQL
+    formatted_values = ", ".join(f"'{value}'" for value in escaped_values)
+    return formatted_values
+
+
 class DatabaseActions:
     """
     Track the actions that need to be executed to the database. Provides
     a shallow, typed ORM on top of the raw SQL commands that we'll execute
     through sqlalchemy.
+
+    This class manually builds up the SQL strings that will be executed against
+    postgres. We intentionally avoid using the ORM or variable-insertion modes
+    here because most table-schema operations don't permit parameters to
+    specify top-level SQL syntax. To keep things consistent, we'll use the
+    same SQL string interpolation for all operations.
 
     """
 
@@ -161,20 +195,24 @@ class DatabaseActions:
         self.prod_sqls: list[str] = []
 
     async def add_table(self, table_name: str):
+        assert_is_safe_sql_identifier(table_name)
+
         await self._record_signature(
             self.add_table,
             dict(table_name=table_name),
             f"""
-            CREATE TABLE {table_name}
+            CREATE TABLE "{table_name}" ();
             """,
         )
 
     async def drop_table(self, table_name: str):
+        assert_is_safe_sql_identifier(table_name)
+
         await self._record_signature(
             self.drop_table,
             dict(table_name=table_name),
             f"""
-            DROP TABLE {table_name}
+            DROP TABLE "{table_name}"
             """,
         )
 
@@ -195,6 +233,14 @@ class DatabaseActions:
                 "Cannot provide both an explicit data type and a custom data type."
             )
 
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
+        # We only need to check the custom data type, since we know
+        # the explicit data types come from the enum and are safe.
+        if custom_data_type:
+            assert_is_safe_sql_identifier(custom_data_type)
+
         column_type = self._get_column_type(
             explicit_data_type=explicit_data_type,
             explicit_data_is_list=explicit_data_is_list,
@@ -211,17 +257,20 @@ class DatabaseActions:
                 custom_data_type=custom_data_type,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             ADD COLUMN {column_name} {column_type}
             """,
         )
 
     async def drop_column(self, table_name: str, column_name: str):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         await self._record_signature(
             self.drop_column,
             dict(table_name=table_name, column_name=column_name),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             DROP COLUMN {column_name}
             """,
         )
@@ -229,6 +278,10 @@ class DatabaseActions:
     async def rename_column(
         self, table_name: str, old_column_name: str, new_column_name: str
     ):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(old_column_name)
+        assert_is_safe_sql_identifier(new_column_name)
+
         await self._record_signature(
             self.rename_column,
             dict(
@@ -237,7 +290,7 @@ class DatabaseActions:
                 new_column_name=new_column_name,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             RENAME COLUMN {old_column_name} TO {new_column_name}
             """,
         )
@@ -259,6 +312,14 @@ class DatabaseActions:
                 "Cannot provide both an explicit data type and a custom data type."
             )
 
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
+        # We only need to check the custom data type, since we know
+        # the explicit data types come from the enum and are safe.
+        if custom_data_type:
+            assert_is_safe_sql_identifier(custom_data_type)
+
         column_type = self._get_column_type(
             explicit_data_type=explicit_data_type,
             explicit_data_is_list=explicit_data_is_list,
@@ -275,7 +336,7 @@ class DatabaseActions:
                 custom_data_type=custom_data_type,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             MODIFY COLUMN {column_name} {column_type}
             """,
         )
@@ -296,29 +357,8 @@ class DatabaseActions:
         self,
         table_name: str,
         columns: list[str],
-        constraint: Literal[ConstraintType.PRIMARY_KEY],
-        constraint_name: str,
-        constraint_args: None = None,
-    ):
-        ...
-
-    @overload
-    async def add_constraint(
-        self,
-        table_name: str,
-        columns: list[str],
-        constraint: Literal[ConstraintType.UNIQUE],
-        constraint_name: str,
-        constraint_args: None = None,
-    ):
-        ...
-
-    @overload
-    async def add_constraint(
-        self,
-        table_name: str,
-        columns: list[str],
-        constraint: Literal[ConstraintType.EXCLUDE],
+        constraint: Literal[ConstraintType.PRIMARY_KEY]
+        | Literal[ConstraintType.UNIQUE],
         constraint_name: str,
         constraint_args: None = None,
     ):
@@ -331,7 +371,7 @@ class DatabaseActions:
         columns: list[str],
         constraint: Literal[ConstraintType.CHECK],
         constraint_name: str,
-        constraint_args: None = None,
+        constraint_args: CheckConstraint,
     ):
         ...
 
@@ -343,9 +383,12 @@ class DatabaseActions:
         constraint_name: str,
         constraint_args: BaseModel | None = None,
     ):
-        columns_formatted = ", ".join(columns)
+        assert_is_safe_sql_identifier(table_name)
+        for column_name in columns:
+            assert_is_safe_sql_identifier(column_name)
 
-        sql = f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} "
+        columns_formatted = ", ".join(columns)
+        sql = f'ALTER TABLE "{table_name}" ADD CONSTRAINT {constraint_name} '
 
         if constraint == ConstraintType.PRIMARY_KEY:
             sql += f"PRIMARY KEY ({columns_formatted})"
@@ -354,6 +397,11 @@ class DatabaseActions:
                 raise ValueError(
                     f"Constraint type FOREIGN_KEY must have ForeignKeyConstraint args, received: {constraint_args}"
                 )
+
+            assert_is_safe_sql_identifier(constraint_args.target_table)
+            for column_name in constraint_args.target_columns:
+                assert_is_safe_sql_identifier(column_name)
+
             ref_cols_formatted = ", ".join(constraint_args.target_columns)
             sql += f"FOREIGN KEY ({columns_formatted}) REFERENCES {constraint_args.target_table} ({ref_cols_formatted})"
         elif constraint == ConstraintType.UNIQUE:
@@ -364,12 +412,6 @@ class DatabaseActions:
                     f"Constraint type CHECK must have CheckConstraint args, received: {constraint_args}"
                 )
             sql += f"CHECK ({constraint_args.check_condition})"
-        elif constraint == ConstraintType.EXCLUDE:
-            if not isinstance(constraint_args, ExcludeConstraint):
-                raise ValueError(
-                    f"Constraint type EXCLUDE must have ExcludeConstraint args, received: {constraint_args}"
-                )
-            sql += f"EXCLUDE USING {constraint_args.exclude_operator} ({columns_formatted})"
         else:
             raise ValueError("Unsupported constraint type")
 
@@ -391,6 +433,9 @@ class DatabaseActions:
         table_name: str,
         constraint_name: str,
     ):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(constraint_name)
+
         await self._record_signature(
             self.drop_constraint,
             dict(
@@ -398,36 +443,43 @@ class DatabaseActions:
                 constraint_name=constraint_name,
             ),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             DROP CONSTRAINT {constraint_name}
             """,
         )
 
     async def add_not_null(self, table_name: str, column_name: str):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         await self._record_signature(
             self.add_not_null,
             dict(table_name=table_name, column_name=column_name),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             ALTER COLUMN {column_name}
             SET NOT NULL
             """,
         )
 
     async def drop_not_null(self, table_name: str, column_name: str):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(column_name)
+
         await self._record_signature(
             self.drop_not_null,
             dict(table_name=table_name, column_name=column_name),
             f"""
-            ALTER TABLE {table_name}
+            ALTER TABLE "{table_name}"
             ALTER COLUMN {column_name}
             DROP NOT NULL
             """,
         )
 
     async def add_type(self, type_name: str, values: list[str]):
-        formatted_values = ", ".join(f"'{value}'" for value in values)
+        assert_is_safe_sql_identifier(type_name)
 
+        formatted_values = format_sql_values(values)
         await self._record_signature(
             self.add_type,
             dict(type_name=type_name, values=values),
@@ -436,30 +488,96 @@ class DatabaseActions:
             """,
         )
 
-    async def add_type_value(self, type_name: str, value: str):
+    async def add_type_values(self, type_name: str, values: list[str]):
+        assert_is_safe_sql_identifier(type_name)
+
+        sql_commands: list[str] = []
+        for value in values:
+            # Use the same escape functionality as we use for lists, since
+            # there's only one object it won't add any commas
+            formatted_value = format_sql_values([value])
+            sql_commands.append(
+                f"""
+            ALTER TYPE "{type_name}" ADD VALUE {formatted_value}
+            """
+            )
+
         await self._record_signature(
-            self.add_type_value,
-            dict(type_name=type_name, value=value),
-            f"""
-            ALTER TYPE {type_name} ADD VALUE '{value}'
-            """,
+            self.add_type_values,
+            dict(type_name=type_name, values=values),
+            ";\n".join(sql_commands),
         )
 
-    async def drop_type_value(self, type_name: str, value: str):
+    async def drop_type_values(
+        self,
+        type_name: str,
+        values: list[str],
+        target_columns: list[tuple[str, str]],
+    ):
+        """
+        Dropping values from an existing type isn't natively supported by Postgres. We work
+        around this limitation by specifying the "target_columns" that already reference the
+        enum type that we want to drop.
+
+        :param target_columns: Specified tuples of (table_name, column_name) pairs that
+        should be migrated to the new enum value.
+
+        """
+        assert_is_safe_sql_identifier(type_name)
+        for table_name, column_name in target_columns:
+            assert_is_safe_sql_identifier(table_name)
+            assert_is_safe_sql_identifier(column_name)
+
+        values_to_remove = format_sql_values(values)
+        column_modifications = ";\n".join(
+            [
+                (
+                    # The "USING" param is required for enum migration
+                    f'EXECUTE \'ALTER TABLE "{table_name}" ALTER COLUMN {column_name} TYPE "{type_name}"'
+                    f" USING {column_name}::text::{type_name}'"
+                )
+                for table_name, column_name in target_columns
+            ]
+        )
+        if column_modifications:
+            column_modifications += ";"
+
         await self._record_signature(
-            self.drop_type_value,
-            dict(type_name=type_name, value=value),
+            self.drop_type_values,
+            dict(type_name=type_name, values=values, target_columns=target_columns),
             f"""
-            ALTER TYPE {type_name} DROP VALUE '{value}'
+            DO $$
+            DECLARE
+                vals text;
+            BEGIN
+                -- Move the current enum to a temporary type
+                EXECUTE 'ALTER TYPE "{type_name}" RENAME TO "{type_name}_old"';
+
+                -- Retrieve all current enum values except those to be excluded
+                SELECT string_agg('''' || unnest || '''', ', ' ORDER BY unnest) INTO vals
+                FROM unnest(enum_range(NULL::{type_name}_old)) AS unnest
+                WHERE unnest NOT IN ({values_to_remove});
+
+                -- Create and populate our new type with the desired changes
+                EXECUTE format('CREATE TYPE "{type_name}" AS ENUM (%s)', vals);
+
+                -- Switch over affected columns to the new type
+                {column_modifications}
+
+                -- Drop the old type
+                EXECUTE 'DROP TYPE "{type_name}_old"';
+            END $$;
             """,
         )
 
     async def drop_type(self, type_name: str):
+        assert_is_safe_sql_identifier(type_name)
+
         await self._record_signature(
             self.drop_type,
             dict(type_name=type_name),
             f"""
-            DROP TYPE {type_name}
+            DROP TYPE "{type_name}"
             """,
         )
 

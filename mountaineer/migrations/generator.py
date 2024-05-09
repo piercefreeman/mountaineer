@@ -166,6 +166,8 @@ class MigrationGenerator:
             self.track_import(value.__class__)
             class_name = value.__class__.__name__
             return f"{class_name}.{value.name}"
+        elif isinstance(value, bool):
+            return "True" if value else "False"
         elif isinstance(value, (str, int, float)):
             # JSON dumps is used here for proper string escaping
             return json_dumps(value)
