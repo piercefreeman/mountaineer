@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import text
 
 from mountaineer.migrations.actions import (
+    CheckConstraint,
     ColumnType,
     ConstraintType,
     DatabaseActions,
@@ -291,6 +292,7 @@ async def modify_column_type(
     # Make sure that we can retrieve the object
     result = await db_session.execute(text("SELECT * FROM test_table"))
     row = result.fetchone()
+    assert row
     assert row[1] == 1
 
 
@@ -442,19 +444,44 @@ async def test_add_constraint_primary_key(
 
 
 @pytest.mark.asyncio
-async def test_add_constraint_exclude(
-    db_backed_actions: DatabaseActions,
-    db_session: AsyncSession,
-):
-    raise NotImplementedError
-
-
-@pytest.mark.asyncio
 async def test_add_constraint_check(
     db_backed_actions: DatabaseActions,
     db_session: AsyncSession,
 ):
-    raise NotImplementedError
+    # Create a table with a integer price column
+    await db_session.execute(
+        text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, price INTEGER)")
+    )
+
+    # Now we add a check constraint that this price column should be positive
+    await db_backed_actions.add_constraint(
+        "test_table",
+        [],
+        ConstraintType.CHECK,
+        "test_check_constraint",
+        constraint_args=CheckConstraint(check_condition="price > 0"),
+    )
+
+    # Make sure that we can insert a positive value
+    await db_session.execute(
+        text(
+            "INSERT INTO test_table (price) VALUES (:price)",
+        ),
+        {
+            "price": 1,
+        },
+    )
+
+    # We expect negative values to fail
+    with pytest.raises(IntegrityError, match="violates check constraint"):
+        await db_session.execute(
+            text(
+                "INSERT INTO test_table (price) VALUES (:price)",
+            ),
+            {
+                "price": -1,
+            },
+        )
 
 
 @pytest.mark.asyncio

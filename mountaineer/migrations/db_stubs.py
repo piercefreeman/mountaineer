@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from mountaineer.compat import Self
 from mountaineer.migrations.actions import (
+    CheckConstraint,
     ColumnType,
     ConstraintType,
     DatabaseActions,
@@ -175,6 +176,7 @@ class DBConstraint(DBObject):
     constraint_type: ConstraintType
 
     foreign_key_constraint: ForeignKeyConstraint | None = None
+    check_constraint: CheckConstraint | None = None
 
     @model_validator(mode="after")
     def validate_constraint_type(self):
@@ -228,6 +230,15 @@ class DBConstraint(DBObject):
                 constraint=self.constraint_type,
                 constraint_name=self.constraint_name,
                 constraint_args=self.foreign_key_constraint,
+                columns=list(self.columns),
+            )
+        elif self.constraint_type == ConstraintType.CHECK:
+            assert self.check_constraint is not None
+            await actor.add_constraint(
+                self.table_name,
+                constraint=self.constraint_type,
+                constraint_name=self.constraint_name,
+                constraint_args=self.check_constraint,
                 columns=list(self.columns),
             )
         else:

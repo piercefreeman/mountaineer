@@ -5,6 +5,7 @@ from sqlalchemy.engine.result import Result
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from mountaineer.migrations.actions import (
+    CheckConstraint,
     ColumnType,
     ConstraintType,
     ForeignKeyConstraint,
@@ -146,7 +147,9 @@ class DatabaseSerializer:
             )
 
             # Handle foreign key specifics
-            fk_constraint = None
+            fk_constraint: ForeignKeyConstraint | None = None
+            check_constraint: CheckConstraint | None = None
+
             if ctype == ConstraintType.FOREIGN_KEY:
                 # Fetch target table
                 fk_query = text("SELECT relname FROM pg_class WHERE oid = :oid")
@@ -169,6 +172,21 @@ class DatabaseSerializer:
                 fk_constraint = ForeignKeyConstraint(
                     target_table=target_table, target_columns=frozenset(target_columns)
                 )
+            elif ctype == ConstraintType.CHECK:
+                # Retrieve the check constraint expression
+                check_query = text(
+                    """
+                    SELECT pg_get_constraintdef(c.oid) AS consrc
+                    FROM pg_constraint c
+                    WHERE c.oid = :oid
+                    """
+                )
+                check_result = await session.execute(check_query, {"oid": row.oid})
+                check_constraint_expr = check_result.scalar_one()
+
+                check_constraint = CheckConstraint(
+                    check_condition=check_constraint_expr,
+                )
 
             yield (
                 DBConstraint(
@@ -177,6 +195,7 @@ class DatabaseSerializer:
                     columns=frozenset(columns),
                     constraint_type=ctype,
                     foreign_key_constraint=fk_constraint,
+                    check_constraint=check_constraint,
                 ),
                 [
                     # We require the columns to be created first

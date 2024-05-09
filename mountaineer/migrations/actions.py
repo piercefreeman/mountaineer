@@ -99,7 +99,10 @@ class ConstraintType(StrEnum):
     FOREIGN_KEY = "FOREIGN KEY"
     UNIQUE = "UNIQUE"
     CHECK = "CHECK"
-    EXCLUDE = "EXCLUDE"
+
+    # Exclude constraints aren't well-supported in SQLAlchemy since they
+    # are postgres-specific, so we don't have built-in handling for them.
+    # EXCLUDE = "EXCLUDE"
 
 
 class ForeignKeyConstraint(BaseModel):
@@ -354,31 +357,10 @@ class DatabaseActions:
         self,
         table_name: str,
         columns: list[str],
-        constraint: Literal[ConstraintType.PRIMARY_KEY],
+        constraint: Literal[ConstraintType.PRIMARY_KEY]
+        | Literal[ConstraintType.UNIQUE],
         constraint_name: str,
         constraint_args: None = None,
-    ):
-        ...
-
-    @overload
-    async def add_constraint(
-        self,
-        table_name: str,
-        columns: list[str],
-        constraint: Literal[ConstraintType.UNIQUE],
-        constraint_name: str,
-        constraint_args: None = None,
-    ):
-        ...
-
-    @overload
-    async def add_constraint(
-        self,
-        table_name: str,
-        columns: list[str],
-        constraint: Literal[ConstraintType.EXCLUDE],
-        constraint_name: str,
-        constraint_args: ExcludeConstraint,
     ):
         ...
 
@@ -430,12 +412,6 @@ class DatabaseActions:
                     f"Constraint type CHECK must have CheckConstraint args, received: {constraint_args}"
                 )
             sql += f"CHECK ({constraint_args.check_condition})"
-        elif constraint == ConstraintType.EXCLUDE:
-            if not isinstance(constraint_args, ExcludeConstraint):
-                raise ValueError(
-                    f"Constraint type EXCLUDE must have ExcludeConstraint args, received: {constraint_args}"
-                )
-            sql += f"EXCLUDE USING {constraint_args.exclude_operator} ({columns_formatted})"
         else:
             raise ValueError("Unsupported constraint type")
 

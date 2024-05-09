@@ -16,6 +16,7 @@ from sqlmodel.sql import sqltypes
 
 from mountaineer.compat import StrEnum
 from mountaineer.migrations.actions import (
+    CheckConstraint,
     ColumnType,
     ConstraintType,
     DatabaseActions,
@@ -310,6 +311,7 @@ class ConstraintWrapper(BaseModel):
     unique: bool | None = None
     primary_key: bool | None = None
     foreign_key: str | None = None
+    check_expression: str | None = None
 
     columns: list[str]
 
@@ -367,6 +369,21 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                 ),
                 [],
             )
+        if next.check_expression:
+            yield (
+                DBConstraint(
+                    table_name=context.current_table,
+                    constraint_type=ConstraintType.CHECK,
+                    columns=frozenset(next.columns),
+                    constraint_name=DBConstraint.new_constraint_name(
+                        context.current_table, next.columns, ConstraintType.CHECK
+                    ),
+                    check_constraint=CheckConstraint(
+                        check_condition=next.check_expression,
+                    ),
+                ),
+                [],
+            )
 
 
 class SQLAlchemyColumnHandler(HandlerBase[sa.Column]):
@@ -394,6 +411,17 @@ class SQLAlchemyForeignKeyHandler(HandlerBase[sa.ForeignKey]):
             ConstraintWrapper(
                 foreign_key=f"{target_table}.{target_column}",
                 columns=[context.current_column],
+            ),
+            context=context,
+        )
+
+
+class SQLAlchemyCheckConstraintHandler(HandlerBase[sa.CheckConstraint]):
+    def convert(self, next: sa.CheckConstraint, context: DelegateContext):
+        yield from self.serializer.delegate(
+            ConstraintWrapper(
+                check_expression=str(next.sqltext),
+                columns=[],  # This is a table-level constraint
             ),
             context=context,
         )
