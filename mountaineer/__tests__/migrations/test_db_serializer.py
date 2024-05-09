@@ -22,6 +22,7 @@ from mountaineer.migrations.db_stubs import (
     DBObjectPointer,
     DBTable,
     DBType,
+    DBTypePointer,
 )
 
 
@@ -78,12 +79,8 @@ def compare_db_objects(
                     DBColumn(
                         table_name="exampledbmodel",
                         column_name="standard_enum",
-                        column_type=DBType(
+                        column_type=DBTypePointer(
                             name="valueenumstandard",
-                            values=frozenset({"A"}),
-                            reference_columns=frozenset(
-                                {("exampledbmodel", "standard_enum")}
-                            ),
                         ),
                         column_is_list=False,
                         nullable=False,
@@ -120,12 +117,8 @@ def compare_db_objects(
                     DBColumn(
                         table_name="exampledbmodel",
                         column_name="str_enum",
-                        column_type=DBType(
+                        column_type=DBTypePointer(
                             name="valueenumstr",
-                            values=frozenset({"A"}),
-                            reference_columns=frozenset(
-                                {("exampledbmodel", "str_enum")}
-                            ),
                         ),
                         column_is_list=False,
                         nullable=False,
@@ -162,12 +155,8 @@ def compare_db_objects(
                     DBColumn(
                         table_name="exampledbmodel",
                         column_name="int_enum",
-                        column_type=DBType(
+                        column_type=DBTypePointer(
                             name="valueenumint",
-                            values=frozenset({"A"}),
-                            reference_columns=frozenset(
-                                {("exampledbmodel", "int_enum")}
-                            ),
                         ),
                         column_is_list=False,
                         nullable=False,

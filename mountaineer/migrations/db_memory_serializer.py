@@ -171,18 +171,32 @@ class DatabaseMemorySerializer:
         previous_by_name = {obj.representation(): obj for obj in previous}
         next_by_name = {obj.representation(): obj for obj in next}
 
-        # Sort the objects by the order that they should be created in
-        if set(next_ordering.keys()) != set(next):
-            raise ValueError(
-                "Ordering next dictionary keys must be the same as the objects in the list"
-            )
-        if set(previous_ordering.keys()) != set(previous):
-            raise ValueError(
-                "Ordering previous dictionary keys must be the same as the objects in the list"
-            )
+        previous_ordering_by_name = {
+            obj.representation(): order for obj, order in previous_ordering.items()
+        }
+        next_ordering_by_name = {
+            obj.representation(): order
+            for obj, order in next_ordering.items()
+            for obj, order in next_ordering.items()
+        }
 
-        previous = sorted(previous, key=lambda obj: previous_ordering[obj])
-        next = sorted(next, key=lambda obj: next_ordering[obj])
+        for ordering, objects in [
+            (previous_ordering_by_name, previous_by_name),
+            (next_ordering_by_name, next_by_name),
+        ]:
+            if set(ordering.keys()) != set(objects.keys()):
+                unique_keys = (set(ordering.keys()) - set(objects.keys())) | (
+                    set(objects.keys()) - set(ordering.keys())
+                )
+                raise ValueError(
+                    f"Ordering dictionary keys must be the same as the objects in the list: {unique_keys}"
+                )
+
+        # Sort the objects by the order that they should be created in
+        previous = sorted(
+            previous, key=lambda obj: previous_ordering_by_name[obj.representation()]
+        )
+        next = sorted(next, key=lambda obj: next_ordering_by_name[obj.representation()])
 
         for next_obj in next:
             previous_obj = previous_by_name.get(next_obj.representation())

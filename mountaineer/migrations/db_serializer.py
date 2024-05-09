@@ -1,4 +1,3 @@
-
 from sqlalchemy import text
 from sqlalchemy.engine.result import Result
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +16,7 @@ from mountaineer.migrations.db_stubs import (
     DBObject,
     DBTable,
     DBType,
+    DBTypePointer,
 )
 
 
@@ -109,7 +109,11 @@ class DatabaseSerializer:
                 DBColumn(
                     table_name=table_name,
                     column_name=row.column_name,
-                    column_type=column_type,
+                    column_type=(
+                        DBTypePointer(name=column_type.name)
+                        if isinstance(column_type, DBType)
+                        else column_type
+                    ),
                     column_is_list=column_is_list,
                     nullable=(row.is_nullable == "YES"),
                 ),

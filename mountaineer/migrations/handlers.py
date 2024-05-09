@@ -30,6 +30,7 @@ from mountaineer.migrations.db_stubs import (
     DBObjectPointer,
     DBTable,
     DBType,
+    DBTypePointer,
 )
 from mountaineer.migrations.generics import (
     remove_null_type,
@@ -254,7 +255,11 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
         if type_payload.custom_type:
             yield type_payload.custom_type, type_dependencies
 
-        column_type = type_payload.custom_type or type_payload.primitive_type
+        column_type = (
+            DBTypePointer(name=type_payload.custom_type.name)
+            if type_payload.custom_type
+            else type_payload.primitive_type
+        )
         if not column_type:
             raise ValueError(
                 f"No column type found for column {context.current_column} in table {context.current_table}"

@@ -64,7 +64,6 @@ class DBObject(BaseModel):
             )
         return self
 
-
 class DBObjectPointer(BaseModel):
     """
     A pointer to an object that was already created elsewhere. Used only for DAG comparisons. Make sure
@@ -72,6 +71,10 @@ class DBObjectPointer(BaseModel):
     won't work properly.
 
     """
+
+    model_config = {
+        "frozen": True,
+    }
 
     @abstractmethod
     def representation(self) -> str:
@@ -108,7 +111,10 @@ class DBColumnPointer(DBColumnBase, DBObjectPointer):
 
 
 class DBColumn(DBColumnBase, DBObject):
-    column_type: Union["DBType", ColumnType]
+    # Use a type pointer here to avoid full equality checks
+    # of the values; if the pointer is the same, we can avoid
+    # updating the column type during a migration.
+    column_type: Union["DBTypePointer", ColumnType]
     column_is_list: bool
 
     nullable: bool
@@ -123,7 +129,7 @@ class DBColumn(DBColumnBase, DBObject):
             explicit_data_is_list=self.column_is_list,
             custom_data_type=(
                 self.column_type.representation()
-                if isinstance(self.column_type, DBType)
+                if isinstance(self.column_type, DBTypePointer)
                 else None
             ),
         )
@@ -157,7 +163,7 @@ class DBColumn(DBColumnBase, DBObject):
                 explicit_data_is_list=self.column_is_list,
                 custom_data_type=(
                     self.column_type.name
-                    if isinstance(self.column_type, DBType)
+                    if isinstance(self.column_type, DBTypePointer)
                     else None
                 ),
             )
@@ -279,19 +285,23 @@ class DBConstraint(DBObject):
             await self.destroy(actor)
             await self.create(actor)
 
-
-class DBType(DBObject):
+class DBTypeBase(BaseModel):
     name: str
+
+    def representation(self):
+        # Type definitions are global by nature
+        return self.name
+
+class DBTypePointer(DBTypeBase, DBObjectPointer):
+    pass
+
+class DBType(DBTypeBase, DBObject):
     values: frozenset[str]
 
     # Captures the columns that use this type value, (table_name, column_name)
     # so we can migrate them properly to new types. Type dropping in Postgres
     # isn't supported.
     reference_columns: frozenset[tuple[str, str]]
-
-    def representation(self):
-        # Type definitions are global by nature
-        return self.name
 
     async def create(self, actor: DatabaseActions):
         await actor.add_type(self.name, sorted(list(self.values)))
@@ -325,9 +335,7 @@ class DBType(DBObject):
         # but might have different reference columns since they might be produced by
         # different parts of the pipeline.
         if self.name != other.name or self.values != other.values:
-            raise ValueError(
-                "Cannot merge types with different core values: {self.name}({self.values}) != {other.name}({other.values})"
-            )
+            raise ValueError("Cannot merge types with different core values: {self.name}({self.values}) != {other.name}({other.values})")
 
         return DBType(
             name=self.name,
