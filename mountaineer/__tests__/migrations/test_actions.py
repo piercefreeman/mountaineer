@@ -224,6 +224,59 @@ async def test_add_column(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("enum_value", [value for value in ColumnType])
+async def test_add_column_any_type(
+    enum_value: ColumnType,
+    db_backed_actions: DatabaseActions,
+    db_session: AsyncSession,
+):
+    """
+    Simple test that all our known type enum values are formatted properly
+    to be inserted into the database, since we don't otherwise validate insertion
+    values here.
+
+    """
+    # Set up a table for us to drop first
+    await db_session.execute(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
+    await db_session.commit()
+
+    await db_backed_actions.add_column(
+        "test_table",
+        "test_column",
+        explicit_data_type=enum_value,
+    )
+
+    # Query the postgres index to see if the column was created
+    result = await db_session.execute(
+        text(
+            "SELECT data_type FROM information_schema.columns WHERE table_name = 'test_table' AND column_name = 'test_column'"
+        )
+    )
+    row = result.fetchone()
+
+    # Some values are shortcuts for other values when inserted without
+    # additional parameters. We keep track of that mapping here so we allow
+    # some flexibility when checking the expected value.
+    # (inserted, allowed alternative value in database)
+    known_equivalents = (
+        (ColumnType.DECIMAL, ColumnType.NUMERIC),
+        (ColumnType.SERIAL, ColumnType.INTEGER),
+        (ColumnType.BIGSERIAL, ColumnType.BIGINT),
+        (ColumnType.CHAR, "character"),
+        (ColumnType.TIME, "time without time zone"),
+        (ColumnType.TIMESTAMP, "timestamp without time zone"),
+    )
+
+    allowed_values = {enum_value.value}
+    for known_value, alternative in known_equivalents:
+        if enum_value == known_value:
+            allowed_values.add(alternative)
+
+    assert row
+    assert row[0] in allowed_values
+
+
+@pytest.mark.asyncio
 async def test_drop_column(
     db_backed_actions: DatabaseActions,
     db_session: AsyncSession,
