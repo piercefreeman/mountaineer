@@ -40,8 +40,6 @@ class Migrator:
         self.actor = DatabaseActions(dry_run=False, db_session=db_session)
         self.db_session = db_session
 
-        self._management_table_initialized = False
-
     @classmethod
     @asynccontextmanager
     async def new_migrator(
@@ -100,12 +98,7 @@ class Migrator:
         # run client code
         await self.db_session.commit()
 
-        self._management_table_initialized = True
-
     async def set_active_revision(self, value: str | None):
-        if not self._management_table_initialized:
-            raise RuntimeError("Migrator table not initialized")
-
         LOGGER.info(f"Setting active revision to {value}")
 
         query = text(
@@ -120,9 +113,6 @@ class Migrator:
         LOGGER.info("Active revision set")
 
     async def get_active_revision(self) -> str | None:
-        if not self._management_table_initialized:
-            raise RuntimeError("Migrator table not initialized")
-
         query = text(
             """
             SELECT active_revision FROM migration_info

@@ -106,6 +106,10 @@ class ExampleDataclass:
         (ExampleDataclass(value="test"), 'ExampleDataclass(value="test")'),
         (True, "True"),
         (False, "False"),
+        (frozenset({"A", "B"}), 'frozenset({"A", "B"})'),
+        ({"A", "B"}, '{"A", "B"}'),
+        (("A",), '("A",)'),
+        (("A", "B"), '("A", "B")'),
     ],
 )
 def test_format_arg(value: Any, expected_value: str):

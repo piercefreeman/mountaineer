@@ -173,6 +173,13 @@ class MigrationGenerator:
             return json_dumps(value)
         elif isinstance(value, list):
             return f"[{', '.join([self.format_arg(v) for v in value])}]"
+        elif isinstance(value, frozenset):
+            return f"frozenset({{{', '.join([self.format_arg(v) for v in value])}}})"
+        elif isinstance(value, set):
+            return f"{{{', '.join([self.format_arg(v) for v in value])}}}"
+        elif isinstance(value, tuple):
+            # Trailing comma is necessary for single element tuples
+            return f"({', '.join([self.format_arg(v) for v in value])},)"
         elif isinstance(value, dict):
             return (
                 "{"
@@ -204,7 +211,7 @@ class MigrationGenerator:
         elif value is None:
             return "None"
         else:
-            raise ValueError(f"Unknown argument type: {value}")
+            raise ValueError(f"Unknown argument type: {value} ({type(value)})")
 
     def track_import(
         self,
