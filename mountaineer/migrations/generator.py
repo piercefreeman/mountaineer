@@ -154,6 +154,9 @@ class MigrationGenerator:
             else:
                 raise ValueError(f"Unknown action type: {action}")
 
+        if not code_lines:
+            code_lines.append("pass")
+
         return code_lines
 
     def format_arg(self, value: Any) -> str:
