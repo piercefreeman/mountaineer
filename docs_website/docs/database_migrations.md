@@ -9,7 +9,8 @@
 Once your application is in production, you'll need some method of updating your database schema as you update your application's functionality. You _could_ write raw SQL to accomplish these migrations, or manually modify database table definitions. But the former is inconvenient and the second is risky. Mountaineer ships with a migration tool that can automatically generate migration files for you and apply them to your database. Its features:
 
 - Fast with no external dependencies outside of Mountaineer core.
-- Programmatic with zero config required, but options that can be specified in code.
+- Zero config required, optional programmatic customization.
+- Unit-testable migration paths that work with normal `pytest` harnesses.
 - Baked-in support for common Postgres types that overlap with Python, most specifically Enums and datetimes.
 - File-based groundtruth of migration logic, so it can be audited in source control and customized by you.
 - Simple API surface, with atomic Python functions that perform the most common migration operations. Direct database queries (or integration with ORM objects in limited cases) can be used for more complex migration logic.
