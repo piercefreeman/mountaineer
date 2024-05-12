@@ -1,5 +1,5 @@
 import json
-from typing import Any, Optional, Union
+from typing import Any, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -75,7 +75,9 @@ class OpenAPIProperty(BaseModel):
     title: str | None = None
     description: str | None = None
     properties: dict[str, Union["OpenAPIProperty", EmptyAPIProperty]] = {}
-    additionalProperties: Union["OpenAPIProperty", EmptyAPIProperty, None] = None
+    additionalProperties: Union[
+        "OpenAPIProperty", EmptyAPIProperty, Literal[False], None
+    ] = None
     required: list[str] = []
 
     # Just specified on the leaf object

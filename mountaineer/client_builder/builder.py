@@ -11,6 +11,7 @@ from typing import Any
 from click import secho
 from fastapi import APIRouter
 from inflection import camelize
+from pydantic_core import ValidationError
 
 from mountaineer.actions import get_function_metadata
 from mountaineer.actions.fields import FunctionActionType
@@ -125,7 +126,13 @@ class ClientBuilder:
             controller = controller_definition.controller
 
             action_spec_openapi = self.openapi_action_specs[controller]
-            action_base = OpenAPIDefinition(**action_spec_openapi)
+            try:
+                action_base = OpenAPIDefinition(**action_spec_openapi)
+            except ValidationError as e:
+                LOGGER.error(
+                    f"Error parsing {controller} action spec: {action_spec_openapi} {e}"
+                )
+                raise e
 
             render_spec_openapi = self.openapi_render_specs[controller]
             render_base = (
