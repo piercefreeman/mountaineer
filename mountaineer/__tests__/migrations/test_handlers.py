@@ -16,10 +16,12 @@ from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,
+    DBObject,
     DBTable,
     DBType,
     DBTypePointer,
 )
+from mountaineer.migrations.handlers import ConstraintWrapper, DelegateContext
 
 
 @pytest.mark.parametrize(
@@ -360,4 +362,86 @@ def test_enum_column_assignment(isolated_sqlalchemy):
             ),
             [DBColumnPointer(table_name="examplemodel2", column_name="id")],
         ),
+    ]
+
+
+@pytest.mark.parametrize(
+    "constraint_wrapper, expected_db_objects",
+    [
+        (
+            ConstraintWrapper(unique=True, columns=["test_col"]),
+            [
+                DBConstraint(
+                    table_name="examplemodel1",
+                    constraint_name="examplemodel1_test_col_unique",
+                    columns=frozenset({"test_col"}),
+                    constraint_type=ConstraintType.UNIQUE,
+                    foreign_key_constraint=None,
+                    check_constraint=None,
+                )
+            ],
+        ),
+        (
+            ConstraintWrapper(primary_key=True, columns=["test_col"]),
+            [
+                DBConstraint(
+                    table_name="examplemodel1",
+                    constraint_name="examplemodel1_pkey",
+                    columns=frozenset({"test_col"}),
+                    constraint_type=ConstraintType.PRIMARY_KEY,
+                    foreign_key_constraint=None,
+                    check_constraint=None,
+                )
+            ],
+        ),
+        (
+            ConstraintWrapper(
+                foreign_key="foreign_model.foreign_col", columns=["test_col"]
+            ),
+            [
+                DBConstraint(
+                    table_name="examplemodel1",
+                    constraint_name="examplemodel1_test_col_fkey",
+                    columns=frozenset({"test_col"}),
+                    constraint_type=ConstraintType.FOREIGN_KEY,
+                    foreign_key_constraint=ForeignKeyConstraint(
+                        target_table="foreign_model",
+                        target_columns=frozenset({"foreign_col"}),
+                    ),
+                    check_constraint=None,
+                )
+            ],
+        ),
+        (
+            ConstraintWrapper(check_expression="value > 0", columns=["test_col"]),
+            [
+                DBConstraint(
+                    table_name="examplemodel1",
+                    constraint_name="examplemodel1_test_col_key",
+                    columns=frozenset({"test_col"}),
+                    constraint_type=ConstraintType.CHECK,
+                    foreign_key_constraint=None,
+                    check_constraint=CheckConstraint(check_condition="value > 0"),
+                )
+            ],
+        ),
+    ],
+)
+def test_column_constraint_handler(
+    constraint_wrapper: ConstraintWrapper,
+    expected_db_objects: list[DBObject],
+):
+    migrator = DatabaseMemorySerializer()
+    db_objects = list(
+        migrator.delegate(
+            constraint_wrapper,
+            context=DelegateContext(
+                current_table="examplemodel1",
+            ),
+        )
+    )
+    assert db_objects == [
+        # None of the constraints are expected to have dependencies
+        (expected_obj, [])
+        for expected_obj in expected_db_objects
     ]
