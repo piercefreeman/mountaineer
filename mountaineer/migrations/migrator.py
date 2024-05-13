@@ -68,7 +68,7 @@ class Migrator:
         within the attached postgres database. This will be a no-op if the table
         already exists.
 
-        Client callers should call this method before running any migrations.
+        Client callers should call this method once before running any migrations.
 
         """
         # Create the table if it doesn't exist
@@ -95,7 +95,7 @@ class Migrator:
             await self.db_session.flush()
 
         # Assume client callers are calling before the transaction block
-        # run client code
+        # runs client code
         await self.db_session.commit()
 
     async def set_active_revision(self, value: str | None):

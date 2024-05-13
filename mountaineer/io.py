@@ -58,6 +58,8 @@ def lru_cache_async(
         @wraps(async_function)
         def internal(*args, **kwargs):
             coroutine = async_function(*args, **kwargs)
+            # Unlike regular coroutine functions, futures can be awaited multiple times
+            # so our caller functions can await the same future on multiple cache hits
             return asyncio.ensure_future(coroutine)
 
         return internal

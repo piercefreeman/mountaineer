@@ -69,6 +69,15 @@ class HandlerBaseMeta(type):
 
 
 class HandlerBase(Generic[N], metaclass=HandlerBaseMeta):
+    """
+    Unlike table schema definitions that are defined in Postgres, in-memory representations
+    of a data model are more ambiguous / varied. SQLModels for instance can support
+    their own native types/attributes, SQLAlchemy columns, or SQLAlchemy types. We therefore
+    consolidate the parsing logic into DBObjects into multiple refactored classes
+    that own a particular family of types with the same parsing strategy.
+
+    """
+
     def __init__(self, migrator: "DatabaseMemorySerializer"):
         self.serializer = migrator
 

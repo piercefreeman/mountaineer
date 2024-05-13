@@ -2,6 +2,11 @@ from mountaineer.migrations.db_stubs import DBType
 
 
 def test_merge_type_columns():
+    """
+    Allow separately yielded type definitions to collect their reference columns. If an
+    enum is referenced in one place, this should build up to the full definition.
+
+    """
     type_a = DBType(
         name="type_a",
         values=frozenset({"A"}),

@@ -71,6 +71,12 @@ class DBObjectPointer(BaseModel):
     the representation mirrors the root object string - otherwise comparison
     won't work properly.
 
+    We typically use pointers in cases where we want to reference an object that should
+    already be created, and the change in the child value shouldn't auto-update the parent.
+    Since by default we use direct model-equality to determine whether we create a migration
+    stage, nesting a full DBObject within a parent object would otherwise cause the parent
+    to update.
+
     """
 
     model_config = {

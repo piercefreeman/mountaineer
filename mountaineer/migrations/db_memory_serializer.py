@@ -175,11 +175,10 @@ class DatabaseMemorySerializer:
             obj.representation(): order for obj, order in previous_ordering.items()
         }
         next_ordering_by_name = {
-            obj.representation(): order
-            for obj, order in next_ordering.items()
-            for obj, order in next_ordering.items()
+            obj.representation(): order for obj, order in next_ordering.items()
         }
 
+        # Verification that the ordering dictionaries align with the objects
         for ordering, objects in [
             (previous_ordering_by_name, previous_by_name),
             (next_ordering_by_name, next_by_name),
