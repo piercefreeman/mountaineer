@@ -1,9 +1,13 @@
 from enum import Enum
+from unittest.mock import ANY
 from uuid import UUID
 
 import pytest
 import sqlalchemy as sa
+from pydantic.fields import FieldInfo as PydanticFieldInfo
+from pydantic_core import PydanticUndefined
 from sqlmodel import Field, SQLModel
+from sqlmodel.main import FieldInfo as SQLModelFieldInfo
 
 from mountaineer.migrations.actions import (
     CheckConstraint,
@@ -70,9 +74,11 @@ def test_sa_foreign_key(
         (
             DBConstraint(
                 table_name="examplemodel",
-                constraint_name=explicit_constraint_name
-                if explicit_constraint_name
-                else "examplemodel_user_id_fkey",
+                constraint_name=(
+                    explicit_constraint_name
+                    if explicit_constraint_name
+                    else "examplemodel_user_id_fkey"
+                ),
                 columns=frozenset({"user_id"}),
                 constraint_type=ConstraintType.FOREIGN_KEY,
                 foreign_key_constraint=ForeignKeyConstraint(
@@ -170,9 +176,11 @@ def test_sa_check_constraint(
         (
             DBConstraint(
                 table_name="examplemodel",
-                constraint_name=explicit_constraint_name
-                if explicit_constraint_name
-                else "examplemodel_key",
+                constraint_name=(
+                    explicit_constraint_name
+                    if explicit_constraint_name
+                    else "examplemodel_key"
+                ),
                 columns=frozenset(),
                 constraint_type=ConstraintType.CHECK,
                 foreign_key_constraint=None,
@@ -363,6 +371,99 @@ def test_enum_column_assignment(isolated_sqlalchemy):
             [DBColumnPointer(table_name="examplemodel2", column_name="id")],
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    "field_info, expected_db_objects",
+    [
+        # Simple PydanticFieldInfo means no sql-metadata has been set
+        (
+            PydanticFieldInfo(annotation=str),
+            [
+                DBColumn(
+                    table_name="examplemodel1",
+                    column_name="test_col",
+                    column_type=ColumnType.VARCHAR,
+                    column_is_list=False,
+                    nullable=False,
+                )
+            ],
+        ),
+        (
+            PydanticFieldInfo(annotation=list[str]),
+            [
+                DBColumn(
+                    table_name="examplemodel1",
+                    column_name="test_col",
+                    column_type=ColumnType.VARCHAR,
+                    column_is_list=True,
+                    nullable=False,
+                )
+            ],
+        ),
+        (
+            PydanticFieldInfo(annotation=str | None),  # type: ignore
+            [
+                DBColumn(
+                    table_name="examplemodel1",
+                    column_name="test_col",
+                    column_type=ColumnType.VARCHAR,
+                    column_is_list=False,
+                    nullable=True,
+                )
+            ],
+        ),
+        # SQLModelFieldInfo allows us to set schema metadata
+        (
+            SQLModelFieldInfo(
+                annotation=str,
+                primary_key=True,
+            ),
+            [
+                DBColumn(
+                    table_name="examplemodel1",
+                    column_name="test_col",
+                    column_type=ColumnType.VARCHAR,
+                    column_is_list=False,
+                    nullable=False,
+                )
+            ],
+        ),
+        # Explicitly provides a SQLAlchemy column
+        (
+            SQLModelFieldInfo(
+                annotation=str,
+                primary_key=PydanticUndefined,
+                unique=PydanticUndefined,
+                sa_column=sa.Column(sa.String, primary_key=True),
+            ),
+            [
+                DBColumn(
+                    table_name="examplemodel1",
+                    column_name="test_col",
+                    column_type=ColumnType.VARCHAR,
+                    column_is_list=False,
+                    nullable=False,
+                )
+            ],
+        ),
+    ],
+)
+def test_column_handler(
+    field_info: PydanticFieldInfo | SQLModelFieldInfo,
+    expected_db_objects: list[DBObject],
+):
+    migrator = DatabaseMemorySerializer()
+    db_objects = list(
+        migrator.delegate(
+            field_info,
+            context=DelegateContext(
+                current_table="examplemodel1",
+                current_column="test_col",
+            ),
+        )
+    )
+    assert db_objects == [(expected_obj, ANY) for expected_obj in expected_db_objects]
 
 
 @pytest.mark.parametrize(
