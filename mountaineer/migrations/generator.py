@@ -177,12 +177,17 @@ class MigrationGenerator:
         elif isinstance(value, list):
             return f"[{', '.join([self.format_arg(v) for v in value])}]"
         elif isinstance(value, frozenset):
-            return f"frozenset({{{', '.join([self.format_arg(v) for v in value])}}})"
+            # Sorting values isn't necessary for client code, but useful for test stability over time
+            return f"frozenset({{{', '.join([self.format_arg(v) for v in sorted(value)])}}})"
         elif isinstance(value, set):
-            return f"{{{', '.join([self.format_arg(v) for v in value])}}}"
+            return f"{{{', '.join([self.format_arg(v) for v in sorted(value)])}}}"
         elif isinstance(value, tuple):
-            # Trailing comma is necessary for single element tuples
-            return f"({', '.join([self.format_arg(v) for v in value])},)"
+            tuple_values = f"{', '.join([self.format_arg(v) for v in value])}"
+            if len(value) == 1:
+                # Trailing comma is necessary for single element tuples
+                return f"({tuple_values},)"
+            else:
+                return f"({tuple_values})"
         elif isinstance(value, dict):
             return (
                 "{"
