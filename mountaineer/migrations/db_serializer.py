@@ -1,9 +1,8 @@
-from functools import lru_cache
-
 from sqlalchemy import text
 from sqlalchemy.engine.result import Result
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from mountaineer.io import lru_cache_async
 from mountaineer.migrations.actions import (
     CheckConstraint,
     ColumnType,
@@ -17,6 +16,7 @@ from mountaineer.migrations.db_stubs import (
     DBObject,
     DBTable,
     DBType,
+    DBTypePointer,
 )
 
 
@@ -109,7 +109,11 @@ class DatabaseSerializer:
                 DBColumn(
                     table_name=table_name,
                     column_name=row.column_name,
-                    column_type=column_type,
+                    column_type=(
+                        DBTypePointer(name=column_type.name)
+                        if isinstance(column_type, DBType)
+                        else column_type
+                    ),
                     column_is_list=column_is_list,
                     nullable=(row.is_nullable == "YES"),
                 ),
@@ -216,7 +220,7 @@ class DatabaseSerializer:
 
     # Enum values are not expected to change within one session, cache the same
     # type if we see it within the same session
-    @lru_cache(maxsize=None)
+    @lru_cache_async(maxsize=None)
     async def fetch_custom_type(self, session: AsyncSession, type_name: str):
         # Get the values in this enum
         values_query = text(

@@ -154,6 +154,9 @@ class MigrationGenerator:
             else:
                 raise ValueError(f"Unknown action type: {action}")
 
+        if not code_lines:
+            code_lines.append("pass")
+
         return code_lines
 
     def format_arg(self, value: Any) -> str:
@@ -173,6 +176,18 @@ class MigrationGenerator:
             return json_dumps(value)
         elif isinstance(value, list):
             return f"[{', '.join([self.format_arg(v) for v in value])}]"
+        elif isinstance(value, frozenset):
+            # Sorting values isn't necessary for client code, but useful for test stability over time
+            return f"frozenset({{{', '.join([self.format_arg(v) for v in sorted(value)])}}})"
+        elif isinstance(value, set):
+            return f"{{{', '.join([self.format_arg(v) for v in sorted(value)])}}}"
+        elif isinstance(value, tuple):
+            tuple_values = f"{', '.join([self.format_arg(v) for v in value])}"
+            if len(value) == 1:
+                # Trailing comma is necessary for single element tuples
+                return f"({tuple_values},)"
+            else:
+                return f"({tuple_values})"
         elif isinstance(value, dict):
             return (
                 "{"
@@ -204,7 +219,7 @@ class MigrationGenerator:
         elif value is None:
             return "None"
         else:
-            raise ValueError(f"Unknown argument type: {value}")
+            raise ValueError(f"Unknown argument type: {value} ({type(value)})")
 
     def track_import(
         self,

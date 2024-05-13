@@ -5,6 +5,7 @@ from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlmodel import text
 
+from mountaineer.logging import LOGGER
 from mountaineer.migrations.actions import DatabaseActions
 
 
@@ -57,11 +58,21 @@ class Migrator:
 
             # Now that the migration is done, we should try to commit the session
             session.okay_to_commit = True
+            LOGGER.info("Committing migration")
             await session.commit()
+            LOGGER.info("Migration committed")
 
     async def init_db(self):
+        """
+        Initialize our migration management table if it doesn't already exist
+        within the attached postgres database. This will be a no-op if the table
+        already exists.
+
+        Client callers should call this method once before running any migrations.
+
+        """
         # Create the table if it doesn't exist
-        await self.db_session.execute(
+        result = await self.db_session.execute(
             text(
                 """
             CREATE TABLE IF NOT EXISTS migration_info (
@@ -83,9 +94,12 @@ class Migrator:
             )
             await self.db_session.flush()
 
+        # Assume client callers are calling before the transaction block
+        # runs client code
+        await self.db_session.commit()
+
     async def set_active_revision(self, value: str | None):
-        # This will be a no-op if the table doesn't exist
-        await self.init_db()
+        LOGGER.info(f"Setting active revision to {value}")
 
         query = text(
             """
@@ -96,10 +110,9 @@ class Migrator:
         await self.db_session.execute(query, {"value": value})
         await self.db_session.flush()
 
-    async def get_active_revision(self) -> str | None:
-        # This will be a no-op if the table doesn't exist
-        await self.init_db()
+        LOGGER.info("Active revision set")
 
+    async def get_active_revision(self) -> str | None:
         query = text(
             """
             SELECT active_revision FROM migration_info

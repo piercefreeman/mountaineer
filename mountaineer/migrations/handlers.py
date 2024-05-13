@@ -30,6 +30,7 @@ from mountaineer.migrations.db_stubs import (
     DBObjectPointer,
     DBTable,
     DBType,
+    DBTypePointer,
 )
 from mountaineer.migrations.generics import (
     remove_null_type,
@@ -68,6 +69,15 @@ class HandlerBaseMeta(type):
 
 
 class HandlerBase(Generic[N], metaclass=HandlerBaseMeta):
+    """
+    Unlike table schema definitions that are defined in Postgres, in-memory representations
+    of a data model are more ambiguous / varied. SQLModels for instance can support
+    their own native types/attributes, SQLAlchemy columns, or SQLAlchemy types. We therefore
+    consolidate the parsing logic into DBObjects into multiple refactored classes
+    that own a particular family of types with the same parsing strategy.
+
+    """
+
     def __init__(self, migrator: "DatabaseMemorySerializer"):
         self.serializer = migrator
 
@@ -254,7 +264,11 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
         if type_payload.custom_type:
             yield type_payload.custom_type, type_dependencies
 
-        column_type = type_payload.custom_type or type_payload.primitive_type
+        column_type = (
+            DBTypePointer(name=type_payload.custom_type.name)
+            if type_payload.custom_type
+            else type_payload.primitive_type
+        )
         if not column_type:
             raise ValueError(
                 f"No column type found for column {context.current_column} in table {context.current_table}"
@@ -308,6 +322,8 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
 
 
 class ConstraintWrapper(BaseModel):
+    explicit_name: str | None = None
+
     unique: bool | None = None
     primary_key: bool | None = None
     foreign_key: str | None = None
@@ -333,8 +349,14 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                     table_name=context.current_table,
                     constraint_type=ConstraintType.PRIMARY_KEY,
                     columns=frozenset(next.columns),
-                    constraint_name=DBConstraint.new_constraint_name(
-                        context.current_table, next.columns, ConstraintType.PRIMARY_KEY
+                    constraint_name=(
+                        next.explicit_name
+                        if next.explicit_name
+                        else DBConstraint.new_constraint_name(
+                            context.current_table,
+                            next.columns,
+                            ConstraintType.PRIMARY_KEY,
+                        )
                     ),
                 ),
                 [],
@@ -347,8 +369,14 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                     table_name=context.current_table,
                     constraint_type=ConstraintType.FOREIGN_KEY,
                     columns=frozenset(next.columns),
-                    constraint_name=DBConstraint.new_constraint_name(
-                        context.current_table, next.columns, ConstraintType.FOREIGN_KEY
+                    constraint_name=(
+                        next.explicit_name
+                        if next.explicit_name
+                        else DBConstraint.new_constraint_name(
+                            context.current_table,
+                            next.columns,
+                            ConstraintType.FOREIGN_KEY,
+                        )
                     ),
                     foreign_key_constraint=ForeignKeyConstraint(
                         target_table=target_table,
@@ -363,8 +391,12 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                     table_name=context.current_table,
                     constraint_type=ConstraintType.UNIQUE,
                     columns=frozenset(next.columns),
-                    constraint_name=DBConstraint.new_constraint_name(
-                        context.current_table, next.columns, ConstraintType.UNIQUE
+                    constraint_name=(
+                        next.explicit_name
+                        if next.explicit_name
+                        else DBConstraint.new_constraint_name(
+                            context.current_table, next.columns, ConstraintType.UNIQUE
+                        )
                     ),
                 ),
                 [],
@@ -375,8 +407,12 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                     table_name=context.current_table,
                     constraint_type=ConstraintType.CHECK,
                     columns=frozenset(next.columns),
-                    constraint_name=DBConstraint.new_constraint_name(
-                        context.current_table, next.columns, ConstraintType.CHECK
+                    constraint_name=(
+                        next.explicit_name
+                        if next.explicit_name
+                        else DBConstraint.new_constraint_name(
+                            context.current_table, next.columns, ConstraintType.CHECK
+                        )
                     ),
                     check_constraint=CheckConstraint(
                         check_condition=next.check_expression,
@@ -407,8 +443,14 @@ class SQLAlchemyForeignKeyHandler(HandlerBase[sa.ForeignKey]):
         target_table = next.column.table.name
         target_column = next.column.name
 
+        if next.name is not None and not isinstance(next.name, str):
+            raise ValueError(
+                f"Foreign key name must be a string, got {next.name} of type {type(next.name)}"
+            )
+
         yield from self.serializer.delegate(
             ConstraintWrapper(
+                explicit_name=next.name,
                 foreign_key=f"{target_table}.{target_column}",
                 columns=[context.current_column],
             ),
@@ -418,8 +460,14 @@ class SQLAlchemyForeignKeyHandler(HandlerBase[sa.ForeignKey]):
 
 class SQLAlchemyCheckConstraintHandler(HandlerBase[sa.CheckConstraint]):
     def convert(self, next: sa.CheckConstraint, context: DelegateContext):
+        if next.name is not None and not isinstance(next.name, str):
+            raise ValueError(
+                f"Foreign key name must be a string, got {next.name} of type {type(next.name)}"
+            )
+
         yield from self.serializer.delegate(
             ConstraintWrapper(
+                explicit_name=next.name,
                 check_expression=str(next.sqltext),
                 columns=[],  # This is a table-level constraint
             ),

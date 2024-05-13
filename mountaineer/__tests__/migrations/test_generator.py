@@ -71,6 +71,18 @@ def test_actions_to_code():
     ]
 
 
+def test_actions_to_code_pass():
+    """
+    We support generating migrations where there are no schema-level changes, so users can
+    write their own data migration logic. In these cases we should pass the code-block
+    so the resulting file is still legitimate.
+
+    """
+    migration_generator = MigrationGenerator()
+    code = migration_generator.actions_to_code([])
+    assert code == ["pass"]
+
+
 class ExampleEnum(Enum):
     A = "a"
     B = "b"
@@ -106,6 +118,10 @@ class ExampleDataclass:
         (ExampleDataclass(value="test"), 'ExampleDataclass(value="test")'),
         (True, "True"),
         (False, "False"),
+        (frozenset({"A", "B"}), 'frozenset({"A", "B"})'),
+        ({"A", "B"}, '{"A", "B"}'),
+        (("A",), '("A",)'),
+        (("A", "B"), '("A", "B")'),
     ],
 )
 def test_format_arg(value: Any, expected_value: str):
