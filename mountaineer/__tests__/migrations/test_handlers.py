@@ -20,7 +20,9 @@ from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,
+    DBConstraintPointer,
     DBObject,
+    DBPointerOR,
     DBTable,
     DBType,
     DBTypePointer,
@@ -74,18 +76,34 @@ def test_sa_foreign_key(
         (
             DBConstraint(
                 table_name="examplemodel",
-                constraint_name=(
-                    explicit_constraint_name
-                    if explicit_constraint_name
-                    else "examplemodel_user_id_fkey"
-                ),
                 columns=frozenset({"user_id"}),
                 constraint_type=ConstraintType.FOREIGN_KEY,
+                constraint_name=explicit_constraint_name
+                if explicit_constraint_name
+                else "examplemodel_user_id_fkey",
                 foreign_key_constraint=ForeignKeyConstraint(
                     target_table="user", target_columns=frozenset({"id"})
                 ),
+                check_constraint=None,
             ),
-            [DBTable(table_name="examplemodel")],
+            [
+                DBColumnPointer(table_name="user", column_name="id"),
+                DBPointerOR(
+                    pointers=[
+                        DBConstraintPointer(
+                            table_name="user",
+                            columns=frozenset({"id"}),
+                            constraint_type=ConstraintType.PRIMARY_KEY,
+                        ),
+                        DBConstraintPointer(
+                            table_name="user",
+                            columns=frozenset({"id"}),
+                            constraint_type=ConstraintType.UNIQUE,
+                        ),
+                    ]
+                ),
+                DBTable(table_name="examplemodel"),
+            ],
         ),
         (
             DBColumn(
@@ -100,10 +118,11 @@ def test_sa_foreign_key(
         (
             DBConstraint(
                 table_name="examplemodel",
-                constraint_name="examplemodel_pkey",
                 columns=frozenset({"id"}),
                 constraint_type=ConstraintType.PRIMARY_KEY,
+                constraint_name="examplemodel_pkey",
                 foreign_key_constraint=None,
+                check_constraint=None,
             ),
             [DBColumnPointer(table_name="examplemodel", column_name="id")],
         ),
@@ -472,26 +491,32 @@ def test_column_handler(
         (
             ConstraintWrapper(unique=True, columns=["test_col"]),
             [
-                DBConstraint(
-                    table_name="examplemodel1",
-                    constraint_name="examplemodel1_test_col_unique",
-                    columns=frozenset({"test_col"}),
-                    constraint_type=ConstraintType.UNIQUE,
-                    foreign_key_constraint=None,
-                    check_constraint=None,
+                (
+                    DBConstraint(
+                        table_name="examplemodel1",
+                        constraint_name="examplemodel1_test_col_unique",
+                        columns=frozenset({"test_col"}),
+                        constraint_type=ConstraintType.UNIQUE,
+                        foreign_key_constraint=None,
+                        check_constraint=None,
+                    ),
+                    [],
                 )
             ],
         ),
         (
             ConstraintWrapper(primary_key=True, columns=["test_col"]),
             [
-                DBConstraint(
-                    table_name="examplemodel1",
-                    constraint_name="examplemodel1_pkey",
-                    columns=frozenset({"test_col"}),
-                    constraint_type=ConstraintType.PRIMARY_KEY,
-                    foreign_key_constraint=None,
-                    check_constraint=None,
+                (
+                    DBConstraint(
+                        table_name="examplemodel1",
+                        constraint_name="examplemodel1_pkey",
+                        columns=frozenset({"test_col"}),
+                        constraint_type=ConstraintType.PRIMARY_KEY,
+                        foreign_key_constraint=None,
+                        check_constraint=None,
+                    ),
+                    [],
                 )
             ],
         ),
@@ -500,29 +525,53 @@ def test_column_handler(
                 foreign_key="foreign_model.foreign_col", columns=["test_col"]
             ),
             [
-                DBConstraint(
-                    table_name="examplemodel1",
-                    constraint_name="examplemodel1_test_col_fkey",
-                    columns=frozenset({"test_col"}),
-                    constraint_type=ConstraintType.FOREIGN_KEY,
-                    foreign_key_constraint=ForeignKeyConstraint(
-                        target_table="foreign_model",
-                        target_columns=frozenset({"foreign_col"}),
+                (
+                    DBConstraint(
+                        table_name="examplemodel1",
+                        constraint_name="examplemodel1_test_col_fkey",
+                        columns=frozenset({"test_col"}),
+                        constraint_type=ConstraintType.FOREIGN_KEY,
+                        foreign_key_constraint=ForeignKeyConstraint(
+                            target_table="foreign_model",
+                            target_columns=frozenset({"foreign_col"}),
+                        ),
+                        check_constraint=None,
                     ),
-                    check_constraint=None,
+                    [
+                        DBColumnPointer(
+                            table_name="foreign_model", column_name="foreign_col"
+                        ),
+                        DBPointerOR(
+                            pointers=[
+                                DBConstraintPointer(
+                                    table_name="foreign_model",
+                                    columns=frozenset({"foreign_col"}),
+                                    constraint_type=ConstraintType.PRIMARY_KEY,
+                                ),
+                                DBConstraintPointer(
+                                    table_name="foreign_model",
+                                    columns=frozenset({"foreign_col"}),
+                                    constraint_type=ConstraintType.UNIQUE,
+                                ),
+                            ]
+                        ),
+                    ],
                 )
             ],
         ),
         (
             ConstraintWrapper(check_expression="value > 0", columns=["test_col"]),
             [
-                DBConstraint(
-                    table_name="examplemodel1",
-                    constraint_name="examplemodel1_test_col_key",
-                    columns=frozenset({"test_col"}),
-                    constraint_type=ConstraintType.CHECK,
-                    foreign_key_constraint=None,
-                    check_constraint=CheckConstraint(check_condition="value > 0"),
+                (
+                    DBConstraint(
+                        table_name="examplemodel1",
+                        constraint_name="examplemodel1_test_col_key",
+                        columns=frozenset({"test_col"}),
+                        constraint_type=ConstraintType.CHECK,
+                        foreign_key_constraint=None,
+                        check_constraint=CheckConstraint(check_condition="value > 0"),
+                    ),
+                    [],
                 )
             ],
         ),
@@ -530,7 +579,7 @@ def test_column_handler(
 )
 def test_column_constraint_handler(
     constraint_wrapper: ConstraintWrapper,
-    expected_db_objects: list[DBObject],
+    expected_db_objects: list[tuple[DBObject, list[DBObject | DBColumnPointer]]],
 ):
     migrator = DatabaseMemorySerializer()
     db_objects = list(
@@ -541,8 +590,4 @@ def test_column_constraint_handler(
             ),
         )
     )
-    assert db_objects == [
-        # None of the constraints are expected to have dependencies
-        (expected_obj, [])
-        for expected_obj in expected_db_objects
-    ]
+    assert db_objects == expected_db_objects

@@ -136,21 +136,23 @@ class DatabaseMemorySerializer:
             else:
                 db_objects_by_name[db_object.representation()] = db_object
 
-        # Make sure all the pointers can be resolved by full objects
-        # Otherwise we want a verbose error that gives more context
-        for _, dependencies in db_objects:
-            for dep in dependencies:
-                if isinstance(dep, DBObjectPointer):
-                    if dep.representation() not in db_objects_by_name:
-                        raise ValueError(
-                            f"Pointer {dep.representation()} not found in the defined database objects"
-                        )
+        def resolve_object(obj: DBObject | DBObjectPointer):
+            if isinstance(obj, DBObjectPointer):
+                # Pointers might have more complex internally handling
+                # for their object equality, so we need to exhaustively search
+                for db_obj in db_objects_by_name.values():
+                    if obj.equal_to_object(db_obj):
+                        return db_obj
+                # If we got here and didn't find the object, none were mapped
+                raise ValueError(
+                    f"Pointer {obj} not found in the defined database objects"
+                )
+            return db_objects_by_name[obj.representation()]
 
-        # Map the potentially different objects to the same object
+        # Map the potentially different objects to the same object. This also resolves
+        # the pointers to the actual objects
         graph_edges = {
-            db_objects_by_name[obj.representation()]: [
-                db_objects_by_name[dep.representation()] for dep in dependencies
-            ]
+            resolve_object(obj): [resolve_object(dep) for dep in dependencies]
             for obj, dependencies in db_objects
         }
 

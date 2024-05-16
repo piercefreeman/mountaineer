@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from typing import Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from mountaineer.compat import Self
 from mountaineer.migrations.actions import (
@@ -86,6 +86,35 @@ class DBObjectPointer(BaseModel):
     @abstractmethod
     def representation(self) -> str:
         pass
+
+    def equal_to_object(self, other: DBObject) -> bool:
+        return self.representation() == other.representation()
+
+
+class DBPointerOR(DBObjectPointer):
+    """
+    Logical OR for requiring at least one pointer to be set
+    but not both of them.
+
+    """
+
+    pointers: list[DBObjectPointer]
+
+    def representation(self) -> str:
+        raise NotImplementedError
+
+    @field_validator("pointers")
+    def validate_pointers(cls, v):
+        if len(v) < 2:
+            raise ValueError("Must provide at least two pointers")
+        return v
+
+    def equal_to_object(self, other: DBObject) -> bool:
+        # Make sure any of the pointers are equal to the object
+        for pointer in self.pointers:
+            if pointer.equal_to_object(other):
+                return True
+        return False
 
 
 class DBTable(DBObject):
@@ -181,12 +210,25 @@ class DBColumn(DBColumnBase, DBObject):
             await actor.drop_not_null(self.table_name, self.column_name)
 
 
-class DBConstraint(DBObject):
+class DBConstraintBase(BaseModel):
     table_name: str
-    constraint_name: str = Field(exclude=True)
     columns: frozenset[str]
 
     constraint_type: ConstraintType
+
+    def representation(self) -> str:
+        # Different construction methods sort the constraint parameters in different ways
+        # We rely on sorting these parameters to ensure that the representation matches
+        # across these different construction methods
+        return f"{self.table_name}.{sorted(self.columns)}.{self.constraint_type}"
+
+
+class DBConstraintPointer(DBConstraintBase, DBObjectPointer):
+    pass
+
+
+class DBConstraint(DBConstraintBase, DBObject):
+    constraint_name: str = Field(exclude=True)
 
     foreign_key_constraint: ForeignKeyConstraint | None = None
     check_constraint: CheckConstraint | None = None
@@ -206,12 +248,6 @@ class DBConstraint(DBObject):
                 "Only foreign key constraints require a ForeignKeyConstraint"
             )
         return self
-
-    def representation(self) -> str:
-        # Different construction methods sort the constraint parameters in different ways
-        # We rely on sorting these parameters to ensure that the representation matches
-        # across these different construction methods
-        return f"{self.table_name}.{sorted(self.columns)}.{self.constraint_type}"
 
     @classmethod
     def new_constraint_name(

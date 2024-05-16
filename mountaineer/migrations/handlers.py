@@ -26,8 +26,10 @@ from mountaineer.migrations.db_stubs import (
     DBColumn,
     DBColumnPointer,
     DBConstraint,
+    DBConstraintPointer,
     DBObject,
     DBObjectPointer,
+    DBPointerOR,
     DBTable,
     DBType,
     DBTypePointer,
@@ -383,7 +385,29 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                         target_columns=frozenset({target_column}),
                     ),
                 ),
-                [],
+                [
+                    # We need to make sure that the other column is created first, and that
+                    # it's currently set up as a unique key
+                    DBColumnPointer(
+                        table_name=target_table,
+                        column_name=target_column,
+                    ),
+                    # Since PRIMARY and UNIQUE are different enum types, we need to check both
+                    DBPointerOR(
+                        pointers=[
+                            DBConstraintPointer(
+                                table_name=target_table,
+                                columns=frozenset({target_column}),
+                                constraint_type=ConstraintType.PRIMARY_KEY,
+                            ),
+                            DBConstraintPointer(
+                                table_name=target_table,
+                                columns=frozenset({target_column}),
+                                constraint_type=ConstraintType.UNIQUE,
+                            ),
+                        ]
+                    ),
+                ],
             )
         if next.unique:
             yield (
