@@ -1,8 +1,10 @@
+import asyncio
 import functools
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from hashlib import sha256
 from json import dumps as json_dumps
-from typing import Any, Callable
+from typing import Any, Callable, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -95,3 +97,40 @@ def extended_lru_cache(maxsize: int, max_size_mb: float | None = None):
         return wrapper
 
     return decorator
+
+
+T = TypeVar("T")
+
+
+class AsyncLoopObjectCache(Generic[T]):
+    """
+    Utility class to tie a certain global session with an active event loop. Used as a helper
+    for global objects (like DB sessions) that we want to cache across multiple requests, but
+    are tied to the event loop in which they were created.
+
+    """
+
+    def __init__(self):
+        self.loop_caches: dict[int, T] = {}
+        self.loop_locks: dict[int, asyncio.Lock] = {}
+
+    def get_obj(self) -> T | None:
+        loop = asyncio.get_running_loop()
+        if id(loop) not in self.loop_caches:
+            return None
+        return self.loop_caches[id(loop)]
+
+    def set_obj(self, obj: T):
+        loop = asyncio.get_running_loop()
+        self.loop_caches[id(loop)] = obj
+
+    @asynccontextmanager
+    async def get_lock(self):
+        loop = asyncio.get_running_loop()
+        if id(loop) not in self.loop_locks:
+            self.loop_locks[id(loop)] = asyncio.Lock()
+        async with self.loop_locks[id(loop)]:
+            # For convenience we also yield the current object
+            # when the lock is acquired, in case another async loop task
+            # has set the object since this lock started blocking.
+            yield self.get_obj()
