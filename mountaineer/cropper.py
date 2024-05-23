@@ -215,7 +215,7 @@ class ASTReducer(ast.NodeTransformer):
                 ):
                     new_keys.append(dict_key)
                     new_values.append(dict_value)
-        return ast.Return(value=ast.Dict(keys=new_keys, values=new_values))
+        return ast.Return(value=ast.Dict(keys=new_keys, values=new_values))  # type: ignore
 
 
 def reduce_function_to_keys(

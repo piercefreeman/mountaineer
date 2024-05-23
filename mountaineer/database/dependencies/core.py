@@ -6,31 +6,13 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
 
+from mountaineer.cache import AsyncLoopObjectCache
 from mountaineer.database.config import DatabaseConfig, PoolType
 from mountaineer.dependencies import CoreDependencies
 from mountaineer.logging import LOGGER
 
 # We share the connection pool across the entire process
-GLOBAL_ENGINE: dict[str, AsyncEngine] = {}
-
-
-def engine_from_config(config: DatabaseConfig, force_new: bool = False):
-    global GLOBAL_ENGINE
-
-    if not config.SQLALCHEMY_DATABASE_URI:
-        raise RuntimeError(f"No SQLALCHEMY_DATABASE_URI set: {config}")
-
-    if force_new or str(config.SQLALCHEMY_DATABASE_URI) not in GLOBAL_ENGINE:
-        GLOBAL_ENGINE[str(config.SQLALCHEMY_DATABASE_URI)] = create_async_engine(
-            str(config.SQLALCHEMY_DATABASE_URI),
-            poolclass=(
-                NullPool
-                if config.DATABASE_POOL_TYPE == PoolType.NULL
-                else AsyncAdaptedQueuePool
-            ),
-        )
-
-    return GLOBAL_ENGINE[str(config.SQLALCHEMY_DATABASE_URI)]
+GLOBAL_ENGINE: AsyncLoopObjectCache[AsyncEngine] = AsyncLoopObjectCache()
 
 
 async def get_db(
@@ -58,7 +40,29 @@ async def get_db(
     ```
 
     """
-    return engine_from_config(config)
+    if not config.SQLALCHEMY_DATABASE_URI:
+        raise RuntimeError(f"No SQLALCHEMY_DATABASE_URI set: {config}")
+
+    current_engine = GLOBAL_ENGINE.get_obj()
+    if current_engine is not None:
+        return current_engine
+
+    async with GLOBAL_ENGINE.get_lock() as current_engine:
+        # Another async task set in the meantime
+        if current_engine is not None:
+            return current_engine
+
+        # Otherwise create a new engine
+        engine = create_async_engine(
+            str(config.SQLALCHEMY_DATABASE_URI),
+            poolclass=(
+                NullPool
+                if config.DATABASE_POOL_TYPE == PoolType.NULL
+                else AsyncAdaptedQueuePool
+            ),
+        )
+        GLOBAL_ENGINE.set_obj(engine)
+        return engine
 
 
 async def get_db_session(
@@ -97,8 +101,10 @@ async def get_db_session(
 
 
 async def unregister_global_engine():
-    global GLOBAL_ENGINE
-    if GLOBAL_ENGINE is not None:
-        for engine in GLOBAL_ENGINE.values():
-            await engine.dispose()
-        GLOBAL_ENGINE = {}
+    """
+    Unregisters the global engines used by all async loops.
+    """
+    for key in list(GLOBAL_ENGINE.loop_caches.keys()):
+        engine = GLOBAL_ENGINE.loop_caches[key]
+        await engine.dispose()
+        del GLOBAL_ENGINE.loop_caches[key]
