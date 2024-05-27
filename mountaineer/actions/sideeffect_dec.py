@@ -224,16 +224,18 @@ async def get_render_parameters(
     automatic calls to the rendering due to side-effects.
 
     """
-    # Create a synethic request object that we would use to access the core
+    # Create a synthetic request object that we would use to access the core
     # html. This will be passed through the dependency resolution pipeline so to
     # render() it's indistinguishable from a real request and therefore will render
     # in the same way.
     # The referrer should capture the page that they're actually on
     referer = request.headers.get("referer")
+    parsed_path = urlparse(referer or controller.url)
     view_request = Request(
         {
             "type": request.scope["type"],
-            "path": urlparse(referer or controller.url).path,
+            "path": parsed_path.path,
+            "query_string": parsed_path.query,
             "headers": request.headers.raw,
             "http_version": request.scope["http_version"],
             "method": "GET",
@@ -265,21 +267,26 @@ async def get_render_parameters(
                 f"Route {route} did not match ({match}) {view_request.scope}"
             )
         view_request.scope = {
-            **view_request.scope,
+            # Make sure we're populating the path params with some values
+            # even if they're not extracted in either the view or the child definition
             "path_params": {},
-            "query_string": "",
+            **view_request.scope,
             **child_scope,
         }
 
     try:
         async with get_function_dependencies(
             callable=controller.render,
-            url=controller.url
-            if not isinstance(controller, LayoutControllerBase)
-            else None,
-            request=view_request
-            if not isinstance(controller, LayoutControllerBase)
-            else None,
+            url=(
+                controller.url
+                if not isinstance(controller, LayoutControllerBase)
+                else None
+            ),
+            request=(
+                view_request
+                if not isinstance(controller, LayoutControllerBase)
+                else None
+            ),
         ) as values:
             yield values
     except RuntimeError as e:

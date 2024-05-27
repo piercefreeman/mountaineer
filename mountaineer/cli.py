@@ -135,7 +135,7 @@ class IsolatedEnvProcess(Process):
 
             # If the client passed a rebuild channel, we'll listen for rebuild requests
             if self.build_config.allow_js_reloads:
-                self.listen_for_rebuilds(app_controller)
+                self.rebuild_thread = self.listen_for_rebuilds(app_controller)
 
         if self.runserver_config is not None:
             thread = UvicornThread(
@@ -214,8 +214,9 @@ class IsolatedEnvProcess(Process):
                 self.run_build(app_controller)
 
         LOGGER.debug("Will launch rebuild thread")
-        rebuild_thread = Thread(target=wait_for_rebuild)
+        rebuild_thread = Thread(target=wait_for_rebuild, daemon=True)
         rebuild_thread.start()
+        return rebuild_thread
 
     def run_build(self, app_controller: AppController):
         start = time()
@@ -255,6 +256,8 @@ class IsolatedEnvProcess(Process):
 
         if self.runserver_config is not None:
             self.close_signal.set()
+
+        self.rebuild_thread.join()
 
         # Try to give the process time to shut down gracefully
         while self.is_alive() and hard_timeout > 0:

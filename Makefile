@@ -114,7 +114,7 @@ test-scripts:
 
 define test-common
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -W error $(test-args) $(2))
+	@(cd $(1) && poetry run pytest -vvv -W error $(test-args) $(2))
 endef
 
 define test-rust-common
