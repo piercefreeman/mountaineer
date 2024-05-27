@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 from time import monotonic_ns
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -157,7 +158,42 @@ async def test_can_call_sideeffect_async_render():
 
 
 @pytest.mark.asyncio
-async def test_get_render_parameters():
+@pytest.mark.parametrize(
+    "referer, expected_resolved",
+    [
+        # Fully specified query parameters
+        (
+            "http://example.com/test/5/?url_query_param=test-query-value",
+            {
+                "cookie_dependency": "cookie-value",
+                "path_param": 5,
+                "url_query_param": "test-query-value",
+            },
+        ),
+        # Unspecified query parameters should be None
+        (
+            "http://example.com/test/5/",
+            {
+                "cookie_dependency": "cookie-value",
+                "path_param": 5,
+                "url_query_param": None,
+            },
+        ),
+        # Partially specified query param url
+        (
+            "http://example.com/test/5/?url_query_param=",
+            {
+                "cookie_dependency": "cookie-value",
+                "path_param": 5,
+                "url_query_param": "",
+            },
+        ),
+    ],
+)
+async def test_get_render_parameters(
+    referer: str,
+    expected_resolved: dict[str, Any],
+):
     """
     Given a controller, reproduce the logic of FastAPI to sniff the render()
     function for dependencies and resolve them.
@@ -173,11 +209,12 @@ async def test_get_render_parameters():
         return found_cookie
 
     class TestController(ControllerBase):
-        url: str = "/test/{query_id}/"
+        url: str = "/test/{path_param}/"
 
         def render(
             self,
-            query_id: int,
+            path_param: int,
+            url_query_param: str | None = None,
             cookie_dependency: str = Depends(grab_cookie_dependency),
         ) -> ExampleRenderModel:
             return ExampleRenderModel(
@@ -199,7 +236,7 @@ async def test_get_render_parameters():
                     "cookie": "test-cookie=cookie-value",
                     # Its important the referer aligns with the controller url, since that is expected
                     # to be the original view page that is calling this sub-function
-                    "referer": "http://example.com/test/5/",
+                    "referer": referer,
                 }
             ).raw,
             "http_version": "1.1",
@@ -214,10 +251,7 @@ async def test_get_render_parameters():
     )
 
     async with get_render_parameters(controller, fake_request) as resolved_dependencies:
-        assert resolved_dependencies == {
-            "cookie_dependency": "cookie-value",
-            "query_id": 5,
-        }
+        assert resolved_dependencies == expected_resolved
 
 
 @pytest.mark.parametrize(
