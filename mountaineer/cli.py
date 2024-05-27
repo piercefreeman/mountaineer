@@ -86,6 +86,8 @@ class IsolatedEnvProcess(Process):
             Queue() if build_config.allow_js_reloads else None
         )
 
+        self.rebuild_thread: Thread | None = None
+
     def run(self):
         LOGGER.debug(
             f"Starting isolated environment process with\nbuild_config: {self.build_config}\nrunserver_config: {self.runserver_config}"
@@ -257,7 +259,8 @@ class IsolatedEnvProcess(Process):
         if self.runserver_config is not None:
             self.close_signal.set()
 
-        self.rebuild_thread.join()
+        if self.rebuild_thread is not None:
+            self.rebuild_thread.join()
 
         # Try to give the process time to shut down gracefully
         while self.is_alive() and hard_timeout > 0:
