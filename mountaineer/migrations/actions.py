@@ -403,7 +403,7 @@ class DatabaseActions:
                 assert_is_safe_sql_identifier(column_name)
 
             ref_cols_formatted = ", ".join(constraint_args.target_columns)
-            sql += f"FOREIGN KEY ({columns_formatted}) REFERENCES {constraint_args.target_table} ({ref_cols_formatted})"
+            sql += f'FOREIGN KEY ({columns_formatted}) REFERENCES "{constraint_args.target_table}" ({ref_cols_formatted})'
         elif constraint == ConstraintType.UNIQUE:
             sql += f"UNIQUE ({columns_formatted})"
         elif constraint == ConstraintType.CHECK:
