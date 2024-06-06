@@ -200,11 +200,16 @@ class MigrationGenerator:
                 + "}"
             )
         elif isinstance(value, BaseModel) or is_dataclass(value):
-            self.track_import(value.__class__)
+            if isinstance(value, BaseModel):
+                model_dict = value.model_dump()
+            elif is_dataclass(value) and not isinstance(value, type):
+                model_dict = asdict(value)
+            else:
+                raise TypeError(
+                    "Value must be a BaseModel instance or a dataclass instance."
+                )
 
-            model_dict = (
-                value.model_dump() if isinstance(value, BaseModel) else asdict(value)
-            )
+            self.track_import(value.__class__)
 
             code = f"{value.__class__.__name__}("
             code += ", ".join(
