@@ -60,6 +60,13 @@ async def test_from_scratch_migration():
             },
         ),
         DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={
+                "table_name": "modela",
+                "column_name": "id",
+            },
+        ),
+        DryRunAction(
             fn=actor.add_type,
             kwargs={
                 "type_name": "oldvalues",
@@ -98,6 +105,13 @@ async def test_from_scratch_migration():
                 "explicit_data_is_list": False,
                 "explicit_data_type": None,
                 "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={
+                "table_name": "modela",
+                "column_name": "animal",
             },
         ),
     ]
@@ -153,6 +167,13 @@ async def test_diff_migration():
                 "explicit_data_is_list": False,
                 "explicit_data_type": ColumnType.VARCHAR,
                 "table_name": "modela",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={
+                "table_name": "modela",
+                "column_name": "name",
             },
         ),
         DryRunAction(
