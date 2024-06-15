@@ -1,51 +1,27 @@
-from enum import Enum, IntEnum
 from json import dumps as json_dumps
 from typing import Any, Generic, Literal, TypeVar
 
 import pytest
 from pydantic import BaseModel, Field, create_model
 
+from mountaineer.__tests__.client_builder.conf_models import (
+    MyEnum,
+    MyIntEnum,
+    MyModel,
+    MyStrEnum,
+    SubModel1,
+)
 from mountaineer.client_builder.build_schemas import (
     OpenAPISchema,
     OpenAPIToTypescriptSchemaConverter,
 )
-from mountaineer.client_builder.openapi import OpenAPIProperty, OpenAPISchemaType
-from mountaineer.compat import StrEnum
+from mountaineer.client_builder.openapi import (
+    OpenAPIProperty,
+    OpenAPISchemaType,
+)
 from mountaineer.logging import LOGGER
 
 T = TypeVar("T")
-
-
-class SubModel1(BaseModel):
-    sub_a: str
-
-
-class SubModel2(BaseModel):
-    sub_b: int
-
-
-class MyStrEnum(StrEnum):
-    VALUE_1 = "value_1"
-    VALUE_2 = "value_2"
-
-
-class MyIntEnum(IntEnum):
-    VALUE_1 = 1
-    VALUE_2 = 2
-
-
-class MyEnum(Enum):
-    VALUE_1 = "value_1"
-    VALUE_2 = 5
-
-
-class MyModel(BaseModel):
-    a: str = Field(description="The a field")
-    b: int
-    c: SubModel1
-    d: list[SubModel1]
-    both_sub: list[SubModel1 | SubModel2 | None]
-    sub_map: dict[str, SubModel1 | None]
 
 
 def test_basic_interface():
@@ -56,47 +32,6 @@ def test_basic_interface():
 
     assert set(result.keys()) == {"MyModel", "SubModel1", "SubModel2", "Sub Map"}
     assert "interface MyModel {" in result["MyModel"]
-
-
-def test_model_gathering_pydantic_models():
-    """
-    Ensure we are able to traverse a single model definition for all the
-    sub-models it uses.
-
-    """
-    schema = OpenAPISchema(**MyModel.model_json_schema())
-
-    converter = OpenAPIToTypescriptSchemaConverter()
-    all_models = converter.gather_all_models(schema)
-
-    # OpenAPI makes an object for the dictionary as well
-    assert len(all_models) == 4
-    assert {m.title for m in all_models} == {
-        "SubModel1",
-        "SubModel2",
-        "MyModel",
-        "Sub Map",
-    }
-
-
-def test_model_gathering_enum_models():
-    class EnumModel(BaseModel):
-        a: MyStrEnum
-        b: MyIntEnum
-        c: MyEnum
-
-    schema = OpenAPISchema(**EnumModel.model_json_schema())
-
-    converter = OpenAPIToTypescriptSchemaConverter()
-    all_models = converter.gather_all_models(schema)
-
-    assert len(all_models) == 4
-    assert {m.title for m in all_models} == {
-        "EnumModel",
-        "MyStrEnum",
-        "MyIntEnum",
-        "MyEnum",
-    }
 
 
 @pytest.mark.parametrize(
@@ -158,7 +93,6 @@ def test_python_to_typescript_types(
     interface_definition = converter.convert_schema_to_interface(
         schema,
         base=schema,
-        defaults_are_required=False,
         all_fields_required=False,
     )
 
@@ -251,30 +185,29 @@ def test_format_generics():
     assert js_interfaces == {"MyModel[str]": "interface MyModelStr {\n  a: string;\n}"}
 
 
-@pytest.mark.parametrize("defaults_are_required", [True, False])
-def test_defaults_are_required(defaults_are_required: bool):
-    class MyModelExplicitField(BaseModel):
-        a: str = Field(default="default value")
+def test_nested_all_fields_required():
+    class ThirdNestedModel(BaseModel):
+        c: str
 
-    class MyModelImplicitField(BaseModel):
-        a: str = "default value"
+    class MyModelNestedModel(BaseModel):
+        b: list[ThirdNestedModel] = []
+
+    class MyModelMainModel(BaseModel):
+        a: list[MyModelNestedModel]
 
     # Both behaviors should be the same
-    for base_model in [MyModelExplicitField, MyModelImplicitField]:
-        converter = OpenAPIToTypescriptSchemaConverter()
+    converter = OpenAPIToTypescriptSchemaConverter()
 
-        json_schema = OpenAPISchema(**converter.get_model_json_schema(base_model))
-        js_interfaces = converter.convert_schema_to_typescript(
-            json_schema, defaults_are_required=defaults_are_required
-        )
-        model_name = base_model.__name__
+    json_schema = OpenAPISchema(**converter.get_model_json_schema(MyModelMainModel))
+    js_interfaces = converter.convert_schema_to_typescript(
+        json_schema, all_fields_required=True
+    )
 
-        if defaults_are_required:
-            assert "a: string" in js_interfaces[model_name]
-            assert "a?: string" not in js_interfaces[model_name]
-        else:
-            assert "a: string" not in js_interfaces[model_name]
-            assert "a?: string" in js_interfaces[model_name]
+    assert "a: Array<MyModelNestedModel>" in js_interfaces["MyModelMainModel"]
+    assert "a?: Array<MyModelNestedModel>" not in js_interfaces["MyModelMainModel"]
+
+    assert "b: Array<ThirdNestedModel>" in js_interfaces["MyModelNestedModel"]
+    assert "b?: Array<ThirdNestedModel>" not in js_interfaces["MyModelNestedModel"]
 
 
 @pytest.mark.parametrize(
@@ -297,24 +230,3 @@ def test_get_typescript_interface_name(model_title: str, expected_interface: str
         )
         == expected_interface
     )
-
-
-class ChildNode(BaseModel):
-    siblings: list["ChildNode"]
-
-
-def test_gather_all_models_recursive():
-    """
-    Ensure that schemas can be specified recursively for nested elements.
-
-    """
-    converter = OpenAPIToTypescriptSchemaConverter()
-    openapi_spec = OpenAPISchema(**converter.get_model_json_schema(ChildNode))
-
-    found_models = converter.gather_all_models(openapi_spec)
-    assert len(found_models) == 1
-
-    js_interfaces = converter.convert_schema_to_typescript(openapi_spec)
-    assert js_interfaces == {
-        "ChildNode": "interface ChildNode {\n  siblings: Array<ChildNode>;\n}"
-    }

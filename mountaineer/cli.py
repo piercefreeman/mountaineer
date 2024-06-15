@@ -262,6 +262,8 @@ class IsolatedEnvProcess(Process):
         if self.rebuild_thread is not None:
             self.rebuild_thread.join()
 
+        self.kill()
+
         # Try to give the process time to shut down gracefully
         while self.is_alive() and hard_timeout > 0:
             self.join(1)
@@ -274,7 +276,7 @@ class IsolatedEnvProcess(Process):
 
         # As a last resort we send a hard termination signal
         if self.is_alive():
-            self.terminate()
+            self.kill()
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
         # If we're receiving a GET request, show the exception. Otherwise fall back

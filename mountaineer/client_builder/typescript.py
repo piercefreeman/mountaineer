@@ -136,6 +136,10 @@ def get_types_from_parameters(
         for one_of in schema.anyOf:
             yield from get_types_from_parameters(one_of, base_openapi_spec)
 
+    if schema.allOf:
+        for all_of in schema.allOf:
+            yield from get_types_from_parameters(all_of, base_openapi_spec)
+
     # If we're able to resolve the ref, do so. Some clients call this to get a limited
     # scope of known parameters, so this value is optional.
     if schema.ref:

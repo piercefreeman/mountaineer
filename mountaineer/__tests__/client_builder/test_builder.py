@@ -4,11 +4,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
+from pydantic import BaseModel
 
+from mountaineer.actions import sideeffect
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.render import RenderBase
 
 
 class ExampleHomeController(ControllerBase):
@@ -218,3 +221,53 @@ def test_validate_unique_paths_conflicting_layout(
         ValueError, match="duplicate view paths under controller management"
     ):
         builder.validate_unique_paths()
+
+
+def test_generate_controller_schema_sideeffect_required_attributes(
+    builder: ClientBuilder,
+):
+    """
+    Ensure that we treat @sideeffect and @passthrough return models like
+    the render model, where we make all their attributes required since
+    we are guaranteed that the push payload from the server will fully
+    hydrate the default values.
+
+    """
+
+    class DataBundle(BaseModel):
+        a: int
+        b: str
+
+    class SimpleRender(RenderBase):
+        a: list[DataBundle] = []
+
+    class SimpleReturn(BaseModel):
+        b: list[DataBundle] = []
+
+    class SideEffectController(ControllerBase):
+        url = "/sideeffect/"
+        view_path = "/sideeffect/page.tsx"
+
+        def render(self) -> SimpleRender:
+            return SimpleRender(a=[DataBundle(a=1, b="1")])
+
+        @sideeffect
+        def my_sideeffect(self) -> SimpleReturn:
+            return SimpleReturn(b=[DataBundle(a=2, b="2")])
+
+    controller = SideEffectController()
+    builder.app.register(controller)
+
+    schemas = builder._generate_controller_schema(controller)
+
+    assert set(schemas.keys()) == {
+        "SimpleRender",
+        "DataBundle",
+        "MySideeffectResponse",
+        "MySideeffectResponseSideEffect",
+        "MySideeffectResponsePassthrough",
+    }
+
+    assert "a: Array<DataBundle>" in schemas["SimpleRender"]
+    assert "a: Array<DataBundle>" in schemas["MySideeffectResponseSideEffect"]
+    assert "b: Array<DataBundle>" in schemas["MySideeffectResponsePassthrough"]

@@ -12,6 +12,7 @@ from mountaineer.client_builder.openapi import (
     OpenAPIProperty,
     OpenAPISchema,
     OpenAPISchemaType,
+    gather_all_models,
     resolve_ref,
 )
 from mountaineer.client_builder.typescript import (
@@ -59,79 +60,31 @@ class OpenAPIToTypescriptSchemaConverter:
     def convert_schema_to_typescript(
         self,
         parsed_spec: OpenAPISchema,
-        defaults_are_required: bool = False,
         all_fields_required: bool = False,
     ):
         # Fetch all the dependent models
-        all_models = list(self.gather_all_models(parsed_spec))
+        all_models = list(gather_all_models(parsed_spec))
 
         return {
             model.title: self.convert_schema_to_interface(
                 model,
                 base=parsed_spec,
-                defaults_are_required=defaults_are_required,
                 all_fields_required=all_fields_required,
             )
             for model in all_models
             if model.title and model.title.strip()
         }
 
-    def gather_all_models(self, base: OpenAPISchema):
-        """
-        Return all unique models that are used in the given OpenAPI schema. This allows clients
-        to build up all of the dependencies that the core model needs.
-
-        :param base: The core OpenAPI Schema
-        """
-
-        seen_models: set[str] = set()
-
-        def walk_models(
-            property: OpenAPIProperty | EmptyAPIProperty,
-        ) -> Iterator[OpenAPIProperty]:
-            if isinstance(property, EmptyAPIProperty):
-                return
-
-            if property.title in seen_models:
-                # We've already parsed this model
-                return
-            elif property.title:
-                seen_models.add(property.title)
-
-            if (
-                property.variable_type == OpenAPISchemaType.OBJECT
-                or property.enum is not None
-            ):
-                yield property
-            if property.ref is not None:
-                yield from walk_models(resolve_ref(property.ref, base))
-            if property.items:
-                yield from walk_models(property.items)
-            if property.anyOf:
-                for prop in property.anyOf:
-                    yield from walk_models(prop)
-            if property.allOf:
-                for prop in property.allOf:
-                    yield from walk_models(prop)
-            for prop in property.properties.values():
-                yield from walk_models(prop)
-            if property.additionalProperties:
-                yield from walk_models(property.additionalProperties)
-
-        return list(set(walk_models(base)))
-
     def convert_schema_to_interface(
         self,
         model: OpenAPIProperty,
         base: BaseModel,
-        defaults_are_required: bool,
         all_fields_required: bool,
     ):
         if model.variable_type == OpenAPISchemaType.OBJECT:
             return self._convert_object_to_interface(
                 model,
                 base,
-                defaults_are_required=defaults_are_required,
                 all_fields_required=all_fields_required,
             )
         elif model.enum is not None:
@@ -143,7 +96,6 @@ class OpenAPIToTypescriptSchemaConverter:
         self,
         model: OpenAPIProperty,
         base: BaseModel,
-        defaults_are_required: bool,
         all_fields_required: bool,
     ):
         fields = []
@@ -194,11 +146,7 @@ class OpenAPIToTypescriptSchemaConverter:
                 LOGGER.warning(f"Unknown property type: {prop}")
 
         for prop_name, prop_details in model.properties.items():
-            is_required = (
-                (prop_name in model.required)
-                or (defaults_are_required and prop_details.default is not None)
-                or all_fields_required
-            )
+            is_required = (prop_name in model.required) or all_fields_required
 
             # Sort types for determinism in tests and built code
             ts_type = " | ".join(sorted(set(walk_array_types(prop_details))))
