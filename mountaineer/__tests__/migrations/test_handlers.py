@@ -68,16 +68,21 @@ def test_sa_foreign_key(
         (
             DBConstraint(
                 table_name="examplemodel",
-                constraint_name=explicit_constraint_name
-                if explicit_constraint_name
-                else "examplemodel_user_id_fkey",
+                constraint_name=(
+                    explicit_constraint_name
+                    if explicit_constraint_name
+                    else "examplemodel_user_id_fkey"
+                ),
                 columns=frozenset({"user_id"}),
                 constraint_type=ConstraintType.FOREIGN_KEY,
                 foreign_key_constraint=ForeignKeyConstraint(
                     target_table="user", target_columns=frozenset({"id"})
                 ),
             ),
-            [DBTable(table_name="examplemodel")],
+            [
+                DBTable(table_name="examplemodel"),
+                DBColumnPointer(table_name="examplemodel", column_name="user_id"),
+            ],
         ),
         (
             DBColumn(

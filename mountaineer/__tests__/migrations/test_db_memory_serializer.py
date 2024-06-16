@@ -213,3 +213,119 @@ async def test_diff_migration():
             },
         ),
     ]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_enum_migration():
+    """
+    Test that the shared reference to an enum across multiple tables results in only
+    one migration action to define the type.
+
+    """
+
+    class EnumValues(Enum):
+        A = "A"
+        B = "B"
+
+    class Model1(SQLModel):
+        id: int = Field(primary_key=True)
+        value: EnumValues
+
+    class Model2(SQLModel):
+        id: int = Field(primary_key=True)
+        value: EnumValues
+
+    migrator = DatabaseMemorySerializer()
+
+    db_objects = list(migrator.delegate([Model1, Model2], context=None))
+    next_ordering = migrator.order_db_objects(db_objects)
+    print("NEXT ORDERING", next_ordering)
+
+    actor = DatabaseActions()
+    actions = await migrator.build_actions(
+        actor, [], {}, [obj for obj, _ in db_objects], next_ordering
+    )
+
+    assert actions == [
+        DryRunComment(text="\nNEW TABLE: model1\n"),
+        DryRunAction(fn=actor.add_table, kwargs={"table_name": "model1"}),
+        DryRunComment(text="\nNEW TABLE: model2\n"),
+        DryRunAction(fn=actor.add_table, kwargs={"table_name": "model2"}),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "id",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.INTEGER,
+                "table_name": "model1",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null, kwargs={"column_name": "id", "table_name": "model1"}
+        ),
+        DryRunAction(
+            fn=actor.add_type, kwargs={"type_name": "enumvalues", "values": ["A", "B"]}
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "id",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.INTEGER,
+                "table_name": "model2",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null, kwargs={"column_name": "id", "table_name": "model2"}
+        ),
+        DryRunAction(
+            fn=actor.add_constraint,
+            kwargs={
+                "columns": ["id"],
+                "constraint": ConstraintType.PRIMARY_KEY,
+                "constraint_args": None,
+                "constraint_name": "model1_pkey",
+                "table_name": "model1",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "value",
+                "custom_data_type": "enumvalues",
+                "explicit_data_is_list": False,
+                "explicit_data_type": None,
+                "table_name": "model1",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={"column_name": "value", "table_name": "model1"},
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "value",
+                "custom_data_type": "enumvalues",
+                "explicit_data_is_list": False,
+                "explicit_data_type": None,
+                "table_name": "model2",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={"column_name": "value", "table_name": "model2"},
+        ),
+        DryRunAction(
+            fn=actor.add_constraint,
+            kwargs={
+                "columns": ["id"],
+                "constraint": ConstraintType.PRIMARY_KEY,
+                "constraint_args": None,
+                "constraint_name": "model2_pkey",
+                "table_name": "model2",
+            },
+        ),
+    ]

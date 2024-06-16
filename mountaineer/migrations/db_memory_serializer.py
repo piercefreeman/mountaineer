@@ -106,15 +106,23 @@ class DatabaseMemorySerializer:
                 context=context if context is not None else DelegateContext(),
             )
         ):
-            yield result, dependencies + (dependent_on or [])
+            # Sort is optional for our DAG ordering, but useful for test determinism
+            yield (
+                result,
+                sorted(
+                    set(dependencies) | set(dependent_on or []),
+                    key=lambda x: x.representation(),
+                ),
+            )
 
     def order_db_objects(
         self,
         db_objects: Sequence[tuple[DBObject, Sequence[DBObject | DBObjectPointer]]],
     ):
         """
-        Resolve the order that the database objects should be created
-        or modified.
+        Resolve the order that the database objects should be created or modified
+        by normalizing pointers/full objects and performing a sort of their defined
+        DAG dependencies in the migration graph.
 
         """
         # First, go through and create a representative object for each of
@@ -136,6 +144,7 @@ class DatabaseMemorySerializer:
             else:
                 db_objects_by_name[db_object.representation()] = db_object
 
+        print("BY NAME", db_objects_by_name)
         # Make sure all the pointers can be resolved by full objects
         # Otherwise we want a verbose error that gives more context
         for _, dependencies in db_objects:
@@ -153,6 +162,8 @@ class DatabaseMemorySerializer:
             ]
             for obj, dependencies in db_objects
         }
+
+        print("EDGES", graph_edges)
 
         # Construct the directed acyclic graph
         ts = TopologicalSorter(graph_edges)
@@ -191,16 +202,22 @@ class DatabaseMemorySerializer:
                     f"Ordering dictionary keys must be the same as the objects in the list: {unique_keys}"
                 )
 
-        # Sort the objects by the order that they should be created in
+        # Sort the objects by the order that they should be created in. Only create one object
+        # for each representation value, in case we were passed duplicate objects.
         previous = sorted(
-            previous, key=lambda obj: previous_ordering_by_name[obj.representation()]
+            previous_by_name.values(),
+            key=lambda obj: previous_ordering_by_name[obj.representation()],
         )
-        next = sorted(next, key=lambda obj: next_ordering_by_name[obj.representation()])
+        next = sorted(
+            next_by_name.values(),
+            key=lambda obj: next_ordering_by_name[obj.representation()],
+        )
 
         for next_obj in next:
             previous_obj = previous_by_name.get(next_obj.representation())
 
             if previous_obj is None and next_obj is not None:
+                print("CREATE", next_obj)
                 await next_obj.create(actor)
             elif previous_obj is not None and next_obj is not None:
                 # Only migrate if they're actually different
