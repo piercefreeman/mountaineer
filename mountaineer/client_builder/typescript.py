@@ -5,11 +5,11 @@ Python definitions.
 """
 from typing import Any
 
-from pydantic import BaseModel
-
 from mountaineer.client_builder.openapi import (
     EmptyAPIProperty,
+    OpenAPIDefinition,
     OpenAPIProperty,
+    OpenAPISchema,
     OpenAPISchemaType,
     URLParameterDefinition,
     resolve_ref,
@@ -90,7 +90,8 @@ def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType):
 
 
 def get_types_from_parameters(
-    schema: OpenAPIProperty | EmptyAPIProperty, base_openapi_spec: BaseModel | None
+    schema: OpenAPIProperty | EmptyAPIProperty,
+    base_openapi_spec: OpenAPISchema | OpenAPIDefinition | None,
 ):
     """
     Handle potentially complex types from the parameter schema, like the case
@@ -153,7 +154,8 @@ def get_types_from_parameters(
 
 
 def get_typehint_for_parameter(
-    parameter: URLParameterDefinition, base: BaseModel | None = None
+    parameter: URLParameterDefinition,
+    base: OpenAPISchema | OpenAPIDefinition | None = None,
 ):
     """
     Get the typehint for a parameter, which may be a single type or a union of types.

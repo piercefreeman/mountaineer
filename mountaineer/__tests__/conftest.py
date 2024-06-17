@@ -16,7 +16,8 @@ def ignore_httpx_deprecation_warnings():
 def ignore_memory_object_resource_warnings():
     # @pierce - Fix a warning exposed in test_build_exception_on_get
     # from one of our underlying libraries
-    filterwarnings("ignore", category=ResourceWarning, module="anyio.*")
+    # filterwarnings("ignore", category=ResourceWarning, module="anyio.*")
+    filterwarnings("ignore", category=ResourceWarning)
 
 
 @pytest.fixture(autouse=True)

@@ -27,7 +27,7 @@ def test_gather_all_models_recursive():
     converter = OpenAPIToTypescriptSchemaConverter()
     openapi_spec = OpenAPISchema(**converter.get_model_json_schema(ChildNode))
 
-    found_models = gather_all_models(openapi_spec.defs)
+    found_models = gather_all_models(openapi_spec)
     assert len(found_models) == 1
 
     js_interfaces = converter.convert_schema_to_typescript(openapi_spec)
@@ -44,7 +44,7 @@ def test_model_gathering_pydantic_models():
     """
     schema = OpenAPISchema(**MyModel.model_json_schema())
 
-    all_models = gather_all_models(schema.defs)
+    all_models = gather_all_models(schema)
 
     # OpenAPI makes an object for the dictionary as well
     assert len(all_models) == 4
@@ -64,7 +64,7 @@ def test_model_gathering_enum_models():
 
     schema = OpenAPISchema(**EnumModel.model_json_schema())
 
-    all_models = gather_all_models(schema.defs)
+    all_models = gather_all_models(schema)
 
     assert len(all_models) == 4
     assert {m.title for m in all_models} == {

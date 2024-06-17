@@ -9,6 +9,7 @@ from pydantic import BaseModel, create_model
 from mountaineer.annotation_helpers import yield_all_subtypes
 from mountaineer.client_builder.openapi import (
     EmptyAPIProperty,
+    OpenAPIDefinition,
     OpenAPIProperty,
     OpenAPISchema,
     OpenAPISchemaType,
@@ -63,7 +64,7 @@ class OpenAPIToTypescriptSchemaConverter:
         all_fields_required: bool = False,
     ):
         # Fetch all the dependent models
-        all_models = list(gather_all_models(parsed_spec.defs))
+        all_models = list(gather_all_models(parsed_spec))
 
         return {
             model.title: self.convert_schema_to_interface(
@@ -78,7 +79,7 @@ class OpenAPIToTypescriptSchemaConverter:
     def convert_schema_to_interface(
         self,
         model: OpenAPIProperty,
-        base: BaseModel,
+        base: OpenAPISchema | OpenAPIDefinition,
         all_fields_required: bool,
     ):
         if model.variable_type == OpenAPISchemaType.OBJECT:
@@ -95,7 +96,7 @@ class OpenAPIToTypescriptSchemaConverter:
     def _convert_object_to_interface(
         self,
         model: OpenAPIProperty,
-        base: BaseModel,
+        base: OpenAPISchema | OpenAPIDefinition,
         all_fields_required: bool,
     ):
         fields = []

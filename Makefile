@@ -33,7 +33,7 @@ lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint
 test: test-lib test-create-mountaineer-app test-scripts
 
 # Integration testing target
-test-integrations: test-create-mountaineer-app-integrations
+test-integrations: test-lib-integrations test-create-mountaineer-app-integrations
 
 # Install all sub-project dependencies with poetry
 install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-scripts
@@ -89,6 +89,8 @@ test-lib:
 	$(call test-common,$(LIB_DIR),$(LIB_NAME))
 	(cd $(LIB_DIR) && docker-compose -f docker-compose.test.yml down)
 	$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
+test-lib-integrations:
+	$(call test-common-integrations,$(LIB_DIR),$(LIB_NAME))
 test-create-mountaineer-app:
 	$(call test-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
 test-create-mountaineer-app-integrations:

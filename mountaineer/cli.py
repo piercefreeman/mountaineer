@@ -1,4 +1,5 @@
 import socket
+from contextlib import redirect_stdout
 from dataclasses import dataclass
 from importlib import import_module
 from importlib.metadata import distributions
@@ -91,8 +92,7 @@ class IsolatedEnvProcess(Process):
             # capturing the stdout of our logging
             ERROR_CONSOLE.status("[bold blue]Loading app...", spinner="dots"),
             StringIO() as buf,
-            # TODO: RESTORE
-            # redirect_stdout(buf),
+            redirect_stdout(buf),
         ):
             start = monotonic_ns()
             app_controller = import_from_string(self.build_config.webcontroller)

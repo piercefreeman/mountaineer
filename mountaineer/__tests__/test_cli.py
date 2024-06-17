@@ -219,6 +219,7 @@ async def check_server_bound(port: int, timeout=8):
     return False
 
 
+@pytest.mark.integration_tests
 @pytest.mark.asyncio
 async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
     # Ensure that there is no existing webapp running
@@ -277,3 +278,4 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
     finally:
         # Terminate the processes after test
         server_process.kill()
+        server_process.wait()

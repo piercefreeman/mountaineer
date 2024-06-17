@@ -188,7 +188,7 @@ class ClientBuilder:
                     content_definition = action.requestBody.content_schema
                     if content_definition.schema_ref.ref:
                         all_models = gather_all_models(
-                            action_base.components.schemas,
+                            action_base,
                             resolve_ref(content_definition.schema_ref.ref, action_base),
                         )
                         for model in all_models:
@@ -200,7 +200,7 @@ class ClientBuilder:
                     content_definition = response.content_schema
                     if content_definition.schema_ref.ref:
                         all_models = gather_all_models(
-                            action_base.components.schemas,
+                            action_base,
                             resolve_ref(content_definition.schema_ref.ref, action_base),
                         )
                         for model in all_models:

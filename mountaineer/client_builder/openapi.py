@@ -333,7 +333,7 @@ class OpenAPIDefinition(BaseModel):
 
 
 def gather_all_models(
-    base: dict[str, OpenAPIProperty],
+    base: OpenAPISchema | OpenAPIDefinition,
     limit_schema: OpenAPIProperty | None = None,
 ):
     """
@@ -379,22 +379,29 @@ def gather_all_models(
 
     if limit_schema:
         return list(set(walk_models(limit_schema)))
+    elif isinstance(base, OpenAPIProperty):
+        # We can walk the property directly
+        return list(set(walk_models(base)))
+    elif isinstance(base, OpenAPIDefinition):
+        return list(
+            {
+                model
+                for endpoint in base.defs.values()  # type: ignore
+                for model in gather_all_models(endpoint)
+            }
+        )
+    else:
+        raise ValueError(f"Invalid base type for gather_all_models: {base}")
 
-    return list(
-        {model for property in base.values() for model in walk_models(property)}
-    )
 
-
-def resolve_ref(
-    ref: str, base: dict[str, BaseModel] | dict[str, OpenAPIProperty] | BaseModel
-) -> OpenAPIProperty:
+def resolve_ref(ref: str, base: OpenAPISchema | OpenAPIDefinition) -> OpenAPIProperty:
     """
     Resolve a $ref that points to a propery-compliant schema in the same document. If this
     ref points somewhere else in the document (that is valid but not a data model) than we
     raise a ValueError.
 
     """
-    current_obj = base
+    current_obj: BaseModel = base
     for part in ref.split("/"):
         if part == "#":
             current_obj = base
@@ -403,7 +410,7 @@ def resolve_ref(
                 current_obj = get_value_by_alias(current_obj, part)
             except AttributeError as e:
                 raise AttributeError(
-                    f"Invalid $ref, couldn't resolve path: {ref}"
+                    f"Invalid $ref, couldn't resolve path: {ref} ({part})"
                 ) from e
     if not isinstance(current_obj, OpenAPIProperty):
         raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")
