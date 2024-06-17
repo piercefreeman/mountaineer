@@ -1,4 +1,6 @@
 import asyncio
+import os
+import signal
 from os import environ
 from pathlib import Path
 from random import uniform
@@ -211,12 +213,11 @@ async def check_server_bound(port: int, timeout=8):
         while time() - start_time < timeout:
             try:
                 response = await client.get(url)
-                if response.status_code == 200:
-                    return True
+                return True, response.status_code
             except httpx.RequestError:
                 pass
             await asyncio.sleep(0.1)
-    return False
+    return False, -1
 
 
 @pytest.mark.integration_tests
@@ -273,9 +274,11 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         print(  # noqa: T201
             "Done with changes, checking that server will resolve if not immediately ready..."
         )
-        assert await check_server_bound(port), "Server is not bound to localhost:3000"
+        is_bound, status_code = await check_server_bound(port)
+        assert is_bound, "Server is not bound to localhost:3000"
+        assert status_code == 200, "Server is not returning 200 status code"
         print("Server is bound to expected port")  # noqa: T201
     finally:
         # Terminate the processes after test
-        server_process.kill()
+        os.kill(server_process.pid, signal.SIGINT)
         server_process.wait()
