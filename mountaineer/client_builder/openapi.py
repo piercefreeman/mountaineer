@@ -332,12 +332,15 @@ class OpenAPIDefinition(BaseModel):
 #
 
 
-def gather_all_models(base: OpenAPISchema, limit_schema: OpenAPIProperty | None = None):
+def gather_all_models(
+    base: dict[str, OpenAPIProperty],
+    limit_schema: OpenAPIProperty | None = None,
+):
     """
     Return all unique models that are used in the given OpenAPI schema. This allows clients
     to build up all of the dependencies that the core model needs.
 
-    :param base: The core OpenAPI Schema
+    :param base: The core OpenAPI Schema. All ref #/ are relative to this schema.
     """
 
     seen_models: set[str] = set()
@@ -374,10 +377,17 @@ def gather_all_models(base: OpenAPISchema, limit_schema: OpenAPIProperty | None 
         if property.additionalProperties:
             yield from walk_models(property.additionalProperties)
 
-    return list(set(walk_models(limit_schema or base)))
+    if limit_schema:
+        return list(set(walk_models(limit_schema)))
+
+    return list(
+        {model for property in base.values() for model in walk_models(property)}
+    )
 
 
-def resolve_ref(ref: str, base: BaseModel) -> OpenAPIProperty:
+def resolve_ref(
+    ref: str, base: dict[str, BaseModel] | dict[str, OpenAPIProperty] | BaseModel
+) -> OpenAPIProperty:
     """
     Resolve a $ref that points to a propery-compliant schema in the same document. If this
     ref points somewhere else in the document (that is valid but not a data model) than we

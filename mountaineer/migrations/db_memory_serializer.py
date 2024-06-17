@@ -144,7 +144,6 @@ class DatabaseMemorySerializer:
             else:
                 db_objects_by_name[db_object.representation()] = db_object
 
-        print("BY NAME", db_objects_by_name)
         # Make sure all the pointers can be resolved by full objects
         # Otherwise we want a verbose error that gives more context
         for _, dependencies in db_objects:
@@ -162,8 +161,6 @@ class DatabaseMemorySerializer:
             ]
             for obj, dependencies in db_objects
         }
-
-        print("EDGES", graph_edges)
 
         # Construct the directed acyclic graph
         ts = TopologicalSorter(graph_edges)
@@ -217,7 +214,6 @@ class DatabaseMemorySerializer:
             previous_obj = previous_by_name.get(next_obj.representation())
 
             if previous_obj is None and next_obj is not None:
-                print("CREATE", next_obj)
                 await next_obj.create(actor)
             elif previous_obj is not None and next_obj is not None:
                 # Only migrate if they're actually different

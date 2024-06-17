@@ -36,6 +36,8 @@ httpx = "^0.27.0"
 types-psycopg2 = "^2.9.21.20240218"
 pyright = "^1.1.352"
 tqdm = "^4.66.2"
+toml = "^0.10.2"
+types-toml = "^0.10.8.20240310"
 
 [build-system]
 requires = ["maturin>=1.3.0"]
@@ -47,10 +49,17 @@ warn_unused_configs = true
 check_untyped_defs = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+module = "ci_webapp.*"
+ignore_missing_imports = true
+
 [tool.pydantic-mypy]
 init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
+
+[tool.pyright]
+exclude = ["**/ci_webapp"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

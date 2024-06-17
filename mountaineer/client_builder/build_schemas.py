@@ -63,7 +63,7 @@ class OpenAPIToTypescriptSchemaConverter:
         all_fields_required: bool = False,
     ):
         # Fetch all the dependent models
-        all_models = list(gather_all_models(parsed_spec))
+        all_models = list(gather_all_models(parsed_spec.defs))
 
         return {
             model.title: self.convert_schema_to_interface(

@@ -49,4 +49,4 @@ else:
             """
             return name.lower()
 
-        __str__ = str.__str__
+        __str__ = str.__str__  # type: ignore

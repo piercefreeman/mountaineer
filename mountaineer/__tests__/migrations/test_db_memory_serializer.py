@@ -239,7 +239,6 @@ async def test_duplicate_enum_migration():
 
     db_objects = list(migrator.delegate([Model1, Model2], context=None))
     next_ordering = migrator.order_db_objects(db_objects)
-    print("NEXT ORDERING", next_ordering)
 
     actor = DatabaseActions()
     actions = await migrator.build_actions(

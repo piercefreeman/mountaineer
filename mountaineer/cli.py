@@ -1,8 +1,5 @@
-import asyncio
 import socket
-from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
-from functools import partial
 from importlib import import_module
 from importlib.metadata import distributions
 from io import StringIO
@@ -14,7 +11,7 @@ from tempfile import mkdtemp
 from threading import Thread
 from time import monotonic_ns, sleep, time
 from traceback import format_exception
-from typing import Any, Callable, MutableMapping
+from typing import Callable
 
 from fastapi import Request
 from rich.traceback import install as rich_traceback_install
@@ -49,7 +46,6 @@ class IsolatedBuildConfig:
 
     # Optional arguments to inherit a global cache from the main process
     build_cache: Path | None = None
-    build_state: MutableMapping[Any, Any] | None = None
 
 
 @dataclass
@@ -71,12 +67,6 @@ class IsolatedEnvProcess(Process):
         build_config: IsolatedBuildConfig,
         runserver_config: IsolatedRunserverConfig | None = None,
     ):
-        """
-        build_state: State that was originally initialized in the main process, before
-        we spawned this worker. This can be used to inherit settings or multiprocessing-safe
-        objects that will stick around for the duration of the process lifecycle inbetween-watchers.
-
-        """
         super().__init__()
 
         self.build_config = build_config
@@ -101,7 +91,8 @@ class IsolatedEnvProcess(Process):
             # capturing the stdout of our logging
             ERROR_CONSOLE.status("[bold blue]Loading app...", spinner="dots"),
             StringIO() as buf,
-            redirect_stdout(buf),
+            # TODO: RESTORE
+            # redirect_stdout(buf),
         ):
             start = monotonic_ns()
             app_controller = import_from_string(self.build_config.webcontroller)
@@ -129,9 +120,6 @@ class IsolatedEnvProcess(Process):
             if self.build_config.build_cache:
                 for builder in app_controller.builders:
                     builder.tmp_dir = self.build_config.build_cache
-            if self.build_config.build_state:
-                for builder in app_controller.builders:
-                    builder.global_state = self.build_config.build_state
 
             self.run_build(app_controller)
 
@@ -262,7 +250,7 @@ class IsolatedEnvProcess(Process):
         if self.rebuild_thread is not None:
             self.rebuild_thread.join()
 
-        self.kill()
+        self.terminate()
 
         # Try to give the process time to shut down gracefully
         while self.is_alive() and hard_timeout > 0:
@@ -319,9 +307,7 @@ def handle_watch(
     # different builds
     global_build_cache = Path(mkdtemp())
 
-    def update_build(
-        metadata: CallbackMetadata, global_state: MutableMapping[Any, Any]
-    ):
+    def update_build(metadata: CallbackMetadata):
         nonlocal current_process
 
         # JS-Only build needed
@@ -338,18 +324,16 @@ def handle_watch(
             build_config=IsolatedBuildConfig(
                 webcontroller=webcontroller,
                 build_cache=global_build_cache,
-                build_state=global_state,
             ),
         )
         current_process.start()
 
-    with init_global_state(webcontroller) as global_state:
-        watchdog = build_common_watchdog(
-            package,
-            partial(update_build, global_state=global_state),
-            subscribe_to_mountaineer=subscribe_to_mountaineer,
-        )
-        watchdog.start_watching()
+    watchdog = build_common_watchdog(
+        package,
+        update_build,
+        subscribe_to_mountaineer=subscribe_to_mountaineer,
+    )
+    watchdog.start_watching()
 
 
 def handle_runserver(
@@ -384,7 +368,7 @@ def handle_runserver(
     watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
 
-    def update_build(metadata: CallbackMetadata, global_state: dict[Any, Any]):
+    def update_build(metadata: CallbackMetadata):
         nonlocal current_process
 
         # JS-Only build needed
@@ -407,7 +391,6 @@ def handle_runserver(
                 webcontroller=webcontroller,
                 notification_channel=watcher_webservice.notification_queue,
                 build_cache=global_build_cache,
-                build_state=global_state,
             ),
         )
         current_process.start()
@@ -424,13 +407,12 @@ def handle_runserver(
 
     signal(SIGINT, graceful_shutdown)
 
-    with init_global_state(webcontroller) as global_state:
-        watchdog = build_common_watchdog(
-            package,
-            partial(update_build, global_state=global_state),
-            subscribe_to_mountaineer=subscribe_to_mountaineer,
-        )
-        watchdog.start_watching()
+    watchdog = build_common_watchdog(
+        package,
+        update_build,
+        subscribe_to_mountaineer=subscribe_to_mountaineer,
+    )
+    watchdog.start_watching()
 
 
 def handle_build(
@@ -538,35 +520,3 @@ def build_common_watchdog(
         # We want to generate a build on the first load
         run_on_bootup=True,
     )
-
-
-@contextmanager
-def init_global_state(webcontroller: str):
-    """
-    Initialize global state: signal to each builder that they can
-    set up their own global state before the fork.
-
-    """
-    global_state: dict[Any, Any] = {}
-
-    with (
-        ERROR_CONSOLE.status(
-            "[bold blue]Setting up global state before fork...", spinner="dots"
-        ),
-        StringIO() as buf,
-        redirect_stdout(buf),
-    ):
-        app_controller = import_from_string(webcontroller)
-        LOGGER.debug(f"init_global_state Load app logs: {buf.getvalue()}")
-
-    if not isinstance(app_controller, AppController):
-        raise ValueError(f"Unknown app controller: {app_controller}")
-
-    async def entrypoint():
-        await asyncio.gather(
-            *[builder.init_state(global_state) for builder in app_controller.builders]
-        )
-
-    asyncio.run(entrypoint())
-
-    yield global_state

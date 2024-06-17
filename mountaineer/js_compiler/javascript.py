@@ -150,9 +150,7 @@ class JavascriptBundler(ClientBuilderBase):
                 f"[bold green]📬 Compiled frontend in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
 
-            print("WILL WRITE OUTPUT")
             output_queue.put(CompiledOutput(success=True))
-            print("DID WRITE OUTPUT")
 
     async def start_build(self):
         self.pending_files = []
@@ -232,10 +230,8 @@ class JavascriptBundler(ClientBuilderBase):
             )
 
         # Send the build params to the queue
-        print("SEND TO QUEUE")
         self.global_state["js_bundler_input"].put(build_params)
         output_payload = self.global_state["js_bundler_output"].get()
-        print("DID RECEIVE FROM QUEUE")
 
         if not output_payload.success:
             if output_payload.exception_type == "ValueError":

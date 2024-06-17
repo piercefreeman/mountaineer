@@ -1,14 +1,15 @@
-from click import command
+from click import command, option
 from mountaineer.cli import handle_build, handle_runserver, handle_watch
 
 
 @command()
-def runserver():
+@option("--port", default=5006)
+def runserver(port):
     handle_runserver(
         package="ci_webapp",
         webservice="ci_webapp.main:app",
         webcontroller="ci_webapp.app:controller",
-        port=5006,
+        port=port,
         subscribe_to_mountaineer=True,
     )
 

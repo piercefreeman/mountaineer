@@ -188,7 +188,7 @@ class ClientBuilder:
                     content_definition = action.requestBody.content_schema
                     if content_definition.schema_ref.ref:
                         all_models = gather_all_models(
-                            action_base,
+                            action_base.components.schemas,
                             resolve_ref(content_definition.schema_ref.ref, action_base),
                         )
                         for model in all_models:
@@ -200,7 +200,7 @@ class ClientBuilder:
                     content_definition = response.content_schema
                     if content_definition.schema_ref.ref:
                         all_models = gather_all_models(
-                            action_base,
+                            action_base.components.schemas,
                             resolve_ref(content_definition.schema_ref.ref, action_base),
                         )
                         for model in all_models:
@@ -522,7 +522,6 @@ class ClientBuilder:
         LOGGER.debug(f"Builder tasks took {(monotonic_ns() - start) / 1e9}s")
 
         start = monotonic_ns()
-        print("SHOULD FINISH")
         await gather_with_concurrency(
             [builder.finish_build() for builder in self.app.builders], n=max_concurrency
         )
@@ -578,12 +577,9 @@ class ClientBuilder:
             ssr_dir = self.view_root.get_managed_ssr_dir()
             metadata_dir = self.view_root.get_managed_metadata_dir()
             for clear_dir in [static_dir, ssr_dir, metadata_dir]:
-                print("WILL CLEAR", clear_dir)
                 if clear_dir.exists():
-                    print("- REMOVE TREE")
                     shutil_rmtree(clear_dir)
 
-            print("LIST VALS", list(tmp_static_dir.iterdir()))
             # Final move - shutil requires the destination directory to not exist, otherwise
             # it will place the folder within the given folder. Since we just want a regular
             # rename, we make sure to not create the destination directory

@@ -347,7 +347,7 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
         # they depend on have been added. This must be made explicit here
         # (versus the implicit hierarchy dependencies) in the case of multiple
         # constraints being added on the table level versus the column level
-        common_col_dependencies = [
+        common_col_dependencies: list[DBObject | DBObjectPointer] = [
             DBColumnPointer(
                 table_name=context.current_table,
                 column_name=column_name,
