@@ -9,7 +9,7 @@ readme = "README.md"
 python = "^3.10"
 
 # While in development, link to the local path
-mountaineer = { path = "../", develop = true }
+mountaineer = { path = "../../../../", develop = true }
 
 [tool.poetry.scripts]
 runserver = "ci_webapp.cli:runserver"

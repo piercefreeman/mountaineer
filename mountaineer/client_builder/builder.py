@@ -21,7 +21,12 @@ from mountaineer.client_builder.build_actions import (
 )
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 from mountaineer.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
-from mountaineer.client_builder.openapi import OpenAPIDefinition, OpenAPISchema
+from mountaineer.client_builder.openapi import (
+    OpenAPIDefinition,
+    OpenAPISchema,
+    gather_all_models,
+    resolve_ref,
+)
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
@@ -125,54 +130,7 @@ class ClientBuilder:
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
 
-            action_spec_openapi = self.openapi_action_specs[controller]
-            try:
-                action_base = OpenAPIDefinition(**action_spec_openapi)
-            except ValidationError as e:
-                LOGGER.error(
-                    f"Error parsing {controller} action spec: {action_spec_openapi} {e}"
-                )
-                raise e
-
-            render_spec_openapi = self.openapi_render_specs[controller]
-            render_base = (
-                OpenAPISchema(**render_spec_openapi.spec)
-                if render_spec_openapi.spec
-                else None
-            )
-
-            schemas: dict[str, str] = {}
-
-            # Convert the render model
-            if render_base:
-                for (
-                    schema_name,
-                    component,
-                ) in self.openapi_schema_converter.convert_schema_to_typescript(
-                    render_base,
-                    # Render models are sent server -> client, so we know they'll provide all their
-                    # values in the initial payload
-                    all_fields_required=True,
-                ).items():
-                    schemas[schema_name] = component
-
-            # Convert all the other models defined in sideeffect routes
-            for schema_name, component in action_base.components.schemas.items():
-                schemas[
-                    schema_name
-                ] = self.openapi_schema_converter.convert_schema_to_interface(
-                    component,
-                    base=action_base,
-                    # Don't require client data uploads to have all the fields
-                    # if there's a value specified server side. Note that this will apply
-                    # to both requests/response models right now, so clients might need
-                    # to do additional validation on the response side to confirm that
-                    # the server did send down the default values.
-                    # This is in contrast to the render() where we always know the response
-                    # payloads should be force required.
-                    defaults_are_required=False,
-                    all_fields_required=False,
-                )
+            schemas = self._generate_controller_schema(controller)
 
             # We put in one big models.ts file to enable potentially cyclical dependencies
             managed_code_dir = self.view_root.get_controller_view_path(
@@ -186,6 +144,91 @@ class ClientBuilder:
                     ]
                 )
             )
+
+    def _generate_controller_schema(self, controller: ControllerBase):
+        action_spec_openapi = self.openapi_action_specs[controller]
+
+        try:
+            action_base = OpenAPIDefinition(**action_spec_openapi)
+        except ValidationError as e:
+            LOGGER.error(
+                f"Error parsing {controller} action spec: {action_spec_openapi} {e}"
+            )
+            raise e
+
+        render_spec_openapi = self.openapi_render_specs[controller]
+        render_base = (
+            OpenAPISchema(**render_spec_openapi.spec)
+            if render_spec_openapi.spec
+            else None
+        )
+
+        schemas: dict[str, str] = {}
+
+        # Convert the render model
+        if render_base:
+            for (
+                schema_name,
+                component,
+            ) in self.openapi_schema_converter.convert_schema_to_typescript(
+                render_base,
+                # Render models are sent server -> client, so we know they'll provide all their
+                # values in the initial payload
+                all_fields_required=True,
+            ).items():
+                schemas[schema_name] = component
+
+        # Convert all the other models defined in sideeffect routes
+        # Iterate through all paths and their actions
+        convert_models = defaultdict(set)
+        for path, endpoint in action_base.paths.items():
+            for action in endpoint.actions:
+                # Request bodies support optional types
+                if action.requestBody:
+                    content_definition = action.requestBody.content_schema
+                    if content_definition.schema_ref.ref:
+                        all_models = gather_all_models(
+                            action_base,
+                            resolve_ref(content_definition.schema_ref.ref, action_base),
+                        )
+                        for model in all_models:
+                            convert_models[model].add("request")
+
+                # Response bodies will be fully hydrated from the server and therefore
+                # will contain every value
+                for status_code, response in action.responses.items():
+                    content_definition = response.content_schema
+                    if content_definition.schema_ref.ref:
+                        all_models = gather_all_models(
+                            action_base,
+                            resolve_ref(content_definition.schema_ref.ref, action_base),
+                        )
+                        for model in all_models:
+                            convert_models[model].add("response")
+
+        for model, schema_types in convert_models.items():
+            # If there are any request models, we should make them all optional
+            # We'll have to do this until we have different models for request/response
+            all_fields_required = all(
+                schema_type == "response" for schema_type in schema_types
+            )
+
+            schemas[
+                model.title
+            ] = self.openapi_schema_converter.convert_schema_to_interface(
+                model,
+                base=action_base,
+                # Don't require client data uploads to have all the fields
+                # if there's a value specified server side. Note that this will apply
+                # to both requests/response models right now, so clients might need
+                # to do additional validation on the response side to confirm that
+                # the server did send down the default values.
+                # This is in contrast to the render() where we always know the response
+                # payloads should be force required.
+                all_fields_required=all_fields_required,
+            )
+
+        return schemas
 
     def generate_action_definitions(self):
         """

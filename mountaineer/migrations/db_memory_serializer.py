@@ -106,15 +106,23 @@ class DatabaseMemorySerializer:
                 context=context if context is not None else DelegateContext(),
             )
         ):
-            yield result, dependencies + (dependent_on or [])
+            # Sort is optional for our DAG ordering, but useful for test determinism
+            yield (
+                result,
+                sorted(
+                    set(dependencies) | set(dependent_on or []),
+                    key=lambda x: x.representation(),
+                ),
+            )
 
     def order_db_objects(
         self,
         db_objects: Sequence[tuple[DBObject, Sequence[DBObject | DBObjectPointer]]],
     ):
         """
-        Resolve the order that the database objects should be created
-        or modified.
+        Resolve the order that the database objects should be created or modified
+        by normalizing pointers/full objects and performing a sort of their defined
+        DAG dependencies in the migration graph.
 
         """
         # First, go through and create a representative object for each of
@@ -191,11 +199,16 @@ class DatabaseMemorySerializer:
                     f"Ordering dictionary keys must be the same as the objects in the list: {unique_keys}"
                 )
 
-        # Sort the objects by the order that they should be created in
+        # Sort the objects by the order that they should be created in. Only create one object
+        # for each representation value, in case we were passed duplicate objects.
         previous = sorted(
-            previous, key=lambda obj: previous_ordering_by_name[obj.representation()]
+            previous_by_name.values(),
+            key=lambda obj: previous_ordering_by_name[obj.representation()],
         )
-        next = sorted(next, key=lambda obj: next_ordering_by_name[obj.representation()])
+        next = sorted(
+            next_by_name.values(),
+            key=lambda obj: next_ordering_by_name[obj.representation()],
+        )
 
         for next_obj in next:
             previous_obj = previous_by_name.get(next_obj.representation())

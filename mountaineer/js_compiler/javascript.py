@@ -1,6 +1,7 @@
 import multiprocessing
 from dataclasses import dataclass
 from pathlib import Path
+from queue import Queue
 from threading import Thread
 from time import monotonic_ns
 from typing import Any
@@ -72,10 +73,8 @@ class JavascriptBundler(ClientBuilderBase):
 
         # Launch a thread that will handle our build queue, potentially across
         # multiple subprocesses
-        build_input_queue: multiprocessing.Queue[tuple[Any]] = multiprocessing.Queue()
-        build_output_queue: multiprocessing.Queue[
-            CompiledOutput
-        ] = multiprocessing.Queue()
+        build_input_queue: Queue[tuple[Any]] = Queue()
+        build_output_queue: Queue[CompiledOutput] = Queue()
 
         global_state["js_bundler_input"] = build_input_queue
         global_state["js_bundler_output"] = build_output_queue

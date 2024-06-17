@@ -90,7 +90,11 @@ def benchmark_function(
                 results: list[Any] = []
                 global_start = monotonic_ns()
 
-                while monotonic_ns() - global_start < time_budget_seconds * 1e9:
+                # Run at least one test, but keep running until we hit our time budget
+                while (
+                    monotonic_ns() - global_start < time_budget_seconds * 1e9
+                    or len(results) == 0
+                ):
                     start, end, result = await single_time_test(
                         test_func, *args, **kwargs
                     )

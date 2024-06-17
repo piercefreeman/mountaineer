@@ -1,5 +1,5 @@
 import json
-from typing import Any, Literal, Optional, Union
+from typing import Any, Iterator, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -332,14 +332,76 @@ class OpenAPIDefinition(BaseModel):
 #
 
 
-def resolve_ref(ref: str, base: BaseModel) -> OpenAPIProperty:
+def gather_all_models(
+    base: OpenAPISchema | OpenAPIDefinition,
+    limit_schema: OpenAPIProperty | None = None,
+):
+    """
+    Return all unique models that are used in the given OpenAPI schema. This allows clients
+    to build up all of the dependencies that the core model needs.
+
+    :param base: The core OpenAPI Schema. All ref #/ are relative to this schema.
+    """
+
+    seen_models: set[str] = set()
+
+    def walk_models(
+        property: OpenAPIProperty | EmptyAPIProperty,
+    ) -> Iterator[OpenAPIProperty]:
+        if isinstance(property, EmptyAPIProperty):
+            return
+
+        if property.title in seen_models:
+            # We've already parsed this model
+            return
+        elif property.title:
+            seen_models.add(property.title)
+
+        if (
+            property.variable_type == OpenAPISchemaType.OBJECT
+            or property.enum is not None
+        ):
+            yield property
+        if property.ref is not None:
+            yield from walk_models(resolve_ref(property.ref, base))
+        if property.items:
+            yield from walk_models(property.items)
+        if property.anyOf:
+            for prop in property.anyOf:
+                yield from walk_models(prop)
+        if property.allOf:
+            for prop in property.allOf:
+                yield from walk_models(prop)
+        for prop in property.properties.values():
+            yield from walk_models(prop)
+        if property.additionalProperties:
+            yield from walk_models(property.additionalProperties)
+
+    if limit_schema:
+        return list(set(walk_models(limit_schema)))
+    elif isinstance(base, OpenAPIProperty):
+        # We can walk the property directly
+        return list(set(walk_models(base)))
+    elif isinstance(base, OpenAPIDefinition):
+        return list(
+            {
+                model
+                for endpoint in base.defs.values()  # type: ignore
+                for model in gather_all_models(endpoint)
+            }
+        )
+    else:
+        raise ValueError(f"Invalid base type for gather_all_models: {base}")
+
+
+def resolve_ref(ref: str, base: OpenAPISchema | OpenAPIDefinition) -> OpenAPIProperty:
     """
     Resolve a $ref that points to a propery-compliant schema in the same document. If this
     ref points somewhere else in the document (that is valid but not a data model) than we
     raise a ValueError.
 
     """
-    current_obj = base
+    current_obj: BaseModel = base
     for part in ref.split("/"):
         if part == "#":
             current_obj = base
@@ -348,7 +410,7 @@ def resolve_ref(ref: str, base: BaseModel) -> OpenAPIProperty:
                 current_obj = get_value_by_alias(current_obj, part)
             except AttributeError as e:
                 raise AttributeError(
-                    f"Invalid $ref, couldn't resolve path: {ref}"
+                    f"Invalid $ref, couldn't resolve path: {ref} ({part})"
                 ) from e
     if not isinstance(current_obj, OpenAPIProperty):
         raise ValueError(f"Resolved $ref is not a valid OpenAPIProperty: {ref}")

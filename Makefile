@@ -14,9 +14,6 @@ LIB_NAME := mountaineer
 CREATE_MOUNTAINEER_APP_DIR := create_mountaineer_app
 CREATE_MOUNTAINEER_APP_NAME := create_mountaineer_app
 
-CI_WEBAPP_DIR := ci_webapp
-CI_WEBAPP_NAME := ci_webapp
-
 DOCS_WEBSITE_DIR := docs_website
 DOCS_WEBSITE_NAME := docs_website
 
@@ -27,19 +24,19 @@ SCRIPTS_NAME := scripts
 .PHONY: lint test
 
 # Main lint target
-lint: lint-lib lint-create-mountaineer-app lint-ci-webapp lint-scripts
+lint: lint-lib lint-create-mountaineer-app lint-scripts
 
 # Lint validation target
-lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint-validation-ci-webapp lint-validation-scripts
+lint-validation: lint-validation-lib lint-validation-create-mountaineer-app lint-validation-scripts
 
 # Testing target
 test: test-lib test-create-mountaineer-app test-scripts
 
 # Integration testing target
-test-integrations: test-create-mountaineer-app-integrations
+test-integrations: test-lib-integrations test-create-mountaineer-app-integrations
 
 # Install all sub-project dependencies with poetry
-install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-ci-webapp install-deps-scripts
+install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-scripts
 
 install-deps-lib:
 	@echo "Installing dependencies for $(LIB_DIR)..."
@@ -49,10 +46,6 @@ install-deps-lib:
 install-deps-create-mountaineer-app:
 	@echo "Installing dependencies for $(CREATE_MOUNTAINEER_APP_DIR)..."
 	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && poetry install)
-
-install-deps-ci-webapp:
-	@echo "Installing dependencies for $(CI_WEBAPP_DIR)..."
-	@(cd $(CI_WEBAPP_DIR) && poetry install)
 
 install-deps-docs-website:
 	@echo "Installing dependencies for $(DOCS_WEBSITE_DIR)..."
@@ -69,7 +62,6 @@ clean-poetry-lock:
 	@echo "Cleaning poetry.lock files..."
 	@rm -f $(LIB_DIR)/poetry.lock
 	@rm -f $(CREATE_MOUNTAINEER_APP_DIR)/poetry.lock
-	@rm -f $(CI_WEBAPP_DIR)/poetry.lock
 	@rm -f $(DOCS_WEBSITE_DIR)/poetry.lock
 	@rm -f $(SCRIPTS_DIR)/poetry.lock
 
@@ -78,8 +70,6 @@ lint-lib:
 	$(call lint-common,$(LIB_DIR),$(LIB_NAME))
 lint-create-mountaineer-app:
 	$(call lint-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
-lint-ci-webapp:
-	$(call lint-common,$(CI_WEBAPP_DIR),$(CI_WEBAPP_NAME))
 lint-scripts:
 	$(call lint-common,$(SCRIPTS_DIR),$(SCRIPTS_NAME))
 
@@ -88,8 +78,6 @@ lint-validation-lib:
 	$(call lint-validation-common,$(LIB_DIR),$(LIB_NAME))
 lint-validation-create-mountaineer-app:
 	$(call lint-validation-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
-lint-validation-ci-webapp:
-	$(call lint-validation-common,$(CI_WEBAPP_DIR),$(CI_WEBAPP_NAME))
 lint-validation-scripts:
 	$(call lint-validation-common,$(SCRIPTS_DIR),$(SCRIPTS_NAME))
 
@@ -101,6 +89,8 @@ test-lib:
 	$(call test-common,$(LIB_DIR),$(LIB_NAME))
 	(cd $(LIB_DIR) && docker-compose -f docker-compose.test.yml down)
 	$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
+test-lib-integrations:
+	$(call test-common-integrations,$(LIB_DIR),$(LIB_NAME))
 test-create-mountaineer-app:
 	$(call test-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
 test-create-mountaineer-app-integrations:

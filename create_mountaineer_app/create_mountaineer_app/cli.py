@@ -121,15 +121,15 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         author_email=input_author_email,
         use_poetry=input_use_poetry,
         use_tailwind=input_use_tailwind,
-        editor_config=EditorType(input_editor_config)
-        if input_editor_config != "no"
-        else None,
+        editor_config=(
+            EditorType(input_editor_config) if input_editor_config != "no" else None
+        ),
         project_path=project_path,
         create_stub_files=input_create_stub_files,
         mountaineer_min_version=get_current_version_number(),
-        mountaineer_dev_path=Path(mountaineer_dev_path).resolve()
-        if mountaineer_dev_path
-        else None,
+        mountaineer_dev_path=(
+            Path(mountaineer_dev_path).resolve() if mountaineer_dev_path else None
+        ),
     )
 
     build_project(metadata)

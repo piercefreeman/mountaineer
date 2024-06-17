@@ -343,6 +343,18 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                 f"The constraint handler requires the current table to be passed in: {context}"
             )
 
+        # All constraints can only be added after the columns
+        # they depend on have been added. This must be made explicit here
+        # (versus the implicit hierarchy dependencies) in the case of multiple
+        # constraints being added on the table level versus the column level
+        common_col_dependencies: list[DBObject | DBObjectPointer] = [
+            DBColumnPointer(
+                table_name=context.current_table,
+                column_name=column_name,
+            )
+            for column_name in next.columns
+        ]
+
         if next.primary_key:
             yield (
                 DBConstraint(
@@ -359,7 +371,7 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                         )
                     ),
                 ),
-                [],
+                common_col_dependencies,
             )
         if next.foreign_key:
             target_table, target_column = next.foreign_key.rsplit(".", 1)
@@ -383,7 +395,7 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                         target_columns=frozenset({target_column}),
                     ),
                 ),
-                [],
+                common_col_dependencies,
             )
         if next.unique:
             yield (
@@ -399,7 +411,7 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                         )
                     ),
                 ),
-                [],
+                common_col_dependencies,
             )
         if next.check_expression:
             yield (
@@ -418,7 +430,7 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                         check_condition=next.check_expression,
                     ),
                 ),
-                [],
+                common_col_dependencies,
             )
 
 
