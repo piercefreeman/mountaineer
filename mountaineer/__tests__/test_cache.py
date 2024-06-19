@@ -1,4 +1,5 @@
 import asyncio
+import gc
 from contextlib import contextmanager
 from random import random, seed
 from typing import Any
@@ -116,3 +117,46 @@ def test_get_lock_reuse_lock():
 
     with create_temporary_event_loop(set_running=False) as event_loop:
         event_loop.run_until_complete(get_lock())
+
+
+def test_cleanup_on_loop_gc():
+    async def set_and_get_obj(cache: AsyncLoopObjectCache[Any]):
+        async with cache.get_lock():
+            obj = "Temporary object"
+            cache.set_obj(obj)
+            assert cache.get_obj() == obj
+            return cache
+
+    # Create the first event loop and set an object in the cache
+    with create_temporary_event_loop(set_running=False) as loop1:
+        cache1 = AsyncLoopObjectCache[Any]()
+        loop1.run_until_complete(set_and_get_obj(cache1))
+
+    del loop1
+
+    # Force garbage collection to cleanup the closed event loop
+    gc.collect()
+
+    # Verify that the object associated with the first loop has been cleaned up
+    assert len(cache1.loop_caches) == 0
+    assert len(cache1.loop_locks) == 0
+    assert len(cache1.event_loop_refs) == 0
+
+    # Create a second event loop and set another object in the cache
+    with create_temporary_event_loop(set_running=False) as loop2:
+        cache2 = AsyncLoopObjectCache[Any]()
+        loop2.run_until_complete(set_and_get_obj(cache2))
+
+    # Verify that the object is still present in the cache for the second loop
+    assert len(cache2.loop_caches) == 1
+    assert len(cache2.loop_locks) == 1
+    assert len(cache2.event_loop_refs) == 1
+
+    # Cleanup the second event loop
+    del loop2
+    gc.collect()
+
+    # Verify that the object associated with the second loop has been cleaned up
+    assert len(cache2.loop_caches) == 0
+    assert len(cache2.loop_locks) == 0
+    assert len(cache2.event_loop_refs) == 0
