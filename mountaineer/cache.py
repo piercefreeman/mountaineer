@@ -1,5 +1,6 @@
 import asyncio
 import functools
+import weakref
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from hashlib import sha256
@@ -113,6 +114,7 @@ class AsyncLoopObjectCache(Generic[T]):
     def __init__(self):
         self.loop_caches: dict[int, T] = {}
         self.loop_locks: dict[int, asyncio.Lock] = {}
+        self.event_loop_refs = {}
 
     def get_obj(self) -> T | None:
         loop = asyncio.get_running_loop()
@@ -123,6 +125,9 @@ class AsyncLoopObjectCache(Generic[T]):
     def set_obj(self, obj: T):
         loop = asyncio.get_running_loop()
         self.loop_caches[id(loop)] = obj
+        self.event_loop_refs[id(loop)] = weakref.finalize(
+            loop, self.cleanup_loop, id(loop)
+        )
 
     @asynccontextmanager
     async def get_lock(self):
@@ -134,3 +139,16 @@ class AsyncLoopObjectCache(Generic[T]):
             # when the lock is acquired, in case another async loop task
             # has set the object since this lock started blocking.
             yield self.get_obj()
+
+    def cleanup_loop(self, loop_id: int):
+        """
+        Callback when the event loop is closed / garbage collected. The cache will never be able
+        to be used again for that loop so we should cleanup associated objects.
+
+        """
+        if loop_id in self.loop_caches:
+            del self.loop_caches[loop_id]
+        if loop_id in self.loop_locks:
+            del self.loop_locks[loop_id]
+        if loop_id in self.event_loop_refs:
+            del self.event_loop_refs[loop_id]
