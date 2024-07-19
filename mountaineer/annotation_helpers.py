@@ -39,7 +39,7 @@ def get_value_by_alias(model: BaseModel | dict[str, Any], alias: str):
 
 
 def resolve_forwardrefs(
-    current_type: type,
+    current_type: type | str,
     *,
     _globals: dict[str, Any] | None = None,
     _locals: dict[str, Any] | None = None,
@@ -88,7 +88,7 @@ def yield_all_subtypes(
     # Track the models we've already validated to avoid circular dependencies
     already_validated: set[Type[BaseModel]] = set()
 
-    def resolve_types(current_type: type):
+    def resolve_types(current_type: type | str):
         nonlocal already_validated
 
         # Always echo back the current type to make sure that everything that we've processed

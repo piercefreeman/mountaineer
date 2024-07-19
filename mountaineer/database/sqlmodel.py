@@ -230,6 +230,6 @@ class GenericSQLModelMetaclass(SQLModelMetaclassBase):
 class SQLModel(SQLModelBase, metaclass=GenericSQLModelMetaclass):
     def __init__(self, **data: Any):
         if hasattr(self, "_original_model"):
-            self._original_model(**data)
+            self._original_model(**data)  # type: ignore
         if finish_init.get():
             sqlmodel_init(self=self, data=data)

@@ -9,10 +9,10 @@ import sqlalchemy as sa
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo as PydanticFieldInfo
 from pydantic_core import PydanticUndefinedType
+from sqlalchemy.sql import sqltypes
 from sqlmodel import SQLModel
 from sqlmodel._compat import is_field_noneable
 from sqlmodel.main import FieldInfo as SQLModelFieldInfo
-from sqlmodel.sql import sqltypes
 
 from mountaineer.compat import StrEnum
 from mountaineer.migrations.actions import (
@@ -165,7 +165,7 @@ class TableHandler(HandlerBase[SQLModel]):
         # We need to wrap in a custom class to indicate to the proper handler that it
         # needs to pick up this normal dictionary
         if hasattr(next, "__table_args__"):
-            for constraint in next.__table_args__:
+            for constraint in next.__table_args__:  # type: ignore
                 yield from self.serializer.delegate(
                     constraint,
                     context=context,
@@ -586,7 +586,7 @@ class PrimitiveHandler(HandlerBase[PRIMITIVE_WRAPPER_TYPES]):
 
 
 SQLALCHEMY_PRIMITIVE_TYPES = (
-    sa.UUID | sqltypes.GUID | sa.Float | sa.String | sa.Boolean | sa.Integer | sa.JSON
+    sa.UUID | sqltypes.Uuid | sa.Float | sa.String | sa.Boolean | sa.Integer | sa.JSON
 )
 
 
@@ -600,7 +600,7 @@ class SQLAlchemyPrimitiveHandler(HandlerBase[SQLALCHEMY_PRIMITIVE_TYPES]):
             sa.String: ColumnType.VARCHAR,
             sa.Boolean: ColumnType.BOOLEAN,
             sa.UUID: ColumnType.UUID,
-            sqltypes.GUID: ColumnType.UUID,
+            sqltypes.Uuid: ColumnType.UUID,
             sa.JSON: ColumnType.JSON,
         }
 
