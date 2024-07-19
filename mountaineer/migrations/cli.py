@@ -1,4 +1,5 @@
 from inspect import isclass
+from time import monotonic_ns
 
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,7 +8,9 @@ from sqlmodel import SQLModel
 
 from mountaineer import CoreDependencies
 from mountaineer.config import ConfigBase
+from mountaineer.console import CONSOLE
 from mountaineer.database import DatabaseDependencies
+from mountaineer.database.config import DatabaseConfig
 from mountaineer.dependencies import get_function_dependencies
 from mountaineer.migrations.client_io import fetch_migrations, sort_migrations
 from mountaineer.migrations.db_serializer import DatabaseSerializer
@@ -24,13 +27,20 @@ async def handle_generate(message: str | None = None):
     """
 
     async def generate_migration(
-        config: ConfigBase = Depends(CoreDependencies.get_config_with_type(ConfigBase)),
+        config: DatabaseConfig = Depends(
+            CoreDependencies.get_config_with_type(DatabaseConfig)
+        ),
         db_session: AsyncSession = Depends(DatabaseDependencies.get_db_session),
     ):
+        assert isinstance(config, ConfigBase)
         if not config.PACKAGE:
             raise ValueError(
                 "PACKAGE must be set in the config to generate a new migration."
             )
+
+        CONSOLE.print(
+            f"Reference db: {config.POSTGRES_USER}@{config.POSTGRES_HOST}:{config.POSTGRES_PORT}/{config.POSTGRES_DB}"
+        )
 
         # Locate the migrations directory that belongs to this project
         package_path = resolve_package_path(config.PACKAGE)
@@ -95,9 +105,21 @@ async def handle_generate(message: str | None = None):
             )
 
         migration_file_path.write_text(migration_code)
+        return migration_file_path
+
+    CONSOLE.print("[bold blue]Generating migration to current schema")
+
+    CONSOLE.print(
+        "[grey58]Note that Mountaineer's migration support is well tested but still in beta."
+    )
+    CONSOLE.print(
+        "[grey58]File an issue @ https://github.com/piercefreeman/mountaineer/issues if you encounter any problems."
+    )
 
     async with get_function_dependencies(callable=generate_migration) as values:
-        await generate_migration(**values)
+        migration_file_path = await generate_migration(**values)
+
+    CONSOLE.print(f"[bold green]New migration added: {migration_file_path.name}")
 
 
 async def handle_apply():
@@ -112,6 +134,7 @@ async def handle_apply():
         db_session: AsyncSession = Depends(DatabaseDependencies.get_db_session),
         config: ConfigBase = Depends(CoreDependencies.get_config_with_type(ConfigBase)),
     ):
+        assert isinstance(config, ConfigBase)
         if not config.PACKAGE:
             raise ValueError("PACKAGE must be set in the config to apply migrations.")
 
@@ -128,6 +151,8 @@ async def handle_apply():
         await migrator.init_db()
         current_revision = await migrator.get_active_revision()
 
+        CONSOLE.print(f"Current revision: {current_revision}")
+
         # Find the item in the sequence that has down_revision equal to the current_revision
         # This indicates the next migration to apply
         next_migration_index = None
@@ -143,9 +168,18 @@ async def handle_apply():
 
         # Get the chain after this index, this should indicate the next migration to apply
         migration_chain = migration_revisions[next_migration_index:]
+        CONSOLE.print(f"Applying {len(migration_chain)} migrations...")
 
         for migration in migration_chain:
-            await migration.handle_up()
+            with CONSOLE.status(
+                f"[bold blue]Applying {migration.up_revision}...", spinner="dots"
+            ):
+                start = monotonic_ns()
+                await migration.handle_up()
+
+            CONSOLE.print(
+                f"[bold green]🚀 Applied {migration.up_revision} in {(monotonic_ns() - start) / 1e9:.2f}s"
+            )
 
     async with get_function_dependencies(callable=apply_migration) as values:
         await apply_migration(**values)
@@ -177,6 +211,8 @@ async def handle_rollback():
         await migrator.init_db()
         current_revision = await migrator.get_active_revision()
 
+        CONSOLE.print(f"Current revision: {current_revision}")
+
         # Find the item in the sequence that has down_revision equal to the current_revision
         # This indicates the next migration to apply
         this_migration_index = None
@@ -192,7 +228,17 @@ async def handle_rollback():
 
         # Get the chain after this index, this should indicate the next migration to apply
         this_migration = migration_revisions[this_migration_index]
-        await this_migration.handle_down()
+
+        with CONSOLE.status(
+            f"[bold blue]Rolling back revision {this_migration.up_revision} to {this_migration.down_revision}...",
+            spinner="dots",
+        ):
+            start = monotonic_ns()
+            await this_migration.handle_down()
+
+        CONSOLE.print(
+            f"[bold green]🪃 Rolled back migration to {this_migration.down_revision} in {(monotonic_ns() - start) / 1e9:.2f}s"
+        )
 
     async with get_function_dependencies(callable=apply_migration) as values:
         await apply_migration(**values)
