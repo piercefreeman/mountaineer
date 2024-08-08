@@ -53,6 +53,7 @@ class IsolatedBuildConfig:
 class IsolatedRunserverConfig:
     entrypoint: str
     port: int
+    host: str
     live_reload_port: int
 
 
@@ -131,6 +132,7 @@ class IsolatedEnvProcess(Process):
             thread = UvicornThread(
                 app=app_controller.app,
                 port=self.runserver_config.port,
+                host=self.runserver_config.host,
             )
             thread.start()
             try:
@@ -342,6 +344,7 @@ def handle_runserver(
     webservice: str,
     webcontroller: str,
     port: int,
+    host: str = "127.0.0.1",
     subscribe_to_mountaineer: bool = False,
 ):
     """
@@ -349,6 +352,7 @@ def handle_runserver(
     :param webservice: Ex. "ci_webapp.app:app"
     :param webcontroller: Ex. "ci_webapp.app:controller"
     :param port: Desired port for the webapp while running locally
+    :param host: Desired host for the webapp while running locally
     :param subscribe_to_mountaineer: See `handle_watch` for more details.
 
     """
@@ -365,7 +369,7 @@ def handle_runserver(
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
-    watcher_webservice = WatcherWebservice()
+    watcher_webservice = WatcherWebservice(webservice_host=host)
     watcher_webservice.start()
 
     def update_build(metadata: CallbackMetadata):
@@ -385,6 +389,7 @@ def handle_runserver(
             runserver_config=IsolatedRunserverConfig(
                 entrypoint=webservice,
                 port=port,
+                host=host,
                 live_reload_port=watcher_webservice.port,
             ),
             build_config=IsolatedBuildConfig(
