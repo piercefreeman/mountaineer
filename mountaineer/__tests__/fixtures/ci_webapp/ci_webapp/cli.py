@@ -4,12 +4,14 @@ from mountaineer.cli import handle_build, handle_runserver, handle_watch
 
 @command()
 @option("--port", default=5006)
-def runserver(port):
+@option("--host", default="127.0.0.1", help="Host to run the server on")
+def runserver(port, host):
     handle_runserver(
         package="ci_webapp",
         webservice="ci_webapp.main:app",
         webcontroller="ci_webapp.app:controller",
         port=port,
+        host=host,
         subscribe_to_mountaineer=True,
     )
 

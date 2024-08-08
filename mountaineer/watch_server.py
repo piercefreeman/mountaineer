@@ -20,10 +20,11 @@ class WatcherWebservice:
 
     """
 
-    def __init__(self, webservice_port: int | None = None):
+    def __init__(self, webservice_port: int | None = None, webservice_host: str = "127.0.0.1"):
         self.app = self.build_app()
         self.websockets: list[WebSocket] = []
         self.port = webservice_port or get_free_port()
+        self.host = webservice_host
         self.notification_queue: Queue[bool | None] = Queue()
 
         self.webservice_thread: UvicornThread | None = None
@@ -75,6 +76,7 @@ class WatcherWebservice:
         self.webservice_thread = UvicornThread(
             app=self.app,
             port=self.port,
+            host=self.host,
             log_level="warning",
         )
 

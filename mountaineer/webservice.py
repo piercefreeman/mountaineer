@@ -11,10 +11,11 @@ from mountaineer.console import CONSOLE
 
 
 class UvicornThread(Thread):
-    def __init__(self, *, app: FastAPI, port: int, log_level: str = "info"):
+    def __init__(self, *, app: FastAPI, port: int, host: str, log_level: str = "info"):
         super().__init__(daemon=True)
         self.app = app
         self.port = port
+        self.host = host
         self.log_level = log_level
         self.server: Server | None = None
 
@@ -22,6 +23,7 @@ class UvicornThread(Thread):
         loop = asyncio.new_event_loop()
         config = Config(
             app=self.app,
+            host=self.host,
             port=self.port,
             reload=False,
             access_log=False,

@@ -10,12 +10,14 @@ from {{project_name}}.config import AppConfig
 
 @command()
 @option("--port", default=5006, help="Port to run the server on")
-def runserver(port: int):
+@option("--host", default="127.0.0.1", help="Host to run the server on")
+def runserver(port: int, host: str):
     handle_runserver(
         package="{{project_name}}",
         webservice="{{project_name}}.main:app",
         webcontroller="{{project_name}}.app:controller",
         port=port,
+        host=host,
     )
 
 
