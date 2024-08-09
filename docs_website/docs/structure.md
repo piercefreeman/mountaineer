@@ -6,7 +6,7 @@ For a project called `my_webapp`, you should have something like the following:
 ```
 my_webapp/
 ├── README.md
-├── docker-compose.yml
+├── docker compose.yml
 ├── my_webapp
 │   ├── __init__.py
 │   ├── app.py

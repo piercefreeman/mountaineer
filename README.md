@@ -62,10 +62,10 @@ Every service file is nested under the `my_webapp` root package. Views are defin
 
 ### Development
 
-If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker-compose file for convenience with `create-mountaineer-app`.
+If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker compose file for convenience with `create-mountaineer-app`.
 
 ```bash
-docker-compose up -d
+docker compose up -d
 poetry run createdb
 ```
 
@@ -123,10 +123,10 @@ Update the index file as well:
 from .todo import TodoItem # noqa: F401
 ```
 
-Make sure you have a Postgres database running. We bundle a docker-compose file for convenience with `create-mountaineer-app`. Launch it in the background and create the new database tables from these code definitions:
+Make sure you have a Postgres database running. We bundle a docker compose file for convenience with `create-mountaineer-app`. Launch it in the background and create the new database tables from these code definitions:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 poetry run createdb
 poetry run runserver
 ```
