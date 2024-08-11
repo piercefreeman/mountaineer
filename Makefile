@@ -83,11 +83,11 @@ lint-validation-scripts:
 
 # Tests
 test-lib:
-	(cd $(LIB_DIR) && docker-compose -f docker-compose.test.yml up -d)
+	(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml up -d)
 	@$(call wait-for-postgres,30,5438)
 	@set -e; \
 	$(call test-common,$(LIB_DIR),$(LIB_NAME))
-	(cd $(LIB_DIR) && docker-compose -f docker-compose.test.yml down)
+	(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml down)
 	$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
 test-lib-integrations:
 	$(call test-common-integrations,$(LIB_DIR),$(LIB_NAME))
