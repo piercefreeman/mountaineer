@@ -62,9 +62,13 @@ class WatcherWebservice:
 
     def monitor_builds(self):
         while True:
+            print("will wait for notification")
             next_obj = self.notification_queue.get()
             if next_obj is None:
                 break
+
+            # Run in another thread's context
+            print("should broadcast")
             asyncio.run(self.broadcast_listeners())
 
     def start(self):

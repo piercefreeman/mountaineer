@@ -366,8 +366,10 @@ def handle_runserver(
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
+    print("should launch watcher")
     watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
+    print("did launch watcher")
 
     # Initial load
     import importlib
@@ -411,7 +413,7 @@ def handle_runserver(
 
     js_compiler = ClientBuilder(
         app_controller,
-        live_reload_port=5006,
+        live_reload_port=watcher_webservice.port,
         build_cache=global_build_cache,
     )
 
@@ -466,6 +468,10 @@ def handle_runserver(
             thread.start()
             print("Started new thread")
 
+        if changed_js or updated_python:
+            watcher_webservice.notification_queue.put(True)
+        print("DID PUT")
+
         # # JS-Only build needed
         # if all(is_view_update(event.path) for event in metadata.events):
         #     if current_process is not None:
@@ -510,6 +516,16 @@ def handle_runserver(
         subscribe_to_mountaineer=subscribe_to_mountaineer,
     )
     watchdog.start_watching()
+
+    # Install a signal handler to catch SIGINT and try to
+    #     shut down gracefully
+    def graceful_shutdown(signum, frame):
+        if watcher_webservice is not None:
+            watcher_webservice.stop()
+        CONSOLE.print("[yellow]Services shutdown, now exiting...")
+        exit(0)
+
+    signal(SIGINT, graceful_shutdown)
 
 
 def handle_build(
