@@ -73,7 +73,7 @@ class IsolatedEnvProcess(Process):
         self.build_config = build_config
         self.runserver_config = runserver_config
         self.close_signal = Event()
-        self.rebuild_channel: QueueType[bool | None] | None = (
+        self.rebuild_channel: QueueType[list[str] | None] | None = (
             Queue() if build_config.allow_js_reloads else None
         )
 
@@ -121,7 +121,7 @@ class IsolatedEnvProcess(Process):
                 for builder in app_controller.builders:
                     builder.tmp_dir = self.build_config.build_cache
 
-            self.run_build(app_controller)
+            self.run_build(app_controller, [])
 
             # If the client passed a rebuild channel, we'll listen for rebuild requests
             if self.build_config.allow_js_reloads:
@@ -142,10 +142,10 @@ class IsolatedEnvProcess(Process):
 
         LOGGER.debug("IsolatedEnvProcess finished")
 
-    def rebuild_js(self):
+    def rebuild_js(self, changed_paths: list[str]):
         LOGGER.debug("JS-Only rebuild started")
         if self.rebuild_channel is not None:
-            self.rebuild_channel.put(True)
+            self.rebuild_channel.put(changed_paths)
         else:
             raise ValueError("No rebuild channel was provided")
 
@@ -201,14 +201,14 @@ class IsolatedEnvProcess(Process):
                 rebuild = self.rebuild_channel.get()
                 if rebuild is None:
                     break
-                self.run_build(app_controller)
+                self.run_build(app_controller, rebuild)
 
         LOGGER.debug("Will launch rebuild thread")
         rebuild_thread = Thread(target=wait_for_rebuild, daemon=True)
         rebuild_thread.start()
         return rebuild_thread
 
-    def run_build(self, app_controller: AppController):
+    def run_build(self, app_controller: AppController, changed_paths: list[str]):
         start = time()
         js_compiler = ClientBuilder(
             app_controller,
@@ -219,8 +219,9 @@ class IsolatedEnvProcess(Process):
             ),
             build_cache=self.build_config.build_cache,
         )
+
         try:
-            js_compiler.build()
+            js_compiler.build(changed_paths)
             CONSOLE.print(
                 f"[bold green]🚀 App launched in {time() - start:.2f} seconds"
             )
@@ -368,44 +369,140 @@ def handle_runserver(
     watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
 
+    # Initial load
+    import importlib
+    import sys
+    import os
+
+    package = webcontroller.split(".")[0]
+    module_name = webcontroller.split(":")[0]
+    controller_name = webcontroller.split(":")[1]
+    module = importlib.import_module(module_name)
+    initial_state = {name: getattr(module, name) for name in dir(module)}
+
+    print(f"Initial load of {module_name} complete.")
+
+    app_controller = initial_state[controller_name]
+
+    # Get the file path of the module
+    module_file = sys.modules[module_name].__file__
+    print(f"Module file: {module_file}")
+
+    def package_path_to_module(file_path, package_name):
+        # Get the package's root directory
+        package = importlib.import_module(package_name)
+        package_root = os.path.dirname(package.__file__)
+
+        # Ensure the file_path is absolute
+        file_path = os.path.abspath(file_path)
+
+        # Check if the file is within the package
+        if not file_path.startswith(package_root):
+            raise ValueError(f"The file {file_path} is not in the package {package_name}")
+
+        # Remove the package root and the file extension
+        relative_path = os.path.relpath(file_path, package_root)
+        module_path = os.path.splitext(relative_path)[0]
+
+        # Convert path separators to dots and add the package name
+        module_name = f"{package_name}.{module_path.replace(os.sep, '.')}"
+
+        return module_name
+
+    js_compiler = ClientBuilder(
+        app_controller,
+        live_reload_port=5006,
+        build_cache=global_build_cache,
+    )
+
+    js_compiler.build_all()
+
+    # Start the webserver. It should update with the new in-memory changes to the controllers
+    thread = UvicornThread(
+        app=app_controller.app,
+        port=5006,
+    )
+    thread.start()
+
     def update_build(metadata: CallbackMetadata):
-        nonlocal current_process
+        nonlocal thread
 
-        # JS-Only build needed
-        if all(is_view_update(event.path) for event in metadata.events):
-            if current_process is not None:
-                current_process.rebuild_js()
-                return
+        print("update_build", metadata.events)
+        # nonlocal current_process
 
-        if current_process is not None:
-            # Stop the current process if it's running
-            current_process.stop()
+        changed_js = []
+        updated_python = False
+        for event in metadata.events:
+            if event.action != CallbackType.MODIFIED and event.action != CallbackType.CREATED:
+                # Keep deleted files around for now
+                continue
 
-        current_process = IsolatedEnvProcess(
-            runserver_config=IsolatedRunserverConfig(
-                entrypoint=webservice,
-                port=port,
-                live_reload_port=watcher_webservice.port,
-            ),
-            build_config=IsolatedBuildConfig(
-                webcontroller=webcontroller,
-                notification_channel=watcher_webservice.notification_queue,
-                build_cache=global_build_cache,
-            ),
-        )
-        current_process.start()
+            if event.path.suffix == ".py":
+                module_name = package_path_to_module(event.path, package)
+                print(f"Path: {event.path} {module_name}")
+                updated_module = importlib.import_module(module_name)
+                importlib.reload(updated_module)
+
+                updated_python = True
+            elif event.path.suffix in {".js", ".ts", ".jsx", ".tsx"}:
+                print("Rebuilding JS")
+                changed_js.append(event.path)
+
+        print("WILL PASS", changed_js)
+        if changed_js:
+            js_compiler.build_fe_diff(changed_js)
+
+        # Updating the app might be all that's actually required
+        if updated_python:
+            importlib.reload(module)
+            initial_state = {name: getattr(module, name) for name in dir(module)}
+            app_controller = initial_state[controller_name]
+
+            thread.stop()
+            thread = UvicornThread(
+                app=app_controller.app,
+                port=5006,
+            )
+            thread.start()
+            print("Started new thread")
+
+        # # JS-Only build needed
+        # if all(is_view_update(event.path) for event in metadata.events):
+        #     if current_process is not None:
+        #         current_process.rebuild_js([
+        #             event.path for event in metadata.events
+        #         ])
+        #         return
+
+        # if current_process is not None:
+        #     # Stop the current process if it's running
+        #     current_process.stop()
+
+        # current_process = IsolatedEnvProcess(
+        #     runserver_config=IsolatedRunserverConfig(
+        #         entrypoint=webservice,
+        #         port=port,
+        #         live_reload_port=watcher_webservice.port,
+        #     ),
+        #     build_config=IsolatedBuildConfig(
+        #         webcontroller=webcontroller,
+        #         notification_channel=watcher_webservice.notification_queue,
+        #         build_cache=global_build_cache,
+        #     ),
+        # )
+        # current_process.start()
 
     # Install a signal handler to catch SIGINT and try to
     # shut down gracefully
-    def graceful_shutdown(signum, frame):
-        if current_process is not None:
-            current_process.stop()
-        if watcher_webservice is not None:
-            watcher_webservice.stop()
-        CONSOLE.print("[yellow]Services shutdown, now exiting...")
-        exit(0)
+    # def graceful_shutdown(signum, frame):
+    #     if current_process is not None:
+    #         current_process.stop()
+    #     if watcher_webservice is not None:
+    #         watcher_webservice.stop()
+    #     CONSOLE.print("[yellow]Services shutdown, now exiting...")
+    #     exit(0)
 
-    signal(SIGINT, graceful_shutdown)
+    # signal(SIGINT, graceful_shutdown)
 
     watchdog = build_common_watchdog(
         package,

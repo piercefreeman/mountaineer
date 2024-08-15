@@ -27,27 +27,32 @@ class ClientBuilderBase(ABC):
         # Note that this tmpdir is shared across all client builders, so it's important
         # that you enforce uniqueness of filenames if you leverage this cache
         self.tmp_dir = tmp_dir if tmp_dir else Path(mkdtemp())
-        self.global_state: MutableMapping[Any, Any] | None = None
 
-    async def init_state(self, global_state: MutableMapping[Any, Any]):
-        pass
+        self.metadata : ClientBundleMetadata | None = None
 
-    async def start_build(self):
-        pass
+        self.dirty_files: set[Path] = set()
+        self.controllers : list[tuple[ControllerBase, ManagedViewPath]] = []
+
+    def set_metadata(self, metadata: ClientBundleMetadata):
+        self.metadata = metadata
+
+    def register_controller(self, controller: ControllerBase, view_path: ManagedViewPath):
+        self.controllers.append((controller, view_path))
+
+    def mark_file_dirty(self, file_path: Path):
+        self.dirty_files.add(file_path)
+
+    async def build_wrapper(self):
+        """
+        All internal users should use this instead of .build()
+        """
+        await self.build()
+        self.dirty_files.clear()
 
     @abstractmethod
-    async def handle_file(
-        self,
-        file_path: ManagedViewPath,
-        controller: ControllerBase | None,
-        metadata: ClientBundleMetadata,
-    ) -> None | Coroutine[Any, Any, None]:
+    async def build(self):
         """
-        Only direct controller views are called with (view, controller) inputs. Otherwise we do a
-        recursive search of the raw files on disk with controller=None.
+        Builds the dirty files.
 
         """
-        pass
-
-    async def finish_build(self):
         pass

@@ -21,6 +21,24 @@ You can also run maturin just with `poetry run maturin develop`, which will be m
 
 You'll also need a system-wide installation of esbuild. If you don't have one when you run the build pipline it will install one for you within `~/.cache/mountaineer/esbuild`.
 
+## External Application
+
+If you want to test your mountaineer changes against a real webapp, you can build a wheel and then add it
+to your project's virtual environment:
+
+```bash
+$ poetry run maturin build --release
+
+   Finished `release` profile [optimized] target(s) in 51.28s
+📦 Built wheel for CPython 3.12 to /Users/piercefreeman/projects/mountaineer/target/wheels/mountaineer-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
+```
+
+Then, in your other project:
+
+```bash
+poetry run pip install /Users/piercefreeman/projects/mountaineer/target/wheels/mountaineer-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
+```
+
 ## Development Utilities
 
 1. Python Testing

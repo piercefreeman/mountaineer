@@ -64,135 +64,106 @@ class JavascriptBundler(ClientBuilderBase):
         self.root_element = root_element
         self.environment = environment
 
-        # Pending paths to be processed
-        # (client_path, server_path)
-        self.pending_files: list[JSBundle] = []
+        self.metadata : ClientBundleMetadata | None = None
 
-    async def init_state(self, global_state):
-        self.global_state = global_state
+        # Mapping of our rust backends that manage the state of the view DAGs
+        self.view_root_states : dict[ManagedViewPath, int] = {}
 
-        # Launch a thread that will handle our build queue, potentially across
-        # multiple subprocesses
-        build_input_queue: Queue[tuple[Any]] = Queue()
-        build_output_queue: Queue[CompiledOutput] = Queue()
-
-        global_state["js_bundler_input"] = build_input_queue
-        global_state["js_bundler_output"] = build_output_queue
-
-        thread = Thread(
-            target=self.process_pending_files,
-            args=(build_input_queue, build_output_queue),
-            daemon=True,
-        )
-        thread.start()
-
-    def process_pending_files(
-        self, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue
-    ):
-        LOGGER.debug("Spawning process_pending_files")
-        while True:
-            try:
-                payload = input_queue.get()
-            except EOFError:
-                LOGGER.debug("Exiting process_pending_files")
-                return
-
-            LOGGER.debug(f"Got JS build payload: {len(payload)}")
-            if payload is None:
-                break
-
-            build_params = [
-                mountaineer_rs.BuildContextParams(*params) for params in payload
-            ]
-
-            start = monotonic_ns()
-
-            with Progress(
-                SpinnerColumn(),
-                *Progress.get_default_columns(),
-                TimeElapsedColumn(),
-                console=CONSOLE,
-                transient=True,
-            ) as progress:
-                build_task = progress.add_task(
-                    "[cyan]Compiling...", total=len(build_params)
-                )
-
-                try:
-
-                    def build_complete_callback(callback_args: tuple[int]):
-                        """
-                        Callback called when each individual file build is complete. For a successful
-                        build this callback |N| should match the input build_params.
-
-                        """
-                        progress.advance(build_task, 1)
-
-                    # Right now this raises pyo3_runtime.PanicException, which isn't caught
-                    # appropriately. Our try/except block should be catching this.
-                    mountaineer_rs.build_javascript(
-                        build_params, build_complete_callback
-                    )
-
-                except Exception as e:
-                    LOGGER.error(f"Error building JS: {e}")
-                    output_queue.put(
-                        CompiledOutput(
-                            success=False,
-                            exception_type=e.__class__.__name__,
-                            exception_message=str(e),
-                        )
-                    )
-                    continue
-
-            CONSOLE.print(
-                f"[bold green]📬 Compiled frontend in {(monotonic_ns() - start) / 1e9:.2f}s"
-            )
-
-            output_queue.put(CompiledOutput(success=True))
-
-    async def start_build(self):
-        self.pending_files = []
-
-        # Make sure we have been initialized
-        if self.global_state is None:
-            await self.init_state({})
-
-    async def handle_file(
-        self,
-        file_path: ManagedViewPath,
-        controller: ControllerBase | None,
-        metadata: ClientBundleMetadata,
-    ):
-        if controller is None:
-            # Require a controller for our bundling
-            return None
-        if file_path.suffix not in [".tsx", ".jsx"]:
+    def mark_file_dirty(self, file_path: Path):
+        if file_path.suffix not in [".ts", ".js", ".tsx", ".jsx"]:
             # We only know how to parse tsx and jsx files
             return None
 
-        # Build the metadata archive for this controller now that
-        # we have the file location context
-        controller_base = underscore(controller.__class__.__name__)
-        root_path = file_path.get_package_root_link()
-        metadata_dir = root_path.get_managed_metadata_dir(tmp_build=True)
-        metadata_payload = self.build_metadata_archive(
-            page_path=file_path, controller=controller
-        )
-        (metadata_dir / f"{controller_base}.json").write_text(metadata_payload)
+        self.dirty_files.add(file_path)
 
-        # Now we can process the files in bulk
-        payload = self.generate_js_bundle(
-            file_path=file_path, controller=controller, metadata=metadata
-        )
-        self.pending_files.append(payload)
+    async def build(self):
+        # Index all of the unique view roots to track the DAG hierarchies
+        unique_roots = {
+            view_path.get_root_link() for _, view_path in self.controllers
+        }
 
-    async def finish_build(self):
-        if not self.global_state:
-            raise ValueError("JavascriptBundler has not been initialized")
+        for root in unique_roots:
+            if root not in self.view_root_states:
+                print("ADD ROOT", root)
+                self.view_root_states[root] = mountaineer_rs.init_frontend_state(str(root))
 
-        build_params = []
-        for payload in self.pending_files:
+        # Convert all of the dirty files into managed paths
+        managed_dirty : list[ManagedViewPath] = []
+        for path in self.dirty_files:
+            # Each file must be relative to one of our known view roots, otherwise
+            # we ignore it
+            for root in unique_roots:
+                if path.is_relative_to(root):
+                    relative_path = path.relative_to(root)
+                    managed_dirty.append(root / relative_path)
+                    break
+
+        # Update the DAG by re-parsing the changed ASTs
+        print("STARTING TO UPDATE STATE", managed_dirty)
+        for file_path in managed_dirty:
+            root_state_id = self.view_root_states[file_path.get_root_link()]
+            mountaineer_rs.update_frontend_state(
+                root_state_id,
+                str(file_path),
+            )
+        print("DONE UPDATING DAG")
+
+        # Now that the DAGs are updated for our current code paths, we can
+        # determine which controllers were affected and need to be re-compiled
+        controller_paths = {
+            str(view_path): (controller, view_path.get_root_link()) for controller, view_path in self.controllers
+        }
+        print("Controllers", self.controllers)
+        affected_controller_paths = {
+            root_path
+            for changed_file in managed_dirty
+            for changed_root in [changed_file.get_root_link()]
+            for root_path in mountaineer_rs.get_affected_roots(
+                self.view_root_states[changed_root],
+                str(changed_file),
+                [
+                    controller_path for controller_path, (controller, controller_root) in controller_paths.items()
+                    if controller_root == changed_root
+                ]
+            )
+        }
+        print("controller_paths", controller_paths)
+        print("AFFECTED PATHS", affected_controller_paths)
+
+        # Now that we have the affected controllers, we can re-compile them
+        recompile_controllers = [
+            controller_paths[controller_view_path][0]
+            for controller_view_path in affected_controller_paths
+        ]
+
+        print("SHOULD RECOMPILE", recompile_controllers)
+
+        for controller, file_path in self.controllers:
+            # Build the metadata archive for this controller now that
+            # we have the file location context
+            controller_base = underscore(controller.__class__.__name__)
+            root_path = file_path.get_package_root_link()
+            metadata_dir = root_path.get_managed_metadata_dir(tmp_build=True)
+            metadata_payload = self.build_metadata_archive(
+                page_path=file_path, controller=controller
+            )
+            (metadata_dir / f"{controller_base}.json").write_text(metadata_payload)
+
+        # Build up temporary files with all relevant code
+        # For now we just copy over the entire view directory so we make
+        # sure all dependencies are in scope - but we only
+        # create the client and server files for the changed ones
+        payloads = [
+            self.generate_js_bundle(
+                file_path=controller_path, controller=controller, metadata=self.metadata
+            )
+            for controller, controller_path in self.controllers
+            if controller in recompile_controllers
+        ]
+
+        # TODO: Clean this up
+        build_params : list[mountaineer_rs.BuildContextParams] = []
+        for payload in payloads:
             controller_base = underscore(payload.controller.__class__.__name__)
 
             root_path = payload.file_path.get_package_root_link()
@@ -203,7 +174,7 @@ class JavascriptBundler(ClientBuilderBase):
             # All these tuple arguments map to the input __init__ arguments
             # for mountaineer_rs.BuildContextParams
             build_params.append(
-                (
+                mountaineer_rs.BuildContextParams(
                     str(payload.client_entrypoint_path),
                     str(payload.temp_path / "node_modules"),
                     self.environment,
@@ -217,7 +188,7 @@ class JavascriptBundler(ClientBuilderBase):
             )
             # Server entrypoint config
             build_params.append(
-                (
+                mountaineer_rs.BuildContextParams(
                     str(payload.server_entrypoint_path),
                     str(payload.temp_path / "node_modules"),
                     self.environment,
@@ -228,16 +199,230 @@ class JavascriptBundler(ClientBuilderBase):
                 )
             )
 
-        # Send the build params to the queue
-        self.global_state["js_bundler_input"].put(build_params)
-        output_payload = self.global_state["js_bundler_output"].get()
+        # Execute the build process
+        # Have to execute in another thread for the progress bar
+        # to show up?
+        start = monotonic_ns()
 
-        if not output_payload.success:
-            if output_payload.exception_type == "ValueError":
-                raise BuildProcessException(output_payload.exception_message)
-            raise ValueError(
-                f"Error building JS, unknown error: {output_payload.exception_message}"
+        with Progress(
+            SpinnerColumn(),
+            *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+            console=CONSOLE,
+            transient=True,
+        ) as progress:
+            build_task = progress.add_task(
+                "[cyan]Compiling...", total=len(build_params)
             )
+
+            try:
+
+                def build_complete_callback(callback_args: tuple[int]):
+                    """
+                    Callback called when each individual file build is complete. For a successful
+                    build this callback |N| should match the input build_params.
+
+                    """
+                    progress.advance(build_task, 1)
+
+                # Right now this raises pyo3_runtime.PanicException, which isn't caught
+                # appropriately. Our try/except block should be catching this.
+                mountaineer_rs.build_javascript(
+                    build_params, build_complete_callback
+                )
+
+            except Exception as e:
+                LOGGER.error(f"Error building JS: {e}")
+                raise e
+
+        CONSOLE.print(
+            f"[bold green]📬 Compiled frontend in {(monotonic_ns() - start) / 1e9:.2f}s"
+        )
+
+
+
+
+
+
+
+
+
+
+    # async def init_state(self, global_state):
+    #     self.global_state = global_state
+
+    #     # Launch a thread that will handle our build queue, potentially across
+    #     # multiple subprocesses
+    #     build_input_queue: Queue[tuple[Any]] = Queue()
+    #     build_output_queue: Queue[CompiledOutput] = Queue()
+
+    #     global_state["js_bundler_input"] = build_input_queue
+    #     global_state["js_bundler_output"] = build_output_queue
+
+    #     thread = Thread(
+    #         target=self.process_pending_files,
+    #         args=(build_input_queue, build_output_queue),
+    #         daemon=True,
+    #     )
+    #     thread.start()
+
+    # def process_pending_files(
+    #     self, input_queue: multiprocessing.Queue, output_queue: multiprocessing.Queue
+    # ):
+    #     LOGGER.debug("Spawning process_pending_files")
+
+    #     # TODO: Figure out how to support multiple states
+    #     state_id = mountaineer_rs.init_frontend_state(str("VIEW_ROOT"))
+    #     print("state_id", state_id)
+
+    #     while True:
+    #         try:
+    #             payload = input_queue.get()
+    #         except EOFError:
+    #             LOGGER.debug("Exiting process_pending_files")
+    #             return
+
+    #         LOGGER.debug(f"Got JS build payload: {len(payload)}")
+    #         if payload is None:
+    #             break
+
+    #         build_params = [
+    #             mountaineer_rs.BuildContextParams(*params) for params in payload
+    #         ]
+
+    #         start = monotonic_ns()
+
+    #         with Progress(
+    #             SpinnerColumn(),
+    #             *Progress.get_default_columns(),
+    #             TimeElapsedColumn(),
+    #             console=CONSOLE,
+    #             transient=True,
+    #         ) as progress:
+    #             build_task = progress.add_task(
+    #                 "[cyan]Compiling...", total=len(build_params)
+    #             )
+
+    #             try:
+
+    #                 def build_complete_callback(callback_args: tuple[int]):
+    #                     """
+    #                     Callback called when each individual file build is complete. For a successful
+    #                     build this callback |N| should match the input build_params.
+
+    #                     """
+    #                     progress.advance(build_task, 1)
+
+    #                 # Right now this raises pyo3_runtime.PanicException, which isn't caught
+    #                 # appropriately. Our try/except block should be catching this.
+    #                 mountaineer_rs.build_javascript(
+    #                     build_params, build_complete_callback
+    #                 )
+
+    #             except Exception as e:
+    #                 LOGGER.error(f"Error building JS: {e}")
+    #                 output_queue.put(
+    #                     CompiledOutput(
+    #                         success=False,
+    #                         exception_type=e.__class__.__name__,
+    #                         exception_message=str(e),
+    #                     )
+    #                 )
+    #                 continue
+
+    #         CONSOLE.print(
+    #             f"[bold green]📬 Compiled frontend in {(monotonic_ns() - start) / 1e9:.2f}s"
+    #         )
+
+    #         output_queue.put(CompiledOutput(success=True))
+
+    # async def start_build(self):
+    #     self.pending_files = []
+
+    #     # Make sure we have been initialized
+    #     if self.global_state is None:
+    #         await self.init_state({})
+
+    # async def mark_file_dirty(
+    #     self,
+    #     file_path: ManagedViewPath,
+    #     controller: ControllerBase | None,
+    #     metadata: ClientBundleMetadata,
+    # ):
+    #     if controller is None:
+    #         # Require a controller for our bundling
+    #         return None
+    #     if file_path.suffix not in [".tsx", ".jsx"]:
+    #         # We only know how to parse tsx and jsx files
+    #         return None
+
+    #     # Build the metadata archive for this controller now that
+    #     # we have the file location context
+    #     controller_base = underscore(controller.__class__.__name__)
+    #     root_path = file_path.get_package_root_link()
+    #     metadata_dir = root_path.get_managed_metadata_dir(tmp_build=True)
+    #     metadata_payload = self.build_metadata_archive(
+    #         page_path=file_path, controller=controller
+    #     )
+    #     (metadata_dir / f"{controller_base}.json").write_text(metadata_payload)
+
+    #     # Now we can process the files in bulk
+    #     payload = self.generate_js_bundle(
+    #         file_path=file_path, controller=controller, metadata=metadata
+    #     )
+    #     self.pending_files.append(payload)
+
+    # async def finish_build(self):
+    #     if not self.global_state:
+    #         raise ValueError("JavascriptBundler has not been initialized")
+
+    #     build_params = []
+    #     for payload in self.pending_files:
+    #         controller_base = underscore(payload.controller.__class__.__name__)
+
+    #         root_path = payload.file_path.get_package_root_link()
+    #         static_dir = root_path.get_managed_static_dir(tmp_build=True)
+    #         ssr_dir = root_path.get_managed_ssr_dir(tmp_build=True)
+
+    #         # Client entrypoint config
+    #         # All these tuple arguments map to the input __init__ arguments
+    #         # for mountaineer_rs.BuildContextParams
+    #         build_params.append(
+    #             (
+    #                 str(payload.client_entrypoint_path),
+    #                 str(payload.temp_path / "node_modules"),
+    #                 self.environment,
+    #                 payload.metadata.live_reload_port
+    #                 if payload.metadata.live_reload_port
+    #                 else 0,
+    #                 False,
+    #                 controller_base,
+    #                 str(static_dir),
+    #             )
+    #         )
+    #         # Server entrypoint config
+    #         build_params.append(
+    #             (
+    #                 str(payload.server_entrypoint_path),
+    #                 str(payload.temp_path / "node_modules"),
+    #                 self.environment,
+    #                 0,
+    #                 True,
+    #                 controller_base,
+    #                 str(ssr_dir),
+    #             )
+    #         )
+
+    #     # Send the build params to the queue
+    #     self.global_state["js_bundler_input"].put(build_params)
+    #     output_payload = self.global_state["js_bundler_output"].get()
+
+    #     if not output_payload.success:
+    #         if output_payload.exception_type == "ValueError":
+    #             raise BuildProcessException(output_payload.exception_message)
+    #         raise ValueError(
+    #             f"Error building JS, unknown error: {output_payload.exception_message}"
+    #         )
 
     def generate_js_bundle(
         self,

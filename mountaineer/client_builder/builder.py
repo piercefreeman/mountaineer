@@ -61,6 +61,7 @@ class ClientBuilder:
         live_reload_port: int | None = None,
         build_cache: Path | None = None,
     ):
+        print("ClientBuilder")
         self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
@@ -72,10 +73,13 @@ class ClientBuilder:
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
 
-    def build(self):
-        asyncio.run(self.async_build())
+    def build_all(self):
+        asyncio.run(self.async_build(None))
 
-    async def async_build(self):
+    def build_fe_diff(self, changed_files: list[Path]):
+        asyncio.run(self.async_build(changed_files))
+
+    async def async_build(self, changed_files: list[Path] | None):
         # Avoid rebuilding if we don't need to
         if self.cache_is_outdated():
             start = monotonic_ns()
@@ -103,7 +107,7 @@ class ClientBuilder:
         else:
             CONSOLE.print("[bold green]useServer up to date")
 
-        await self.build_javascript_chunks()
+        await self.build_javascript_chunks(changed_files)
 
         # Update the cached paths attached to the app
         for controller_definition in self.app.controllers:
@@ -469,7 +473,7 @@ class ClientBuilder:
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
-    async def build_javascript_chunks(self, max_concurrency: int = 25):
+    async def build_javascript_chunks(self, changed_files: list[Path], max_concurrency: int = 25):
         """
         Build the final javascript chunks that will render the react documents. Each page will get
         one chunk associated with it. We suffix these files with the current md5 hash of the contents to
@@ -477,55 +481,54 @@ class ClientBuilder:
         contents have rebuilt in the background.
 
         """
+        print("Building javascript chunks", changed_files)
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
         )
 
+        for builder in self.app.builders:
+            builder.set_metadata(metadata)
+
+        for builder in self.app.builders:
+            for controller_definition in self.app.controllers:
+                builder.register_controller(
+                    controller_definition.controller,
+                    self.view_root.get_controller_view_path(
+                        controller_definition.controller
+                    )
+                )
+
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
-        controller_tasks = [
-            builder.handle_file(
-                self.view_root.get_controller_view_path(
-                    controller_definition.controller
-                ),
-                controller=controller_definition.controller,
-                metadata=metadata,
-            )
-            for controller_definition in self.app.controllers
-            for builder in self.app.builders
-        ]
+        if changed_files:
+            print("CHANGED")
+            for changed_file in changed_files:
+                for builder in self.app.builders:
+                    builder.mark_file_dirty(changed_file)
+        else:
+            print("INITIAL")
+            for controller_definition in self.app.controllers:
+                for builder in self.app.builders:
+                    builder.mark_file_dirty(
+                        self.view_root.get_controller_view_path(
+                            controller_definition.controller
+                        )
+                    )
 
-        # Optionally build static files the main views and plugin views
-        # This allows plugins to have custom handling for different file types
-        file_tasks = [
-            builder.handle_file(
-                path,
-                controller=None,
-                metadata=metadata,
-            )
-            for path in self.get_static_files()
-            for builder in self.app.builders
-        ]
-
-        start = monotonic_ns()
-        await gather_with_concurrency(
-            [builder.start_build() for builder in self.app.builders],
-            n=max_concurrency,
-        )
-        LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
+            # Optionally build static files the main views and plugin views
+            # This allows plugins to have custom handling for different file types
+            for path in self.get_static_files():
+                for builder in self.app.builders:
+                    builder.mark_file_dirty(path)
 
         start = monotonic_ns()
         results = await gather_with_concurrency(
-            controller_tasks + file_tasks, n=max_concurrency, catch_exceptions=True
+            [builder.build_wrapper() for builder in self.app.builders],
+            n=max_concurrency,
+            catch_exceptions=True,
         )
-        LOGGER.debug(f"Builder tasks took {(monotonic_ns() - start) / 1e9}s")
-
-        start = monotonic_ns()
-        await gather_with_concurrency(
-            [builder.finish_build() for builder in self.app.builders], n=max_concurrency
-        )
-        LOGGER.debug(f"Builder finish took in {(monotonic_ns() - start) / 1e9}s")
+        LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False

@@ -1,6 +1,7 @@
 import asyncio
 from logging import getLogger
 from threading import Thread
+from time import sleep
 
 from fastapi import FastAPI
 from rich.logging import RichHandler
@@ -42,3 +43,13 @@ class UvicornThread(Thread):
     def stop(self):
         if self.server is not None:
             self.server.should_exit = True
+
+        # Wait until the server is stopped
+        max_wait = 10
+        while self.is_alive():
+            max_wait -= 1
+            if max_wait <= 0:
+                raise TimeoutError("Server did not stop in time")
+            sleep(0.1)
+
+        print("SERVER STOPPED!")

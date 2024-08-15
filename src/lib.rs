@@ -1,13 +1,16 @@
 use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 use pyo3::types::PyTuple;
+use std::collections::HashMap;
 use std::ffi::c_int;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+mod dependencies;
 mod errors;
 mod lexers;
 mod logging;
@@ -81,10 +84,114 @@ impl BuildContextParams {
     }
 }
 
+lazy_static! {
+    static ref GLOBAL_WATCHERS: Mutex<HashMap<i32, dependencies::DependencyWatcher>> =
+        Mutex::new(HashMap::new());
+}
+
 #[pymodule]
 fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
+
+    #[pyfn(m)]
+    #[pyo3(name = "init_frontend_state")]
+    fn init_frontend_state(py: Python, fe_dir: String) -> PyResult<PyObject> {
+        /*
+         * Sniffs the full views directory and builds up a dependency tree
+         * of the current frontend file dependencies. We modify this in a differential
+         * fashion later.
+         */
+
+        let directory = PathBuf::from(fe_dir);
+        let watcher = dependencies::DependencyWatcher::new(directory);
+
+        match watcher {
+            Ok(result) => {
+                println!("Initial dependency graph built successfully!");
+                println!("Number of nodes: {}", result.graph.node_count());
+                println!("Number of edges: {}", result.graph.edge_count());
+
+                // result.print_dependency_tree();
+
+                // Creates a new local obj so we just return back the pointer
+                // of the context
+                let mut map = GLOBAL_WATCHERS.lock().unwrap();
+                let id = map.len() as i32;
+                map.insert(id, result);
+
+                let result_py: PyObject = id.to_object(py);
+                Ok(result_py)
+            }
+            Err(err) => match err {
+                /*AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
+                AppError::V8ExceptionError(msg) => Err(PyValueError::new_err(msg)),*/
+                _ => Err(PyValueError::new_err(err)),
+            },
+        }
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "update_frontend_state")]
+    fn update_frontend_state(
+        py: Python,
+        global_watcher_id: i32,
+        updated_file: String,
+    ) -> PyResult<PyObject> {
+        let mut map = GLOBAL_WATCHERS.lock().unwrap();
+        let watcher = map.get_mut(&global_watcher_id).ok_or_else(|| {
+            PyValueError::new_err(format!("No watcher found for ID: {}", global_watcher_id))
+        })?;
+        let updated_path = Path::new(&updated_file);
+
+        let update_status = watcher.update_file(updated_path);
+
+        match update_status {
+            Ok(_result) => {
+                println!("Updated dependency graph successfully!");
+                println!("Number of nodes: {}", watcher.graph.node_count());
+                println!("Number of edges: {}", watcher.graph.edge_count());
+
+                // watcher.print_dependency_tree();
+
+                let result_py: PyObject = true.to_object(py);
+                Ok(result_py)
+            }
+            Err(err) => Err(PyValueError::new_err(err)),
+        }
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "get_affected_roots")]
+    fn get_affected_roots(
+        py: Python,
+        global_watcher_id: i32,
+        changed_file: String,
+        root_files: Vec<String>,
+    ) -> PyResult<PyObject> {
+        let map = GLOBAL_WATCHERS.lock().unwrap();
+        let watcher = map.get(&global_watcher_id).ok_or_else(|| {
+            PyValueError::new_err(format!("No watcher found for ID: {}", global_watcher_id))
+        })?;
+
+        let changed_path = PathBuf::from(changed_file);
+        let root_paths: Vec<PathBuf> = root_files.into_iter().map(PathBuf::from).collect();
+
+        println!("Changed path: {:?}", changed_path);
+        println!("Root paths: {:?}", root_paths);
+        let affected_roots = watcher.get_affected_roots(&changed_path, root_paths);
+
+        match affected_roots {
+            Ok(result) => {
+                let py_list = PyList::empty(py);
+                for path in result {
+                    py_list.append(path.to_str().unwrap())?;
+                }
+                Ok(py_list.into())
+            }
+            Err(err) => Err(PyValueError::new_err(err)),
+        }
+    }
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]

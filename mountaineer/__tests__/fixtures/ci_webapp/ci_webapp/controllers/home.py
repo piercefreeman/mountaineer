@@ -25,6 +25,8 @@ class HomeController(ControllerBase):
 
     def __init__(self):
         super().__init__()
+        print("NEW INIT")
+
         self.global_count = 0
 
     @sideeffect
