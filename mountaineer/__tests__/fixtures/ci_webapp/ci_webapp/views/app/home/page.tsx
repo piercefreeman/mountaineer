@@ -1,5 +1,6 @@
 import React from "react";
 import { useServer, HTTPValidationErrorException } from "./_server";
+import { CustomComponent } from "./element";
 
 const Home = () => {
   const serverState = useServer();
@@ -13,6 +14,7 @@ const Home = () => {
         Hello {serverState.client_ip}, current count is{" "}
         {serverState.current_count} {serverState.random_uuid}
       </p>
+      <CustomComponent />
       <p>
         <a
           className="font-medium text-blue-500"

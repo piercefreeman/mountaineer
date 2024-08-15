@@ -4,7 +4,7 @@ use petgraph::Direction;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use swc_common::sync::Lrc;
 use swc_common::SourceMap;
 use swc_ecma_ast::{ImportDecl, Module};
@@ -101,21 +101,26 @@ impl DependencyWatcher {
         let module = self.parse_js_file(file_path)?;
         let dependencies = self.extract_dependencies(&module);
 
+        let parent_file = normalize_path(&file_path.to_path_buf());
+
         let node_index = *self
             .node_map
-            .entry(file_path.to_path_buf())
+            .entry(parent_file.clone())
             .or_insert_with(|| self.graph.add_node(file_path.to_path_buf()));
 
         for dep in dependencies {
             let resolved_dep = self.resolve_dependency(file_path, &dep)?;
+            let child_file = normalize_path(&resolved_dep);
+
             println!(
-                "Resolved dep: {} -> {}",
-                file_path.display(),
-                resolved_dep.display()
+                "Resolved dep (absolute): {} -> {}",
+                parent_file.display(),
+                child_file.display()
             );
+
             let dep_index = *self
                 .node_map
-                .entry(resolved_dep.clone())
+                .entry(child_file)
                 .or_insert_with(|| self.graph.add_node(resolved_dep));
             self.graph.add_edge(node_index, dep_index, ());
         }
@@ -167,6 +172,7 @@ impl DependencyWatcher {
         import_path: &str,
     ) -> Result<PathBuf, String> {
         if import_path.starts_with('.') {
+            println!("Found import: {}", import_path);
             // Relative import
             Ok(current_file.parent().unwrap().join(import_path))
         } else if import_path.starts_with('/') {
@@ -201,10 +207,17 @@ impl DependencyWatcher {
 
     pub fn get_affected_roots(
         &self,
-        changed_file: &Path,
-        root_paths: Vec<PathBuf>,
+        changed_file_raw: &Path,
+        root_paths_raw: Vec<PathBuf>,
     ) -> Result<HashSet<PathBuf>, String> {
         let mut affected_roots = HashSet::new();
+        let changed_file_buf = normalize_path(&changed_file_raw.to_path_buf());
+        let changed_file = changed_file_buf.as_path();
+
+        let root_paths: Vec<PathBuf> = root_paths_raw
+            .iter()
+            .map(|p| normalize_path(p).as_path().to_path_buf())
+            .collect();
 
         // Check that the changed file is in the DAG
         if !self.node_map.contains_key(changed_file) {
@@ -293,5 +306,72 @@ impl DependencyWatcher {
         }
 
         visited.remove(&node);
+    }
+}
+
+fn normalize_path(path: &PathBuf) -> PathBuf {
+    /*
+     * Unlike PathBuf::canonicalize, this function does not check if the path exists.
+     * It only collapses relative-import paths (e.g. `./`, `../`, `../../`, etc.)
+     * We also rarely want to keep the file extension for js files, since they are often
+     * imported without the extension. So we also strip to just the base file name.
+     */
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
+        components.next();
+        PathBuf::from(c.as_os_str())
+    } else {
+        PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => unreachable!(),
+            Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                ret.pop();
+            }
+            Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+
+    // Strip the file suffix
+    if let Some(file_name) = ret.file_name().and_then(|f| f.to_str()) {
+        if let Some(name_without_ext) = file_name.split('.').next() {
+            let new_path = ret.with_file_name(name_without_ext);
+            return new_path;
+        }
+    }
+
+    ret
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_path() {
+        assert_eq!(
+            normalize_path(&PathBuf::from("/a/b/./c/../d")),
+            PathBuf::from("/a/b/d")
+        );
+        assert_eq!(
+            normalize_path(&PathBuf::from("a/../../b")),
+            PathBuf::from("../b")
+        );
+        assert_eq!(
+            normalize_path(&PathBuf::from("/a/b/c/./../../d")),
+            PathBuf::from("/a/d")
+        );
+        assert_eq!(
+            normalize_path(&PathBuf::from("/a/b/c")),
+            PathBuf::from("/a/b/c")
+        );
     }
 }
