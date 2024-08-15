@@ -65,6 +65,13 @@ impl DependencyWatcher {
             let path = entry.path();
 
             if path.is_dir() {
+                // Ignore node_modules and hidden directories
+                if path.file_name().map_or(false, |name| {
+                    name == "node_modules" || name.to_string_lossy().starts_with('.')
+                }) {
+                    continue;
+                }
+
                 self.index_directory(&path)?;
             } else if path.extension().map_or(false, |ext| {
                 ext == "ts" || ext == "tsx" || ext == "js" || ext == "jsx"

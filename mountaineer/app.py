@@ -514,7 +514,6 @@ class AppController:
         # Exception injection
         #
 
-        # Loop over the registered controllers and get the action exceptions
         exceptions_by_url: dict[str, list[ExceptionSchema]] = {}
         for controller_definition in self.controllers:
             for (

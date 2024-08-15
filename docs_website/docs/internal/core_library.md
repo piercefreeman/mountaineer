@@ -33,10 +33,11 @@ $ poetry run maturin build --release
 📦 Built wheel for CPython 3.12 to /Users/piercefreeman/projects/mountaineer/target/wheels/mountaineer-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
 ```
 
-Then, in your other project:
+Then, in your other project. If you've already installed a previous local mountaineer wheel, you'll have to run with `--force-reinstall` to prompt pip
+to actually swap out the wheels versus ignoring the same version number.
 
 ```bash
-poetry run pip install /Users/piercefreeman/projects/mountaineer/target/wheels/mountaineer-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
+poetry run pip install [--force-reinstall] /Users/piercefreeman/projects/mountaineer/target/wheels/mountaineer-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
 ```
 
 ## Development Utilities

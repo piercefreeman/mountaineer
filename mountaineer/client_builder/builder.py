@@ -85,6 +85,7 @@ class ClientBuilder:
             start = monotonic_ns()
 
             with CONSOLE.status("Building useServer", spinner="dots"):
+                print("Starting server build")
                 # Make sure our application definitions are in a valid state before we start
                 # to build the client code
                 self.validate_unique_paths()
@@ -101,6 +102,7 @@ class ClientBuilder:
                 self.generate_link_aggregator()
                 self.generate_view_servers()
                 self.generate_index_file()
+                print("Finished server build")
             CONSOLE.print(
                 f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
@@ -473,7 +475,7 @@ class ClientBuilder:
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
-    async def build_javascript_chunks(self, changed_files: list[Path], max_concurrency: int = 25):
+    async def build_javascript_chunks(self, changed_files: list[Path] | None, max_concurrency: int = 25):
         """
         Build the final javascript chunks that will render the react documents. Each page will get
         one chunk associated with it. We suffix these files with the current md5 hash of the contents to
@@ -607,7 +609,21 @@ class ClientBuilder:
         if not self.build_cache:
             return True
 
+        print("Checking cache status...")
+        start = monotonic_ns()
+
         cached_metadata = self.build_cache / "client_builder_openapi.json"
+
+        # TODO: OPTIMIZE
+        # JUST FOR BENCHMARKING
+        time_action_start = monotonic_ns()
+        for controller_definition in self.app.controllers:
+            self.openapi_action_specs[controller_definition.controller]
+        print("Action", (monotonic_ns() - time_action_start) / 1e9)
+        time_render_start = monotonic_ns()
+        for controller_definition in self.app.controllers:
+            self.openapi_render_specs[controller_definition.controller]
+        print("Render", (monotonic_ns() - time_render_start) / 1e9)
 
         cached_contents = {
             controller_definition.controller.__class__.__name__: {
@@ -618,7 +634,12 @@ class ClientBuilder:
             }
             for controller_definition in self.app.controllers
         }
+
+        json_dump_start = monotonic_ns()
         cached_str = json_dumps(cached_contents, sort_keys=True)
+        print("JSON dump", (monotonic_ns() - json_dump_start) / 1e9)
+
+        print(f"Cache check took {(monotonic_ns() - start) / 1e9}s")
 
         if not cached_metadata.exists():
             cached_metadata.write_text(cached_str)
@@ -748,15 +769,15 @@ class ClientBuilder:
 
         """
         if not hasattr(self, "_openapi_action_specs"):
-            self._openapi_specs: dict[ControllerBase, dict[Any, Any]] = {}
+            self._openapi_action_specs: dict[ControllerBase, dict[Any, Any]] = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller
-                self._openapi_specs[controller] = self.openapi_from_controller(
+                self._openapi_action_specs[controller] = self.openapi_from_controller(
                     controller_definition
                 )
 
-        return self._openapi_specs
+        return self._openapi_action_specs
 
     @property
     def openapi_render_specs(self):
