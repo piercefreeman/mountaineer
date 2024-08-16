@@ -51,7 +51,11 @@ class RenderSpec:
 
 class ClientBuilder:
     """
-    Main entrypoint for building the auto-generated typescript code.
+    Main entrypoint for building the auto-generated typescript code. This includes
+    the server provided API used by useServer and the final compiled javascript that
+    is executed by SSR and the client frontend.
+
+    It delegates out the compilation to the js_compiler/* package.
 
     """
 
@@ -602,61 +606,22 @@ class ClientBuilder:
                 self.view_root.get_managed_metadata_dir(),
             ),
         ]:
-            # Only remove the final path if the tmp path exists
+            # Only remove the final path if the matching tmp path build exists
+            # This creates a merged build where we maintain the base code created
+            # on startup and the possibly incremental builds.
+            # We do the deletion up-front so we don't delete our actual files mid-copy
+            # in case we have multiple with the same prefix (like .js and .map)
             for tmp_file in tmp_path.glob("*"):
-                final_file = final_path / tmp_file.name
-
                 # Strip any md5 hashes from the filename and delete
                 # all the items matching the same name
-                base_filename = tmp_file.name.split("-")[0]
+                base_filename = tmp_file.name.rsplit("-")[0].rsplit(".")[0]
                 for old_file in final_path.glob(f"{base_filename}*"):
                     old_file.unlink()
 
+            # We've cleared old versions, now freshly copy the files
+            for tmp_file in tmp_path.glob("*"):
+                final_file = final_path / tmp_file.name
                 shutil_move(tmp_file, final_file)
-
-        # with TemporaryDirectory() as tmp_dir:
-        #     tmp_path = Path(tmp_dir)
-        #     tmp_static_dir = tmp_path / "static"
-        #     tmp_ssr_dir = tmp_path / "ssr"
-        #     tmp_metadata_dir = tmp_path / "metadata"
-
-        #     # Since the tmp builds are within their parent folder, we need to move
-        #     # them out of the way before we clear
-        #     # Unlike the standard rename operation, shutil will treat this move as a rename if the files
-        #     # exist within the same OS and will do a copy/replace if they live across volumes
-        #     # This is necessary for some docker build pipelines where /tmp is auto-mounted
-        #     # as a shared volume between stages and therefore the act of building temporary files
-        #     # would cause a "Invalid cross-device link" when we try to copy
-        #     shutil_move(
-        #         self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
-        #     )
-        #     shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
-        #     shutil_move(
-        #         self.view_root.get_managed_metadata_dir(tmp_build=True),
-        #         tmp_metadata_dir,
-        #     )
-
-        #     static_dir = self.view_root.get_managed_static_dir()
-        #     ssr_dir = self.view_root.get_managed_ssr_dir()
-        #     metadata_dir = self.view_root.get_managed_metadata_dir()
-        #     for clear_dir in [static_dir, ssr_dir, metadata_dir]:
-        #         if clear_dir.exists():
-        #             shutil_rmtree(clear_dir)
-
-        #     print("Will move", tmp_ssr_dir)
-        #     # Final move - shutil requires the destination directory to not exist, otherwise
-        #     # it will place the folder within the given folder. Since we just want a regular
-        #     # rename, we make sure to not create the destination directory
-        #     shutil_move(
-        #         tmp_static_dir, self.view_root.get_managed_static_dir(create_dir=False)
-        #     )
-        #     shutil_move(
-        #         tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
-        #     )
-        #     shutil_move(
-        #         tmp_metadata_dir,
-        #         self.view_root.get_managed_metadata_dir(create_dir=False),
-        #     )
 
     def cache_is_outdated(self):
         """

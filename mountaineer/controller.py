@@ -227,7 +227,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
                 for script_name in self.bundled_scripts
             ]
         )
-
         page_contents = f"""
         <html>
         <head>
