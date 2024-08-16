@@ -112,12 +112,6 @@ impl DependencyWatcher {
             let resolved_dep = self.resolve_dependency(file_path, &dep)?;
             let child_file = normalize_path(&resolved_dep);
 
-            println!(
-                "Resolved dep (absolute): {} -> {}",
-                parent_file.display(),
-                child_file.display()
-            );
-
             let dep_index = *self
                 .node_map
                 .entry(child_file)
@@ -172,14 +166,12 @@ impl DependencyWatcher {
         import_path: &str,
     ) -> Result<PathBuf, String> {
         if import_path.starts_with('.') {
-            println!("Found import: {}", import_path);
             // Relative import
             Ok(current_file.parent().unwrap().join(import_path))
         } else if import_path.starts_with('/') {
             // Absolute import
             Ok(self.root_dir.join(import_path.strip_prefix('/').unwrap()))
         } else {
-            println!("Potential alias import: {}", import_path);
             // Potential alias import
             self.resolve_alias_import(import_path)
         }
@@ -247,65 +239,6 @@ impl DependencyWatcher {
         }
 
         Ok(affected_roots)
-    }
-
-    pub fn print_dependency_tree(&self) {
-        println!("Dependency Tree:");
-        let root_nodes: Vec<_> = self
-            .graph
-            .node_indices()
-            .filter(|&n| {
-                self.graph
-                    .neighbors_directed(n, Direction::Incoming)
-                    .count()
-                    == 0
-            })
-            .collect();
-
-        for (i, root) in root_nodes.iter().enumerate() {
-            let is_last = i == root_nodes.len() - 1;
-            self.print_subtree(*root, "", is_last, &mut HashSet::new());
-        }
-    }
-
-    fn print_subtree(
-        &self,
-        node: NodeIndex,
-        indent: &str,
-        is_last: bool,
-        visited: &mut HashSet<NodeIndex>,
-    ) {
-        if visited.contains(&node) {
-            println!(
-                "{}{}└── [Circular Reference]",
-                indent,
-                if is_last { "└── " } else { "├── " }
-            );
-            return;
-        }
-
-        visited.insert(node);
-
-        let node_path = &self.graph[node];
-        println!(
-            "{}{}{}",
-            indent,
-            if is_last { "└── " } else { "├── " },
-            node_path.file_name().unwrap().to_string_lossy()
-        );
-
-        let children: Vec<_> = self
-            .graph
-            .neighbors_directed(node, Direction::Outgoing)
-            .collect();
-        let last_child_index = children.len().saturating_sub(1);
-
-        for (i, child) in children.into_iter().enumerate() {
-            let new_indent = format!("{}{}   ", indent, if is_last { " " } else { "│" });
-            self.print_subtree(child, &new_indent, i == last_child_index, visited);
-        }
-
-        visited.remove(&node);
     }
 }
 

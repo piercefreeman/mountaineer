@@ -108,11 +108,12 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
         match watcher {
             Ok(result) => {
-                println!("Initial dependency graph built successfully!");
-                println!("Number of nodes: {}", result.graph.node_count());
-                println!("Number of edges: {}", result.graph.edge_count());
-
-                // result.print_dependency_tree();
+                #[allow(clippy::print_stdout)]
+                if cfg!(debug_assertions) {
+                    println!("Initial dependency graph built successfully!");
+                    println!("Number of nodes: {}", result.graph.node_count());
+                    println!("Number of edges: {}", result.graph.edge_count());
+                }
 
                 // Creates a new local obj so we just return back the pointer
                 // of the context
@@ -124,8 +125,6 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
                 Ok(result_py)
             }
             Err(err) => match err {
-                /*AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
-                AppError::V8ExceptionError(msg) => Err(PyValueError::new_err(msg)),*/
                 _ => Err(PyValueError::new_err(err)),
             },
         }
@@ -148,11 +147,12 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
         match update_status {
             Ok(_result) => {
-                println!("Updated dependency graph successfully!");
-                println!("Number of nodes: {}", watcher.graph.node_count());
-                println!("Number of edges: {}", watcher.graph.edge_count());
-
-                // watcher.print_dependency_tree();
+                #[allow(clippy::print_stdout)]
+                if cfg!(debug_assertions) {
+                    println!("Initial dependency graph built successfully!");
+                    println!("Number of nodes: {}", watcher.graph.node_count());
+                    println!("Number of edges: {}", watcher.graph.edge_count());
+                }
 
                 let result_py: PyObject = true.to_object(py);
                 Ok(result_py)
@@ -177,8 +177,6 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         let changed_path = PathBuf::from(changed_file);
         let root_paths: Vec<PathBuf> = root_files.into_iter().map(PathBuf::from).collect();
 
-        println!("Changed path: {:?}", changed_path);
-        println!("Root paths: {:?}", root_paths);
         let affected_roots = watcher.get_affected_roots(&changed_path, root_paths);
 
         match affected_roots {

@@ -51,5 +51,3 @@ class UvicornThread(Thread):
             if max_wait <= 0:
                 raise TimeoutError("Server did not stop in time")
             sleep(0.1)
-
-        print("SERVER STOPPED!")

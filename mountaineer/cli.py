@@ -1,28 +1,23 @@
-import socket
-from contextlib import redirect_stdout
-from dataclasses import dataclass
-from importlib import import_module
+import asyncio
+import importlib
+import sys
 from importlib.metadata import distributions
-from io import StringIO
-from multiprocessing import Event, Process, Queue, get_start_method, set_start_method
-from multiprocessing.queues import Queue as QueueType
+from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
-from threading import Thread
-from time import monotonic_ns, sleep, time
-from traceback import format_exception
+from time import sleep, time
 from typing import Callable
 
-from fastapi import Request
 from rich.traceback import install as rich_traceback_install
 
-from mountaineer.app import AppController
+from mountaineer.app_manager import AppManager
+from mountaineer.cache import LRUCache
 from mountaineer.client_builder.builder import ClientBuilder
-from mountaineer.console import CONSOLE, ERROR_CONSOLE
-from mountaineer.controllers.exception_controller import ExceptionController
-from mountaineer.js_compiler.exceptions import BuildProcessException
+from mountaineer.console import CONSOLE
+from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.logging import LOGGER
+from mountaineer.ssr import render_ssr
 from mountaineer.watch import (
     CallbackDefinition,
     CallbackMetadata,
@@ -30,256 +25,6 @@ from mountaineer.watch import (
     PackageWatchdog,
 )
 from mountaineer.watch_server import WatcherWebservice
-from mountaineer.webservice import UvicornThread
-
-
-@dataclass
-class IsolatedBuildConfig:
-    webcontroller: str
-
-    # When builds are completed, a notification will be sent from the subprocess->main process
-    # via this channel
-    notification_channel: QueueType | None = None
-
-    # If the main process needs to rebuild client js, this flag will open a channel
-    # to the subprocess to rebuild the client js
-    allow_js_reloads: bool = True
-
-    # Optional arguments to inherit a global cache from the main process
-    build_cache: Path | None = None
-
-
-@dataclass
-class IsolatedRunserverConfig:
-    entrypoint: str
-    port: int
-    live_reload_port: int
-
-
-class IsolatedEnvProcess(Process):
-    """
-    We need a fully separate process for our runserver and watch, so we're able to re-import
-    all of the dependent files when there are changes.
-
-    """
-
-    def __init__(
-        self,
-        build_config: IsolatedBuildConfig,
-        runserver_config: IsolatedRunserverConfig | None = None,
-    ):
-        super().__init__()
-
-        self.build_config = build_config
-        self.runserver_config = runserver_config
-        self.close_signal = Event()
-        self.rebuild_channel: QueueType[list[str] | None] | None = (
-            Queue() if build_config.allow_js_reloads else None
-        )
-
-        self.rebuild_thread: Thread | None = None
-
-    def run(self):
-        LOGGER.debug(
-            f"Starting isolated environment process with\nbuild_config: {self.build_config}\nrunserver_config: {self.runserver_config}"
-        )
-
-        CONSOLE.rule("[bold red]Mountaineer Build Started")
-
-        with (
-            # We don't want to print stdout on the initial import, since this will just duplicate
-            # the init code / logging of the app. We use our error console to avoid
-            # capturing the stdout of our logging
-            ERROR_CONSOLE.status("[bold blue]Loading app...", spinner="dots"),
-            StringIO() as buf,
-            redirect_stdout(buf),
-        ):
-            start = monotonic_ns()
-            app_controller = import_from_string(self.build_config.webcontroller)
-            LOGGER.debug(f"Load app logs: {buf.getvalue()}")
-        CONSOLE.print(
-            f"[bold green]🎒 Loaded app in {(monotonic_ns() - start) / 1e9:.2f}s"
-        )
-
-        if not isinstance(app_controller, AppController):
-            raise ValueError(
-                f"Expected {self.build_config.webcontroller} to be an instance of AppController"
-            )
-
-        # Mount our exceptions controller, since we'll need these artifacts built
-        # as part of the JS build phase
-        self.exception_controller = ExceptionController()
-        app_controller.register(self.exception_controller)
-        app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
-
-        # Finish the build before we start the server since the server launch is going to sniff
-        # for the built artifacts
-        if self.build_config is not None:
-            # Inject our tmp directory instead of the directories for the already registered
-            # build components
-            if self.build_config.build_cache:
-                for builder in app_controller.builders:
-                    builder.tmp_dir = self.build_config.build_cache
-
-            self.run_build(app_controller, [])
-
-            # If the client passed a rebuild channel, we'll listen for rebuild requests
-            if self.build_config.allow_js_reloads:
-                self.rebuild_thread = self.listen_for_rebuilds(app_controller)
-
-        if self.runserver_config is not None:
-            thread = UvicornThread(
-                app=app_controller.app,
-                port=self.runserver_config.port,
-            )
-            thread.start()
-            try:
-                self.close_signal.wait()
-            except KeyboardInterrupt:
-                pass
-            thread.stop()
-            thread.join()
-
-        LOGGER.debug("IsolatedEnvProcess finished")
-
-    def rebuild_js(self, changed_paths: list[str]):
-        LOGGER.debug("JS-Only rebuild started")
-        if self.rebuild_channel is not None:
-            self.rebuild_channel.put(changed_paths)
-        else:
-            raise ValueError("No rebuild channel was provided")
-
-    def alert_notification_channel(self):
-        """
-        Alerts the notification channel of a build update, once the server
-        comes back online. Before this the client might refresh and get a blank
-        page because the server hasn't yet booted.
-        """
-
-        def wait_for_server():
-            # No need to do anything if we don't have a notification channel
-            if self.runserver_config is None:
-                return
-            if self.build_config.notification_channel is None:
-                return
-
-            # Loop until there is something bound to the runserver_config.port
-            start = time()
-            LOGGER.debug("Waiting for server to come online")
-            while True:
-                try:
-                    with socket.create_connection(
-                        ("localhost", self.runserver_config.port)
-                    ):
-                        break
-                except ConnectionRefusedError:
-                    sleep(0.1)
-            LOGGER.debug(f"Server took {time() - start:.2f} seconds to come online")
-
-            # Buffer to make sure the server is fully booted
-            sleep(0.5)
-
-            if self.build_config.notification_channel:
-                self.build_config.notification_channel.put(True)
-
-        alert_thread = Thread(target=wait_for_server)
-        alert_thread.start()
-
-    def listen_for_rebuilds(self, app_controller: AppController):
-        """
-        If clients place an object into the rebuild channel, our background thread
-        will pick up on these updates and cause a JS-only reload. This only works if the
-        application controller's logic hasn't changed, since we use the global one
-        that was previously created in our isolated process.
-
-        """
-
-        def wait_for_rebuild():
-            if not self.rebuild_channel:
-                raise ValueError("No rebuild channel was provided")
-            while True:
-                rebuild = self.rebuild_channel.get()
-                if rebuild is None:
-                    break
-                self.run_build(app_controller, rebuild)
-
-        LOGGER.debug("Will launch rebuild thread")
-        rebuild_thread = Thread(target=wait_for_rebuild, daemon=True)
-        rebuild_thread.start()
-        return rebuild_thread
-
-    def run_build(self, app_controller: AppController, changed_paths: list[str]):
-        start = time()
-        js_compiler = ClientBuilder(
-            app_controller,
-            live_reload_port=(
-                self.runserver_config.live_reload_port
-                if self.runserver_config
-                else None
-            ),
-            build_cache=self.build_config.build_cache,
-        )
-
-        try:
-            js_compiler.build(changed_paths)
-            CONSOLE.print(
-                f"[bold green]🚀 App launched in {time() - start:.2f} seconds"
-            )
-
-            # Completed successfully
-            app_controller.build_exception = None
-
-            self.alert_notification_channel()
-        except BuildProcessException as e:
-            CONSOLE.print(f"[bold red]🪲 Build failed: {e}")
-            app_controller.build_exception = e
-
-    def stop(self, hard_timeout: float = 5.0):
-        """
-        Client-side stop method to shut down the running process.
-        """
-        # If we've already stopped, don't try to stop again
-        if not self.is_alive():
-            return
-
-        if self.rebuild_channel is not None:
-            self.rebuild_channel.put(None)
-
-        if self.runserver_config is not None:
-            self.close_signal.set()
-
-        if self.rebuild_thread is not None:
-            self.rebuild_thread.join()
-
-        self.terminate()
-
-        # Try to give the process time to shut down gracefully
-        while self.is_alive() and hard_timeout > 0:
-            self.join(1)
-            hard_timeout -= 1
-
-        if hard_timeout == 0:
-            CONSOLE.print(
-                f"[bold red]Server shutdown reached hard timeout deadline: {self.is_alive()}",
-            )
-
-        # As a last resort we send a hard termination signal
-        if self.is_alive():
-            self.kill()
-
-    async def handle_dev_exception(self, request: Request, exc: Exception):
-        # If we're receiving a GET request, show the exception. Otherwise fall back
-        # on the normal REST handlers
-        if request.method == "GET":
-            response = await self.exception_controller._generate_html(
-                global_metadata=None,
-                exception=str(exc),
-                stack="".join(format_exception(exc)),
-            )
-            response.status_code = 500
-            return response
-        else:
-            raise exc
 
 
 def handle_watch(
@@ -302,32 +47,35 @@ def handle_watch(
     """
     update_multiprocessing_settings()
 
-    current_process: IsolatedEnvProcess | None = None
-
     # The global cache will let us keep cache files warm across
     # different builds
     global_build_cache = Path(mkdtemp())
 
+    app_manager = AppManager.from_webcontroller(webcontroller)
+    js_compiler = ClientBuilder(
+        app_manager.app_controller,
+        live_reload_port=None,
+        build_cache=global_build_cache,
+    )
+
+    asyncio.run(js_compiler.build_all())
+
     def update_build(metadata: CallbackMetadata):
-        nonlocal current_process
+        updated_js: set[Path] = set()
+        updated_python: set[Path] = set()
 
-        # JS-Only build needed
-        if all(is_view_update(event.path) for event in metadata.events):
-            if current_process is not None:
-                current_process.rebuild_js()
-                return
+        for event in metadata.events:
+            if event.path.suffix in KNOWN_JS_EXTENSIONS:
+                updated_js.add(event.path)
+            elif event.path.suffix in {".py"}:
+                updated_python.add(event.path)
 
-        if current_process is not None:
-            # Stop the current process if it's running
-            current_process.stop()
-
-        current_process = IsolatedEnvProcess(
-            build_config=IsolatedBuildConfig(
-                webcontroller=webcontroller,
-                build_cache=global_build_cache,
-            ),
-        )
-        current_process.start()
+        # Update the use-server definitions in case modifications to the
+        # python file affected the API spec
+        if updated_python:
+            asyncio.run(js_compiler.build_use_server())
+        if updated_js:
+            asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
 
     watchdog = build_common_watchdog(
         package,
@@ -354,10 +102,7 @@ def handle_runserver(
 
     """
     update_multiprocessing_settings()
-
     rich_traceback_install()
-
-    current_process: IsolatedEnvProcess | None = None
 
     # The global cache will let us keep cache files warm across
     # different builds
@@ -366,159 +111,121 @@ def handle_runserver(
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
-    print("should launch watcher")
     watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
-    print("did launch watcher")
 
-    # Initial load
-    import importlib
-    import sys
-    import os
-
-    package = webcontroller.split(".")[0]
-    module_name = webcontroller.split(":")[0]
-    controller_name = webcontroller.split(":")[1]
-    module = importlib.import_module(module_name)
-    initial_state = {name: getattr(module, name) for name in dir(module)}
-
-    print(f"Initial load of {module_name} complete.")
-
-    app_controller = initial_state[controller_name]
-
-    # Get the file path of the module
-    module_file = sys.modules[module_name].__file__
-    print(f"Module file: {module_file}")
-
-    def package_path_to_module(file_path, package_name):
-        # Get the package's root directory
-        package = importlib.import_module(package_name)
-        package_root = os.path.dirname(package.__file__)
-
-        # Ensure the file_path is absolute
-        file_path = os.path.abspath(file_path)
-
-        # Check if the file is within the package
-        if not file_path.startswith(package_root):
-            raise ValueError(f"The file {file_path} is not in the package {package_name}")
-
-        # Remove the package root and the file extension
-        relative_path = os.path.relpath(file_path, package_root)
-        module_path = os.path.splitext(relative_path)[0]
-
-        # Convert path separators to dots and add the package name
-        module_name = f"{package_name}.{module_path.replace(os.sep, '.')}"
-
-        return module_name
+    app_manager = AppManager.from_webcontroller(webcontroller)
+    LOGGER.debug(f"Initial load of {webcontroller} complete.")
 
     js_compiler = ClientBuilder(
-        app_controller,
+        app_manager.app_controller,
         live_reload_port=watcher_webservice.port,
         build_cache=global_build_cache,
     )
+    asyncio.run(js_compiler.build_all())
 
-    js_compiler.build_all()
-
-    # Start the webserver. It should update with the new in-memory changes to the controllers
-    thread = UvicornThread(
-        app=app_controller.app,
-        port=5006,
-    )
-    thread.start()
+    # Start the initial thread
+    app_manager.port = port
+    app_manager.restart_server()
 
     def update_build(metadata: CallbackMetadata):
-        nonlocal thread
+        start = time()
 
-        print("update_build", metadata.events)
-        # nonlocal current_process
+        # Consider the case where we have the app controller that imports a given module
+        # ```
+        # import myapp.controller as controller
+        # ```
+        # And within this controller we have an import from the file that we've changed as part
+        # of this modification
+        # ```
+        # from myapp.module import MyController as MyController
+        # ```
+        # By default, an importlib.refresh(app_controller_module) won't update this given sub-dependency, since
+        # Python holds tighly to objects that are brought into scope and are not only global system modules.
+        #
+        # We keep track of the unique objects that are contained within the updated files, so we can
+        # manually inspect the project for any objects that are still referencing the old module.
+        # and update them manually.
+        objects_to_reload: set[int] = set()
 
-        changed_js = []
-        updated_python = False
+        updated_js: set[Path] = set()
+        updated_python: set[Path] = set()
+
         for event in metadata.events:
-            if event.action != CallbackType.MODIFIED and event.action != CallbackType.CREATED:
+            if (
+                event.action != CallbackType.MODIFIED
+                and event.action != CallbackType.CREATED
+            ):
                 # Keep deleted files around for now
                 continue
 
             if event.path.suffix == ".py":
-                module_name = package_path_to_module(event.path, package)
-                print(f"Path: {event.path} {module_name}")
+                updated_python.add(event.path)
+                module_name = app_manager.package_path_to_module(event.path)
+
+                # Get the IDs before we reload the module, since they'll change after
+                # the re-import
+                current_module = sys.modules[module_name]
+                objects_to_reload |= app_manager.objects_in_module(current_module)
+
+                # Now, once we've cached the ids of objects currently in memory we can clear
+                # the actual model definition from the module cache
                 updated_module = importlib.import_module(module_name)
                 importlib.reload(updated_module)
+            elif event.path.suffix in KNOWN_JS_EXTENSIONS:
+                updated_js.add(event.path)
 
-                updated_python = True
-            elif event.path.suffix in {".js", ".ts", ".jsx", ".tsx"}:
-                print("Rebuilding JS")
-                changed_js.append(event.path)
-
-        print("WILL PASS", changed_js)
-        if changed_js:
-            js_compiler.build_fe_diff(changed_js)
-
-        # Updating the app might be all that's actually required
         if updated_python:
-            importlib.reload(module)
-            initial_state = {name: getattr(module, name) for name in dir(module)}
-            app_controller = initial_state[controller_name]
+            LOGGER.debug(f"Changed Python: {updated_python}")
+            asyncio.run(js_compiler.build_use_server())
 
-            thread.stop()
-            thread = UvicornThread(
-                app=app_controller.app,
-                port=5006,
+        if updated_js:
+            LOGGER.debug(f"Changed JS: {updated_js}")
+            asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
+
+        if updated_python:
+            # Update the nested dependencies of our app that are brought into runtime
+            # and still hold on to an outdated version of the module. We reload these
+            # so they'll proceed to fetch and update themselves with the contents of the new module.
+            all_updated_components = list(
+                app_manager.get_submodules_with_objects(
+                    app_manager.module, objects_to_reload
+                )
             )
-            thread.start()
-            print("Started new thread")
+            for updated_module in all_updated_components:
+                LOGGER.debug(f"Updating dependent module: {updated_module}")
+                importlib.reload(updated_module)
 
-        if changed_js or updated_python:
+            # Now we re-mount the app entrypoint, which should initialize the changed
+            # controllers with their new values
+            app_manager.update_module()
+
+            # Clear the cache so changes to the python logic should re-calculate
+            # their ssr views
+            if hasattr("render_ssr", "_cache"):
+                lru_cache: LRUCache = getattr(render_ssr, "_cache")
+                LOGGER.debug(f"Clearing SSR cache of {len(lru_cache.cache)} items")
+                lru_cache.clear()
+
+            app_manager.restart_server()
+
+        if updated_js or updated_python:
+            # Wait up to 5s for our webserver to start, so when we refresh
+            # the new page is ready immediately.
+            start_time = time()
+            max_wait_time = 5
+            while time() - start_time < max_wait_time:
+                if app_manager.is_port_open("127.0.0.1", port):
+                    CONSOLE.print(f"[blue]Webserver is ready on {"127.0.0.1"}:{port}!")
+                    break
+                sleep(0.1)  # Short sleep to prevent busy-waiting
+
             watcher_webservice.notification_queue.put(True)
-        print("DID PUT")
 
-        # # JS-Only build needed
-        # if all(is_view_update(event.path) for event in metadata.events):
-        #     if current_process is not None:
-        #         current_process.rebuild_js([
-        #             event.path for event in metadata.events
-        #         ])
-        #         return
-
-        # if current_process is not None:
-        #     # Stop the current process if it's running
-        #     current_process.stop()
-
-        # current_process = IsolatedEnvProcess(
-        #     runserver_config=IsolatedRunserverConfig(
-        #         entrypoint=webservice,
-        #         port=port,
-        #         live_reload_port=watcher_webservice.port,
-        #     ),
-        #     build_config=IsolatedBuildConfig(
-        #         webcontroller=webcontroller,
-        #         notification_channel=watcher_webservice.notification_queue,
-        #         build_cache=global_build_cache,
-        #     ),
-        # )
-        # current_process.start()
+        CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 
     # Install a signal handler to catch SIGINT and try to
     # shut down gracefully
-    # def graceful_shutdown(signum, frame):
-    #     if current_process is not None:
-    #         current_process.stop()
-    #     if watcher_webservice is not None:
-    #         watcher_webservice.stop()
-    #     CONSOLE.print("[yellow]Services shutdown, now exiting...")
-    #     exit(0)
-
-    # signal(SIGINT, graceful_shutdown)
-
-    watchdog = build_common_watchdog(
-        package,
-        update_build,
-        subscribe_to_mountaineer=subscribe_to_mountaineer,
-    )
-    watchdog.start_watching()
-
-    # Install a signal handler to catch SIGINT and try to
-    #     shut down gracefully
     def graceful_shutdown(signum, frame):
         if watcher_webservice is not None:
             watcher_webservice.stop()
@@ -526,6 +233,13 @@ def handle_runserver(
         exit(0)
 
     signal(SIGINT, graceful_shutdown)
+
+    watchdog = build_common_watchdog(
+        package,
+        update_build,
+        subscribe_to_mountaineer=subscribe_to_mountaineer,
+    )
+    watchdog.start_watching()
 
 
 def handle_build(
@@ -536,13 +250,15 @@ def handle_build(
     Handle a one-off build. Most often used in production CI pipelines.
 
     """
-    app_controller = import_from_string(webcontroller)
+    app_manager = AppManager.from_webcontroller(webcontroller)
+
     js_compiler = ClientBuilder(
-        app_controller,
+        app_manager.app_controller,
         live_reload_port=None,
     )
     start = time()
-    js_compiler.build()
+
+    asyncio.run(js_compiler.build_all())
     CONSOLE.print(f"[bold green]App built in {time() - start:.2f}s")
 
 
@@ -568,16 +284,6 @@ def update_multiprocessing_settings():
             LOGGER.error(f"Cannot change the start method after it has been used: {e}")
 
 
-def import_from_string(import_string: str):
-    """
-    Given a string to the package (like "ci_webapp.app:controller") import the
-    actual variable
-    """
-    module_name, attribute_name = import_string.split(":")
-    module = import_module(module_name)
-    return getattr(module, attribute_name)
-
-
 def find_packages_with_prefix(prefix: str):
     """
     Find and return a list of all installed package names that start with the given prefix.
@@ -588,15 +294,6 @@ def find_packages_with_prefix(prefix: str):
         for dist in distributions()
         if dist.metadata["Name"].startswith(prefix)
     ]
-
-
-def is_view_update(path: Path):
-    """
-    Determines if the file change is a view update. This assumes
-    the user subscribes to our "views" convention.
-
-    """
-    return any(part == "views" for part in path.parts)
 
 
 def build_common_watchdog(

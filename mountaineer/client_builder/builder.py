@@ -1,5 +1,5 @@
-import asyncio
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
@@ -61,7 +61,6 @@ class ClientBuilder:
         live_reload_port: int | None = None,
         build_cache: Path | None = None,
     ):
-        print("ClientBuilder")
         self.openapi_schema_converter = OpenAPIToTypescriptSchemaConverter(
             export_interface=True
         )
@@ -73,19 +72,19 @@ class ClientBuilder:
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
 
-    def build_all(self):
-        asyncio.run(self.async_build(None))
+    async def build_all(self):
+        await self.build_use_server()
+        await self.build_fe_diff(None)
 
-    def build_fe_diff(self, changed_files: list[Path]):
-        asyncio.run(self.async_build(changed_files))
+    async def build_use_server(self):
+        start = monotonic_ns()
 
-    async def async_build(self, changed_files: list[Path] | None):
         # Avoid rebuilding if we don't need to
         if self.cache_is_outdated():
-            start = monotonic_ns()
-
-            with CONSOLE.status("Building useServer", spinner="dots"):
-                print("Starting server build")
+            with (
+                self.catch_build_exception(),
+                CONSOLE.status("Building useServer", spinner="dots"),
+            ):
                 # Make sure our application definitions are in a valid state before we start
                 # to build the client code
                 self.validate_unique_paths()
@@ -102,19 +101,35 @@ class ClientBuilder:
                 self.generate_link_aggregator()
                 self.generate_view_servers()
                 self.generate_index_file()
-                print("Finished server build")
             CONSOLE.print(
                 f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
         else:
-            CONSOLE.print("[bold green]useServer up to date")
+            CONSOLE.print(
+                f"[bold green]Validated useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
+            )
 
-        await self.build_javascript_chunks(changed_files)
+    async def build_fe_diff(self, changed_files: list[Path] | None):
+        """
+        If changed_files is empty or None, will perform a full rebuild
+        of all controller views on disk.
 
-        # Update the cached paths attached to the app
-        for controller_definition in self.app.controllers:
-            controller = controller_definition.controller
-            controller.resolve_paths(self.view_root, force=True)
+        """
+        with self.catch_build_exception():
+            await self.build_javascript_chunks(changed_files)
+
+            # Update the cached paths attached to the app
+            for controller_definition in self.app.controllers:
+                controller = controller_definition.controller
+                controller.resolve_paths(self.view_root, force=True)
+
+    @contextmanager
+    def catch_build_exception(self):
+        try:
+            yield
+        except BuildProcessException as e:
+            self.app.build_exception = e
+            raise
 
     def generate_static_files(self):
         """
@@ -475,7 +490,9 @@ class ClientBuilder:
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
-    async def build_javascript_chunks(self, changed_files: list[Path] | None, max_concurrency: int = 25):
+    async def build_javascript_chunks(
+        self, changed_files: list[Path] | None, max_concurrency: int = 25
+    ):
         """
         Build the final javascript chunks that will render the react documents. Each page will get
         one chunk associated with it. We suffix these files with the current md5 hash of the contents to
@@ -483,9 +500,9 @@ class ClientBuilder:
         contents have rebuilt in the background.
 
         """
-        print("Building javascript chunks", changed_files)
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
+            package_root_link=self.view_root.get_package_root_link(),
         )
 
         for builder in self.app.builders:
@@ -497,19 +514,17 @@ class ClientBuilder:
                     controller_definition.controller,
                     self.view_root.get_controller_view_path(
                         controller_definition.controller
-                    )
+                    ),
                 )
 
         # Each build command is completely independent and there's some overhead with spawning
         # each process. Make use of multi-core machines and spawn each process in its own
         # management thread so we complete the build process in parallel.
         if changed_files:
-            print("CHANGED")
             for changed_file in changed_files:
                 for builder in self.app.builders:
                     builder.mark_file_dirty(changed_file)
         else:
-            print("INITIAL")
             for controller_definition in self.app.controllers:
                 for builder in self.app.builders:
                     builder.mark_file_dirty(
@@ -609,22 +624,9 @@ class ClientBuilder:
         if not self.build_cache:
             return True
 
-        print("Checking cache status...")
         start = monotonic_ns()
 
         cached_metadata = self.build_cache / "client_builder_openapi.json"
-
-        # TODO: OPTIMIZE
-        # JUST FOR BENCHMARKING
-        time_action_start = monotonic_ns()
-        for controller_definition in self.app.controllers:
-            self.openapi_action_specs[controller_definition.controller]
-        print("Action", (monotonic_ns() - time_action_start) / 1e9)
-        time_render_start = monotonic_ns()
-        for controller_definition in self.app.controllers:
-            self.openapi_render_specs[controller_definition.controller]
-        print("Render", (monotonic_ns() - time_render_start) / 1e9)
-
         cached_contents = {
             controller_definition.controller.__class__.__name__: {
                 "action": self.openapi_action_specs[controller_definition.controller],
@@ -635,11 +637,8 @@ class ClientBuilder:
             for controller_definition in self.app.controllers
         }
 
-        json_dump_start = monotonic_ns()
         cached_str = json_dumps(cached_contents, sort_keys=True)
-        print("JSON dump", (monotonic_ns() - json_dump_start) / 1e9)
-
-        print(f"Cache check took {(monotonic_ns() - start) / 1e9}s")
+        LOGGER.debug(f"Cache check took {(monotonic_ns() - start) / 1e9}s")
 
         if not cached_metadata.exists():
             cached_metadata.write_text(cached_str)

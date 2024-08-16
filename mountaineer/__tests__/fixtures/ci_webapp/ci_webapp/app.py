@@ -13,8 +13,7 @@ controller = AppController(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
     custom_builders=[
-        # TODO: Re-implement
-        # PostCSSBundler(),
+        PostCSSBundler(),
     ],
     config=AppConfig(),
 )
