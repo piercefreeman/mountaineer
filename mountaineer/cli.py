@@ -90,6 +90,7 @@ def handle_runserver(
     package: str,
     webservice: str,
     webcontroller: str,
+    host: str = "127.0.0.1",
     port: int,
     subscribe_to_mountaineer: bool = False,
 ):
@@ -112,7 +113,7 @@ def handle_runserver(
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
     start = time()
-    watcher_webservice = WatcherWebservice()
+    watcher_webservice = WatcherWebservice(webservice_host=host)
     watcher_webservice.start()
 
     app_manager = AppManager.from_webcontroller(webcontroller)
@@ -127,6 +128,7 @@ def handle_runserver(
 
     # Start the initial thread
     app_manager.port = port
+    app_manager.host = host
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 

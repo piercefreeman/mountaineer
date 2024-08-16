@@ -33,6 +33,7 @@ class AppManager:
         self.app_controller = app_controller
 
         self.webservice_thread: UvicornThread | None = None
+        self.host: str | None = None
         self.port: int | None = None
 
         self.exception_controller = ExceptionController()
@@ -77,6 +78,7 @@ class AppManager:
 
         self.webservice_thread = UvicornThread(
             app=self.app_controller.app,
+            host=self.host or "127.0.0.1",
             port=self.port,
         )
         self.webservice_thread.start()
