@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
 from shutil import move as shutil_move, rmtree as shutil_rmtree
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 from time import monotonic_ns
 from typing import Any
 
@@ -72,7 +72,19 @@ class ClientBuilder:
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
 
+        self.tmp_dir = Path(mkdtemp())
+
     async def build_all(self):
+        # Totally clear away the old build cache, so we start fresh
+        # and don't have additional files hanging around
+        for clear_dir in [
+            self.view_root.get_managed_ssr_dir(),
+            self.view_root.get_managed_metadata_dir(),
+            self.view_root.get_managed_static_dir(),
+        ]:
+            if clear_dir.exists():
+                shutil_rmtree(clear_dir)
+
         await self.build_use_server()
         await self.build_fe_diff(None)
 
@@ -503,6 +515,7 @@ class ClientBuilder:
         metadata = ClientBundleMetadata(
             live_reload_port=self.live_reload_port,
             package_root_link=self.view_root.get_package_root_link(),
+            tmp_dir=self.tmp_dir,
         )
 
         for builder in self.app.builders:
@@ -571,48 +584,79 @@ class ClientBuilder:
         outdated md5 content hashes from being served
 
         """
-        with TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            tmp_static_dir = tmp_path / "static"
-            tmp_ssr_dir = tmp_path / "ssr"
-            tmp_metadata_dir = tmp_path / "metadata"
-
-            # Since the tmp builds are within their parent folder, we need to move
-            # them out of the way before we clear
-            # Unlike the standard rename operation, shutil will treat this move as a rename if the files
-            # exist within the same OS and will do a copy/replace if they live across volumes
-            # This is necessary for some docker build pipelines where /tmp is auto-mounted
-            # as a shared volume between stages and therefore the act of building temporary files
-            # would cause a "Invalid cross-device link" when we try to copy
-            shutil_move(
-                self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
-            )
-            shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
-            shutil_move(
+        # For now, just copy over the _tmp files into the main directory. Replace them
+        # if they exist. This is a differential copy to support our build pipeline
+        # that will only change progressively. It notably does not handle the case of
+        # deleted files.
+        for tmp_path, final_path in [
+            (
+                self.view_root.get_managed_static_dir(tmp_build=True),
+                self.view_root.get_managed_static_dir(),
+            ),
+            (
+                self.view_root.get_managed_ssr_dir(tmp_build=True),
+                self.view_root.get_managed_ssr_dir(),
+            ),
+            (
                 self.view_root.get_managed_metadata_dir(tmp_build=True),
-                tmp_metadata_dir,
-            )
+                self.view_root.get_managed_metadata_dir(),
+            ),
+        ]:
+            # Only remove the final path if the tmp path exists
+            for tmp_file in tmp_path.glob("*"):
+                final_file = final_path / tmp_file.name
 
-            static_dir = self.view_root.get_managed_static_dir()
-            ssr_dir = self.view_root.get_managed_ssr_dir()
-            metadata_dir = self.view_root.get_managed_metadata_dir()
-            for clear_dir in [static_dir, ssr_dir, metadata_dir]:
-                if clear_dir.exists():
-                    shutil_rmtree(clear_dir)
+                # Strip any md5 hashes from the filename and delete
+                # all the items matching the same name
+                base_filename = tmp_file.name.split("-")[0]
+                for old_file in final_path.glob(f"{base_filename}*"):
+                    old_file.unlink()
 
-            # Final move - shutil requires the destination directory to not exist, otherwise
-            # it will place the folder within the given folder. Since we just want a regular
-            # rename, we make sure to not create the destination directory
-            shutil_move(
-                tmp_static_dir, self.view_root.get_managed_static_dir(create_dir=False)
-            )
-            shutil_move(
-                tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
-            )
-            shutil_move(
-                tmp_metadata_dir,
-                self.view_root.get_managed_metadata_dir(create_dir=False),
-            )
+                shutil_move(tmp_file, final_file)
+
+        # with TemporaryDirectory() as tmp_dir:
+        #     tmp_path = Path(tmp_dir)
+        #     tmp_static_dir = tmp_path / "static"
+        #     tmp_ssr_dir = tmp_path / "ssr"
+        #     tmp_metadata_dir = tmp_path / "metadata"
+
+        #     # Since the tmp builds are within their parent folder, we need to move
+        #     # them out of the way before we clear
+        #     # Unlike the standard rename operation, shutil will treat this move as a rename if the files
+        #     # exist within the same OS and will do a copy/replace if they live across volumes
+        #     # This is necessary for some docker build pipelines where /tmp is auto-mounted
+        #     # as a shared volume between stages and therefore the act of building temporary files
+        #     # would cause a "Invalid cross-device link" when we try to copy
+        #     shutil_move(
+        #         self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
+        #     )
+        #     shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
+        #     shutil_move(
+        #         self.view_root.get_managed_metadata_dir(tmp_build=True),
+        #         tmp_metadata_dir,
+        #     )
+
+        #     static_dir = self.view_root.get_managed_static_dir()
+        #     ssr_dir = self.view_root.get_managed_ssr_dir()
+        #     metadata_dir = self.view_root.get_managed_metadata_dir()
+        #     for clear_dir in [static_dir, ssr_dir, metadata_dir]:
+        #         if clear_dir.exists():
+        #             shutil_rmtree(clear_dir)
+
+        #     print("Will move", tmp_ssr_dir)
+        #     # Final move - shutil requires the destination directory to not exist, otherwise
+        #     # it will place the folder within the given folder. Since we just want a regular
+        #     # rename, we make sure to not create the destination directory
+        #     shutil_move(
+        #         tmp_static_dir, self.view_root.get_managed_static_dir(create_dir=False)
+        #     )
+        #     shutil_move(
+        #         tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
+        #     )
+        #     shutil_move(
+        #         tmp_metadata_dir,
+        #         self.view_root.get_managed_metadata_dir(create_dir=False),
+        #     )
 
     def cache_is_outdated(self):
         """

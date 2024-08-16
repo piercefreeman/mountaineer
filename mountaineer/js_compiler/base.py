@@ -1,7 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import mkdtemp
 
 from mountaineer.controller import ControllerBase
 from mountaineer.paths import ManagedViewPath
@@ -10,6 +9,12 @@ from mountaineer.paths import ManagedViewPath
 @dataclass
 class ClientBundleMetadata:
     package_root_link: ManagedViewPath
+
+    # We keep a tmpdir open for the duration of the build process, so our rust
+    # logic can leverage file-based caches for faster builds
+    # Note that this tmpdir is shared across all client builders, so it's important
+    # that you enforce uniqueness of filenames if you leverage this cache
+    tmp_dir: Path
 
     live_reload_port: int | None = None
 
@@ -22,13 +27,7 @@ class ClientBuilderBase(ABC):
 
     """
 
-    def __init__(self, tmp_dir: Path | None = None):
-        # We keep a tmpdir open for the duration of the build process, so our rust
-        # logic can leverage file-based caches for faster builds
-        # Note that this tmpdir is shared across all client builders, so it's important
-        # that you enforce uniqueness of filenames if you leverage this cache
-        self.tmp_dir = tmp_dir if tmp_dir else Path(mkdtemp())
-
+    def __init__(self):
         self.metadata: ClientBundleMetadata | None = None
 
         self.dirty_files: set[Path] = set()

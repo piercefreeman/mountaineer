@@ -111,6 +111,7 @@ def handle_runserver(
     # Start the webservice - it should persist for the lifetime of the
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
+    start = time()
     watcher_webservice = WatcherWebservice()
     watcher_webservice.start()
 
@@ -127,6 +128,7 @@ def handle_runserver(
     # Start the initial thread
     app_manager.port = port
     app_manager.restart_server()
+    CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 
     def update_build(metadata: CallbackMetadata):
         start = time()
@@ -175,6 +177,11 @@ def handle_runserver(
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
 
+        # Logging in the following section assumes we're actually doing some
+        # work; if we're not, we should just exit early
+        if not updated_js and not updated_python:
+            return
+
         if updated_python:
             LOGGER.debug(f"Changed Python: {updated_python}")
             asyncio.run(js_compiler.build_use_server())
@@ -222,7 +229,7 @@ def handle_runserver(
 
             watcher_webservice.notification_queue.put(True)
 
-        CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
+        CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
 
     # Install a signal handler to catch SIGINT and try to
     # shut down gracefully

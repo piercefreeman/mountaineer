@@ -53,9 +53,8 @@ class JavascriptBundler(ClientBuilderBase):
         self,
         root_element: str = "root",
         environment: str = "development",
-        tmp_dir: Path | None = None,
     ):
-        super().__init__(tmp_dir=tmp_dir)
+        super().__init__()
 
         self.root_element = root_element
         self.environment = environment
@@ -221,7 +220,7 @@ class JavascriptBundler(ClientBuilderBase):
                 raise e
 
         CONSOLE.print(
-            f"[bold green]📬 Compiled frontend in {(monotonic_ns() - start) / 1e9:.2f}s"
+            f"[bold green]🏗️  Compiled {len(build_params)} frontend controller{'s' if len(build_params) > 1 else ''} in {(monotonic_ns() - start) / 1e9:.2f}s"
         )
 
     def generate_js_bundle(
@@ -230,6 +229,9 @@ class JavascriptBundler(ClientBuilderBase):
         controller: ControllerBase,
         metadata: ClientBundleMetadata,
     ) -> JSBundle:
+        if not self.metadata:
+            raise ValueError("Metadata must be set before generating a JS bundle")
+
         # Before starting, make sure all the files are valid
         self.validate_page(
             page_path=file_path, view_root_path=file_path.get_root_link()
@@ -237,7 +239,7 @@ class JavascriptBundler(ClientBuilderBase):
 
         # Since this directory should persist between build lifecycles, we both use a unchanging
         # directory name and one that will be unique across different controllers
-        temp_dir_path = self.tmp_dir / controller.__class__.__name__
+        temp_dir_path = self.metadata.tmp_dir / controller.__class__.__name__
         temp_dir_path.mkdir(exist_ok=True)
 
         layout_paths = self.sniff_for_layouts(
