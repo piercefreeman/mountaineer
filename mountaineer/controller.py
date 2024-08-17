@@ -5,6 +5,7 @@ from json import dumps as json_dumps
 from pathlib import Path
 from re import compile as re_compile
 from time import monotonic_ns
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -157,176 +158,197 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         pass
 
-    async def _generate_html(
-        self,
-        *args,
-        global_metadata: Metadata | None,
-        other_render_contexts: dict[str, RenderBase | RenderNull] | None = None,
-        **kwargs,
-    ):
-        """
-        Generate the HTML that will populate the loaded page of the controller.
+    # async def _generate_html(
+    #     self,
+    #     *args,
+    #     global_metadata: Metadata | None,
+    #     other_render_contexts: dict[str, RenderBase | RenderNull] | None = None,
+    #     **kwargs,
+    # ):
+    #     """
+    #     Generate the HTML that will populate the loaded page of the controller.
 
-        :param other_render_contexts: The dictionary should be constructed in the order of
-        precedence, with the first element being the most hierarchical related element to
-        this controller. This is used by our metadata resolution layer to figure out what
-        is the best metadata attribute to fall back to.
+    #     :param other_render_contexts: The dictionary should be constructed in the order of
+    #     precedence, with the first element being the most hierarchical related element to
+    #     this controller. This is used by our metadata resolution layer to figure out what
+    #     is the best metadata attribute to fall back to.
 
-        """
-        # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
-        # insert it into the page.
-        server_data = self.render(*args, **kwargs)
-        if isawaitable(server_data):
-            server_data = await server_data
-        if server_data is None:
-            server_data = RenderNull()
+    #     """
+    #     # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
+    #     # insert it into the page.
+    #     server_data = self.render(*args, **kwargs)
+    #     if isawaitable(server_data):
+    #         server_data = await server_data
+    #     if server_data is None:
+    #         server_data = RenderNull()
 
-        # This isn't expected to happen, but we add a check to typeguard the following logic
-        if not isinstance(server_data, RenderBase):
-            raise ValueError(
-                f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
-            )
+    #     # This isn't expected to happen, but we add a check to typeguard the following logic
+    #     if not isinstance(server_data, RenderBase):
+    #         raise ValueError(
+    #             f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
+    #         )
 
-        # If we got back metadata that includes a redirect, we should short-circuit the rest of the
-        # render process and return a redirect response
-        if server_data.metadata and server_data.metadata.explicit_response:
-            return server_data.metadata.explicit_response
+    #     # If we got back metadata that includes a redirect, we should short-circuit the rest of the
+    #     # render process and return a redirect response
+    #     if server_data.metadata and server_data.metadata.explicit_response:
+    #         return server_data.metadata.explicit_response
 
-        metadatas: list[Metadata] = []
-        if server_data.metadata:
-            metadatas.append(server_data.metadata)
-        if other_render_contexts and (
-            server_data.metadata is None
-            or not server_data.metadata.ignore_global_metadata
-        ):
-            for other_render_context in other_render_contexts.values():
-                if other_render_context.metadata:
-                    metadatas.append(other_render_context.metadata)
-        if global_metadata and (
-            server_data.metadata is None
-            or not server_data.metadata.ignore_global_metadata
-        ):
-            metadatas.append(global_metadata)
+    #     metadatas: list[Metadata] = []
+    #     if server_data.metadata:
+    #         metadatas.append(server_data.metadata)
+    #     if other_render_contexts and (
+    #         server_data.metadata is None
+    #         or not server_data.metadata.ignore_global_metadata
+    #     ):
+    #         for other_render_context in other_render_contexts.values():
+    #             if other_render_context.metadata:
+    #                 metadatas.append(other_render_context.metadata)
+    #     if global_metadata and (
+    #         server_data.metadata is None
+    #         or not server_data.metadata.ignore_global_metadata
+    #     ):
+    #         metadatas.append(global_metadata)
 
-        header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
+    #     header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
 
-        # Client-side react scripts that will hydrate the server side contents on load
-        server_data_json = {
-            render_key: context.model_dump(mode="json")
-            for render_key, context in [
-                (self.__class__.__name__, server_data),
-                *list(other_render_contexts.items() if other_render_contexts else []),
-            ]
-        }
+    #     # Client-side react scripts that will hydrate the server side contents on load
+    #     server_data_json = {
+    #         render_key: context.model_dump(mode="json")
+    #         for render_key, context in [
+    #             (self.__class__.__name__, server_data),
+    #             *list(other_render_contexts.items() if other_render_contexts else []),
+    #         ]
+    #     }
 
-        ssr_html = self._generate_ssr_html(server_data_json)
+    #     ssr_html = self._generate_ssr_html(server_data_json)
 
-        optional_scripts = "\n".join(
-            [
-                f"<script src='/static/{script_name}'></script>"
-                for script_name in self.bundled_scripts
-            ]
-        )
-        page_contents = f"""
-        <html>
-        <head>
-        {header_str}
-        </head>
-        <body>
-        <div id="root">{ssr_html}</div>
-        <script type="text/javascript">
-        const SERVER_DATA = {json_dumps(server_data_json)};
-        </script>
-        {optional_scripts}
-        </body>
-        </html>
-        """
+    #     optional_scripts = "\n".join(
+    #         [
+    #             f"<script src='/static/{script_name}'></script>"
+    #             for script_name in self.bundled_scripts
+    #         ]
+    #     )
+    #     page_contents = f"""
+    #     <html>
+    #     <head>
+    #     {header_str}
+    #     </head>
+    #     <body>
+    #     <div id="root">{ssr_html}</div>
+    #     <script type="text/javascript">
+    #     const SERVER_DATA = {json_dumps(server_data_json)};
+    #     </script>
+    #     {optional_scripts}
+    #     </body>
+    #     </html>
+    #     """
 
-        return HTMLResponse(page_contents)
+    #     return HTMLResponse(page_contents)
 
-    def _generate_ssr_html(self, server_data: dict[str, Any]) -> str:
-        self.resolve_paths()
+    # def _generate_ssr_html(self, server_data: dict[str, Any]) -> str:
+    #     # if self.mode == "DEVELOPMENT":
+    #     if True:
+    #         # We jit compile the script if we haven't based on the current
+    #         # package configuration. This allows us to pick up updates of
+    #         # dependent files and upstream files like layouts
+    #         if not self.view_base_path:
+    #             raise ValueError("No view base path set for this controller")
 
-        if not self.ssr_path:
-            # Try to resolve the path dynamically now
-            raise ValueError("No SSR path set for this controller")
+    #         # This approach is too specific
+    #         print("SSR VALUES", str(self.view_base_path / self.view_path))
+    #         ssr_script = mountaineer_rs.compile_single_javascript(
+    #             str(self.view_base_path / str(self.view_path).lstrip("/")),
+    #             str(self.view_base_path / "node_modules"),
+    #             "DEVELOPMENT",
+    #             0,
+    #             True,
+    #         )
+    #         # print("SSR SCRIPT", ssr_script)
+    #     else:
+    #         self.resolve_paths()
 
-        start = monotonic_ns()
-        try:
-            ssr_html = render_ssr(
-                self.ssr_path.read_text(),
-                server_data,
-                hard_timeout=self.hard_ssr_timeout,
-            )
-        except V8RuntimeError as e:
-            # Try to parse the file sources and re-raise the error with the
-            # maps on the current filesystem
-            if self.source_map is not None:
-                # parse() is a no-op if the source map is already parsed, so we can do it again
-                self.source_map.parse()
-                raise V8RuntimeError(self.source_map.map_exception(str(e)))
-            raise e
+    #         if not self.ssr_path:
+    #             # Try to resolve the path dynamically now
+    #             raise ValueError("No SSR path set for this controller")
 
-        ssr_duration = (monotonic_ns() - start) / 1e9
-        if ssr_duration > self.slow_ssr_threshold:
-            LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
-        else:
-            LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
+    #         ssr_script = self.ssr_path.read_text()
 
-        return cast(str, ssr_html)
+    #     start = monotonic_ns()
+    #     try:
+    #         ssr_html = render_ssr(
+    #             ssr_script,
+    #             server_data,
+    #             hard_timeout=self.hard_ssr_timeout,
+    #         )
+    #     except V8RuntimeError as e:
+    #         # Try to parse the file sources and re-raise the error with the
+    #         # maps on the current filesystem
+    #         if self.source_map is not None:
+    #             # parse() is a no-op if the source map is already parsed, so we can do it again
+    #             self.source_map.parse()
+    #             raise V8RuntimeError(self.source_map.map_exception(str(e)))
+    #         raise e
 
-    def _build_header(self, metadata: Metadata) -> list[str]:
-        """
-        Builds the header for this controller. Returns the list of tags that will be injected into the
-        <head> tag of the rendered page.
+    #     ssr_duration = (monotonic_ns() - start) / 1e9
+    #     if ssr_duration > self.slow_ssr_threshold:
+    #         LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
+    #     else:
+    #         LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
 
-        """
-        tags: list[str] = []
+    #     return cast(str, ssr_html)
 
-        def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
-            attributes: list[str] = []
-            for key, value in payload.items():
-                if value is None:
-                    continue
-                elif isinstance(value, bool):
-                    # Boolean attributes can just be represented by just their key
-                    if value:
-                        attributes.append(key)
-                    else:
-                        continue
-                else:
-                    attributes.append(f'{key}="{value}"')
-            return " ".join(attributes)
+    # def _build_header(self, metadata: Metadata) -> list[str]:
+    #     """
+    #     Builds the header for this controller. Returns the list of tags that will be injected into the
+    #     <head> tag of the rendered page.
 
-        if metadata.title:
-            tags.append(f"<title>{metadata.title}</title>")
+    #     """
+    #     tags: list[str] = []
 
-        for meta_definition in metadata.metas:
-            meta_attributes = {
-                "name": meta_definition.name,
-                "content": meta_definition.content,
-                **meta_definition.optional_attributes,
-            }
-            tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
+    #     def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
+    #         attributes: list[str] = []
+    #         for key, value in payload.items():
+    #             if value is None:
+    #                 continue
+    #             elif isinstance(value, bool):
+    #                 # Boolean attributes can just be represented by just their key
+    #                 if value:
+    #                     attributes.append(key)
+    #                 else:
+    #                     continue
+    #             else:
+    #                 attributes.append(f'{key}="{value}"')
+    #         return " ".join(attributes)
 
-        for script_definition in metadata.scripts:
-            script_attributes: dict[str, str | bool] = {
-                "src": script_definition.src,
-                "async": script_definition.asynchronous,
-                "defer": script_definition.defer,
-                **script_definition.optional_attributes,
-            }
-            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
+    #     if metadata.title:
+    #         tags.append(f"<title>{metadata.title}</title>")
 
-        for link_definition in metadata.links:
-            link_attributes = {
-                "rel": link_definition.rel,
-                "href": link_definition.href,
-                **link_definition.optional_attributes,
-            }
-            tags.append(f"<link {format_optional_keys(link_attributes)} />")
+    #     for meta_definition in metadata.metas:
+    #         meta_attributes = {
+    #             "name": meta_definition.name,
+    #             "content": meta_definition.content,
+    #             **meta_definition.optional_attributes,
+    #         }
+    #         tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
 
-        return tags
+    #     for script_definition in metadata.scripts:
+    #         script_attributes: dict[str, str | bool] = {
+    #             "src": script_definition.src,
+    #             "async": script_definition.asynchronous,
+    #             "defer": script_definition.defer,
+    #             **script_definition.optional_attributes,
+    #         }
+    #         tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
+
+    #     for link_definition in metadata.links:
+    #         link_attributes = {
+    #             "rel": link_definition.rel,
+    #             "href": link_definition.href,
+    #             **link_definition.optional_attributes,
+    #         }
+    #         tags.append(f"<link {format_optional_keys(link_attributes)} />")
+
+    #     return tags
 
     def _get_client_functions(self) -> Iterable[tuple[str, Callable, FunctionMetadata]]:
         """

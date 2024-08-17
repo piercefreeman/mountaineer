@@ -6,9 +6,11 @@ use pyo3::types::PyTuple;
 use std::collections::HashMap;
 use std::ffi::c_int;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tempfile;
 
 mod dependencies;
 mod errors;
@@ -350,6 +352,138 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         Ok(true)
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "compile_multiple_javascript")]
+    fn compile_multiple_javascript(
+        py: Python,
+        paths: Vec<Vec<String>>,
+        node_modules_path: String,
+        environment: String,
+        live_reload_port: i32,
+        is_server: bool,
+    ) -> PyResult<Vec<String>> {
+        #[allow(clippy::print_stdout)]
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
+        let mut output_files = Vec::new();
+
+        // Each entrypoint definition is a single page
+        for path_group in paths.iter() {
+            // Create a temporary file for the synthetic entrypoint
+            let temp_dir = tempfile::TempDir::new()?;
+            let temp_file_path = temp_dir.path().join("entrypoint.jsx");
+            let mut temp_file = fs::File::create(&temp_file_path)?;
+
+            // Generate the synthetic entrypoint content
+            let mut entrypoint_content = String::from("import React from 'react';\n");
+            //entrypoint_content += "import { mountLiveReload } from '@/lib/live_reload';\n\n";
+
+            for (j, path) in path_group.iter().enumerate() {
+                entrypoint_content += &format!("import Layout{} from '{}';\n", j, path);
+            }
+
+            entrypoint_content += "\nconst Entrypoint = () => {\n";
+            //entrypoint_content += "    mountLiveReload({});\n";
+            entrypoint_content += "    return (\n";
+
+            // Nest the layouts
+            for (i, _path) in path_group.iter().enumerate() {
+                entrypoint_content += &"        ".repeat(i + 1);
+                entrypoint_content += &format!("<Layout{}>\n", i);
+            }
+
+            // Add the innermost Page component
+            //entrypoint_content += &"        ".repeat(paths.len() + 1);
+            //entrypoint_content += "<Page />\n";
+
+            // Close the nested layouts
+            for (i, _path) in path_group.iter().enumerate().rev() {
+                entrypoint_content += &"        ".repeat(i + 1);
+                entrypoint_content += &format!("</Layout{}>\n", i);
+            }
+
+            entrypoint_content += "    );\n";
+            entrypoint_content += "};\n\n";
+
+            // Add client-side or server-side specific code
+            if !is_server {
+                entrypoint_content += "import { hydrateRoot } from 'react-dom/client';\n";
+                entrypoint_content += "const container = document.getElementById('root');\n";
+                entrypoint_content += "hydrateRoot(container, <Entrypoint />);\n";
+            } else {
+                entrypoint_content += "import { renderToString } from 'react-dom/server';\n";
+                entrypoint_content +=
+                    "export const Index = () => renderToString(<Entrypoint />);\n";
+            }
+
+            println!("entrypoint_content: {}", entrypoint_content);
+
+            // Write the entrypoint content to the temporary file
+            temp_file.write_all(entrypoint_content.as_bytes())?;
+
+            // Use the temporary file as the entrypoint for esbuild
+            // TODO: Refactor out so we can pass multiple files
+            let temp_path_str = temp_file_path.to_str().unwrap().to_string();
+            let context_result = src_go::get_build_context(
+                &temp_path_str,
+                &node_modules_path,
+                &environment,
+                live_reload_port,
+                is_server,
+            );
+
+            let context_id = match context_result {
+                Ok(id) => id,
+                Err(err) => {
+                    println!("Error getting build context: {:?}", err);
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(err));
+                }
+            };
+
+            let callback = Arc::new(Box::new(move |_id: i32| {
+                // We don't need to do anything in the callback for a single file compilation
+            }) as Box<dyn Fn(i32) + Send + Sync>);
+
+            let rebuild_result =
+                py.allow_threads(move || src_go::rebuild_contexts(vec![context_id], callback));
+
+            if let Err(err) = rebuild_result {
+                println!("Error rebuilding context: {:?}", err);
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    err.join("\n"),
+                ));
+            }
+
+            // Read all the contents in temp_dir
+            println!("Contents of temporary directory:");
+            let mut file_paths = Vec::new();
+            for entry in fs::read_dir(temp_dir.path())? {
+                let entry = entry?;
+                let path: PathBuf = entry.path();
+                println!("  {:?}", path);
+                file_paths.push(path);
+            }
+
+            // Read the compiled file
+            match fs::read_to_string(temp_file_path.with_extension("jsx.out")) {
+                Ok(content) => {
+                    output_files.push(content);
+                }
+                Err(err) => {
+                    println!("Error reading compiled file: {:?}", err);
+                    return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                        "Failed to read compiled file: {}",
+                        err
+                    )));
+                }
+            }
+        }
+
+        Ok(output_files)
     }
 
     Ok(())

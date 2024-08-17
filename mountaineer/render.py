@@ -1,6 +1,6 @@
 from hashlib import sha256
 from json import dumps as json_dumps
-from typing import TYPE_CHECKING, Any, Type
+from typing import TYPE_CHECKING, Any, Mapping, Type
 
 from fastapi import Response
 from pydantic import BaseModel, model_validator
@@ -175,6 +175,69 @@ class Metadata(BaseModel):
         "extra": "forbid",
         "arbitrary_types_allowed": True,
     }
+
+    def merge(self, parent: "Metadata") -> "Metadata":
+        return Metadata(
+            title=self.title or parent.title,
+            metas=[*self.metas, *parent.metas],
+            links=[*self.links, *parent.links],
+            scripts=[*self.scripts, *parent.scripts],
+            explicit_response=self.explicit_response,
+            ignore_global_metadata=self.ignore_global_metadata,
+        )
+
+    def build_header(self) -> list[str]:
+        """
+        Builds the header for this controller. Returns the list of tags that will be injected into the
+        <head> tag of the rendered page.
+
+        """
+        tags: list[str] = []
+
+        def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
+            attributes: list[str] = []
+            for key, value in payload.items():
+                if value is None:
+                    continue
+                elif isinstance(value, bool):
+                    # Boolean attributes can just be represented by just their key
+                    if value:
+                        attributes.append(key)
+                    else:
+                        continue
+                else:
+                    attributes.append(f'{key}="{value}"')
+            return " ".join(attributes)
+
+        if self.title:
+            tags.append(f"<title>{self.title}</title>")
+
+        for meta_definition in self.metas:
+            meta_attributes = {
+                "name": meta_definition.name,
+                "content": meta_definition.content,
+                **meta_definition.optional_attributes,
+            }
+            tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
+
+        for script_definition in self.scripts:
+            script_attributes: dict[str, str | bool] = {
+                "src": script_definition.src,
+                "async": script_definition.asynchronous,
+                "defer": script_definition.defer,
+                **script_definition.optional_attributes,
+            }
+            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
+
+        for link_definition in self.links:
+            link_attributes = {
+                "rel": link_definition.rel,
+                "href": link_definition.href,
+                **link_definition.optional_attributes,
+            }
+            tags.append(f"<link {format_optional_keys(link_attributes)} />")
+
+        return tags
 
 
 class RenderBase(BaseModel, metaclass=ReturnModelMetaclass):

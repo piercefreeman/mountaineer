@@ -167,11 +167,13 @@ class AppManager:
     def mount_exceptions(self, app_controller: AppController):
         app_controller.register(self.exception_controller)
         app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+        pass
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
         # If we're receiving a GET request, show the exception. Otherwise fall back
         # on the normal REST handlers
         if request.method == "GET":
+            raise NotImplementedError
             response = await self.exception_controller._generate_html(
                 global_metadata=None,
                 exception=str(exc),

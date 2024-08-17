@@ -192,6 +192,11 @@ def handle_runserver(
             LOGGER.debug(f"Changed JS: {updated_js}")
             asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
 
+            # TODO: Switch to the DAG state management of imports
+            # that's provided by mountaineer_rs
+            for path in updated_js:
+                app_manager.app_controller.invalidate_view(path)
+
         if updated_python:
             # Update the nested dependencies of our app that are brought into runtime
             # and still hold on to an outdated version of the module. We reload these

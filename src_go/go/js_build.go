@@ -76,6 +76,12 @@ func GetBuildContext(
 		buildOptions.Define["process.env.SSR_RENDERING"] = "false"
 	}
 
+	// Split code into least common parts
+	// During a production build we will do this at the aggregate level
+	// to ensure that the code is as small as possible; at debugging
+	// we mostly want to keep local units isolate
+	// buildOptions.Splitting = true
+
 	ctx, err := api.Context(buildOptions)
 	if err != nil {
 		// Log the error
