@@ -362,6 +362,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         node_modules_path: String,
         environment: String,
         live_reload_port: i32,
+        live_reload_import: String,
         is_server: bool,
     ) -> PyResult<Vec<String>> {
         #[allow(clippy::print_stdout)]
@@ -380,14 +381,15 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
             // Generate the synthetic entrypoint content
             let mut entrypoint_content = String::from("import React from 'react';\n");
-            //entrypoint_content += "import { mountLiveReload } from '@/lib/live_reload';\n\n";
+            entrypoint_content +=
+                &format!("import mountLiveReload from '{}';\n\n", live_reload_import);
 
             for (j, path) in path_group.iter().enumerate() {
                 entrypoint_content += &format!("import Layout{} from '{}';\n", j, path);
             }
 
             entrypoint_content += "\nconst Entrypoint = () => {\n";
-            //entrypoint_content += "    mountLiveReload({});\n";
+            entrypoint_content += "    mountLiveReload({});\n";
             entrypoint_content += "    return (\n";
 
             // Nest the layouts

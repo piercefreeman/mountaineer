@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
+from mountaineer.static import get_static_path
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
 from dataclasses import dataclass, field
@@ -161,6 +162,8 @@ class AppController:
         # Edges that link the hierarchy together
         self.hierarchy_paths: dict[Path, LayoutElement] = {}
 
+        self.live_reload_port : int = 0
+
     def register(self, controller: ControllerBase):
         """
         Register a new controller. This will:
@@ -234,16 +237,18 @@ class AppController:
                 controller_node.cached_server_script = mountaineer_rs.compile_multiple_javascript(
                     view_paths,
                     str(self.view_root / "node_modules"),
-                    "DEVELOPMENT",
+                    "development",
                     0,
+                    str(get_static_path("live_reload.ts").resolve().absolute()),
                     True,
                 )[0]
             if not controller_node.cached_client_script:
                 controller_node.cached_client_script = mountaineer_rs.compile_multiple_javascript(
                     view_paths,
                     str(self.view_root / "node_modules"),
-                    "DEVELOPMENT",
-                    5008,
+                    "development",
+                    self.live_reload_port,
+                    str(get_static_path("live_reload.ts").resolve().absolute()),
                     False,
                 )[0]
             print(f"Rendered scripts in {(monotonic_ns() - start) / 1e9}")
@@ -448,6 +453,8 @@ class AppController:
         """
         if path.resolve().absolute() not in self.hierarchy_paths:
             return
+
+        LOGGER.debug(f"Will invalidate path and children controllers: {path}")
 
         def _invalidate_node(node: LayoutElement):
             node.cached_server_script = None

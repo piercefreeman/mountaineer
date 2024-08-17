@@ -127,8 +127,10 @@ def handle_runserver(
     asyncio.run(js_compiler.build_all())
 
     # Start the initial thread
+    # TODO: Clean up the variable passing between clientbuilder and app controller
     app_manager.port = port
     app_manager.host = host
+    app_manager.app_controller.live_reload_port = watcher_webservice.port
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 

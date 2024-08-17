@@ -5,6 +5,7 @@ from traceback import format_exception
 from types import ModuleType
 
 from fastapi import Request
+from fastapi.responses import Response
 
 from mountaineer.app import AppController
 from mountaineer.controllers.exception_controller import ExceptionController
@@ -173,13 +174,14 @@ class AppManager:
         # If we're receiving a GET request, show the exception. Otherwise fall back
         # on the normal REST handlers
         if request.method == "GET":
-            raise NotImplementedError
-            response = await self.exception_controller._generate_html(
-                global_metadata=None,
-                exception=str(exc),
-                stack="".join(format_exception(exc)),
-            )
-            response.status_code = 500
-            return response
+            # raise NotImplementedError
+            # response = await self.exception_controller._generate_html(
+            #     global_metadata=None,
+            #     exception=str(exc),
+            #     stack="".join(format_exception(exc)),
+            # )
+            # response.status_code = 500
+            # return response
+            return Response("".join(format_exception(exc)))
         else:
             raise exc
