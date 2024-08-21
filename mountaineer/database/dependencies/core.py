@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.pool import AsyncAdaptedQueuePool, NullPool
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.cache import AsyncLoopObjectCache
 from mountaineer.database.config import DatabaseConfig, PoolType
@@ -88,7 +89,9 @@ async def get_db_session(
     ```
 
     """
-    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    session_maker = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
     async with session_maker() as session:
         try:
             yield session

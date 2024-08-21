@@ -6,8 +6,9 @@ import pytest
 import pytest_asyncio
 from fastapi import Depends
 from sqlalchemy import exc as sa_exc
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel import SQLModel, text
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.config import ConfigBase, unregister_config
 from mountaineer.database import DatabaseDependencies
@@ -130,6 +131,8 @@ async def db_engine(config: MigrationAppConfig):
 
 @pytest_asyncio.fixture
 async def db_session(db_engine: AsyncEngine):
-    session_maker = async_sessionmaker(db_engine, expire_on_commit=False)
+    session_maker = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
     async with session_maker() as session:
         yield session
