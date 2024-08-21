@@ -4,8 +4,8 @@ from typing import cast
 from sqlalchemy.exc import InvalidRequestError
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel import text
-from sqlmodel.ext.asyncio.session import AsyncSession
 
+from mountaineer.database.session import AsyncSession
 from mountaineer.logging import LOGGER
 from mountaineer.migrations.actions import DatabaseActions
 
@@ -106,7 +106,7 @@ class Migrator:
         """
         )
 
-        await self.db_session.exec(query, {"value": value})
+        await self.db_session.exec(query, params={"value": value})
         await self.db_session.flush()
 
         LOGGER.info("Active revision set")

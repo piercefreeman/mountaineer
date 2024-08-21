@@ -8,11 +8,11 @@ from fastapi import Depends
 from sqlalchemy import exc as sa_exc
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel import SQLModel, text
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.config import ConfigBase, unregister_config
 from mountaineer.database import DatabaseDependencies
 from mountaineer.database.config import DatabaseConfig
+from mountaineer.database.session import AsyncSession
 from mountaineer.dependencies.base import get_function_dependencies
 from mountaineer.test_utilities import bootstrap_database
 

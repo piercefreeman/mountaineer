@@ -5,7 +5,7 @@ from mountaineer import Metadata, RenderBase, ControllerBase, APIException, side
 from mountaineer.database import DatabaseDependencies
 
 from fastapi import Request, Depends
-from sqlmodel.ext.asyncio.session import AsyncSession
+from mountaineer.database.session import AsyncSession
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 

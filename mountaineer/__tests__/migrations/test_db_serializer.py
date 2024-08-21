@@ -5,10 +5,10 @@ import sqlalchemy as sa
 from pydantic import create_model
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlmodel import Field, SQLModel
-from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.main import FieldInfo
 
 from mountaineer.compat import StrEnum
+from mountaineer.database.session import AsyncSession
 from mountaineer.migrations.actions import (
     ColumnType,
     ConstraintType,

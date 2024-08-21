@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 import pytest
 from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 from sqlmodel import text
-from sqlmodel.ext.asyncio.session import AsyncSession
 
+from mountaineer.database.session import AsyncSession
 from mountaineer.migrations.actions import (
     CheckConstraint,
     ColumnType,

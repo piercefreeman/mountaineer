@@ -5,9 +5,9 @@ from typing import Any, Callable, Literal, overload
 
 from pydantic import BaseModel
 from sqlmodel import text
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.compat import StrEnum
+from mountaineer.database.session import AsyncSession
 from mountaineer.logging import LOGGER
 
 

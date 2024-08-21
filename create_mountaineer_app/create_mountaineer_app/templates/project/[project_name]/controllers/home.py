@@ -7,7 +7,7 @@ from mountaineer.database import DatabaseDependencies
 from fastapi import Request, Depends
 from pydantic import BaseModel
 from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
+from mountaineer.database.session import AsyncSession
 
 from {{project_name}} import models
 

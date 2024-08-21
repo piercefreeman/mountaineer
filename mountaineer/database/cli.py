@@ -40,7 +40,7 @@ async def handle_createdb(*args, **kwargs):
             await connection.run_sync(SQLModel.metadata.create_all)
 
             # Log the tables that were created
-            result = await connection.exec(
+            result = await connection.execute(
                 text(
                     """
                 SELECT table_name
