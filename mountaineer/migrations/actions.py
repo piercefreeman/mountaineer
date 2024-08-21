@@ -4,10 +4,10 @@ from re import fullmatch as re_fullmatch
 from typing import Any, Callable, Literal, overload
 
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import text
 
 from mountaineer.compat import StrEnum
+from mountaineer.database.session import AsyncSession
 from mountaineer.logging import LOGGER
 
 
@@ -643,7 +643,7 @@ class DatabaseActions:
             LOGGER.debug(f"Executing migration SQL: {sql}")
 
             self.prod_sqls.append(sql)
-            await self.db_session.execute(text(sql))
+            await self.db_session.exec(text(sql))
 
     def add_comment(self, text: str):
         if self.dry_run:

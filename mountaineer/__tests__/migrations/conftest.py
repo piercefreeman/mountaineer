@@ -6,12 +6,13 @@ import pytest
 import pytest_asyncio
 from fastapi import Depends
 from sqlalchemy import exc as sa_exc
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel import SQLModel, text
 
 from mountaineer.config import ConfigBase, unregister_config
 from mountaineer.database import DatabaseDependencies
 from mountaineer.database.config import DatabaseConfig
+from mountaineer.database.session import AsyncSession
 from mountaineer.dependencies.base import get_function_dependencies
 from mountaineer.test_utilities import bootstrap_database
 
@@ -44,7 +45,7 @@ async def clear_all_database_objects(db_session: AsyncSession):
 
     """
     # Step 1: Drop all tables in the public schema
-    await db_session.execute(
+    await db_session.exec(
         text(
             """
         DO $$ DECLARE
@@ -59,7 +60,7 @@ async def clear_all_database_objects(db_session: AsyncSession):
     )
 
     # Step 2: Drop all custom types in the public schema
-    await db_session.execute(
+    await db_session.exec(
         text(
             """
         DO $$ DECLARE
@@ -130,6 +131,8 @@ async def db_engine(config: MigrationAppConfig):
 
 @pytest_asyncio.fixture
 async def db_session(db_engine: AsyncEngine):
-    session_maker = async_sessionmaker(db_engine, expire_on_commit=False)
+    session_maker = async_sessionmaker(
+        db_engine, class_=AsyncSession, expire_on_commit=False
+    )
     async with session_maker() as session:
         yield session

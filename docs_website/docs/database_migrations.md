@@ -143,7 +143,7 @@ async def up(
     self,
     migrator: Migrator = Depends(MigrationDependencies.get_migrator),
 ):
-    result = await migrator.db_session.execute("SELECT * FROM article")
+    result = await migrator.db_session.exec("SELECT * FROM article")
 ```
 
 We recommend using the actor object whenever possible, as it provides a more consistent and safe way to run migrations. If you are using the raw database session object, be aware that we require migrations to be run in a single transaction. This ensures that if a migration fails, the database will be rolled back to its previous state. We therefore disable calling `db_session.commit()` explicitly from within user code.
