@@ -73,7 +73,7 @@ class Migrator:
 
         """
         # Create the table if it doesn't exist
-        result = await self.db_session.execute(
+        result = await self.db_session.exec(
             text(
                 """
             CREATE TABLE IF NOT EXISTS migration_info (
@@ -85,12 +85,10 @@ class Migrator:
         await self.db_session.flush()
 
         # Check if the table is empty and insert a default value if necessary
-        result = await self.db_session.execute(
-            text("SELECT COUNT(*) FROM migration_info")
-        )
+        result = await self.db_session.exec(text("SELECT COUNT(*) FROM migration_info"))
         count = result.scalar_one()
         if count == 0:
-            await self.db_session.execute(
+            await self.db_session.exec(
                 text("INSERT INTO migration_info (active_revision) VALUES (NULL)")
             )
             await self.db_session.flush()
@@ -108,7 +106,7 @@ class Migrator:
         """
         )
 
-        await self.db_session.execute(query, {"value": value})
+        await self.db_session.exec(query, {"value": value})
         await self.db_session.flush()
 
         LOGGER.info("Active revision set")
@@ -120,5 +118,5 @@ class Migrator:
         """
         )
 
-        result = await self.db_session.execute(query)
+        result = await self.db_session.exec(query)
         return cast(str | None, result.scalar_one())

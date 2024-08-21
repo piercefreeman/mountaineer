@@ -45,7 +45,7 @@ async def clear_all_database_objects(db_session: AsyncSession):
 
     """
     # Step 1: Drop all tables in the public schema
-    await db_session.execute(
+    await db_session.exec(
         text(
             """
         DO $$ DECLARE
@@ -60,7 +60,7 @@ async def clear_all_database_objects(db_session: AsyncSession):
     )
 
     # Step 2: Drop all custom types in the public schema
-    await db_session.execute(
+    await db_session.exec(
         text(
             """
         DO $$ DECLARE

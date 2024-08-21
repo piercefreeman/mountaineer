@@ -52,7 +52,7 @@ class DatabaseSerializer:
                 yield constraint, dependencies + [table]
 
     async def get_tables(self, session: AsyncSession):
-        result: Result = await session.execute(
+        result: Result = await session.exec(
             text(
                 "SELECT table_name FROM information_schema.tables WHERE table_schema='public'"
             )
@@ -86,7 +86,7 @@ class DatabaseSerializer:
 
         """
         )
-        result = await session.execute(query, {"table_name": table_name})
+        result = await session.exec(query, params={"table_name": table_name})
 
         column_dependencies: list[DBObject] = []
 
@@ -129,7 +129,7 @@ class DatabaseSerializer:
             WHERE pg_class.relname = :table_name
         """
         )
-        result = await session.execute(query, {"table_name": table_name})
+        result = await session.exec(query, params={"table_name": table_name})
         for row in result.fetchall():
             contype = (
                 row.contype.decode() if isinstance(row.contype, bytes) else row.contype
@@ -157,7 +157,7 @@ class DatabaseSerializer:
             if ctype == ConstraintType.FOREIGN_KEY:
                 # Fetch target table
                 fk_query = text("SELECT relname FROM pg_class WHERE oid = :oid")
-                fk_result = await session.execute(fk_query, {"oid": row.confrelid})
+                fk_result = await session.exec(fk_query, params={"oid": row.confrelid})
                 target_table = fk_result.scalar_one()
 
                 # Fetch target columns
@@ -168,8 +168,9 @@ class DatabaseSerializer:
                     WHERE a.attrelid = :oid AND a.attnum = ANY(:conkey)
                 """
                 )
-                target_columns_result = await session.execute(
-                    target_columns_query, {"oid": row.confrelid, "conkey": row.confkey}
+                target_columns_result = await session.exec(
+                    target_columns_query,
+                    params={"oid": row.confrelid, "conkey": row.confkey},
                 )
                 target_columns = {row[0] for row in target_columns_result}
 
@@ -185,7 +186,7 @@ class DatabaseSerializer:
                     WHERE c.oid = :oid
                     """
                 )
-                check_result = await session.execute(check_query, {"oid": row.oid})
+                check_result = await session.exec(check_query, params={"oid": row.oid})
                 check_constraint_expr = check_result.scalar_one()
 
                 check_constraint = CheckConstraint(
@@ -213,8 +214,8 @@ class DatabaseSerializer:
         query = text(
             "SELECT attname FROM pg_attribute WHERE attnum = ANY(:conkey) AND attrelid = (SELECT oid FROM pg_class WHERE relname = :table_name)"
         )
-        result = await session.execute(
-            query, {"conkey": conkey, "table_name": table_name}
+        result = await session.exec(
+            query, params={"conkey": conkey, "table_name": table_name}
         )
         return list(result.scalars().all())
 
@@ -231,7 +232,9 @@ class DatabaseSerializer:
         WHERE pg_type.typname = :type_name
         """
         )
-        values_result = await session.execute(values_query, {"type_name": type_name})
+        values_result = await session.exec(
+            values_query, params={"type_name": type_name}
+        )
         values = frozenset(values_result.scalars().all())
 
         # Determine all the columns where this type is referenced
@@ -251,8 +254,8 @@ class DatabaseSerializer:
                 AND NOT a.attisdropped;
             """
         )
-        reference_columns_results = await session.execute(
-            reference_columns_query, {"type_name": type_name}
+        reference_columns_results = await session.exec(
+            reference_columns_query, params={"type_name": type_name}
         )
         reference_columns = frozenset(
             {

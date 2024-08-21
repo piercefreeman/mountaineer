@@ -24,9 +24,9 @@ class HomeController(ControllerBase):
         self,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
     ) -> HomeRender:
-        items = await session.execute(select(models.DetailItem))
+        items = (await session.exec(select(models.DetailItem))).all()
         return HomeRender(
-            items=items.scalars().all(),
+            items=items,
             metadata=Metadata(title="Home"),
         )
 

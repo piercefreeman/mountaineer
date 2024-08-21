@@ -156,7 +156,7 @@ async def test_add_table(
     await db_session.commit()
 
     # We should have a table in the database
-    assert await db_session.execute(text("SELECT * FROM test_table"))
+    assert await db_session.exec(text("SELECT * FROM test_table"))
 
 
 @pytest.mark.asyncio
@@ -173,7 +173,7 @@ async def test_add_table_reserved_keyword(
     await db_session.commit()
 
     # We should have a table in the database
-    assert await db_session.execute(text("SELECT * FROM user"))
+    assert await db_session.exec(text("SELECT * FROM user"))
 
 
 @pytest.mark.asyncio
@@ -182,7 +182,7 @@ async def test_drop_table(
     db_session: AsyncSession,
 ):
     # Set up a table for us to drop first
-    await db_session.execute(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
+    await db_session.exec(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
     await db_session.commit()
 
     await db_backed_actions.drop_table("test_table")
@@ -191,7 +191,7 @@ async def test_drop_table(
     # SQLAlchemy re-raises the exception as a ProgrammingError, but includes
     # the original exception as a string representation that we can match against
     with pytest.raises(ProgrammingError, match="UndefinedTableError"):
-        await db_session.execute(text("SELECT * FROM test_table"))
+        await db_session.exec(text("SELECT * FROM test_table"))
 
 
 @pytest.mark.asyncio
@@ -200,7 +200,7 @@ async def test_add_column(
     db_session: AsyncSession,
 ):
     # Set up a table for us to drop first
-    await db_session.execute(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
+    await db_session.exec(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
     await db_session.commit()
 
     # Standard type
@@ -220,11 +220,11 @@ async def test_add_column(
 
     # We should now have columns in the table
     # Insert an object with the expected columns
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column, test_column_list) VALUES (:column_value, :list_values)"
         ),
-        {
+        params={
             "column_value": "test_value",
             "list_values": ["value_1", "value_2"],
         },
@@ -233,7 +233,7 @@ async def test_add_column(
     await db_session.commit()
 
     # Make sure that we can retrieve the object
-    result = await db_session.execute(text("SELECT * FROM test_table"))
+    result = await db_session.exec(text("SELECT * FROM test_table"))
     row = result.fetchone()
     assert row
     assert row[1] == "test_value"
@@ -254,7 +254,7 @@ async def test_add_column_any_type(
 
     """
     # Set up a table for us to drop first
-    await db_session.execute(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
+    await db_session.exec(text("CREATE TABLE test_table (id SERIAL PRIMARY KEY)"))
     await db_session.commit()
 
     await db_backed_actions.add_column(
@@ -264,7 +264,7 @@ async def test_add_column_any_type(
     )
 
     # Query the postgres index to see if the column was created
-    result = await db_session.execute(
+    result = await db_session.exec(
         text(
             "SELECT data_type FROM information_schema.columns WHERE table_name = 'test_table' AND column_name = 'test_column'"
         )
@@ -299,7 +299,7 @@ async def test_drop_column(
     db_session: AsyncSession,
 ):
     # Set up a table for us to drop first
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
     )
     await db_session.commit()
@@ -308,7 +308,7 @@ async def test_drop_column(
 
     # We should not have a column in the table
     with pytest.raises(ProgrammingError, match="UndefinedColumn"):
-        await db_session.execute(text("SELECT test_column FROM test_table"))
+        await db_session.exec(text("SELECT test_column FROM test_table"))
 
 
 @pytest.mark.asyncio
@@ -317,7 +317,7 @@ async def test_rename_column(
     db_session: AsyncSession,
 ):
     # Set up a table for us to drop first
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
     )
     await db_session.commit()
@@ -325,11 +325,11 @@ async def test_rename_column(
     await db_backed_actions.rename_column("test_table", "test_column", "new_column")
 
     # We should have a column in the table
-    assert await db_session.execute(text("SELECT new_column FROM test_table"))
+    assert await db_session.exec(text("SELECT new_column FROM test_table"))
 
     # We should not have a column in the table
     with pytest.raises(ProgrammingError, match="UndefinedColumn"):
-        await db_session.execute(text("SELECT test_column FROM test_table"))
+        await db_session.exec(text("SELECT test_column FROM test_table"))
 
 
 @pytest.mark.asyncio
@@ -338,7 +338,7 @@ async def modify_column_type(
     db_session: AsyncSession,
 ):
     # Set up a table with the old types
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
     )
     await db_session.commit()
@@ -350,9 +350,9 @@ async def modify_column_type(
     )
 
     # We should now be able to inject an integer value
-    await db_session.execute(
+    await db_session.exec(
         text("INSERT INTO test_table (test_column) VALUES (:column_value)"),
-        {
+        params={
             "column_value": 1,
         },
     )
@@ -360,7 +360,7 @@ async def modify_column_type(
     await db_session.commit()
 
     # Make sure that we can retrieve the object
-    result = await db_session.execute(text("SELECT * FROM test_table"))
+    result = await db_session.exec(text("SELECT * FROM test_table"))
     row = result.fetchone()
     assert row
     assert row[1] == 1
@@ -372,21 +372,21 @@ async def test_add_constraint_foreign_key(
     db_session: AsyncSession,
 ):
     # Set up two tables since we need a table target
-    await db_session.execute(
+    await db_session.exec(
         text(
             "CREATE TABLE external_table (id SERIAL PRIMARY KEY, external_column VARCHAR)"
         )
     )
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column_id INTEGER)")
     )
 
     # Insert an existing object into the external table
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO external_table (id, external_column) VALUES (:id, :column_value)",
         ),
-        {
+        params={
             "id": 1,
             "column_value": "test_value",
         },
@@ -406,22 +406,22 @@ async def test_add_constraint_foreign_key(
 
     # We should now have a foreign key constraint
     # Insert an object that links to our known external object
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column_id) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": 1,
         },
     )
 
     # We should not be able to insert an object that does not link to the external object
     with pytest.raises(IntegrityError, match="foreign key constraint"):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (test_column_id) VALUES (:column_value)",
             ),
-            {
+            params={
                 "column_value": 2,
             },
         )
@@ -433,7 +433,7 @@ async def test_add_constraint_unique(
     db_session: AsyncSession,
 ):
     # Add the table that should have a unique column
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
     )
 
@@ -447,11 +447,11 @@ async def test_add_constraint_unique(
 
     # We should now have a unique constraint, make sure that we can't
     # insert the same value twice
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": "test_value",
         },
     )
@@ -459,11 +459,11 @@ async def test_add_constraint_unique(
     with pytest.raises(
         IntegrityError, match="duplicate key value violates unique constraint"
     ):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (test_column) VALUES (:column_value)",
             ),
-            {
+            params={
                 "column_value": "test_value",
             },
         )
@@ -475,7 +475,7 @@ async def test_add_constraint_primary_key(
     db_session: AsyncSession,
 ):
     # Create an empty table to simulate one just created
-    await db_session.execute(text("CREATE TABLE test_table ()"))
+    await db_session.exec(text("CREATE TABLE test_table ()"))
 
     # Add a new column
     await db_backed_actions.add_column("test_table", "test_column", ColumnType.INTEGER)
@@ -490,11 +490,11 @@ async def test_add_constraint_primary_key(
 
     # We should now have a primary key constraint, make sure that we can insert
     # a value into the column
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": 1,
         },
     )
@@ -503,11 +503,11 @@ async def test_add_constraint_primary_key(
     with pytest.raises(
         IntegrityError, match="duplicate key value violates unique constraint"
     ):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (test_column) VALUES (:column_value)",
             ),
-            {
+            params={
                 "column_value": 1,
             },
         )
@@ -519,7 +519,7 @@ async def test_add_constraint_check(
     db_session: AsyncSession,
 ):
     # Create a table with a integer price column
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, price INTEGER)")
     )
 
@@ -533,22 +533,22 @@ async def test_add_constraint_check(
     )
 
     # Make sure that we can insert a positive value
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (price) VALUES (:price)",
         ),
-        {
+        params={
             "price": 1,
         },
     )
 
     # We expect negative values to fail
     with pytest.raises(IntegrityError, match="violates check constraint"):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (price) VALUES (:price)",
             ),
-            {
+            params={
                 "price": -1,
             },
         )
@@ -560,10 +560,10 @@ async def test_drop_constraint(
     db_session: AsyncSession,
 ):
     # Manually create a table with a unique constraint
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
     )
-    await db_session.execute(
+    await db_session.exec(
         text(
             "ALTER TABLE test_table ADD CONSTRAINT test_unique_constraint UNIQUE (test_column)"
         )
@@ -573,20 +573,20 @@ async def test_drop_constraint(
     await db_backed_actions.drop_constraint("test_table", "test_unique_constraint")
 
     # We should now be able to insert the same value twice
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": "test_value",
         },
     )
 
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": "test_value",
         },
     )
@@ -598,7 +598,7 @@ async def test_add_not_null(
     db_session: AsyncSession,
 ):
     # Create a table with a nullable column (default behavior for fields)
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR)")
     )
 
@@ -606,11 +606,11 @@ async def test_add_not_null(
 
     # We should now have a not null constraint, make sure that we can't insert a null value
     with pytest.raises(IntegrityError, match="null value in column"):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (test_column) VALUES (:column_value)",
             ),
-            {
+            params={
                 "column_value": None,
             },
         )
@@ -622,7 +622,7 @@ async def test_drop_not_null(
     db_session: AsyncSession,
 ):
     # Create a table with a not null column
-    await db_session.execute(
+    await db_session.exec(
         text(
             "CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column VARCHAR NOT NULL)"
         )
@@ -631,11 +631,11 @@ async def test_drop_not_null(
     await db_backed_actions.drop_not_null("test_table", "test_column")
 
     # We should now be able to insert a null value
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": None,
         },
     )
@@ -649,27 +649,27 @@ async def test_add_type(
     await db_backed_actions.add_type("test_type", ["A", "B"])
 
     # Create a new table with a column of the new type
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column test_type)")
     )
 
     # We should be able to insert values that match this type
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": "A",
         },
     )
 
     # Values not in the enum type definition should fail during insertion
     with pytest.raises(DBAPIError, match="InvalidTextRepresentationError"):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (test_column) VALUES (:column_value)",
             ),
-            {
+            params={
                 "column_value": "C",
             },
         )
@@ -681,10 +681,10 @@ async def test_add_type_values(
     db_session: AsyncSession,
 ):
     # Create an existing enum
-    await db_session.execute(text("CREATE TYPE test_type AS ENUM ('A')"))
+    await db_session.exec(text("CREATE TYPE test_type AS ENUM ('A')"))
 
     # Create a table that uses this enum
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column test_type)")
     )
 
@@ -695,11 +695,11 @@ async def test_add_type_values(
     await db_session.commit()
 
     # We should be able to insert values that match this type
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": "B",
         },
     )
@@ -711,19 +711,19 @@ async def test_drop_type_values_no_existing_references(
     db_session: AsyncSession,
 ):
     # Create an existing enum with two values
-    await db_session.execute(text("CREATE TYPE test_type AS ENUM ('A', 'B')"))
+    await db_session.exec(text("CREATE TYPE test_type AS ENUM ('A', 'B')"))
 
     # Drop a value from this enum
     await db_backed_actions.drop_type_values("test_type", ["B"], target_columns=[])
     await db_session.commit()
 
     # Create a table that uses this enum
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column test_type)")
     )
 
     # Fetch the values for the enum that are currently in use
-    result = await db_session.execute(
+    result = await db_session.exec(
         text("SELECT array_agg(unnest) FROM unnest(enum_range(NULL::test_type))")
     )
     current_values = result.scalar()
@@ -736,10 +736,10 @@ async def test_drop_type_values(
     db_session: AsyncSession,
 ):
     # Create an existing enum with two values
-    await db_session.execute(text("CREATE TYPE test_type AS ENUM ('A', 'B')"))
+    await db_session.exec(text("CREATE TYPE test_type AS ENUM ('A', 'B')"))
 
     # Create a table that uses this enum
-    await db_session.execute(
+    await db_session.exec(
         text("CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column test_type)")
     )
 
@@ -750,28 +750,28 @@ async def test_drop_type_values(
     await db_session.commit()
 
     # Fetch the values for the enum that are currently in use
-    result = await db_session.execute(
+    result = await db_session.exec(
         text("SELECT array_agg(unnest) FROM unnest(enum_range(NULL::test_type))")
     )
     current_values = result.scalar()
     assert current_values == ["A"]
 
     # We should be able to insert values that match A but not B
-    await db_session.execute(
+    await db_session.exec(
         text(
             "INSERT INTO test_table (test_column) VALUES (:column_value)",
         ),
-        {
+        params={
             "column_value": "A",
         },
     )
 
     with pytest.raises(DBAPIError, match="InvalidTextRepresentationError"):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "INSERT INTO test_table (test_column) VALUES (:column_value)",
             ),
-            {
+            params={
                 "column_value": "B",
             },
         )
@@ -783,14 +783,14 @@ async def test_drop_type(
     db_session: AsyncSession,
 ):
     # Create a new type
-    await db_session.execute(text("CREATE TYPE test_type AS ENUM ('A')"))
+    await db_session.exec(text("CREATE TYPE test_type AS ENUM ('A')"))
 
     # Drop this type
     await db_backed_actions.drop_type("test_type")
 
     # We shouldn't be able to create a table with this type
     with pytest.raises(ProgrammingError, match='type "test_type" does not exist'):
-        await db_session.execute(
+        await db_session.exec(
             text(
                 "CREATE TABLE test_table (id SERIAL PRIMARY KEY, test_column test_type)"
             )

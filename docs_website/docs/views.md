@@ -67,10 +67,10 @@ class HomeController(ControllerBase):
         self,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
     ) -> HomeRender:
-        todos = await session.execute(select(TodoItem))
+        todos = (await session.execute(select(TodoItem))).all()
 
         return HomeRender(
-            todos=todos.scalars().all()
+            todos=todos
         )
 ```
 

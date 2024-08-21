@@ -643,7 +643,7 @@ class DatabaseActions:
             LOGGER.debug(f"Executing migration SQL: {sql}")
 
             self.prod_sqls.append(sql)
-            await self.db_session.execute(text(sql))
+            await self.db_session.exec(text(sql))
 
     def add_comment(self, text: str):
         if self.dry_run:
