@@ -7,6 +7,7 @@ from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from time import sleep, time
+from traceback import format_exc
 from typing import Callable
 
 from rich.traceback import install as rich_traceback_install
@@ -171,13 +172,25 @@ def handle_runserver(
 
                 # Get the IDs before we reload the module, since they'll change after
                 # the re-import
-                current_module = sys.modules[module_name]
-                objects_to_reload |= app_manager.objects_in_module(current_module)
+                # If module_name is not already in sys.modules, it hasn't been
+                # imported yet and we don't need to worry about refreshing dependent definitions
+                if module_name in sys.modules:
+                    LOGGER.debug(f"Changed Python: {event.path}")
+                    current_module = sys.modules[module_name]
+                    objects_to_reload |= app_manager.objects_in_module(current_module)
+                else:
+                    LOGGER.debug(f"Module {module_name} is new and not yet imported")
 
                 # Now, once we've cached the ids of objects currently in memory we can clear
                 # the actual model definition from the module cache
-                updated_module = importlib.import_module(module_name)
-                importlib.reload(updated_module)
+                try:
+                    updated_module = importlib.import_module(module_name)
+                    importlib.reload(updated_module)
+                except Exception as e:
+                    stacktrace = format_exc()
+                    CONSOLE.print(f"[bold red]Error reloading {module_name}, stopping reload...")
+                    CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
+                    continue
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
 

@@ -188,7 +188,7 @@ class AppController:
         # controller.resolve_paths(self.view_root, force=True)
         self.update_hierarchy(known_controller=controller)
 
-        print("CURRENT DAG", self.hierarchy_paths)
+        # LOGGER.debug(f"Current hierarchy dag: {self.hierarchy_paths}")
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -222,7 +222,7 @@ class AppController:
                 direct_hierarchy.append(current_node)
                 current_node = current_node.parent
 
-            # print("Parent layouts", direct_hierarchy)
+            self._print_hierarchy()
 
             direct_hierarchy.reverse()
             view_paths = [[
@@ -396,6 +396,54 @@ class AppController:
 
         self.merge_hierarchy_signatures(controller_definition)
 
+    def _print_hierarchy(self):
+        """
+        Diagnostic inspection of the hierarchy paths
+        """
+
+        def print_hierarchy(
+            root: LayoutElement,
+            root_path: Path,
+            hierarchy_paths: dict[Path, LayoutElement],
+            indent: str = "",
+            is_last: bool = True
+        ):
+            # Print the current node
+            prefix = indent + ("└── " if is_last else "├── ")
+            relative_path = root.path.relative_to(root_path)
+            print(f"{prefix}{relative_path} (ID: {root.id})")
+
+            # Prepare the indent for children
+            child_indent = indent + ("    " if is_last else "│   ")
+
+            # Sort children by their paths
+            sorted_children = sorted(root.children, key=lambda x: x.path)
+
+            # Print children
+            for i, child in enumerate(sorted_children):
+                is_last_child = (i == len(sorted_children) - 1)
+                print_hierarchy(child, root_path, hierarchy_paths, child_indent, is_last_child)
+
+            # Check for any disconnected paths that belong to this node
+            disconnected_paths = [
+                path for path, element in hierarchy_paths.items()
+                if element.id == root.id and path not in [child.path for child in root.children]
+            ]
+
+            # Print disconnected paths
+            for i, path in enumerate(sorted(disconnected_paths)):
+                is_last_disconnected = (i == len(disconnected_paths) - 1) and not root.children
+                prefix = child_indent + ("└── " if is_last_disconnected else "├── ")
+                relative_path = path.relative_to(root_path)
+                print(f"{prefix}{relative_path} (Disconnected)")
+
+        # Find the elements with no parent
+        for element in self.hierarchy_paths.values():
+            if element.parent is None:
+                print(f"Root: {element.path} ({element.id})")
+                # Paths will be the file, so we show based on the root
+                print_hierarchy(element, element.path.parent, self.hierarchy_paths)
+
     def merge_hierarchy_signatures(self, controller_definition: ControllerDefinition):
         # We should:
         # Update _this_ controller with anything in the above hierarchy (known layout controllers)
@@ -452,6 +500,17 @@ class AppController:
 
         """
         if path.resolve().absolute() not in self.hierarchy_paths:
+            # We have changed a path that isn't tracked as part of our
+            # hierarchy. This is most likely a dependent file (like a component) that
+            # is imported by some pages. Some early POC work has handled this explicitly
+            # via parsing the whole project import dependences, but this introduces unnecessary
+            # complexity when fresh-compile times are only ~0.3s and we only impact on dev.
+            #
+            # We allow components to clear all cached scripts and allow the next page
+            # refresh to handle the rebuild.
+            for path in list(self.hierarchy_paths):
+                self.invalidate_view(path)
+
             return
 
         LOGGER.debug(f"Will invalidate path and children controllers: {path}")
@@ -542,17 +601,17 @@ class AppController:
         # We should only update the current definition, we don't need to re-parse its hierarchy since
         # we assume the disk layout hasn't changed
         if full_view_path in self.hierarchy_paths:
-            layout_element = self.hierarchy_paths[full_view_path]
+            view_element = self.hierarchy_paths[full_view_path]
             if known_controller is not None:
-                layout_element.controller = known_controller
-            return layout_element
+                view_element.controller = known_controller
+            return view_element
 
-        layout_element = LayoutElement(
+        view_element = LayoutElement(
             id=uuid4(),
             controller=known_controller,
             path=full_view_path
         )
-        self.hierarchy_paths[full_view_path] = layout_element
+        self.hierarchy_paths[full_view_path] = view_element
 
         # Recursively parse the parent paths to find the first layout (if any)
         # We go up until the view root. We allow the update_hierarchy to capture
@@ -567,22 +626,23 @@ class AppController:
 
             layout_file = current_path / 'layout.tsx'
             if layout_file.exists():
+                LOGGER.debug(f"Layout found on disk, adding link: {view_element.path} {layout_file}")
                 parent_layout = self.update_hierarchy(known_view_path=layout_file)
 
                 # Never create a self-referential layout
                 # This can happen with layout controllers that will also find their
                 # own layout.tsx file
-                if parent_layout != layout_element:
-                    parent_layout.children.append(layout_element)
-                    layout_element.parent = parent_layout
+                if parent_layout != view_element:
+                    parent_layout.children.append(view_element)
+                    view_element.parent = parent_layout
 
-                # We should break at the nearest level, since each page
-                # can only have one direct parent
-                break
+                    # We should break at the nearest level, since each page
+                    # can only have one direct parent
+                    break
 
             current_path = current_path.parent
 
-        return layout_element
+        return view_element
 
     async def handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(

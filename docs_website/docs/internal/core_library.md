@@ -40,6 +40,16 @@ to actually swap out the wheels versus ignoring the same version number.
 poetry run pip install [--force-reinstall] /Users/piercefreeman/projects/mountaineer/target/wheels/mountaineer-0.1.0-cp312-cp312-macosx_11_0_arm64.whl
 ```
 
+## Logging
+
+It's sometimes helpful to run Mountaineer with verbose logging, whether you're developing new functionality
+or trying to diagnose a problem. You can set the `MOUNTAINEER_LOG_LEVEL` environment variable to `DEBUG` to
+enable verbose logging:
+
+```bash
+$ MOUNTAINEER_LOG_LEVEL=DEBUG poetry run runserver
+```
+
 ## Development Utilities
 
 1. Python Testing
@@ -75,4 +85,3 @@ poetry run pip install [--force-reinstall] /Users/piercefreeman/projects/mountai
     $ docker run -it mountaineer
     $ make install-deps
     $ make test-integrations
-    ```
