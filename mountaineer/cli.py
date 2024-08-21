@@ -188,7 +188,9 @@ def handle_runserver(
                     importlib.reload(updated_module)
                 except Exception as e:
                     stacktrace = format_exc()
-                    CONSOLE.print(f"[bold red]Error reloading {module_name}, stopping reload...")
+                    CONSOLE.print(
+                        f"[bold red]Error reloading {module_name}, stopping reload..."
+                    )
                     CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
                     continue
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:

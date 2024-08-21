@@ -4,8 +4,8 @@ from re import fullmatch as re_fullmatch
 from typing import Any, Callable, Literal, overload
 
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import text
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.compat import StrEnum
 from mountaineer.logging import LOGGER

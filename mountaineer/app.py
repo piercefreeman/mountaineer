@@ -1,25 +1,23 @@
 from collections import defaultdict
+from dataclasses import dataclass, field
 from functools import wraps
 from inspect import Parameter, Signature, isawaitable, isclass, signature
+from json import dumps as json_dumps
 from pathlib import Path
 from time import monotonic_ns
 from typing import Any, Callable, Optional, Type
 from uuid import UUID, uuid4
-from mountaineer.ssr import V8RuntimeError, render_ssr
-from json import dumps as json_dumps
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, Request
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
-from mountaineer.static import get_static_path
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
-from dataclasses import dataclass, field
-from mountaineer import mountaineer as mountaineer_rs
 
+from mountaineer import mountaineer as mountaineer_rs
 from mountaineer.actions import (
     FunctionActionType,
     fuse_metadata_to_response_typehint,
@@ -28,14 +26,15 @@ from mountaineer.actions import (
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.config import ConfigBase
-from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.exceptions import APIException, APIExceptionInternalModelBase
+from mountaineer.exceptions import APIException
 from mountaineer.js_compiler.base import ClientBuilderBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
+from mountaineer.ssr import render_ssr
+from mountaineer.static import get_static_path
 
 
 class ControllerDefinition(BaseModel):
@@ -68,12 +67,13 @@ class ExceptionSchema(BaseModel):
         "extra": "forbid",
     }
 
+
 @dataclass
 class LayoutElement:
     id: UUID
 
     # Can be null if a layout doesn't have a path
-    controller : ControllerBase | None
+    controller: ControllerBase | None
 
     # Absolute path to the tsx / jsx entrypoint
     path: Path
@@ -85,6 +85,7 @@ class LayoutElement:
 
     cached_server_script: str | None = None
     cached_client_script: str | None = None
+
 
 class AppController:
     """
@@ -162,7 +163,7 @@ class AppController:
         # Edges that link the hierarchy together
         self.hierarchy_paths: dict[Path, LayoutElement] = {}
 
-        self.live_reload_port : int = 0
+        self.live_reload_port: int = 0
 
     def register(self, controller: ControllerBase):
         """
@@ -214,7 +215,7 @@ class AppController:
 
             # We need to figure out the layout controllers that should
             # wrap this controller
-            direct_hierarchy : list[LayoutElement] = []
+            direct_hierarchy: list[LayoutElement] = []
             current_node = controller_node
             while current_node is not None:
                 if current_node in direct_hierarchy:
@@ -225,32 +226,33 @@ class AppController:
             self._print_hierarchy()
 
             direct_hierarchy.reverse()
-            view_paths = [[
-                str(layout.path)
-                for layout in direct_hierarchy
-            ]]
+            view_paths = [[str(layout.path) for layout in direct_hierarchy]]
 
             # Caching the build files saves about 0.3 on every load
             # during development
             start = monotonic_ns()
             if not controller_node.cached_server_script:
-                controller_node.cached_server_script = mountaineer_rs.compile_multiple_javascript(
-                    view_paths,
-                    str(self.view_root / "node_modules"),
-                    "development",
-                    0,
-                    str(get_static_path("live_reload.ts").resolve().absolute()),
-                    True,
-                )[0]
+                controller_node.cached_server_script = (
+                    mountaineer_rs.compile_multiple_javascript(
+                        view_paths,
+                        str(self.view_root / "node_modules"),
+                        "development",
+                        0,
+                        str(get_static_path("live_reload.ts").resolve().absolute()),
+                        True,
+                    )[0]
+                )
             if not controller_node.cached_client_script:
-                controller_node.cached_client_script = mountaineer_rs.compile_multiple_javascript(
-                    view_paths,
-                    str(self.view_root / "node_modules"),
-                    "development",
-                    self.live_reload_port,
-                    str(get_static_path("live_reload.ts").resolve().absolute()),
-                    False,
-                )[0]
+                controller_node.cached_client_script = (
+                    mountaineer_rs.compile_multiple_javascript(
+                        view_paths,
+                        str(self.view_root / "node_modules"),
+                        "development",
+                        self.live_reload_port,
+                        str(get_static_path("live_reload.ts").resolve().absolute()),
+                        False,
+                    )[0]
+                )
             print(f"Rendered scripts in {(monotonic_ns() - start) / 1e9}")
 
             # print("SERVER SCRIPT", controller_node.cached_server_script)
@@ -280,7 +282,12 @@ class AppController:
             if not isinstance(controller_output, RenderBase):
                 return controller_output
 
-            return self.compile_html(controller_node.cached_server_script, controller_node.cached_client_script, controller_output, render_output)
+            return self.compile_html(
+                controller_node.cached_server_script,
+                controller_node.cached_client_script,
+                controller_output,
+                render_output,
+            )
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
@@ -406,7 +413,7 @@ class AppController:
             root_path: Path,
             hierarchy_paths: dict[Path, LayoutElement],
             indent: str = "",
-            is_last: bool = True
+            is_last: bool = True,
         ):
             # Print the current node
             prefix = indent + ("└── " if is_last else "├── ")
@@ -421,18 +428,24 @@ class AppController:
 
             # Print children
             for i, child in enumerate(sorted_children):
-                is_last_child = (i == len(sorted_children) - 1)
-                print_hierarchy(child, root_path, hierarchy_paths, child_indent, is_last_child)
+                is_last_child = i == len(sorted_children) - 1
+                print_hierarchy(
+                    child, root_path, hierarchy_paths, child_indent, is_last_child
+                )
 
             # Check for any disconnected paths that belong to this node
             disconnected_paths = [
-                path for path, element in hierarchy_paths.items()
-                if element.id == root.id and path not in [child.path for child in root.children]
+                path
+                for path, element in hierarchy_paths.items()
+                if element.id == root.id
+                and path not in [child.path for child in root.children]
             ]
 
             # Print disconnected paths
             for i, path in enumerate(sorted(disconnected_paths)):
-                is_last_disconnected = (i == len(disconnected_paths) - 1) and not root.children
+                is_last_disconnected = (
+                    i == len(disconnected_paths) - 1
+                ) and not root.children
                 prefix = child_indent + ("└── " if is_last_disconnected else "├── ")
                 relative_path = path.relative_to(root_path)
                 print(f"{prefix}{relative_path} (Disconnected)")
@@ -450,7 +463,9 @@ class AppController:
         # Update _child_ controller with this view (in the case that this definition is
         # a layout controller)
         node = next(
-            node for node in self.hierarchy_paths.values() if node.controller == controller_definition.controller
+            node
+            for node in self.hierarchy_paths.values()
+            if node.controller == controller_definition.controller
         )
 
         def explore_children(node):
@@ -482,13 +497,13 @@ class AppController:
 
         for parent in parent_definitions:
             self.merge_render_signatures(
-                 controller_definition,
-                 reference_controller=parent,
+                controller_definition,
+                reference_controller=parent,
             )
         for child in child_definitions:
             self.merge_render_signatures(
-                 child,
-                 reference_controller=controller_definition,
+                child,
+                reference_controller=controller_definition,
             )
 
     def invalidate_view(self, path: Path):
@@ -576,7 +591,12 @@ class AppController:
 
         return HTMLResponse(page_contents)
 
-    def update_hierarchy(self, *, known_controller: ControllerBase | None = None, known_view_path: ManagedViewPath | None = None):
+    def update_hierarchy(
+        self,
+        *,
+        known_controller: ControllerBase | None = None,
+        known_view_path: ManagedViewPath | None = None,
+    ):
         """
         When we register a new element, we need to:
 
@@ -591,9 +611,15 @@ class AppController:
         """
         if known_view_path is None:
             if known_controller is None:
-                raise ValueError("Either new_hierarchy or known_view_path must be provided")
+                raise ValueError(
+                    "Either new_hierarchy or known_view_path must be provided"
+                )
 
-            full_view_path = self.view_root / known_controller.view_path.lstrip("/") if isinstance(known_controller.view_path, str) else known_controller.view_path
+            full_view_path = (
+                self.view_root / known_controller.view_path.lstrip("/")
+                if isinstance(known_controller.view_path, str)
+                else known_controller.view_path
+            )
             full_view_path = full_view_path.resolve().absolute()
         else:
             full_view_path = known_view_path.resolve().absolute()
@@ -607,9 +633,7 @@ class AppController:
             return view_element
 
         view_element = LayoutElement(
-            id=uuid4(),
-            controller=known_controller,
-            path=full_view_path
+            id=uuid4(), controller=known_controller, path=full_view_path
         )
         self.hierarchy_paths[full_view_path] = view_element
 
@@ -622,11 +646,15 @@ class AppController:
         while current_path != package_root:
             # We should never get to the OS root
             if str(current_path) == "/":
-                raise ValueError(f"View path ({full_view_path}) is not within the package root: {package_root}")
+                raise ValueError(
+                    f"View path ({full_view_path}) is not within the package root: {package_root}"
+                )
 
-            layout_file = current_path / 'layout.tsx'
+            layout_file = current_path / "layout.tsx"
             if layout_file.exists():
-                LOGGER.debug(f"Layout found on disk, adding link: {view_element.path} {layout_file}")
+                LOGGER.debug(
+                    f"Layout found on disk, adding link: {view_element.path} {layout_file}"
+                )
                 parent_layout = self.update_hierarchy(known_view_path=layout_file)
 
                 # Never create a self-referential layout

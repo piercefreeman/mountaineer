@@ -6,8 +6,8 @@ import pytest
 import pytest_asyncio
 from fastapi import Depends
 from sqlalchemy import exc as sa_exc
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
-from sqlmodel import SQLModel, text
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlmodel import AsyncSession, SQLModel, text
 
 from mountaineer.config import ConfigBase, unregister_config
 from mountaineer.database import DatabaseDependencies

@@ -1,6 +1,6 @@
 from sqlalchemy import text
 from sqlalchemy.engine.result import Result
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.io import lru_cache_async
 from mountaineer.migrations.actions import (
