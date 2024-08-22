@@ -158,6 +158,30 @@ async def test_can_call_sideeffect_async_render():
 
 
 @pytest.mark.asyncio
+async def test_can_call_sideeffect_original():
+    """
+    Ensure that we can access the raw underlying function that was
+    wrapped by the decorator.
+
+    """
+
+    class ExampleController(ControllerCommon):
+        def render(
+            self,
+            query_id: int,
+        ) -> ExampleRenderModel:
+            self.render_counts += 1
+            return ExampleRenderModel(
+                value_a="Hello",
+                value_b="World",
+            )
+
+    controller = ExampleController()
+    await ExampleController.call_sideeffect.original(controller, dict())
+    await ExampleController.call_sideeffect_async.original(controller, dict())
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "referer, expected_resolved",
     [

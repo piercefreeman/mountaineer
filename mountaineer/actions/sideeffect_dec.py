@@ -24,6 +24,7 @@ from mountaineer.actions.fields import (
     ResponseModelType,
     SideeffectResponseBase,
     SideeffectWrappedCallable,
+    create_original_fn,
     extract_response_model_from_signature,
     format_final_action_response,
     init_function_metadata,
@@ -208,7 +209,7 @@ def sideeffect(*args, **kwargs):  # type: ignore
             metadata.exception_models = exception_models
             metadata.media_type = None  # Use the default json response type
 
-            inner.original = func  # type: ignore
+            inner.original = create_original_fn(func)  # type: ignore
             return inner
 
         return wrapper
