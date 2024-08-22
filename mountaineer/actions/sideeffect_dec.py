@@ -4,8 +4,8 @@ from inspect import Parameter, isawaitable, signature
 from typing import (
     TYPE_CHECKING,
     Any,
-    Awaitable,
     Callable,
+    Concatenate,
     Coroutine,
     ParamSpec,
     Type,
@@ -22,6 +22,8 @@ from starlette.routing import Match
 from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
+    SideeffectResponseBase,
+    SideeffectWrappedCallable,
     extract_response_model_from_signature,
     format_final_action_response,
     init_function_metadata,
@@ -37,6 +39,7 @@ if TYPE_CHECKING:
 
 P = ParamSpec("P")
 R = TypeVar("R", bound=BaseModel | JSONResponse | None)
+C = TypeVar("C")
 
 
 @overload
@@ -46,14 +49,26 @@ def sideeffect(
     response_model: Type[BaseModel] | None = None,  # deprecated
     exception_models: list[Type[APIException]] | None = None,
     experimental_render_reload: bool | None = None,
-) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
+) -> Callable[
+    [Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]]],
+    # Callable[P, Awaitable[SideeffectResponseBase[R]]],
+    SideeffectWrappedCallable[C, P, R],
+]:
+    """
+    @sideeffect decorator with options.
+    """
     ...
 
 
 @overload
 def sideeffect(
-    func: Callable[P, R | Coroutine[Any, Any, R]],
-) -> Callable[P, Awaitable[R]]:
+    func: Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]],
+) -> SideeffectWrappedCallable[
+    C, P, R
+]:  # Callable[P, Awaitable[SideeffectResponseBase[R]]]:
+    """
+    Simple @sideeffect, will use default options.
+    """
     ...
 
 
@@ -170,12 +185,11 @@ def sideeffect(*args, **kwargs):  # type: ignore
                     if isawaitable(server_data):
                         server_data = await server_data
 
-                    return format_final_action_response(
-                        dict(
-                            sideeffect=server_data,
-                            passthrough=passthrough_values,
-                        ),
-                    )
+                    final_payload: SideeffectResponseBase[Any] = {
+                        "sideeffect": server_data,
+                        "passthrough": passthrough_values,
+                    }
+                    return format_final_action_response(final_payload)  # type: ignore
 
             # Update the signature of 'inner' to include 'request: Request'
             # We need to modify this to conform to the request parameters that are sniffed
@@ -196,6 +210,8 @@ def sideeffect(*args, **kwargs):  # type: ignore
             metadata.passthrough_model = passthrough_model
             metadata.exception_models = exception_models
             metadata.media_type = None  # Use the default json response type
+
+            inner.original = func  # type: ignore
             return inner
 
         return wrapper

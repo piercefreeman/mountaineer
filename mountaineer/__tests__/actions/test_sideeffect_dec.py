@@ -90,12 +90,12 @@ async def call_sideeffect_common(controller: ControllerCommon):
 
         # Even if the "request" is not required by our sideeffects, it's required
         # by the function injected by the sideeffect decorator.
-        return_value_sync = await controller.call_sideeffect(
+        return_value_sync = await controller.call_sideeffect(  # type: ignore
             {},
             request=Request({"type": "http"}),  # type: ignore
         )
 
-        return_value_async = await controller.call_sideeffect_async(
+        return_value_async = await controller.call_sideeffect_async(  # type: ignore
             {},
             request=Request({"type": "http"}),  # type: ignore
         )

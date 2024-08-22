@@ -2,6 +2,7 @@ import collections
 import collections.abc
 import typing
 import warnings
+from asyncio import iscoroutinefunction
 from enum import Enum
 from inspect import (
     isclass,
@@ -11,9 +12,17 @@ from json import loads as json_loads
 from typing import (
     TYPE_CHECKING,
     Any,
+    Awaitable,
     Callable,
+    Concatenate,
+    Generic,
+    NotRequired,
     Optional,
+    ParamSpec,
+    Protocol,
     Type,
+    TypedDict,
+    TypeVar,
     get_args,
     get_origin,
 )
@@ -41,6 +50,40 @@ class FunctionActionType(Enum):
 class ResponseModelType(Enum):
     SINGLE_RESPONSE = "SINGLE_RESPONSE"
     ITERATOR_RESPONSE = "ITERATOR_RESPONSE"
+
+
+P = TypeVar("P")
+
+
+class SideeffectResponseBase(TypedDict, Generic[P]):
+    passthrough: P
+    # We can't yet typehint across the boundary of the sideeffect -> render
+    # within one class since @sideeffect is isolated to just the wrapped function
+    sideeffect: NotRequired[Any]
+
+
+T = ParamSpec("T")
+R = TypeVar("R")
+C = TypeVar("C", covariant=True)
+
+
+class SideeffectWrappedCallable(Protocol[C, T, R]):
+    def __call__(
+        self: Any, *args: T.args, **kwargs: T.kwargs
+    ) -> Awaitable[SideeffectResponseBase[R]]:
+        ...
+
+    # Since the original function is extracted directly from the class, it's
+    # just a hanging function and no longer an instance method. Users therefore
+    # need to call it with the class instance explicitly as the first argument.
+    original: Callable[Concatenate[C, T], Awaitable[R]]
+
+
+class SideeffectRawCallable(Protocol[C, T, R]):
+    def __call__(self: Any, *args: T.args, **kwargs: T.kwargs) -> Awaitable[R]:
+        ...
+
+    original: Callable[Concatenate[C, T], Awaitable[R]]
 
 
 class FunctionMetadata(BaseModel):
@@ -250,7 +293,7 @@ def format_final_action_response(dict_payload: dict[str, Any]):
     merge the final payload into the explicit response.
 
     """
-    responses = [
+    responses: list[tuple[str, JSONResponse]] = [
         (key, response)
         for key, response in dict_payload.items()
         if isinstance(response, JSONResponse)
@@ -344,3 +387,19 @@ def extract_model_from_decorated_types(
     raise ValueError(
         f"Invalid response_model typehint for standard action: {type_hint}"
     )
+
+
+def create_original_fn(fn):
+    """
+    To fulfill our typehints for "original" that are returned from @sideeffect
+    and @passthrough we have to make them all async even if they weren't originally.
+
+    """
+    if iscoroutinefunction(fn):
+        return fn
+    else:
+
+        async def async_fn(*args, **kwargs):
+            return fn(*args, **kwargs)
+
+        return async_fn
