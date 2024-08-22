@@ -183,7 +183,8 @@ def sideeffect(*args, **kwargs):  # type: ignore
                     if isawaitable(server_data):
                         server_data = await server_data
 
-                    final_payload: SideeffectResponseBase[Any] = {
+                    # Following types ignored to support 3.10
+                    final_payload: SideeffectResponseBase[Any] = {  # type: ignore
                         "sideeffect": server_data,
                         "passthrough": passthrough_values,
                     }

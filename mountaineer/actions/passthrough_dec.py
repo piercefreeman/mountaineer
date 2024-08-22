@@ -165,7 +165,8 @@ def passthrough(*args, **kwargs):  # type: ignore
                 if isasyncgen(response):
                     return wrap_passthrough_generator(response)
 
-                final_payload: SideeffectResponseBase[Any] = {
+                # Following types ignored to support 3.10
+                final_payload: SideeffectResponseBase[Any] = {  # type: ignore
                     "passthrough": response,
                 }
                 return format_final_action_response(final_payload)  # type: ignore

@@ -1,5 +1,6 @@
 import collections
 import collections.abc
+import sys
 import typing
 import warnings
 from asyncio import iscoroutinefunction
@@ -36,9 +37,9 @@ from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.exceptions import APIException
 from mountaineer.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
 
-try:
+if sys.version_info >= (3, 11):
     from typing import NotRequired
-except ImportError:
+else:
     from typing_extensions import NotRequired
 
 if TYPE_CHECKING:
@@ -58,12 +59,17 @@ class ResponseModelType(Enum):
 
 P = TypeVar("P")
 
+if sys.version_info >= (3, 11):
 
-class SideeffectResponseBase(TypedDict, Generic[P]):
-    passthrough: P
-    # We can't yet typehint across the boundary of the sideeffect -> render
-    # within one class since @sideeffect is isolated to just the wrapped function
-    sideeffect: NotRequired[Any]
+    class SideeffectResponseBase(TypedDict, Generic[P]):
+        passthrough: P
+        # We can't yet typehint across the boundary of the sideeffect -> render
+        # within one class since @sideeffect is isolated to just the wrapped function
+        sideeffect: NotRequired[Any]
+else:
+    # Inheriting from both TypedDict and Generic[P] is not supported in Python 3.10 and below
+    class SideeffectResponseBase(dict, Generic[P]):
+        pass
 
 
 T = ParamSpec("T")
