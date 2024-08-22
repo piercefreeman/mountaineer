@@ -16,7 +16,6 @@ from typing import (
     Callable,
     Concatenate,
     Generic,
-    NotRequired,
     Optional,
     ParamSpec,
     Protocol,
@@ -36,6 +35,11 @@ from pydantic.fields import FieldInfo
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.exceptions import APIException
 from mountaineer.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
+
+try:
+    from typing import NotRequired
+except ImportError:
+    from typing_extensions import NotRequired
 
 if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase

@@ -51,7 +51,6 @@ def sideeffect(
     experimental_render_reload: bool | None = None,
 ) -> Callable[
     [Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]]],
-    # Callable[P, Awaitable[SideeffectResponseBase[R]]],
     SideeffectWrappedCallable[C, P, R],
 ]:
     """
@@ -63,9 +62,7 @@ def sideeffect(
 @overload
 def sideeffect(
     func: Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]],
-) -> SideeffectWrappedCallable[
-    C, P, R
-]:  # Callable[P, Awaitable[SideeffectResponseBase[R]]]:
+) -> SideeffectWrappedCallable[C, P, R]:
     """
     Simple @sideeffect, will use default options.
     """
