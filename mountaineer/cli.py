@@ -131,7 +131,7 @@ def handle_runserver(
     # TODO: Clean up the variable passing between clientbuilder and app controller
     app_manager.port = port
     app_manager.host = host
-    app_manager.app_controller.live_reload_port = watcher_webservice.port
+    app_manager.live_reload_port = watcher_webservice.port
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 
@@ -223,8 +223,11 @@ def handle_runserver(
                     app_manager.module, objects_to_reload
                 )
             )
+            LOGGER.debug(
+                f"Found dependent modules: {all_updated_components} ({app_manager.module}: {objects_to_reload})"
+            )
+
             for updated_module in all_updated_components:
-                LOGGER.debug(f"Updating dependent module: {updated_module}")
                 importlib.reload(updated_module)
 
             # Now we re-mount the app entrypoint, which should initialize the changed

@@ -120,7 +120,15 @@ const mountLiveReload = ({ host, port }: { host?: string; port?: number }) => {
   }
 
   if (!host) host = "localhost";
-  if (!port) port = Number(process.env.LIVE_RELOAD_PORT) || 5015;
+  if (!port) {
+    if (!process.env.LIVE_RELOAD_PORT) {
+      console.error(
+        "process.env.LIVE_RELOAD_PORT is not passed from server to development client.",
+      );
+      return;
+    }
+    port = Number(process.env.LIVE_RELOAD_PORT);
+  }
 
   useEffect(() => {
     console.log("Connecting to live reload server...");

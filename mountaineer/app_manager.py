@@ -37,6 +37,8 @@ class AppManager:
         self.host: str | None = None
         self.port: int | None = None
 
+        self.live_reload_port: int | None = None
+
         self.exception_controller = ExceptionController()
 
         # Initial mount
@@ -77,6 +79,10 @@ class AppManager:
         if self.webservice_thread is not None:
             self.webservice_thread.stop()
 
+        # Inject the live reload port so it's picked up even
+        # when the app changes
+        self.app_controller.live_reload_port = self.live_reload_port or 0
+
         self.webservice_thread = UvicornThread(
             app=self.app_controller.app,
             host=self.host or "127.0.0.1",
@@ -85,13 +91,19 @@ class AppManager:
         self.webservice_thread.start()
 
     def objects_in_module(self, module: ModuleType):
+        """
+        Given a module like `myapp.controllers.my_controller` it will find all
+        the objects that are actually defined in that file (versus imported
+        into that file but with a root definition elsewhere).
+
+        """
         return {
             id(obj)
             for name in dir(module)
             for obj in [getattr(module, name)]
             # Only include objects defined in this file versus imports into this file
             # from external sources
-            if hasattr(obj, "__module__") and obj.__module__ == self.module_name
+            if hasattr(obj, "__module__") and obj.__module__ == module.__name__
         }
 
     def package_path_to_module(self, file_path):
