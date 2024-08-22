@@ -354,6 +354,12 @@ class ClientBuilder:
         # For each controller, import the links and export them
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
+
+            # Layout controllers don't have links, so the import path won't be
+            # able to find a valid file reference
+            if isinstance(controller, LayoutControllerBase):
+                continue
+
             controller_code_dir = self.view_root.get_controller_view_path(
                 controller
             ).get_managed_code_dir()
@@ -499,10 +505,15 @@ class ClientBuilder:
 
             chunks: list[str] = []
 
-            chunks.append("export * from './actions';")
-            chunks.append("export * from './links';")
-            chunks.append("export * from './models';")
-            chunks.append("export * from './useServer';")
+            # Depending on our build pipeline, some of these files might not exist
+            # or be empty (no module exports). We want to make sure that we don't
+            # try to re-export empty values or Typescript will fail to compile
+            # with error TS2306: File 'myfile.ts' is not a module.
+            export_paths = ["actions", "links", "models", "useServer"]
+            for export_path in export_paths:
+                file = controller_code_dir / f"{export_path}.ts"
+                if file.exists() and file.read_text().strip():
+                    chunks.append(f"export * from './{export_path}';")
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 

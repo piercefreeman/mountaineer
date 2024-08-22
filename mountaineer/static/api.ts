@@ -96,8 +96,11 @@ export const __request = async (params: FetchParams) => {
     }
 
     // Otherwise we have an unhandled error, rethrow as a generic error
-    const error = new FetchErrorBase<any>(-1, e.toString());
-    error.stack = e.stack;
+    const errorText = e instanceof Error ? e.toString() : "Unknown error";
+    const errorStack = e instanceof Error ? e.stack : undefined;
+
+    const error = new FetchErrorBase<any>(-1, errorText);
+    error.stack = errorStack;
     throw error;
   }
 };

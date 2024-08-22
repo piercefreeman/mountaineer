@@ -3,11 +3,11 @@ from uuid import UUID, uuid4
 
 from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
 from mountaineer.database import DatabaseDependencies
+from mountaineer.database.session import AsyncSession
 
 from fastapi import Request, Depends
 from pydantic import BaseModel
 from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from {{project_name}} import models
 
@@ -24,9 +24,9 @@ class HomeController(ControllerBase):
         self,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
     ) -> HomeRender:
-        items = await session.execute(select(models.DetailItem))
+        items = (await session.exec(select(models.DetailItem))).all()
         return HomeRender(
-            items=items.scalars().all(),
+            items=items,
             metadata=Metadata(title="Home"),
         )
 

@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.main import FieldInfo
 
 from mountaineer.compat import StrEnum
+from mountaineer.database.session import AsyncSession
 from mountaineer.migrations.actions import (
     ColumnType,
     ConstraintType,

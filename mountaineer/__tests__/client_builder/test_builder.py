@@ -83,12 +83,57 @@ def test_generate_link_aggregator(builder: ClientBuilder):
     builder.generate_link_aggregator()
 
 
+def test_generate_link_aggregator_ignores_layout(builder: ClientBuilder):
+    class ExampleLayout(LayoutControllerBase):
+        async def render(self) -> None:
+            pass
+
+    builder.app.register(ExampleLayout())
+    builder.generate_link_aggregator()
+
+    global_code_dir = builder.view_root.get_managed_code_dir()
+    global_links = (global_code_dir / "links.ts").read_text()
+    assert "ExampleLayout" not in global_links
+    assert "ExampleHomeControllerGetLinks" in global_links
+    assert "ExampleDetailControllerGetLinks" in global_links
+
+
 def test_generate_view_servers(builder: ClientBuilder):
     builder.generate_view_servers()
 
 
-def test_generate_index_file(builder: ClientBuilder):
+@pytest.mark.parametrize("empty_links", [True, False])
+def test_generate_index_file_ignores_empty(builder: ClientBuilder, empty_links: bool):
+    # Create some stub files. We simulate a case where the links file
+    # is created but empty
+    file_contents = "import React from 'react';\n"
+    for controller_definition in builder.app.controllers:
+        controller_code_dir = builder.view_root.get_controller_view_path(
+            controller_definition.controller
+        ).get_managed_code_dir()
+
+        (controller_code_dir / "actions.ts").write_text(file_contents)
+        (controller_code_dir / "models.ts").write_text(file_contents)
+        (controller_code_dir / "useServer.ts").write_text(file_contents)
+        if empty_links:
+            (controller_code_dir / "links.ts").write_text("")
+
     builder.generate_index_file()
+
+    # Read the index file for each controller
+    for controller_definition in builder.app.controllers:
+        controller_code_dir = builder.view_root.get_controller_view_path(
+            controller_definition.controller
+        ).get_managed_code_dir()
+
+        index_file = controller_code_dir / "index.ts"
+        assert index_file.exists()
+        imported_dependencies = index_file.read_text().split("\n")
+        assert imported_dependencies == [
+            "export * from './actions';",
+            "export * from './models';",
+            "export * from './useServer';",
+        ]
 
 
 def test_cache_is_outdated_no_cache(builder: ClientBuilder):

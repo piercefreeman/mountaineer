@@ -10,8 +10,8 @@ from typing import (
     TYPE_CHECKING,
     Any,
     AsyncIterator,
-    Awaitable,
     Callable,
+    Concatenate,
     Coroutine,
     Literal,
     ParamSpec,
@@ -26,6 +26,10 @@ from pydantic import BaseModel
 from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
+    SideeffectRawCallable,
+    SideeffectResponseBase,
+    SideeffectWrappedCallable,
+    create_original_fn,
     extract_response_model_from_signature,
     format_final_action_response,
     init_function_metadata,
@@ -38,6 +42,7 @@ if TYPE_CHECKING:
 
 P = ParamSpec("P")
 R = TypeVar("R", bound=BaseModel | AsyncIterator[BaseModel] | JSONResponse | None)
+C = TypeVar("C")
 
 RawResponseR = TypeVar("RawResponseR", bound=Response)
 
@@ -47,7 +52,10 @@ def passthrough(  # type: ignore
     *,
     response_model: Type[BaseModel] | None = None,  # Deprecated
     exception_models: list[Type[APIException]] | None = None,
-) -> Callable[[Callable[P, R | Coroutine[Any, Any, R]]], Callable[P, Awaitable[R]]]:
+) -> Callable[
+    [Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]]],
+    SideeffectWrappedCallable[C, P, R],
+]:
     ...
 
 
@@ -56,16 +64,16 @@ def passthrough(
     *,
     raw_response: Literal[True] = True,
 ) -> Callable[
-    [Callable[P, RawResponseR | Coroutine[Any, Any, RawResponseR]]],
-    Callable[P, Awaitable[RawResponseR]],
+    [Callable[Concatenate[C, P], RawResponseR | Coroutine[Any, Any, RawResponseR]]],
+    SideeffectRawCallable[C, P, RawResponseR],
 ]:
     ...
 
 
 @overload
 def passthrough(
-    func: Callable[P, R | Coroutine[Any, Any, R]],
-) -> Callable[P, Awaitable[R]]:
+    func: Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]],
+) -> SideeffectWrappedCallable[C, P, R]:
     ...
 
 
@@ -157,7 +165,11 @@ def passthrough(*args, **kwargs):  # type: ignore
                 if isasyncgen(response):
                     return wrap_passthrough_generator(response)
 
-                return format_final_action_response(dict(passthrough=response))
+                # Following types ignored to support 3.10
+                final_payload: SideeffectResponseBase[Any] = {  # type: ignore
+                    "passthrough": response,
+                }
+                return format_final_action_response(final_payload)  # type: ignore
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
@@ -168,6 +180,8 @@ def passthrough(*args, **kwargs):  # type: ignore
                 if response_type == ResponseModelType.ITERATOR_RESPONSE
                 else None
             )
+
+            inner.original = create_original_fn(func)  # type: ignore
             return inner
 
         return wrapper

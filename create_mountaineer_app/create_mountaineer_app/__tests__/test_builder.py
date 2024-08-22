@@ -129,7 +129,7 @@ def test_valid_permutations(
         "COMPOSE_PROJECT_NAME": f"test_project-{uuid4()}",
     }
     subprocess.run(
-        ["docker-compose", "up", "-d"],
+        ["docker", "compose", "up", "-d"],
         cwd=metadata.project_path,
         check=True,
         env=docker_compose_env,
@@ -202,7 +202,7 @@ def test_valid_permutations(
 
         secho("Shutting down docker...")
         subprocess.run(
-            ["docker-compose", "down"],
+            ["docker", "compose", "down"],
             cwd=metadata.project_path,
             check=True,
             env=docker_compose_env,

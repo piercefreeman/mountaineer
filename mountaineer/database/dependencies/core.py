@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer.cache import AsyncLoopObjectCache
 from mountaineer.database.config import DatabaseConfig, PoolType
+from mountaineer.database.session import AsyncSession
 from mountaineer.dependencies import CoreDependencies
 from mountaineer.logging import LOGGER
 

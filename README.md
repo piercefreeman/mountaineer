@@ -62,10 +62,10 @@ Every service file is nested under the `my_webapp` root package. Views are defin
 
 ### Development
 
-If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker-compose file for convenience with `create-mountaineer-app`.
+If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker compose file for convenience with `create-mountaineer-app`.
 
 ```bash
-docker-compose up -d
+docker compose up -d
 poetry run createdb
 ```
 
@@ -123,10 +123,10 @@ Update the index file as well:
 from .todo import TodoItem # noqa: F401
 ```
 
-Make sure you have a Postgres database running. We bundle a docker-compose file for convenience with `create-mountaineer-app`. Launch it in the background and create the new database tables from these code definitions:
+Make sure you have a Postgres database running. We bundle a docker compose file for convenience with `create-mountaineer-app`. Launch it in the background and create the new database tables from these code definitions:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 poetry run createdb
 poetry run runserver
 ```
@@ -140,7 +140,7 @@ from mountaineer import sideeffect, ControllerBase, RenderBase
 from mountaineer.database import DatabaseDependencies
 
 from fastapi import Request, Depends
-from sqlmodel.ext.asyncio.session import AsyncSession
+from mountaineer.database.session import AsyncSession
 from sqlmodel import select
 
 from my_webapp.models.todo import TodoItem
@@ -158,7 +158,7 @@ class HomeController(ControllerBase):
         request: Request,
         session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
     ) -> HomeRender:
-        todos = await session.execute(select(TodoItem))
+        todos = (await session.exec(select(TodoItem))).all()
 
         return HomeRender(
             client_ip=(
@@ -166,7 +166,7 @@ class HomeController(ControllerBase):
                 if request.client
                 else "unknown"
             ),
-            todos=todos.scalars().all()
+            todos=todos
         )
 ```
 

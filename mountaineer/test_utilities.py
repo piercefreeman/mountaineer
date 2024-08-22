@@ -164,7 +164,6 @@ async def bootstrap_database(engine: AsyncEngine):
     # the user likely hasn't booted up the test database
     try:
         async with engine.connect() as conn:
-            # Optionally, you can perform a simple query to ensure the connection is valid
             await conn.execute(text("SELECT 1"))
     except (DBAPIError, OSError) as e:
         # Handle specific database connection errors or raise a custom exception
