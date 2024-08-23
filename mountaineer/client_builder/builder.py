@@ -76,7 +76,6 @@ class ClientBuilder:
         # and don't have additional files hanging around
         for clear_dir in [
             self.view_root.get_managed_ssr_dir(),
-            self.view_root.get_managed_metadata_dir(),
             self.view_root.get_managed_static_dir(),
         ]:
             if clear_dir.exists():

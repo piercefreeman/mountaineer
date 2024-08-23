@@ -4,7 +4,6 @@ import sys
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
-from re import match as re_match
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from time import sleep, time
@@ -14,7 +13,7 @@ from typing import Callable
 from inflection import underscore
 from rich.traceback import install as rich_traceback_install
 
-from mountaineer import mountaineer as mountaineer_rs
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.app_manager import HotReloadManager, find_packages_with_prefix
 from mountaineer.cache import LRUCache
 from mountaineer.client_builder.builder import ClientBuilder
@@ -339,36 +338,35 @@ def handle_build(
         str(get_static_path("live_reload.ts").resolve().absolute()),
         False,
     )
-    print("BUNDLE RESULT", client_bundle_result)
-
-    # TODO: We should own the names that we pass in
-    int_to_controller = {
-        i: controller_definition.controller
-        for i, controller_definition in enumerate(
-            app_manager.app_controller.controllers
-        )
-    }
 
     static_output = app_manager.app_controller.view_root.get_managed_static_dir()
     ssr_output = app_manager.app_controller.view_root.get_managed_ssr_dir()
 
-    # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
-    for path, content in client_bundle_result["entrypoints"].items():
-        print("ENTRYPOINT", path)
-        match = re_match(r"entrypoint(\d+)(\.js|\.js\.map)", path)
-        if match is None:
-            raise ValueError(f"Unexpected entrypoint path: {path}")
-        controller = int_to_controller[int(match.group(1))]
+    # If we don't have the same number of entrypoints as controllers, something went wrong
+    if len(client_bundle_result["entrypoints"]) != len(
+        app_manager.app_controller.controllers
+    ):
+        raise ValueError(
+            f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
+            f"Controllers: {len(app_manager.app_controller.controllers)}\n"
+            f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
+        )
 
+    # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
+    for controller_definition, content, map_content in zip(
+        app_manager.app_controller.controllers,
+        client_bundle_result["entrypoints"],
+        client_bundle_result["entrypoint_maps"],
+    ):
         # TODO: Consolidate naming conventions for scripts into our `ManagedPath` class
-        script_root = underscore(controller.__class__.__name__)
+        script_root = underscore(controller_definition.controller.__class__.__name__)
         content_hash = md5(content.encode()).hexdigest()
         (static_output / f"{script_root}-{content_hash}.js").write_text(content)
+        (static_output / f"{script_root}-{content_hash}.map.js").write_text(map_content)
 
     # Copy the other files 1:1 because they'll be referenced by name in the
     # entrypoints
     for path, content in client_bundle_result["supporting"].items():
-        print("SUPPORTING", path)
         (static_output / path).write_text(content)
 
     # Now we go one-by-one to provide the SSR files, which will be consolidated

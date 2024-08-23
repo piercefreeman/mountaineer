@@ -3,7 +3,7 @@ use pyo3::types::{PyDict, PyList};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use crate::code_gen;
@@ -81,8 +81,9 @@ fn process_output_files(
     let mut processed_files = HashSet::new();
 
     for path in entrypoint_paths {
-        let js_path = PathBuf::from(path).with_extension("js");
-        let map_path = PathBuf::from(path).with_extension("js.map");
+        let file_name = Path::new(path).file_name().unwrap().to_str().unwrap();
+        let js_path = output_dir.join(file_name).with_extension("js");
+        let map_path = output_dir.join(file_name).with_extension("js.map");
 
         process_file(&js_path, &mut processed_files, |content| {
             entrypoints.append(content)

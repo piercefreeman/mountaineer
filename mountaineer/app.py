@@ -17,7 +17,7 @@ from inflection import underscore
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
 
-from mountaineer import mountaineer as mountaineer_rs
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions import (
     FunctionActionType,
     fuse_metadata_to_response_typehint,
@@ -205,8 +205,6 @@ class AppController:
             controller_node, direct_hierarchy = self._view_hierarchy_for_controller(
                 controller,
             )
-
-            self._print_hierarchy()
 
             direct_hierarchy.reverse()
             view_paths = [[str(layout.path) for layout in direct_hierarchy]]
@@ -463,7 +461,7 @@ class AppController:
         # We need to figure out the layout controllers that should
         # wrap this controller
         direct_hierarchy: list[LayoutElement] = []
-        current_node = controller_node
+        current_node: LayoutElement | None = controller_node
         while current_node is not None:
             if current_node in direct_hierarchy:
                 raise ValueError(f"Recursive layout detected: {current_node.path}")
@@ -471,60 +469,6 @@ class AppController:
             current_node = current_node.parent
 
         return controller_node, direct_hierarchy
-
-    def _print_hierarchy(self):
-        """
-        Diagnostic inspection of the hierarchy paths
-        """
-
-        def print_hierarchy(
-            root: LayoutElement,
-            root_path: Path,
-            hierarchy_paths: dict[Path, LayoutElement],
-            indent: str = "",
-            is_last: bool = True,
-        ):
-            # Print the current node
-            prefix = indent + ("└── " if is_last else "├── ")
-            relative_path = root.path.relative_to(root_path)
-            print(f"{prefix}{relative_path} (ID: {root.id})")
-
-            # Prepare the indent for children
-            child_indent = indent + ("    " if is_last else "│   ")
-
-            # Sort children by their paths
-            sorted_children = sorted(root.children, key=lambda x: x.path)
-
-            # Print children
-            for i, child in enumerate(sorted_children):
-                is_last_child = i == len(sorted_children) - 1
-                print_hierarchy(
-                    child, root_path, hierarchy_paths, child_indent, is_last_child
-                )
-
-            # Check for any disconnected paths that belong to this node
-            disconnected_paths = [
-                path
-                for path, element in hierarchy_paths.items()
-                if element.id == root.id
-                and path not in [child.path for child in root.children]
-            ]
-
-            # Print disconnected paths
-            for i, path in enumerate(sorted(disconnected_paths)):
-                is_last_disconnected = (
-                    i == len(disconnected_paths) - 1
-                ) and not root.children
-                prefix = child_indent + ("└── " if is_last_disconnected else "├── ")
-                relative_path = path.relative_to(root_path)
-                print(f"{prefix}{relative_path} (Disconnected)")
-
-        # Find the elements with no parent
-        for element in self.hierarchy_paths.values():
-            if element.parent is None:
-                print(f"Root: {element.path} ({element.id})")
-                # Paths will be the file, so we show based on the root
-                print_hierarchy(element, element.path.parent, self.hierarchy_paths)
 
     def merge_hierarchy_signatures(self, controller_definition: ControllerDefinition):
         # We should:
@@ -645,7 +589,7 @@ class AppController:
         # header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
         if page_metadata.metadata:
             metadata = page_metadata.metadata
-            if not metadata.ignore_global_metadata:
+            if not metadata.ignore_global_metadata and self.global_metadata:
                 metadata = metadata.merge(self.global_metadata)
             header_str = "\n".join(metadata.build_header())
         else:

@@ -39,7 +39,6 @@ class ClientCompiler:
         this is a None equality check; a blank list is provided, we won't refresh any files.
 
         """
-        print("WILL BUILD BUILDER")
         if limit_paths is None:
             limit_paths = list(self._get_static_files())
             limit_paths += [
@@ -77,7 +76,7 @@ class ClientCompiler:
             if isinstance(result, Exception):
                 has_build_error = True
                 if isinstance(result, BuildProcessException):
-                    CONSOLE.print(f"[bold red]Build error: {result}", fg="red")
+                    CONSOLE.print(f"[bold red]Build error: {result}")
                 final_exception += str(result)
 
         if has_build_error:

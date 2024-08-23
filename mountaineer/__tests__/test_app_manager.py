@@ -57,7 +57,7 @@ def app_package(tmp_app_package_dir: Path):
 @pytest.fixture
 def manager(app_package: AppPackageType) -> HotReloadManager:
     package_name, _, _ = app_package
-    return HotReloadManager.from_webcontroller(
+    return HotReloadManager.from_webcontroller(  # type: ignore
         f"{package_name}.test_controller:test_controller",
         host="localhost",
         port=8000,
@@ -86,7 +86,7 @@ def test_update_module(manager: HotReloadManager, app_package: AppPackageType):
 
     # Check if the new attribute is present
     assert hasattr(manager.app_controller, "new_attribute")
-    assert manager.app_controller.new_attribute == "test" # type: ignore
+    assert manager.app_controller.new_attribute == "test"  # type: ignore
 
 
 def test_restart_server(manager: HotReloadManager):
