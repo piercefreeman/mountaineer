@@ -6,9 +6,9 @@ from unittest.mock import MagicMock, _Call, call, patch
 
 import pytest
 
-from mountaineer.controller import ControllerBase
 from mountaineer.client_compiler.base import ClientBundleMetadata
 from mountaineer.client_compiler.javascript import JavascriptBundler
+from mountaineer.controller import ControllerBase
 from mountaineer.paths import ManagedViewPath
 
 

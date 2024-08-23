@@ -1,10 +1,8 @@
 use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyList;
-use pyo3::types::PyTuple;
+use pyo3::types::{PyDict, PyList};
 use std::collections::HashMap;
-use std::ffi::c_int;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tempfile;
 
+mod code_gen;
 mod dependencies;
 mod errors;
 mod lexers;
@@ -272,49 +271,8 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
             let temp_file_path = temp_dir.path().join("entrypoint.jsx");
             let mut temp_file = fs::File::create(&temp_file_path)?;
 
-            // Generate the synthetic entrypoint content
-            let mut entrypoint_content = String::from("import React from 'react';\n");
-            entrypoint_content +=
-                &format!("import mountLiveReload from '{}';\n\n", live_reload_import);
-
-            for (j, path) in path_group.iter().enumerate() {
-                entrypoint_content += &format!("import Layout{} from '{}';\n", j, path);
-            }
-
-            entrypoint_content += "\nconst Entrypoint = () => {\n";
-            entrypoint_content += "    mountLiveReload({});\n";
-            entrypoint_content += "    return (\n";
-
-            // Nest the layouts
-            for (i, _path) in path_group.iter().enumerate() {
-                entrypoint_content += &"        ".repeat(i + 1);
-                entrypoint_content += &format!("<Layout{}>\n", i);
-            }
-
-            // Add the innermost Page component
-            //entrypoint_content += &"        ".repeat(paths.len() + 1);
-            //entrypoint_content += "<Page />\n";
-
-            // Close the nested layouts
-            for (i, _path) in path_group.iter().enumerate().rev() {
-                entrypoint_content += &"        ".repeat(i + 1);
-                entrypoint_content += &format!("</Layout{}>\n", i);
-            }
-
-            entrypoint_content += "    );\n";
-            entrypoint_content += "};\n\n";
-
-            // Add client-side or server-side specific code
-            if !is_server {
-                entrypoint_content += "import { hydrateRoot } from 'react-dom/client';\n";
-                entrypoint_content += "const container = document.getElementById('root');\n";
-                entrypoint_content += "hydrateRoot(container, <Entrypoint />);\n";
-            } else {
-                entrypoint_content += "import { renderToString } from 'react-dom/server';\n";
-                entrypoint_content +=
-                    "export const Index = () => renderToString(<Entrypoint />);\n";
-            }
-
+            let entrypoint_content =
+                code_gen::build_entrypoint(&path_group, is_server, &live_reload_import);
             println!("entrypoint_content: {}", entrypoint_content);
 
             // Write the entrypoint content to the temporary file
@@ -379,6 +337,98 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         }
 
         Ok(output_files)
+    }
+
+    #[pyfn(m)]
+    #[pyo3(name = "build_production_bundle")]
+    fn build_production_bundle(
+        py: Python,
+        paths: Vec<Vec<String>>,
+        node_modules_path: String,
+        environment: String,
+        live_reload_import: String,
+        is_server: bool,
+    ) -> PyResult<Py<PyDict>> {
+        /*
+         * Builds a full production bundle from multiple JavaScript files. Uses
+         * file splitting and tree-shaking to optimize the bundle size for
+         * client users.
+         */
+        // We expect to have a 1:1 mapping of input files to output files
+        // with the same name (entrypoint.js)
+        // We return these with a mapping of {original_path: contents}
+        // alongside a list of {supporting_path: content} for the bundle
+        // files that are shared between multiple entrypoints
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
+        }
+
+        // Create a temporary folder for synthetic entrypoints
+        let temp_dir = tempfile::TempDir::new()?;
+        let temp_dir_path = temp_dir.path();
+        let mut entrypoint_paths = Vec::new();
+        let mut original_to_temp_map = HashMap::new();
+
+        // Create synthetic entrypoints
+        for (index, path_group) in paths.iter().enumerate() {
+            let temp_file_path = temp_dir_path.join(format!("entrypoint{}.jsx", index));
+            let mut temp_file = fs::File::create(&temp_file_path)?;
+            let entrypoint_content =
+                code_gen::build_entrypoint(&path_group, is_server, &live_reload_import);
+            println!("entrypoint_content: {}", entrypoint_content);
+            temp_file.write_all(entrypoint_content.as_bytes())?;
+            let temp_path_str = temp_file_path.to_str().unwrap().to_string();
+            entrypoint_paths.push(temp_path_str.clone());
+            //original_to_temp_map.insert(format!("entrypoint{}.js", index), path_group[0].clone());
+            // TODO: Just store these in a set alongside the map files
+            original_to_temp_map.insert(
+                format!("entrypoint{}.js", index),
+                format!("entrypoint{}.js", index),
+            );
+        }
+
+        // Create output directory
+        let output_dir = temp_dir.path().join("bundled");
+        fs::create_dir_all(&output_dir)?;
+
+        // Call bundle_all function
+        match src_go::bundle_all(
+            entrypoint_paths,
+            node_modules_path,
+            environment,
+            output_dir.to_str().unwrap().to_string(),
+        ) {
+            Ok(()) => {
+                let result = PyDict::new(py);
+                let entrypoints = PyDict::new(py);
+                let supporting = PyDict::new(py);
+
+                for entry in fs::read_dir(&output_dir)? {
+                    let entry = entry?;
+                    let path = entry.path();
+                    if path.is_file() {
+                        let content = fs::read_to_string(&path)?;
+                        let filename = path.file_name().unwrap().to_str().unwrap();
+
+                        // Check if this is an entrypoint file
+                        if let Some(original_path) = original_to_temp_map.get(filename) {
+                            entrypoints.set_item(original_path, content)?;
+                            println!("ENTRYPOINT {}", filename);
+                        } else {
+                            // This is a supporting file
+                            supporting.set_item(filename, content)?;
+                            println!("SUPPORTING {}", filename);
+                        }
+                    }
+                }
+
+                result.set_item("entrypoints", entrypoints)?;
+                result.set_item("supporting", supporting)?;
+
+                Ok(result.into())
+            }
+            Err(error) => Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(error)),
+        }
     }
 
     Ok(())

@@ -1,23 +1,29 @@
 import asyncio
 import importlib
 import sys
+from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
+from re import match as re_match
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from time import sleep, time
 from traceback import format_exc
 from typing import Callable
 
+from inflection import underscore
 from rich.traceback import install as rich_traceback_install
 
+from mountaineer import mountaineer as mountaineer_rs
 from mountaineer.app_manager import HotReloadManager, find_packages_with_prefix
 from mountaineer.cache import LRUCache
 from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.logging import LOGGER
 from mountaineer.ssr import render_ssr
+from mountaineer.static import get_static_path
 from mountaineer.watch import (
     CallbackDefinition,
     CallbackMetadata,
@@ -131,6 +137,12 @@ def handle_runserver(
     )
     asyncio.run(js_compiler.build_all())
 
+    app_compiler = ClientCompiler(
+        app=app_manager.app_controller,
+        view_root=app_manager.app_controller.view_root,
+    )
+    asyncio.run(app_compiler.run_builder_plugins())
+
     # Start the initial thread
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
@@ -196,6 +208,14 @@ def handle_runserver(
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
 
+        # Pass all updated files to the app compiler to build stylesheets
+        # and other asset compilations
+        asyncio.run(
+            app_compiler.run_builder_plugins(
+                limit_paths=list(updated_js) + list(updated_python)
+            )
+        )
+
         # Logging in the following section assumes we're actually doing some
         # work; if we're not, we should just exit early
         if not updated_js and not updated_python:
@@ -207,10 +227,8 @@ def handle_runserver(
 
         if updated_js:
             LOGGER.debug(f"Changed JS: {updated_js}")
-            asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
+            # asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
 
-            # TODO: Switch to the DAG state management of imports
-            # that's provided by mountaineer_rs
             for path in updated_js:
                 app_manager.app_controller.invalidate_view(path)
 
@@ -290,9 +308,87 @@ def handle_build(
         app_manager.app_controller,
         live_reload_port=None,
     )
+    client_compiler = ClientCompiler(
+        app_manager.app_controller.view_root,
+        app_manager.app_controller,
+    )
     start = time()
 
+    # Build the latest client support files (useServer)
     asyncio.run(js_compiler.build_all())
+    asyncio.run(client_compiler.run_builder_plugins())
+
+    # Compile the final bundle
+    # This requires us to get each entrypoint, which should just be the controllers
+    # that are registered to the app
+    # We also need to inspect the hierarchy
+    all_view_paths: list[list[str]] = []
+
+    for controller_definition in app_manager.app_controller.controllers:
+        _, direct_hierarchy = app_manager.app_controller._view_hierarchy_for_controller(
+            controller_definition.controller
+        )
+        direct_hierarchy.reverse()
+        all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
+
+    # Compile the final client bundle
+    client_bundle_result = mountaineer_rs.build_production_bundle(
+        all_view_paths,
+        str(app_manager.app_controller.view_root / "node_modules"),
+        "production",
+        str(get_static_path("live_reload.ts").resolve().absolute()),
+        False,
+    )
+    print("BUNDLE RESULT", client_bundle_result)
+
+    # TODO: We should own the names that we pass in
+    int_to_controller = {
+        i: controller_definition.controller
+        for i, controller_definition in enumerate(
+            app_manager.app_controller.controllers
+        )
+    }
+
+    static_output = app_manager.app_controller.view_root.get_managed_static_dir()
+    ssr_output = app_manager.app_controller.view_root.get_managed_ssr_dir()
+
+    # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
+    for path, content in client_bundle_result["entrypoints"].items():
+        print("ENTRYPOINT", path)
+        match = re_match(r"entrypoint(\d+)(\.js|\.js\.map)", path)
+        if match is None:
+            raise ValueError(f"Unexpected entrypoint path: {path}")
+        controller = int_to_controller[int(match.group(1))]
+
+        # TODO: Consolidate naming conventions for scripts into our `ManagedPath` class
+        script_root = underscore(controller.__class__.__name__)
+        content_hash = md5(content.encode()).hexdigest()
+        (static_output / f"{script_root}-{content_hash}.js").write_text(content)
+
+    # Copy the other files 1:1 because they'll be referenced by name in the
+    # entrypoints
+    for path, content in client_bundle_result["supporting"].items():
+        print("SUPPORTING", path)
+        (static_output / path).write_text(content)
+
+    # Now we go one-by-one to provide the SSR files, which will be consolidated
+    # into a single runnable script for ease of use by the V8 engine
+    result_scripts = mountaineer_rs.compile_multiple_javascript(
+        all_view_paths,
+        str(app_manager.app_controller.view_root / "node_modules"),
+        "production",
+        0,
+        str(get_static_path("live_reload.ts").resolve().absolute()),
+        True,
+    )
+
+    for controller, script in zip(
+        app_manager.app_controller.controllers, result_scripts
+    ):
+        script_root = underscore(controller.controller.__class__.__name__)
+        content_hash = md5(script.encode()).hexdigest()
+        (ssr_output / f"{script_root}.js").write_text(script)
+
     CONSOLE.print(f"[bold green]App built in {time() - start:.2f}s")
 
 

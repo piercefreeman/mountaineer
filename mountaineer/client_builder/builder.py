@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from tempfile import mkdtemp
 from time import monotonic_ns
 from typing import Any
 
@@ -30,10 +29,10 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
+from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
@@ -71,8 +70,6 @@ class ClientBuilder:
         self.view_root = ManagedViewPath.from_view_root(app.view_root)
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
-
-        self.tmp_dir = Path(mkdtemp())
 
     async def build_all(self):
         # Totally clear away the old build cache, so we start fresh
@@ -120,20 +117,6 @@ class ClientBuilder:
             CONSOLE.print(
                 f"[bold green]Validated useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
-
-    # async def build_fe_diff(self, changed_files: list[Path] | None):
-    #     """
-    #     If changed_files is empty or None, will perform a full rebuild
-    #     of all controller views on disk.
-
-    #     """
-    #     with self.catch_build_exception():
-    #         await self.build_javascript_chunks(changed_files)
-
-    #         # Update the cached paths attached to the app
-    #         for controller_definition in self.app.controllers:
-    #             controller = controller_definition.controller
-    #             controller.resolve_paths(self.view_root, force=True)
 
     @contextmanager
     def catch_build_exception(self):
@@ -513,123 +496,6 @@ class ClientBuilder:
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
-    # async def build_javascript_chunks(
-    #     self, changed_files: list[Path] | None, max_concurrency: int = 25
-    # ):
-    #     """
-    #     Build the final javascript chunks that will render the react documents. Each page will get
-    #     one chunk associated with it. We suffix these files with the current md5 hash of the contents to
-    #     allow clients to aggressively cache these contents but invalidate the cache whenever the script
-    #     contents have rebuilt in the background.
-
-    #     """
-    #     metadata = ClientBundleMetadata(
-    #         live_reload_port=self.live_reload_port,
-    #         package_root_link=self.view_root.get_package_root_link(),
-    #         tmp_dir=self.tmp_dir,
-    #     )
-
-    #     for builder in self.app.builders:
-    #         builder.set_metadata(metadata)
-
-    #     for builder in self.app.builders:
-    #         for controller_definition in self.app.controllers:
-    #             builder.register_controller(
-    #                 controller_definition.controller,
-    #                 self.view_root.get_controller_view_path(
-    #                     controller_definition.controller
-    #                 ),
-    #             )
-
-    #     # Each build command is completely independent and there's some overhead with spawning
-    #     # each process. Make use of multi-core machines and spawn each process in its own
-    #     # management thread so we complete the build process in parallel.
-    #     if changed_files:
-    #         for changed_file in changed_files:
-    #             for builder in self.app.builders:
-    #                 builder.mark_file_dirty(changed_file)
-    #     else:
-    #         for controller_definition in self.app.controllers:
-    #             for builder in self.app.builders:
-    #                 builder.mark_file_dirty(
-    #                     self.view_root.get_controller_view_path(
-    #                         controller_definition.controller
-    #                     )
-    #                 )
-
-    #         # Optionally build static files the main views and plugin views
-    #         # This allows plugins to have custom handling for different file types
-    #         for path in self.get_static_files():
-    #             for builder in self.app.builders:
-    #                 builder.mark_file_dirty(path)
-
-    #     start = monotonic_ns()
-    #     results = await gather_with_concurrency(
-    #         [builder.build_wrapper() for builder in self.app.builders],
-    #         n=max_concurrency,
-    #         catch_exceptions=True,
-    #     )
-    #     LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
-
-    #     # Go through the exceptions, logging the build errors explicitly
-    #     has_build_error = False
-    #     final_exception: str = ""
-    #     for result in results:
-    #         if isinstance(result, Exception):
-    #             has_build_error = True
-    #             if isinstance(result, BuildProcessException):
-    #                 secho(f"Build error: {result}", fg="red")
-    #             final_exception += str(result)
-
-    #     if has_build_error:
-    #         raise BuildProcessException(final_exception)
-
-    #     self.move_build_artifacts_into_project()
-
-    # def move_build_artifacts_into_project(self):
-    #     """
-    #     Now that we build has completed, we can clear out the old files and replace it
-    #     with the thus-far temporary files
-
-    #     This cleans up old controllers in the case that they were deleted, and prevents
-    #     outdated md5 content hashes from being served
-
-    #     """
-    #     # For now, just copy over the _tmp files into the main directory. Replace them
-    #     # if they exist. This is a differential copy to support our build pipeline
-    #     # that will only change progressively. It notably does not handle the case of
-    #     # deleted files.
-    #     for tmp_path, final_path in [
-    #         (
-    #             self.view_root.get_managed_static_dir(tmp_build=True),
-    #             self.view_root.get_managed_static_dir(),
-    #         ),
-    #         (
-    #             self.view_root.get_managed_ssr_dir(tmp_build=True),
-    #             self.view_root.get_managed_ssr_dir(),
-    #         ),
-    #         (
-    #             self.view_root.get_managed_metadata_dir(tmp_build=True),
-    #             self.view_root.get_managed_metadata_dir(),
-    #         ),
-    #     ]:
-    #         # Only remove the final path if the matching tmp path build exists
-    #         # This creates a merged build where we maintain the base code created
-    #         # on startup and the possibly incremental builds.
-    #         # We do the deletion up-front so we don't delete our actual files mid-copy
-    #         # in case we have multiple with the same prefix (like .js and .map)
-    #         for tmp_file in tmp_path.glob("*"):
-    #             # Strip any md5 hashes from the filename and delete
-    #             # all the items matching the same name
-    #             base_filename = tmp_file.name.rsplit("-")[0].rsplit(".")[0]
-    #             for old_file in final_path.glob(f"{base_filename}*"):
-    #                 old_file.unlink()
-
-    #         # We've cleared old versions, now freshly copy the files
-    #         for tmp_file in tmp_path.glob("*"):
-    #             final_file = final_path / tmp_file.name
-    #             shutil_move(tmp_file, final_file)
-
     def cache_is_outdated(self):
         """
         Determines if our last build is outdated and we need to rebuild the client. Running
@@ -665,21 +531,6 @@ class ClientBuilder:
             return True
 
         return False
-
-    def get_static_files(self):
-        ignore_directories = ["_ssr", "_static", "_server", "_metadata", "node_modules"]
-
-        for view_root in self.get_all_root_views():
-            for dir_path, _, filenames in view_root.walk():
-                for filename in filenames:
-                    if any(
-                        [
-                            directory in dir_path.parts
-                            for directory in ignore_directories
-                        ]
-                    ):
-                        continue
-                    yield dir_path / filename
 
     def validate_unique_paths(self):
         """
@@ -723,29 +574,6 @@ class ClientBuilder:
                 raise ValueError(
                     f"View path {view_path} does not exist, ensure it is created before running the server"
                 )
-
-    def get_all_root_views(self) -> list[ManagedViewPath]:
-        """
-        The self.view_root variable is the root of the current user project. We may have other
-        "view roots" that store view for plugins.
-
-        This function inspects the controller path definitions and collects all of the
-        unique root view paths. The returned ManagedViewPaths are all copied and set to
-        share the same package root as the user project.
-
-        """
-        # Find the view roots
-        view_roots = {self.view_root.copy()}
-        for controller_definition in self.app.controllers:
-            view_path = controller_definition.controller.view_path
-            if isinstance(view_path, ManagedViewPath):
-                view_roots.add(view_path.get_root_link().copy())
-
-        # All the view roots should have the same package root
-        for view_root in view_roots:
-            view_root.package_root_link = self.view_root.package_root_link
-
-        return list(view_roots)
 
     def get_render_local_state(self, controller: ControllerBase):
         """

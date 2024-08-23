@@ -5,7 +5,7 @@ from inspect import Parameter, Signature, isawaitable, isclass, signature
 from json import dumps as json_dumps
 from pathlib import Path
 from time import monotonic_ns
-from typing import Any, Callable, Optional, Type
+from typing import Any, Callable, Optional, Type, cast, overload
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, Request
@@ -25,11 +25,11 @@ from mountaineer.actions import (
 )
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
+from mountaineer.client_compiler.base import ClientBuilderBase
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException
-from mountaineer.client_compiler.base import ClientBuilderBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
@@ -186,10 +186,7 @@ class AppController:
             )
 
         # Update the paths now that we have access to the runtime package path
-        # controller.resolve_paths(self.view_root, force=True)
-        self.update_hierarchy(known_controller=controller)
-
-        # LOGGER.debug(f"Current hierarchy dag: {self.hierarchy_paths}")
+        controller_node = self.update_hierarchy(known_controller=controller)
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -202,69 +199,28 @@ class AppController:
         # with the dependency injection kwargs
         @wraps(controller.render)
         async def generate_controller_html(*args, **kwargs):
-            # In production we should use a cached script file. Here we dynamically
-            # re-build the script to make sure we have the latest.
+            start = monotonic_ns()
 
             # Figure out which controller we're rendering
-            controller_node = next(
-                node
-                for node in self.hierarchy_paths.values()
-                if node.controller == controller
+            controller_node, direct_hierarchy = self._view_hierarchy_for_controller(
+                controller,
             )
-            # print("CONTROLLER", controller_node)
-
-            # We need to figure out the layout controllers that should
-            # wrap this controller
-            direct_hierarchy: list[LayoutElement] = []
-            current_node = controller_node
-            while current_node is not None:
-                if current_node in direct_hierarchy:
-                    raise ValueError(f"Recursive layout detected: {current_node.path}")
-                direct_hierarchy.append(current_node)
-                current_node = current_node.parent
 
             self._print_hierarchy()
 
             direct_hierarchy.reverse()
             view_paths = [[str(layout.path) for layout in direct_hierarchy]]
 
-            # Caching the build files saves about 0.3 on every load
-            # during development
-            start = monotonic_ns()
-            if not controller_node.cached_server_script:
-                controller_node.cached_server_script = (
-                    mountaineer_rs.compile_multiple_javascript(
-                        view_paths,
-                        str(self.view_root / "node_modules"),
-                        "development",
-                        0,
-                        str(get_static_path("live_reload.ts").resolve().absolute()),
-                        True,
-                    )[0]
-                )
-            if not controller_node.cached_client_script:
-                controller_node.cached_client_script = (
-                    mountaineer_rs.compile_multiple_javascript(
-                        view_paths,
-                        str(self.view_root / "node_modules"),
-                        "development",
-                        self.live_reload_port,
-                        str(get_static_path("live_reload.ts").resolve().absolute()),
-                        False,
-                    )[0]
-                )
-            print(f"Rendered scripts in {(monotonic_ns() - start) / 1e9}")
-
-            # print("SERVER SCRIPT", controller_node.cached_server_script)
-
-            # Assemble the metadata for each layout controller
+            # Assemble the metadata for each controller involved in rendering this view
+            # (this includes the current page and any wrapper LayoutControllers)
+            render_overhead_by_controller = {}
             render_output = {}
-
             for node in direct_hierarchy:
                 # Must be a layout-only component
                 if not node.controller:
                     continue
 
+                time = monotonic_ns()
                 render_values = self.get_value_mask_for_signature(
                     signature(node.controller.render), kwargs
                 )
@@ -273,6 +229,9 @@ class AppController:
                     server_data = await server_data
                 if server_data is None:
                     server_data = RenderNull()
+                render_overhead_by_controller[node.controller.__class__.__name__] = (
+                    monotonic_ns() - time
+                )
 
                 render_output[node.controller.__class__.__name__] = server_data
 
@@ -282,12 +241,76 @@ class AppController:
             if not isinstance(controller_output, RenderBase):
                 return controller_output
 
-            return self.compile_html(
-                controller_node.cached_server_script,
-                controller_node.cached_client_script,
-                controller_output,
-                render_output,
+            LOGGER.debug(
+                f"Controller {controller.__class__.__name__} data acquired in {(monotonic_ns() - start) / 1e9}"
             )
+            LOGGER.debug(
+                f"Controller {controller.__class__.__name__} controller breakdown:\n"
+                + "\n".join(
+                    [
+                        f"{controller_name}: {overhead / 1e9}"
+                        for controller_name, overhead in render_overhead_by_controller.items()
+                    ]
+                )
+            )
+
+            # If we're in development mode, we should recompile the script on page
+            # load to make sure we have the latest if there's any chance that it
+            # was affected by recent code changes
+            if self.config and self.config.ENVIRONMENT == "development":
+                # Caching the build files saves about 0.3 on every load
+                # during development
+                start = monotonic_ns()
+                if not controller_node.cached_server_script:
+                    controller_node.cached_server_script = (
+                        mountaineer_rs.compile_multiple_javascript(
+                            view_paths,
+                            str(self.view_root / "node_modules"),
+                            "development",
+                            0,
+                            str(get_static_path("live_reload.ts").resolve().absolute()),
+                            True,
+                        )[0]
+                    )
+                if not controller_node.cached_client_script:
+                    controller_node.cached_client_script = (
+                        mountaineer_rs.compile_multiple_javascript(
+                            view_paths,
+                            str(self.view_root / "node_modules"),
+                            "development",
+                            self.live_reload_port,
+                            str(get_static_path("live_reload.ts").resolve().absolute()),
+                            False,
+                        )[0]
+                    )
+                LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
+
+                html = self.compile_html(
+                    cast(str, controller_node.cached_server_script),
+                    controller_output,
+                    render_output,
+                    inline_client_script=cast(
+                        str, controller_node.cached_client_script
+                    ),
+                    external_client_imports=None,
+                )
+            else:
+                # Production payload
+                html = self.compile_html(
+                    cast(str, controller_node.cached_server_script),
+                    controller_output,
+                    render_output,
+                    inline_client_script=None,
+                    external_client_imports=[
+                        f"/static/{script_name}"
+                        for script_name in controller.bundled_scripts
+                    ],
+                )
+
+            LOGGER.debug(
+                f"Controller {controller.__class__.__name__} load time took {(monotonic_ns() - start) / 1e9}"
+            )
+            return html
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
@@ -325,6 +348,24 @@ class AppController:
             controller.render, FunctionActionType.RENDER
         )
         render_metadata.render_model = return_model
+
+        # If we're running in production, sniff for the script files ahead of time and
+        # attach them to the controller
+        # This allows each view to avoid having to find these on disk, as well as gives
+        # a proactive error if any view will be unable to render when their script files
+        # are missing
+        if self.config and self.config.ENVIRONMENT != "development":
+            controller.resolve_paths(self.view_root, force=True)
+            if not controller.bundled_scripts:
+                raise ValueError(
+                    f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
+                )
+            if not controller.ssr_path:
+                raise ValueError(
+                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
+                )
+
+            controller_node.cached_server_script = controller.ssr_path.read_text()
 
         # Register the rendering view to an isolated APIRoute, so we can keep track of its
         # the resulting router independently of the rest of the application
@@ -402,6 +443,32 @@ class AppController:
         self.controller_names.add(controller_name)
 
         self.merge_hierarchy_signatures(controller_definition)
+
+    def _view_hierarchy_for_controller(self, controller: ControllerBase):
+        """
+        Determines the nested parent layouts for the given controller, according
+        to the currently mounted LayoutElement hierarchy.
+
+        """
+        # Figure out which controller we're rendering
+        controller_node = next(
+            node
+            for node in self.hierarchy_paths.values()
+            if node.controller == controller
+        )
+        # print("CONTROLLER", controller_node)
+
+        # We need to figure out the layout controllers that should
+        # wrap this controller
+        direct_hierarchy: list[LayoutElement] = []
+        current_node = controller_node
+        while current_node is not None:
+            if current_node in direct_hierarchy:
+                raise ValueError(f"Recursive layout detected: {current_node.path}")
+            direct_hierarchy.append(current_node)
+            current_node = current_node.parent
+
+        return controller_node, direct_hierarchy
 
     def _print_hierarchy(self):
         """
@@ -540,12 +607,38 @@ class AppController:
         node = self.hierarchy_paths[path]
         _invalidate_node(node)
 
+    @overload
     def compile_html(
         self,
         server_script: str,
-        client_script: str,
         page_metadata: RenderBase,
         all_render: dict[str, RenderBase],
+        *,
+        inline_client_script: str,
+        external_client_imports: None,
+    ):
+        ...
+
+    @overload
+    def compile_html(
+        self,
+        server_script: str,
+        page_metadata: RenderBase,
+        all_render: dict[str, RenderBase],
+        *,
+        inline_client_script: None,
+        external_client_imports: list[str],
+    ):
+        ...
+
+    def compile_html(
+        self,
+        server_script: str,
+        page_metadata: RenderBase,
+        all_render: dict[str, RenderBase],
+        *,
+        inline_client_script: str | None = None,
+        external_client_imports: list[str] | None = None,
     ):
         # header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
         if page_metadata.metadata:
@@ -569,10 +662,27 @@ class AppController:
             hard_timeout=10,
         )
 
-        # TODO: Add prod code
-        # When we're running in debug mode, we just import
-        # the script into each page so we can pick up on the latest changes
-        client_import = f"<script type='text/javascript'>{client_script}</script>"
+        client_import: str
+        if inline_client_script:
+            # When we're running in debug mode, we just import
+            # the script into each page so we can pick up on the latest changes
+            client_import = (
+                f"<script type='text/javascript'>{inline_client_script}</script>"
+            )
+        elif external_client_imports:
+            # This will point to our minified bundle that will in-turn import the other
+            # common dependencies
+            # Module types are required for browsers to use the import syntax
+            # https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules
+            # All major browsers have had support since 2018
+            client_import = "\n".join(
+                [
+                    f"<script type='module' src='{import_path}'></script>"
+                    for import_path in external_client_imports
+                ]
+            )
+        else:
+            raise ValueError("Invalid client script import")
 
         page_contents = f"""
         <html>

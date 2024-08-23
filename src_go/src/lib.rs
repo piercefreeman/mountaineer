@@ -6,7 +6,7 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 extern crate libc;
 
-use std::ffi::{c_int, CString};
+use std::ffi::{c_char, c_int, CString};
 use std::sync::{mpsc, Arc};
 use std::thread;
 
@@ -122,10 +122,50 @@ pub fn remove_context(context_ptr: c_int) {
     }
 }
 
+pub fn bundle_all(
+    paths: Vec<String>,
+    node_modules_path: String,
+    environment: String,
+    outdir: String,
+) -> Result<(), String> {
+    unsafe {
+        // Convert all paths to C strings
+        let c_paths: Vec<*mut c_char> = paths
+            .iter()
+            .map(|s| CString::new(s.clone()).unwrap().into_raw())
+            .collect();
+
+        let c_node_modules_path = CString::new(node_modules_path).unwrap();
+        let c_environment = CString::new(environment).unwrap();
+        let c_outdir = CString::new(outdir).unwrap();
+
+        let error_ptr = BundleAll(
+            c_paths.as_ptr() as *mut *mut c_char,
+            c_paths.len() as c_int,
+            c_node_modules_path.as_ptr() as *mut c_char,
+            c_environment.as_ptr() as *mut c_char,
+            c_outdir.as_ptr() as *mut c_char,
+        );
+
+        // Clean up the C strings
+        for &ptr in &c_paths {
+            let _ = CString::from_raw(ptr);
+        }
+
+        if !error_ptr.is_null() {
+            let error_string = CString::from_raw(error_ptr).to_string_lossy().into_owned();
+            Err(error_string)
+        } else {
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use tempfile::tempdir;
 
     #[test]
@@ -182,8 +222,72 @@ mod tests {
             get_build_context(&js_file_path.to_str().unwrap(), "", "development", 0, true).unwrap();
         assert_ne!(context_id, 0);
 
-        rebuild_contexts(vec![context_id]).unwrap();
+        // Create a simple callback
+        let callback = Arc::new(Box::new(|id: i32| {
+            println!("Context {} rebuilt", id);
+        }) as Box<dyn Fn(i32) + Send + Sync>);
+
+        // Call rebuild_contexts with the callback
+        rebuild_contexts(vec![context_id], callback).unwrap();
+
         assert!(output_file_path.exists());
+    }
+
+    #[test]
+    fn test_bundle_all() {
+        // Create a temporary directory
+        let temp_dir = tempdir().unwrap();
+
+        // Create two JS files
+        let js_file_path1 = temp_dir.path().join("file1.js");
+        let js_file_path2 = temp_dir.path().join("file2.js");
+
+        // Expected output files
+        let output_build_path = temp_dir.path().join("build_output");
+        fs::create_dir(&output_build_path).unwrap();
+
+        let output_file_path1 = output_build_path.join("file1.js");
+        let output_file_path2 = output_build_path.join("file2.js");
+
+        // Write simple JavaScript to the files
+        let js_content1 = r#"export const func1 = () => "Hello from file1";"#;
+        let js_content2 = r#"export const func2 = () => "Hello from file2";"#;
+        fs::write(&js_file_path1, js_content1).unwrap();
+        fs::write(&js_file_path2, js_content2).unwrap();
+
+        // Create a mock node_modules directory
+        let node_modules_path = temp_dir.path().join("node_modules");
+        fs::create_dir(&node_modules_path).unwrap();
+
+        // Call bundle_all function
+        let result = bundle_all(
+            vec![
+                js_file_path1.to_str().unwrap().to_string(),
+                js_file_path2.to_str().unwrap().to_string(),
+            ],
+            node_modules_path.to_str().unwrap().to_string(),
+            "development".to_string(),
+            output_build_path.to_str().unwrap().to_string(),
+        );
+
+        // Assert the result is Ok
+        assert!(result.is_ok(), "bundle_all failed: {:?}", result.err());
+
+        // Check if output files exist
+        assert!(output_file_path1.exists(), "Output file1.js not found");
+        assert!(output_file_path2.exists(), "Output file2.js not found");
+
+        // Optionally, check the content of the output files
+        let output_content1 = fs::read_to_string(&output_file_path1).unwrap();
+        let output_content2 = fs::read_to_string(&output_file_path2).unwrap();
+        assert!(
+            output_content1.contains("func1"),
+            "Output of file1.js doesn't contain expected content"
+        );
+        assert!(
+            output_content2.contains("func2"),
+            "Output of file2.js doesn't contain expected content"
+        );
     }
 
     #[test]
