@@ -16,12 +16,6 @@ path-absolutize = "3.1.1"
 regex = "1.10.3"
 md5 = "0.7.0"
 
-petgraph = "0.6.5"
-swc_common = "0.37.2"
-swc_ecma_parser = "0.149.0"
-swc_ecma_visit = "0.104.5"
-swc_ecma_ast = "0.118.1"
-
 log = "0.4"
 env_logger = "0.11"
 
