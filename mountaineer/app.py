@@ -263,7 +263,7 @@ class AppController:
                 start = monotonic_ns()
                 if not controller_node.cached_server_script:
                     controller_node.cached_server_script = (
-                        mountaineer_rs.compile_multiple_javascript(
+                        mountaineer_rs.compile_independent_bundles(
                             view_paths,
                             str(self.view_root / "node_modules"),
                             "development",
@@ -274,7 +274,7 @@ class AppController:
                     )
                 if not controller_node.cached_client_script:
                     controller_node.cached_client_script = (
-                        mountaineer_rs.compile_multiple_javascript(
+                        mountaineer_rs.compile_independent_bundles(
                             view_paths,
                             str(self.view_root / "node_modules"),
                             "development",

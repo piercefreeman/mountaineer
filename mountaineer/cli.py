@@ -332,7 +332,7 @@ def handle_build(
         all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
 
     # Compile the final client bundle
-    client_bundle_result = mountaineer_rs.build_production_bundle(
+    client_bundle_result = mountaineer_rs.compile_production_bundle(
         all_view_paths,
         str(app_manager.app_controller.view_root / "node_modules"),
         "production",
@@ -373,7 +373,7 @@ def handle_build(
 
     # Now we go one-by-one to provide the SSR files, which will be consolidated
     # into a single runnable script for ease of use by the V8 engine
-    result_scripts = mountaineer_rs.compile_multiple_javascript(
+    result_scripts = mountaineer_rs.compile_independent_bundles(
         all_view_paths,
         str(app_manager.app_controller.view_root / "node_modules"),
         "production",

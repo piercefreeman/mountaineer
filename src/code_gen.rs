@@ -27,10 +27,6 @@ pub fn build_entrypoint(
         entrypoint_content += &format!("<Layout{}>\n", i);
     }
 
-    // Add the innermost Page component
-    //entrypoint_content += &"        ".repeat(paths.len() + 1);
-    //entrypoint_content += "<Page />\n";
-
     // Close the nested layouts
     for (i, _path) in path_group.iter().enumerate().rev() {
         entrypoint_content += &"        ".repeat(i + 1);
