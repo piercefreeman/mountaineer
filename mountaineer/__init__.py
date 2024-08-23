@@ -10,7 +10,7 @@ from mountaineer.controller import ControllerBase as ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.dependencies import CoreDependencies as CoreDependencies
 from mountaineer.exceptions import APIException as APIException
-from mountaineer.js_compiler.postcss import PostCSSBundler as PostCSSBundler
+from mountaineer.client_compiler.postcss import PostCSSBundler as PostCSSBundler
 from mountaineer.paths import ManagedViewPath as ManagedViewPath
 from mountaineer.render import (
     LinkAttribute as LinkAttribute,

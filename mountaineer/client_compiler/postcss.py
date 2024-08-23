@@ -8,8 +8,8 @@ from time import monotonic_ns
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
 from mountaineer.console import CONSOLE
-from mountaineer.js_compiler.base import ClientBuilderBase
-from mountaineer.js_compiler.exceptions import BuildProcessException
+from mountaineer.client_compiler.base import ClientBuilderBase
+from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 

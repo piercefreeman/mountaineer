@@ -1,5 +1,5 @@
 from mountaineer.app import AppController
-from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
 {% if create_stub_files %}

@@ -4,7 +4,6 @@ from time import monotonic_ns
 from fastapi import Depends
 from sqlalchemy.orm import mapperlib
 from sqlmodel import SQLModel
-from sqlmodel.ext.asyncio.session import AsyncSession
 
 from mountaineer import CoreDependencies
 from mountaineer.config import ConfigBase

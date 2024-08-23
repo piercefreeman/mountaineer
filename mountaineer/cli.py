@@ -1,7 +1,6 @@
 import asyncio
 import importlib
 import sys
-from importlib.metadata import distributions
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
 from signal import SIGINT, signal
@@ -12,7 +11,7 @@ from typing import Callable
 
 from rich.traceback import install as rich_traceback_install
 
-from mountaineer.app_manager import AppManager
+from mountaineer.app_manager import HotReloadManager, find_packages_with_prefix
 from mountaineer.cache import LRUCache
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.console import CONSOLE
@@ -35,7 +34,9 @@ def handle_watch(
     subscribe_to_mountaineer: bool = False,
 ):
     """
-    Watch the file directory and rebuild auto-generated files.
+    Watch the file directory and rebuild auto-generated files. This only
+    creates the frontend files necessary to get server-side typehints. It
+    doesn't build the package for production use.
 
     :param package: Ex. "ci_webapp"
     :param webcontroller: Ex. "ci_webapp.app:controller"
@@ -52,7 +53,7 @@ def handle_watch(
     # different builds
     global_build_cache = Path(mkdtemp())
 
-    app_manager = AppManager.from_webcontroller(webcontroller)
+    app_manager = HotReloadManager.from_webcontroller(webcontroller)
     js_compiler = ClientBuilder(
         app_manager.app_controller,
         live_reload_port=None,
@@ -75,8 +76,9 @@ def handle_watch(
         # python file affected the API spec
         if updated_python:
             asyncio.run(js_compiler.build_use_server())
-        if updated_js:
-            asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
+
+        # For now, we don't do any js analysis besides building - which
+        # we don't need to do if we're just watching for changes
 
     watchdog = build_common_watchdog(
         package,
@@ -117,7 +119,9 @@ def handle_runserver(
     watcher_webservice = WatcherWebservice(webservice_host=host)
     watcher_webservice.start()
 
-    app_manager = AppManager.from_webcontroller(webcontroller)
+    app_manager = HotReloadManager.from_webcontroller(
+        webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
+    )
     LOGGER.debug(f"Initial load of {webcontroller} complete.")
 
     js_compiler = ClientBuilder(
@@ -128,10 +132,6 @@ def handle_runserver(
     asyncio.run(js_compiler.build_all())
 
     # Start the initial thread
-    # TODO: Clean up the variable passing between clientbuilder and app controller
-    app_manager.port = port
-    app_manager.host = host
-    app_manager.live_reload_port = watcher_webservice.port
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 
@@ -281,10 +281,10 @@ def handle_build(
     webcontroller: str,
 ):
     """
-    Handle a one-off build. Most often used in production CI pipelines.
+    Creates a production bundle of frontend files that is ready for service.
 
     """
-    app_manager = AppManager.from_webcontroller(webcontroller)
+    app_manager = HotReloadManager.from_webcontroller(webcontroller)
 
     js_compiler = ClientBuilder(
         app_manager.app_controller,
@@ -316,18 +316,6 @@ def update_multiprocessing_settings():
             # in an inappropriate context or after multiprocessing has started, which
             # is not allowed.
             LOGGER.error(f"Cannot change the start method after it has been used: {e}")
-
-
-def find_packages_with_prefix(prefix: str):
-    """
-    Find and return a list of all installed package names that start with the given prefix.
-
-    """
-    return [
-        dist.metadata["Name"]
-        for dist in distributions()
-        if dist.metadata["Name"].startswith(prefix)
-    ]
 
 
 def build_common_watchdog(

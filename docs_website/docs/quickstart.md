@@ -144,7 +144,7 @@ Now that we've newly created this controller, we wire it up to the application. 
 
 ```python title="my_webapp/app.py"
 from mountaineer.app import AppController
-from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
 from my_webapp.config import AppConfig

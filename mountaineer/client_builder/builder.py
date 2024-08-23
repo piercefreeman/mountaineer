@@ -3,12 +3,11 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
-from shutil import move as shutil_move, rmtree as shutil_rmtree
+from shutil import rmtree as shutil_rmtree
 from tempfile import mkdtemp
 from time import monotonic_ns
 from typing import Any
 
-from click import secho
 from fastapi import APIRouter
 from inflection import camelize
 from pydantic_core import ValidationError
@@ -34,9 +33,7 @@ from mountaineer.client_builder.typescript import (
 from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.io import gather_with_concurrency
-from mountaineer.js_compiler.base import ClientBundleMetadata
-from mountaineer.js_compiler.exceptions import BuildProcessException
+from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
@@ -52,8 +49,7 @@ class RenderSpec:
 class ClientBuilder:
     """
     Main entrypoint for building the auto-generated typescript code. This includes
-    the server provided API used by useServer and the final compiled javascript that
-    is executed by SSR and the client frontend.
+    the server provided API used by useServer.
 
     It delegates out the compilation to the js_compiler/* package.
 
@@ -90,7 +86,7 @@ class ClientBuilder:
                 shutil_rmtree(clear_dir)
 
         await self.build_use_server()
-        await self.build_fe_diff(None)
+        # await self.build_fe_diff(None)
 
     async def build_use_server(self):
         start = monotonic_ns()
@@ -125,19 +121,19 @@ class ClientBuilder:
                 f"[bold green]Validated useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
 
-    async def build_fe_diff(self, changed_files: list[Path] | None):
-        """
-        If changed_files is empty or None, will perform a full rebuild
-        of all controller views on disk.
+    # async def build_fe_diff(self, changed_files: list[Path] | None):
+    #     """
+    #     If changed_files is empty or None, will perform a full rebuild
+    #     of all controller views on disk.
 
-        """
-        with self.catch_build_exception():
-            await self.build_javascript_chunks(changed_files)
+    #     """
+    #     with self.catch_build_exception():
+    #         await self.build_javascript_chunks(changed_files)
 
-            # Update the cached paths attached to the app
-            for controller_definition in self.app.controllers:
-                controller = controller_definition.controller
-                controller.resolve_paths(self.view_root, force=True)
+    #         # Update the cached paths attached to the app
+    #         for controller_definition in self.app.controllers:
+    #             controller = controller_definition.controller
+    #             controller.resolve_paths(self.view_root, force=True)
 
     @contextmanager
     def catch_build_exception(self):
@@ -517,122 +513,122 @@ class ClientBuilder:
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
-    async def build_javascript_chunks(
-        self, changed_files: list[Path] | None, max_concurrency: int = 25
-    ):
-        """
-        Build the final javascript chunks that will render the react documents. Each page will get
-        one chunk associated with it. We suffix these files with the current md5 hash of the contents to
-        allow clients to aggressively cache these contents but invalidate the cache whenever the script
-        contents have rebuilt in the background.
+    # async def build_javascript_chunks(
+    #     self, changed_files: list[Path] | None, max_concurrency: int = 25
+    # ):
+    #     """
+    #     Build the final javascript chunks that will render the react documents. Each page will get
+    #     one chunk associated with it. We suffix these files with the current md5 hash of the contents to
+    #     allow clients to aggressively cache these contents but invalidate the cache whenever the script
+    #     contents have rebuilt in the background.
 
-        """
-        metadata = ClientBundleMetadata(
-            live_reload_port=self.live_reload_port,
-            package_root_link=self.view_root.get_package_root_link(),
-            tmp_dir=self.tmp_dir,
-        )
+    #     """
+    #     metadata = ClientBundleMetadata(
+    #         live_reload_port=self.live_reload_port,
+    #         package_root_link=self.view_root.get_package_root_link(),
+    #         tmp_dir=self.tmp_dir,
+    #     )
 
-        for builder in self.app.builders:
-            builder.set_metadata(metadata)
+    #     for builder in self.app.builders:
+    #         builder.set_metadata(metadata)
 
-        for builder in self.app.builders:
-            for controller_definition in self.app.controllers:
-                builder.register_controller(
-                    controller_definition.controller,
-                    self.view_root.get_controller_view_path(
-                        controller_definition.controller
-                    ),
-                )
+    #     for builder in self.app.builders:
+    #         for controller_definition in self.app.controllers:
+    #             builder.register_controller(
+    #                 controller_definition.controller,
+    #                 self.view_root.get_controller_view_path(
+    #                     controller_definition.controller
+    #                 ),
+    #             )
 
-        # Each build command is completely independent and there's some overhead with spawning
-        # each process. Make use of multi-core machines and spawn each process in its own
-        # management thread so we complete the build process in parallel.
-        if changed_files:
-            for changed_file in changed_files:
-                for builder in self.app.builders:
-                    builder.mark_file_dirty(changed_file)
-        else:
-            for controller_definition in self.app.controllers:
-                for builder in self.app.builders:
-                    builder.mark_file_dirty(
-                        self.view_root.get_controller_view_path(
-                            controller_definition.controller
-                        )
-                    )
+    #     # Each build command is completely independent and there's some overhead with spawning
+    #     # each process. Make use of multi-core machines and spawn each process in its own
+    #     # management thread so we complete the build process in parallel.
+    #     if changed_files:
+    #         for changed_file in changed_files:
+    #             for builder in self.app.builders:
+    #                 builder.mark_file_dirty(changed_file)
+    #     else:
+    #         for controller_definition in self.app.controllers:
+    #             for builder in self.app.builders:
+    #                 builder.mark_file_dirty(
+    #                     self.view_root.get_controller_view_path(
+    #                         controller_definition.controller
+    #                     )
+    #                 )
 
-            # Optionally build static files the main views and plugin views
-            # This allows plugins to have custom handling for different file types
-            for path in self.get_static_files():
-                for builder in self.app.builders:
-                    builder.mark_file_dirty(path)
+    #         # Optionally build static files the main views and plugin views
+    #         # This allows plugins to have custom handling for different file types
+    #         for path in self.get_static_files():
+    #             for builder in self.app.builders:
+    #                 builder.mark_file_dirty(path)
 
-        start = monotonic_ns()
-        results = await gather_with_concurrency(
-            [builder.build_wrapper() for builder in self.app.builders],
-            n=max_concurrency,
-            catch_exceptions=True,
-        )
-        LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
+    #     start = monotonic_ns()
+    #     results = await gather_with_concurrency(
+    #         [builder.build_wrapper() for builder in self.app.builders],
+    #         n=max_concurrency,
+    #         catch_exceptions=True,
+    #     )
+    #     LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
 
-        # Go through the exceptions, logging the build errors explicitly
-        has_build_error = False
-        final_exception: str = ""
-        for result in results:
-            if isinstance(result, Exception):
-                has_build_error = True
-                if isinstance(result, BuildProcessException):
-                    secho(f"Build error: {result}", fg="red")
-                final_exception += str(result)
+    #     # Go through the exceptions, logging the build errors explicitly
+    #     has_build_error = False
+    #     final_exception: str = ""
+    #     for result in results:
+    #         if isinstance(result, Exception):
+    #             has_build_error = True
+    #             if isinstance(result, BuildProcessException):
+    #                 secho(f"Build error: {result}", fg="red")
+    #             final_exception += str(result)
 
-        if has_build_error:
-            raise BuildProcessException(final_exception)
+    #     if has_build_error:
+    #         raise BuildProcessException(final_exception)
 
-        self.move_build_artifacts_into_project()
+    #     self.move_build_artifacts_into_project()
 
-    def move_build_artifacts_into_project(self):
-        """
-        Now that we build has completed, we can clear out the old files and replace it
-        with the thus-far temporary files
+    # def move_build_artifacts_into_project(self):
+    #     """
+    #     Now that we build has completed, we can clear out the old files and replace it
+    #     with the thus-far temporary files
 
-        This cleans up old controllers in the case that they were deleted, and prevents
-        outdated md5 content hashes from being served
+    #     This cleans up old controllers in the case that they were deleted, and prevents
+    #     outdated md5 content hashes from being served
 
-        """
-        # For now, just copy over the _tmp files into the main directory. Replace them
-        # if they exist. This is a differential copy to support our build pipeline
-        # that will only change progressively. It notably does not handle the case of
-        # deleted files.
-        for tmp_path, final_path in [
-            (
-                self.view_root.get_managed_static_dir(tmp_build=True),
-                self.view_root.get_managed_static_dir(),
-            ),
-            (
-                self.view_root.get_managed_ssr_dir(tmp_build=True),
-                self.view_root.get_managed_ssr_dir(),
-            ),
-            (
-                self.view_root.get_managed_metadata_dir(tmp_build=True),
-                self.view_root.get_managed_metadata_dir(),
-            ),
-        ]:
-            # Only remove the final path if the matching tmp path build exists
-            # This creates a merged build where we maintain the base code created
-            # on startup and the possibly incremental builds.
-            # We do the deletion up-front so we don't delete our actual files mid-copy
-            # in case we have multiple with the same prefix (like .js and .map)
-            for tmp_file in tmp_path.glob("*"):
-                # Strip any md5 hashes from the filename and delete
-                # all the items matching the same name
-                base_filename = tmp_file.name.rsplit("-")[0].rsplit(".")[0]
-                for old_file in final_path.glob(f"{base_filename}*"):
-                    old_file.unlink()
+    #     """
+    #     # For now, just copy over the _tmp files into the main directory. Replace them
+    #     # if they exist. This is a differential copy to support our build pipeline
+    #     # that will only change progressively. It notably does not handle the case of
+    #     # deleted files.
+    #     for tmp_path, final_path in [
+    #         (
+    #             self.view_root.get_managed_static_dir(tmp_build=True),
+    #             self.view_root.get_managed_static_dir(),
+    #         ),
+    #         (
+    #             self.view_root.get_managed_ssr_dir(tmp_build=True),
+    #             self.view_root.get_managed_ssr_dir(),
+    #         ),
+    #         (
+    #             self.view_root.get_managed_metadata_dir(tmp_build=True),
+    #             self.view_root.get_managed_metadata_dir(),
+    #         ),
+    #     ]:
+    #         # Only remove the final path if the matching tmp path build exists
+    #         # This creates a merged build where we maintain the base code created
+    #         # on startup and the possibly incremental builds.
+    #         # We do the deletion up-front so we don't delete our actual files mid-copy
+    #         # in case we have multiple with the same prefix (like .js and .map)
+    #         for tmp_file in tmp_path.glob("*"):
+    #             # Strip any md5 hashes from the filename and delete
+    #             # all the items matching the same name
+    #             base_filename = tmp_file.name.rsplit("-")[0].rsplit(".")[0]
+    #             for old_file in final_path.glob(f"{base_filename}*"):
+    #                 old_file.unlink()
 
-            # We've cleared old versions, now freshly copy the files
-            for tmp_file in tmp_path.glob("*"):
-                final_file = final_path / tmp_file.name
-                shutil_move(tmp_file, final_file)
+    #         # We've cleared old versions, now freshly copy the files
+    #         for tmp_file in tmp_path.glob("*"):
+    #             final_file = final_path / tmp_file.name
+    #             shutil_move(tmp_file, final_file)
 
     def cache_is_outdated(self):
         """

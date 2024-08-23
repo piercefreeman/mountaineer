@@ -1,6 +1,7 @@
 import importlib
 import os
 import socket
+from importlib.metadata import distributions
 from traceback import format_exception
 from types import ModuleType
 
@@ -12,10 +13,12 @@ from mountaineer.controllers.exception_controller import ExceptionController
 from mountaineer.webservice import UvicornThread
 
 
-class AppManager:
+class HotReloadManager:
     """
     Manages the lifecycle of a single app controller, including its webservice thread
     and utilities for hot-reloading.
+
+    This is only intended for development use.
 
     """
 
@@ -26,6 +29,9 @@ class AppManager:
         module_name: str,
         controller_name: str,
         app_controller: AppController,
+        host: str | None,
+        port: int | None,
+        live_reload_port: int | None,
     ):
         self.package = package
         self.module = module
@@ -34,10 +40,10 @@ class AppManager:
         self.app_controller = app_controller
 
         self.webservice_thread: UvicornThread | None = None
-        self.host: str | None = None
-        self.port: int | None = None
+        self.host = host
+        self.port = port
 
-        self.live_reload_port: int | None = None
+        self.live_reload_port = live_reload_port
 
         self.exception_controller = ExceptionController()
 
@@ -45,7 +51,13 @@ class AppManager:
         self.mount_exceptions(app_controller)
 
     @classmethod
-    def from_webcontroller(cls, webcontroller: str):
+    def from_webcontroller(
+        cls,
+        webcontroller: str,
+        host: str | None = None,
+        port: int | None = None,
+        live_reload_port: int | None = None,
+    ):
         package = webcontroller.split(".")[0]
         module_name = webcontroller.split(":")[0]
         controller_name = webcontroller.split(":")[1]
@@ -60,6 +72,9 @@ class AppManager:
             module_name=module_name,
             controller_name=controller_name,
             app_controller=app_controller,
+            host=host,
+            port=port,
+            live_reload_port=live_reload_port,
         )
 
     def update_module(self):
@@ -180,7 +195,6 @@ class AppManager:
     def mount_exceptions(self, app_controller: AppController):
         app_controller.register(self.exception_controller)
         app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
-        pass
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
         # If we're receiving a GET request, show the exception. Otherwise fall back
@@ -197,3 +211,15 @@ class AppManager:
             return Response("".join(format_exception(exc)))
         else:
             raise exc
+
+
+def find_packages_with_prefix(prefix: str):
+    """
+    Find and return a list of all installed package names that start with the given prefix.
+
+    """
+    return [
+        dist.metadata["Name"]
+        for dist in distributions()
+        if dist.metadata["Name"].startswith(prefix)
+    ]

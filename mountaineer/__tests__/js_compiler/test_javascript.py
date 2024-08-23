@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, _Call, call, patch
 import pytest
 
 from mountaineer.controller import ControllerBase
-from mountaineer.js_compiler.base import ClientBundleMetadata
-from mountaineer.js_compiler.javascript import JavascriptBundler
+from mountaineer.client_compiler.base import ClientBundleMetadata
+from mountaineer.client_compiler.javascript import JavascriptBundler
 from mountaineer.paths import ManagedViewPath
 
 
@@ -43,7 +43,7 @@ def mocked_esbuild():
 
 @pytest.fixture(scope="function")
 def base_javascript_bundler(mocked_esbuild: MagicMock) -> JavascriptBundler:
-    from mountaineer.js_compiler.javascript import JavascriptBundler
+    from mountaineer.client_compiler.javascript import JavascriptBundler
 
     # Recycle this object every function call, since the end function will usually
     # modify the page_path or other instance variables

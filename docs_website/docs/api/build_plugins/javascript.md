@@ -1,1 +1,1 @@
-::: mountaineer.js_compiler.javascript.JavascriptBundler
+::: mountaineer.client_compiler.javascript.JavascriptBundler

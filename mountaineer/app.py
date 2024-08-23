@@ -29,7 +29,7 @@ from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException
-from mountaineer.js_compiler.base import ClientBuilderBase
+from mountaineer.client_compiler.base import ClientBuilderBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull

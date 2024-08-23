@@ -13,7 +13,7 @@ npm install postcss-cli
 After this you can leverage the `PostCSSBundler` within your custom build pipeline:
 
 ```python
-from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.client_compiler.postcss import PostCSSBundler
 
 controller = AppController(
     custom_builders=[
