@@ -134,7 +134,7 @@ The `up_revision` and `down_revision` are used to track the migration state. The
 
 ## Extending Migration Files
 
-The `Migrator` object is a thin wrapper around the `DatabaseActions` object, which is a collection of common migration operations. If you need to perform a more complex migration operation, you can customize the logic by calling `migrator.actor` yourself. Head over to the [DatabaseActions documentation](/database/migrations) to see the full list of available migration operations.
+The `Migrator` object is a thin wrapper around the `DatabaseActions` object, which is a collection of common migration operations. If you need to perform a more complex migration operation, you can customize the logic by calling `migrator.actor` yourself. Head over to the [DatabaseActions documentation](./api/database/migrations.md) to see the full list of available migration operations.
 
 In addition to the actor, you can also access the underlying database session object. This is useful if you need to run raw SQL queries that aren't covered by the actor object.
 

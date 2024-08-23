@@ -168,7 +168,6 @@ func BundleAll(paths **C.char, pathCount C.int, nodeModulesPath *C.char, environ
 	goEnvironment := C.GoString(environment)
 	goOutdir := C.GoString(outdir)
 
-	fmt.Printf("Bundling %v to output %v\n", goPaths, goOutdir)
 	buildOptions := api.BuildOptions{
 		EntryPoints:       goPaths,
 		Bundle:            true,
@@ -196,7 +195,6 @@ func BundleAll(paths **C.char, pathCount C.int, nodeModulesPath *C.char, environ
 		errorMsg := fmt.Sprintf("Error executing esbuild: %v", result.Errors)
 		return C.CString(errorMsg)
 	}
-	fmt.Println("esbuild executed successfully.")
 
 	for i := range result.OutputFiles {
 		outputFile := result.OutputFiles[i]

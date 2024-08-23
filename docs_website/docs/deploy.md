@@ -113,7 +113,7 @@ CMD ["/venv/bin/uvicorn", "{my_webapp}.main:app", "--host", "0.0.0.0", "--port",
 ## Local Testing
 
 Once your Docker image is built, the best way to test it is to run it locally with `docker run`.
-However you can also simulate what the production uvicorn is doing by running:
+However you can also simulate what the production service is doing by running:
 
 ```bash
 poetry run build

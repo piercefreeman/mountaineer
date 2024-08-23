@@ -103,6 +103,9 @@ def handle_runserver(
     subscribe_to_mountaineer: bool = False,
 ):
     """
+    Start a local development server. This will hot-reload your browser any time
+    your frontend or backend code changes.
+
     :param package: Ex. "ci_webapp"
     :param webservice: Ex. "ci_webapp.app:app"
     :param webcontroller: Ex. "ci_webapp.app:controller"
@@ -299,6 +302,13 @@ def handle_build(
 ):
     """
     Creates a production bundle of frontend files that is ready for service.
+
+    Building your app will compile your TypeScript into the client-side bundle that will be downloaded
+    by the browser. It also ahead-of-time generates the server code that will be run as part of [SSR](./ssr.md).
+    You'll want to do it before deploying your application into production - but since a full build can take up
+    to 10s, `handle_runserver` provides a better workflow for daily development.
+
+    :param webcontroller: Ex. "ci_webapp.app:controller"
 
     """
     app_manager = HotReloadManager.from_webcontroller(webcontroller)
