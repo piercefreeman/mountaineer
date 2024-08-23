@@ -193,8 +193,16 @@ class HotReloadManager:
                 return False
 
     def mount_exceptions(self, app_controller: AppController):
-        app_controller.register(self.exception_controller)
-        app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+        # Don't re-mount the exception controller; this can happen if we
+        # re-import the module and the underlying app controller is not re-initialized
+        current_controllers = [
+            controller_definition.controller.__class__.__name__
+            for controller_definition in app_controller.controllers
+        ]
+
+        if self.exception_controller.__class__.__name__ not in current_controllers:
+            app_controller.register(self.exception_controller)
+            app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
         # If we're receiving a GET request, show the exception. Otherwise fall back

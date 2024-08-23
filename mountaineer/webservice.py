@@ -47,9 +47,13 @@ class UvicornThread(Thread):
             self.server.should_exit = True
 
         # Wait until the server is stopped
-        max_wait = 10
+        total_wait = 10
+        remaining_wait = total_wait
+        wait_interval = 0.1
         while self.is_alive():
-            max_wait -= 1
-            if max_wait <= 0:
-                raise TimeoutError("Server did not stop in time")
-            sleep(0.1)
+            remaining_wait -= 1
+            if remaining_wait <= 0:
+                raise TimeoutError(
+                    f"Server did not stop in {total_wait*wait_interval}s"
+                )
+            sleep(wait_interval)

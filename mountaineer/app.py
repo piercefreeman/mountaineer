@@ -283,7 +283,9 @@ class AppController:
                             False,
                         )[0]
                     )
-                LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
+                LOGGER.debug(
+                    f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
+                )
 
                 html = self.compile_html(
                     cast(str, controller_node.cached_server_script),
@@ -751,8 +753,11 @@ class AppController:
         # We go up until the view root. We allow the update_hierarchy to capture
         # the root view path, but we don't allow it to be a layout. This allows
         # layouts to inherit other layouts
-        current_path = full_view_path
-        package_root = full_view_path.get_root_link()
+        #
+        # Resolve the path to the real underlying system path, necessary for /private/var
+        # and /private symlinking in tmp paths
+        current_path = full_view_path.realpath()
+        package_root = full_view_path.get_root_link().realpath()
         while current_path != package_root:
             # We should never get to the OS root
             if str(current_path) == "/":

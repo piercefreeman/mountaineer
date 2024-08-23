@@ -2,7 +2,7 @@ import importlib.metadata
 import sys
 from json import loads as json_loads
 from os import PathLike, walk as os_walk
-from os.path import relpath
+from os.path import realpath, relpath
 from pathlib import Path
 from re import search as re_search
 from typing import TYPE_CHECKING, Optional
@@ -233,6 +233,9 @@ class ManagedViewPath(type(Path())):  # type: ignore
     @property
     def parent(self):  # type: ignore
         return self._inherit_root_link(super().parent)
+
+    def realpath(self):
+        return self._inherit_root_link(realpath(self))
 
     def _inherit_root_link(self, new_path: Path | str) -> "ManagedViewPath":
         managed_path = ManagedViewPath(new_path)
