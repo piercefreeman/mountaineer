@@ -42,7 +42,7 @@ def test_resolve_paths(tmp_path: Path):
     random_hash = "b5ecd0c4405374100d6ef93088b86898"
     (static_base / f"stub_controller-{random_hash}.js").touch()
     (static_base / f"stub_controller-{random_hash}.js.map").touch()
-    assert not controller.resolve_paths(view_base)
+    assert controller.resolve_paths(view_base)
 
     # Now ensure that the paths are correctly set
     assert controller.view_base_path == view_base

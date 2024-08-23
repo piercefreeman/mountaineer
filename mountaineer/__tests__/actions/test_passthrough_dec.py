@@ -29,14 +29,16 @@ def test_markup_passthrough():
     class ExamplePassthroughModel(BaseModel):
         first_name: str
 
-    class TestController(ControllerBase):
+    class ExampleController(ControllerBase):
+        view_path = "/test.tsx"
+
         @passthrough
         def get_external_data(self) -> ExamplePassthroughModel:
             return ExamplePassthroughModel(
                 first_name="John",
             )
 
-    metadata = get_function_metadata(TestController.get_external_data)
+    metadata = get_function_metadata(ExampleController.get_external_data)
     assert metadata.action_type == FunctionActionType.PASSTHROUGH
     assert metadata.get_passthrough_model() == ExamplePassthroughModel
     assert metadata.function_name == "get_external_data"
@@ -56,6 +58,7 @@ class ExamplePassthroughModel(BaseModel):
 
 class ExampleController(ControllerBase):
     url: str = "/test/{query_id}/"
+    view_path = "/test.tsx"
 
     def __init__(self):
         super().__init__()
@@ -135,6 +138,7 @@ class ExampleModel(BaseModel):
 
 class ExampleIterableController(ControllerBase):
     url = "/example"
+    view_path = "/test.tsx"
 
     async def render(self) -> None:
         pass
@@ -207,8 +211,9 @@ async def test_can_call_iterable():
 
 @pytest.mark.asyncio
 async def test_raw_response():
-    class TestController(ControllerBase):
+    class ExampleController(ControllerBase):
         url: str = "/test/{query_id}/"
+        view_path = "/test.tsx"
 
         def render(
             self,
@@ -221,7 +226,7 @@ async def test_raw_response():
             return JSONResponse(content={"raw_value": "success"})
 
     app = AppController(view_root=Path())
-    controller = TestController()
+    controller = ExampleController()
     app.register(controller)
 
     controller_definition = app.definition_for_controller(controller)

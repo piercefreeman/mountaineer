@@ -7,6 +7,8 @@ from mountaineer.controller_layout import LayoutControllerBase
 
 
 class ExampleLayoutController(LayoutControllerBase):
+    view_path = "/test.tsx"
+
     async def render(self) -> None:
         pass
 

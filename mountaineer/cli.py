@@ -261,13 +261,13 @@ def handle_runserver(
             app_manager.restart_server()
 
         if updated_js or updated_python:
-            # Wait up to 5s for our webserver to start, so when we refresh
-            # the new page is ready immediately.
+            # Wait up to 5s for our webserver to start, so when we push our refresh
+            # websocket the new page is ready immediately.
             start_time = time()
             max_wait_time = 5
             while time() - start_time < max_wait_time:
-                if app_manager.is_port_open("127.0.0.1", port):
-                    CONSOLE.print(f"[blue]Webserver is ready on {"127.0.0.1"}:{port}!")
+                if app_manager.is_port_open(host, port):
+                    CONSOLE.print(f"[blue]Webserver is ready on {host}:{port}!")
                     break
                 sleep(0.1)  # Short sleep to prevent busy-waiting
 

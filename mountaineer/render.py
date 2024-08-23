@@ -1,12 +1,14 @@
 from hashlib import sha256
 from json import dumps as json_dumps
-from typing import TYPE_CHECKING, Any, Mapping, Type
+from typing import TYPE_CHECKING, Any, Mapping, Type, TypeVar
 
 from fastapi import Response
 from pydantic import BaseModel, model_validator
 from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import Field, FieldInfo
 from typing_extensions import dataclass_transform
+
+T = TypeVar("T")
 
 
 class FieldClassDefinition(BaseModel):
@@ -177,11 +179,18 @@ class Metadata(BaseModel):
     }
 
     def merge(self, parent: "Metadata") -> "Metadata":
+        def merge_item(a: list[T], b: list[T]):
+            # Keeps the original ordering while avoiding duplicates
+            for item in b:
+                if item not in a:
+                    a.append(item)
+            return a
+
         return Metadata(
             title=self.title or parent.title,
-            metas=[*self.metas, *parent.metas],
-            links=[*self.links, *parent.links],
-            scripts=[*self.scripts, *parent.scripts],
+            metas=merge_item(self.metas, parent.metas),
+            links=merge_item(self.links, parent.links),
+            scripts=merge_item(self.scripts, parent.scripts),
             explicit_response=self.explicit_response,
             ignore_global_metadata=self.ignore_global_metadata,
         )

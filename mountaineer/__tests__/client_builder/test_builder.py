@@ -85,6 +85,8 @@ def test_generate_link_aggregator(builder: ClientBuilder):
 
 def test_generate_link_aggregator_ignores_layout(builder: ClientBuilder):
     class ExampleLayout(LayoutControllerBase):
+        view_path = "/test.tsx"
+
         async def render(self) -> None:
             pass
 
