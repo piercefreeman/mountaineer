@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use crate::code_gen;
-use src_go;
 
 #[pyfunction]
 pub fn compile_production_bundle(
@@ -34,7 +33,7 @@ pub fn compile_production_bundle(
         environment,
         output_dir.to_str().unwrap().to_string(),
     )
-    .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
 
     let result = PyDict::new(py);
     let (entrypoints, entrypoint_maps, supporting) =

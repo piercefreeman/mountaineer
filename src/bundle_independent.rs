@@ -6,7 +6,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::code_gen;
-use src_go;
 
 #[pyfunction]
 pub fn compile_independent_bundles(
@@ -45,7 +44,7 @@ fn create_temp_dir() -> PyResult<TempDir> {
 
 fn create_entrypoint(
     temp_dir: &TempDir,
-    path_group: &Vec<String>,
+    path_group: &[String],
     is_server: bool,
     live_reload_import: &str,
 ) -> PyResult<PathBuf> {

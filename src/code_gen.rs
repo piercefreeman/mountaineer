@@ -5,7 +5,7 @@
 */
 
 pub fn build_entrypoint(
-    path_group: &Vec<String>,
+    path_group: &[String],
     is_server: bool,
     live_reload_import: &str,
 ) -> String {
@@ -46,5 +46,5 @@ pub fn build_entrypoint(
         entrypoint_content += "export const Index = () => renderToString(<Entrypoint />);\n";
     }
 
-    return entrypoint_content;
+    entrypoint_content
 }
