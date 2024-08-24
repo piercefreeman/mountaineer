@@ -153,7 +153,14 @@ func RemoveContext(id C.int) {
 }
 
 //export BundleAll
-func BundleAll(paths **C.char, pathCount C.int, nodeModulesPath *C.char, environment *C.char, outdir *C.char) (returnError *C.char) {
+func BundleAll(
+	paths **C.char,
+	pathCount C.int,
+	nodeModulesPath *C.char,
+	environment *C.char,
+	minified C.int,
+	outdir *C.char,
+) (returnError *C.char) {
 	/*
 	 * No context required, does an adhoc rebuild of all of the requested client
 	 * files into a production bundle.
@@ -167,6 +174,7 @@ func BundleAll(paths **C.char, pathCount C.int, nodeModulesPath *C.char, environ
 	goNodeModulesPath := C.GoString(nodeModulesPath)
 	goEnvironment := C.GoString(environment)
 	goOutdir := C.GoString(outdir)
+	goMinify := minified == 1
 
 	buildOptions := api.BuildOptions{
 		EntryPoints:       goPaths,
@@ -175,9 +183,9 @@ func BundleAll(paths **C.char, pathCount C.int, nodeModulesPath *C.char, environ
 		Format:            api.FormatESModule,
 		Splitting:         true,
 		Sourcemap:         api.SourceMapExternal,
-		MinifySyntax:      true,
-		MinifyWhitespace:  true,
-		MinifyIdentifiers: true,
+		MinifySyntax:      goMinify,
+		MinifyWhitespace:  goMinify,
+		MinifyIdentifiers: goMinify,
 		Loader: map[string]api.Loader{
 			".tsx": api.LoaderTSX,
 			".jsx": api.LoaderJSX,

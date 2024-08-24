@@ -126,6 +126,7 @@ pub fn bundle_all(
     paths: Vec<String>,
     node_modules_path: String,
     environment: String,
+    minify: bool,
     outdir: String,
 ) -> Result<(), String> {
     unsafe {
@@ -144,6 +145,7 @@ pub fn bundle_all(
             c_paths.len() as c_int,
             c_node_modules_path.as_ptr() as *mut c_char,
             c_environment.as_ptr() as *mut c_char,
+            if minify { 1 } else { 0 } as c_int,
             c_outdir.as_ptr() as *mut c_char,
         );
 

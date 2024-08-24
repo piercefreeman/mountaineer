@@ -299,6 +299,7 @@ def handle_runserver(
 def handle_build(
     *,
     webcontroller: str,
+    minify: bool = True,
 ):
     """
     Creates a production bundle of frontend files that is ready for service.
@@ -309,6 +310,7 @@ def handle_build(
     to 10s, `handle_runserver` provides a better workflow for daily development.
 
     :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param minify: Minify the JS bundle, strip debug symbols
 
     """
     app_manager = HotReloadManager.from_webcontroller(webcontroller)
@@ -345,6 +347,7 @@ def handle_build(
         all_view_paths,
         str(app_manager.app_controller.view_root / "node_modules"),
         "production",
+        minify,
         str(get_static_path("live_reload.ts").resolve().absolute()),
         False,
     )

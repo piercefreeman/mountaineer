@@ -14,6 +14,7 @@ pub fn compile_production_bundle(
     paths: Vec<Vec<String>>,
     node_modules_path: String,
     environment: String,
+    minify: bool,
     live_reload_import: String,
     is_server: bool,
 ) -> PyResult<Py<PyDict>> {
@@ -31,6 +32,7 @@ pub fn compile_production_bundle(
         entrypoint_paths.clone(),
         node_modules_path,
         environment,
+        minify,
         output_dir.to_str().unwrap().to_string(),
     )
     .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;

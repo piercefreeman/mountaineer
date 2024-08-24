@@ -161,6 +161,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         paths: Vec<Vec<String>>,
         node_modules_path: String,
         environment: String,
+        minify: bool,
         live_reload_import: String,
         is_server: bool,
     ) -> PyResult<Py<PyDict>> {
@@ -178,6 +179,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
             paths,
             node_modules_path,
             environment,
+            minify,
             live_reload_import,
             is_server,
         )
