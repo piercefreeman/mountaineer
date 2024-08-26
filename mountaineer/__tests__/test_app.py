@@ -57,6 +57,7 @@ def test_validates_layouts_exclude_urls():
         # Not allowed, but might typehint correctly because the ControllerBase
         # superclass supports it.
         url = "/layout_url"
+        view_path = "/test.tsx"
 
         async def render(self) -> None:
             pass

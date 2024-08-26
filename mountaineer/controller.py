@@ -1,10 +1,8 @@
 from abc import ABC, abstractmethod
 from importlib.metadata import PackageNotFoundError
-from inspect import getmembers, isawaitable, ismethod
-from json import dumps as json_dumps
+from inspect import getmembers, ismethod
 from pathlib import Path
 from re import compile as re_compile
-from time import monotonic_ns
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -12,56 +10,29 @@ from typing import (
     Coroutine,
     Generic,
     Iterable,
-    Mapping,
     Optional,
     ParamSpec,
-    cast,
 )
 
-from fastapi.responses import HTMLResponse
 from inflection import underscore
-from pydantic import BaseModel
 
 from mountaineer.actions import (
     FunctionActionType,
     FunctionMetadata,
     get_function_metadata,
 )
+from mountaineer.client_compiler.source_maps import SourceMapParser
 from mountaineer.config import get_config
-from mountaineer.js_compiler.source_maps import SourceMapParser
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import (
-    LinkAttribute,
-    MetaAttribute,
-    Metadata,
     RenderBase,
-    RenderNull,
-    ScriptAttribute,
 )
-from mountaineer.ssr import V8RuntimeError, render_ssr
 
 if TYPE_CHECKING:
     from mountaineer.app import ControllerDefinition
 
 RenderInput = ParamSpec("RenderInput")
-
-
-class BuildMetadata(BaseModel):
-    """
-    Controller metadata that is established during build-time and might be stripped
-    during the final output. For instance, layout.tsx files might not be included
-    in production payloads but this metadata object still stores their hierarchy
-    relative to the controllers.
-
-    """
-
-    # All paths in the metadata should be absolute paths, since they are consistent
-    # with regard to the builder filesystem but might be different when deployed
-    view_path: Path
-
-    # Organized by hierarchy, first index is the outermost layout
-    layout_view_paths: list[Path] = []
 
 
 class ControllerBase(ABC, Generic[RenderInput]):
@@ -103,7 +74,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # Set by the path resolution layer
         self.view_base_path: Path | None = None
         self.ssr_path: Path | None = None
-        self.build_metadata: BuildMetadata | None = None
 
         self.resolve_paths()
 
@@ -157,178 +127,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         pass
 
-    async def _generate_html(
-        self,
-        *args,
-        global_metadata: Metadata | None,
-        other_render_contexts: dict[str, RenderBase | RenderNull] | None = None,
-        **kwargs,
-    ):
-        """
-        Generate the HTML that will populate the loaded page of the controller.
-
-        :param other_render_contexts: The dictionary should be constructed in the order of
-        precedence, with the first element being the most hierarchical related element to
-        this controller. This is used by our metadata resolution layer to figure out what
-        is the best metadata attribute to fall back to.
-
-        """
-        # Because JSON is a subset of JavaScript, we can just dump the model as JSON and
-        # insert it into the page.
-        server_data = self.render(*args, **kwargs)
-        if isawaitable(server_data):
-            server_data = await server_data
-        if server_data is None:
-            server_data = RenderNull()
-
-        # This isn't expected to happen, but we add a check to typeguard the following logic
-        if not isinstance(server_data, RenderBase):
-            raise ValueError(
-                f"Controller.render() must return a RenderBase instance, not {type(server_data)}"
-            )
-
-        # If we got back metadata that includes a redirect, we should short-circuit the rest of the
-        # render process and return a redirect response
-        if server_data.metadata and server_data.metadata.explicit_response:
-            return server_data.metadata.explicit_response
-
-        metadatas: list[Metadata] = []
-        if server_data.metadata:
-            metadatas.append(server_data.metadata)
-        if other_render_contexts and (
-            server_data.metadata is None
-            or not server_data.metadata.ignore_global_metadata
-        ):
-            for other_render_context in other_render_contexts.values():
-                if other_render_context.metadata:
-                    metadatas.append(other_render_context.metadata)
-        if global_metadata and (
-            server_data.metadata is None
-            or not server_data.metadata.ignore_global_metadata
-        ):
-            metadatas.append(global_metadata)
-
-        header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
-
-        # Client-side react scripts that will hydrate the server side contents on load
-        server_data_json = {
-            render_key: context.model_dump(mode="json")
-            for render_key, context in [
-                (self.__class__.__name__, server_data),
-                *list(other_render_contexts.items() if other_render_contexts else []),
-            ]
-        }
-
-        ssr_html = self._generate_ssr_html(server_data_json)
-
-        optional_scripts = "\n".join(
-            [
-                f"<script src='/static/{script_name}'></script>"
-                for script_name in self.bundled_scripts
-            ]
-        )
-
-        page_contents = f"""
-        <html>
-        <head>
-        {header_str}
-        </head>
-        <body>
-        <div id="root">{ssr_html}</div>
-        <script type="text/javascript">
-        const SERVER_DATA = {json_dumps(server_data_json)};
-        </script>
-        {optional_scripts}
-        </body>
-        </html>
-        """
-
-        return HTMLResponse(page_contents)
-
-    def _generate_ssr_html(self, server_data: dict[str, Any]) -> str:
-        self.resolve_paths()
-
-        if not self.ssr_path:
-            # Try to resolve the path dynamically now
-            raise ValueError("No SSR path set for this controller")
-
-        start = monotonic_ns()
-        try:
-            ssr_html = render_ssr(
-                self.ssr_path.read_text(),
-                server_data,
-                hard_timeout=self.hard_ssr_timeout,
-            )
-        except V8RuntimeError as e:
-            # Try to parse the file sources and re-raise the error with the
-            # maps on the current filesystem
-            if self.source_map is not None:
-                # parse() is a no-op if the source map is already parsed, so we can do it again
-                self.source_map.parse()
-                raise V8RuntimeError(self.source_map.map_exception(str(e)))
-            raise e
-
-        ssr_duration = (monotonic_ns() - start) / 1e9
-        if ssr_duration > self.slow_ssr_threshold:
-            LOGGER.warning(f"Slow SSR render detected: {ssr_duration:.2f}s")
-        else:
-            LOGGER.debug(f"SSR render took {ssr_duration:.2f}s")
-
-        return cast(str, ssr_html)
-
-    def _build_header(self, metadata: Metadata) -> list[str]:
-        """
-        Builds the header for this controller. Returns the list of tags that will be injected into the
-        <head> tag of the rendered page.
-
-        """
-        tags: list[str] = []
-
-        def format_optional_keys(payload: Mapping[str, str | bool | None]) -> str:
-            attributes: list[str] = []
-            for key, value in payload.items():
-                if value is None:
-                    continue
-                elif isinstance(value, bool):
-                    # Boolean attributes can just be represented by just their key
-                    if value:
-                        attributes.append(key)
-                    else:
-                        continue
-                else:
-                    attributes.append(f'{key}="{value}"')
-            return " ".join(attributes)
-
-        if metadata.title:
-            tags.append(f"<title>{metadata.title}</title>")
-
-        for meta_definition in metadata.metas:
-            meta_attributes = {
-                "name": meta_definition.name,
-                "content": meta_definition.content,
-                **meta_definition.optional_attributes,
-            }
-            tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
-
-        for script_definition in metadata.scripts:
-            script_attributes: dict[str, str | bool] = {
-                "src": script_definition.src,
-                "async": script_definition.asynchronous,
-                "defer": script_definition.defer,
-                **script_definition.optional_attributes,
-            }
-            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
-
-        for link_definition in metadata.links:
-            link_attributes = {
-                "rel": link_definition.rel,
-                "href": link_definition.href,
-                **link_definition.optional_attributes,
-            }
-            tags.append(f"<link {format_optional_keys(link_attributes)} />")
-
-        return tags
-
     def _get_client_functions(self) -> Iterable[tuple[str, Callable, FunctionMetadata]]:
         """
         Returns all of the client-callable functions for this controller. Right now we force
@@ -374,14 +172,13 @@ class ControllerBase(ABC, Generic[RenderInput]):
             # Unable to resolve, no-op
             return False
 
-        script_name = underscore(self.__class__.__name__)
         self.view_base_path = view_base
 
         # We'll update this bool if we can't find any dependencies
         found_dependencies = True
 
         # The SSR path is going to be static
-        ssr_path = view_base / "_ssr" / f"{script_name}.js"
+        ssr_path = view_base / "_ssr" / f"{self.script_name}.js"
         if ssr_path.exists():
             self.ssr_path = ssr_path
             ssr_map_path = ssr_path.with_suffix(".js.map")
@@ -392,7 +189,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
             found_dependencies = False
 
         # Find the md5-converted cache path
-        md5_script_pattern = re_compile(script_name + "-" + "[a-f0-9]{32}" + ".js")
+        md5_script_pattern = re_compile(self.script_name + "-" + "[a-f0-9]{32}" + ".js")
         if (view_base / "_static").exists():
             self.bundled_scripts = [
                 path.name
@@ -407,46 +204,8 @@ class ControllerBase(ABC, Generic[RenderInput]):
         else:
             found_dependencies = False
 
-        # Find the metadata
-        metadata_path = view_base / "_metadata" / f"{script_name}.json"
-        if metadata_path.exists():
-            metadata = BuildMetadata.model_validate_json(metadata_path.read_text())
-            self.build_metadata = metadata
-        else:
-            found_dependencies = False
-
         return found_dependencies
 
-    def _merge_metadatas(self, metadatas: list[Metadata]):
-        """
-        Merges a list of metadata objects, sorted by priority. Some fields will
-        take the union (like scripts) - others will prioritize earlier entries (title).
-
-        """
-        # Keep track of the unique values we've seen already to ensure that we are:
-        # 1. Only including unique values
-        # 2. Ranking them in the same order as they were provided
-        metas: set[MetaAttribute] = set()
-        links: set[LinkAttribute] = set()
-        scripts: set[ScriptAttribute] = set()
-
-        final_metadata = Metadata()
-
-        for metadata in metadatas:
-            final_metadata.title = final_metadata.title or metadata.title
-
-            final_metadata.metas.extend(
-                [element for element in metadata.metas if element not in metas]
-            )
-            final_metadata.links.extend(
-                [element for element in metadata.links if element not in links]
-            )
-            final_metadata.scripts.extend(
-                [element for element in metadata.scripts if element not in scripts]
-            )
-
-            metas |= set(metadata.metas)
-            links |= set(metadata.links)
-            scripts |= set(metadata.scripts)
-
-        return final_metadata
+    @property
+    def script_name(self):
+        return underscore(self.__class__.__name__)

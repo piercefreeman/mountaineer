@@ -3,9 +3,9 @@ from uuid import UUID
 
 from mountaineer import Metadata, RenderBase, ControllerBase, APIException, sideeffect
 from mountaineer.database import DatabaseDependencies
+from mountaineer.database.session import AsyncSession
 
 from fastapi import Request, Depends
-from mountaineer.database.session import AsyncSession
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 

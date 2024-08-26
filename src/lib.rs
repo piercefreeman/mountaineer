@@ -1,13 +1,11 @@
 use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyTuple;
-use std::ffi::c_int;
-use std::fs;
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use pyo3::types::PyDict;
 
+mod bundle_independent;
+mod bundle_prod;
+mod code_gen;
 mod errors;
 mod lexers;
 mod logging;
@@ -25,22 +23,6 @@ pub use source_map::{
     VLQDecoder,
 };
 pub use ssr::Ssr;
-
-fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
-    if hard_timeout > 0 {
-        timeout::run_thread_with_timeout(
-            || {
-                let js = ssr::Ssr::new(js_string, "SSR");
-                js.render_to_string(None)
-            },
-            Duration::from_millis(hard_timeout),
-        )
-    } else {
-        // Call inline, no timeout
-        let js = ssr::Ssr::new(js_string, "SSR");
-        js.render_to_string(None)
-    }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 #[pyclass(get_all, set_all)]
@@ -105,7 +87,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         // init only if we haven't done so already
         let _ = env_logger::try_init();
 
-        let result_value = run_ssr(js_string, hard_timeout);
+        let result_value = ssr::run_ssr(js_string, hard_timeout);
 
         match result_value {
             Ok(result) => {
@@ -141,134 +123,67 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
     }
 
     #[pyfn(m)]
-    #[pyo3(name = "build_javascript")]
-    // PyRef to support borrow checking: https://github.com/PyO3/pyo3/issues/1177
-    fn build_javascript(
-        _py: Python,
-        params: Vec<PyRef<BuildContextParams>>,
-        callback: PyObject,
-    ) -> PyResult<bool> {
-        #[allow(clippy::print_stdout)]
+    #[pyo3(name = "compile_independent_bundles")]
+    fn compile_independent_bundles(
+        py: Python,
+        paths: Vec<Vec<String>>,
+        node_modules_path: String,
+        environment: String,
+        live_reload_port: i32,
+        live_reload_import: String,
+        is_server: bool,
+    ) -> PyResult<Vec<String>> {
+        /*
+         * Accepts a list of page definitions and creates fully isolated bundles
+         * that can be executed in a JS runtime with zero dependencies / external imports. For
+         * production ready packages that use chunking to decrease the filesize
+         * overhead, see `compile_production_bundle`.
+         */
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
         }
 
-        let mut context_ids = Vec::<c_int>::new();
+        bundle_independent::compile_independent_bundles(
+            py,
+            paths,
+            node_modules_path,
+            environment,
+            live_reload_port,
+            live_reload_import,
+            is_server,
+        )
+    }
 
-        for param in &params {
-            let context_result = src_go::get_build_context(
-                &param.path,
-                &param.node_modules_path,
-                &param.environment,
-                param.live_reload_port,
-                param.is_server,
-            );
-            match context_result {
-                Ok(context_id) => {
-                    context_ids.push(context_id);
-                }
-                Err(err) => {
-                    println!("Error getting build context: {:?}", err);
-                    return Err(PyErr::new::<PyValueError, _>(err));
-                }
-            }
+    #[pyfn(m)]
+    #[pyo3(name = "compile_production_bundle")]
+    fn compile_production_bundle(
+        py: Python,
+        paths: Vec<Vec<String>>,
+        node_modules_path: String,
+        environment: String,
+        minify: bool,
+        live_reload_import: String,
+        is_server: bool,
+    ) -> PyResult<Py<PyDict>> {
+        /*
+         * Builds a full production bundle from multiple JavaScript files. Uses
+         * file splitting and tree-shaking to optimize the bundle size for
+         * client users.
+         */
+        if cfg!(debug_assertions) {
+            println!("Running in debug mode");
         }
 
-        let callback_arc = Arc::new(Mutex::new(callback));
-        let rebuild_result = _py.allow_threads(move || {
-            let callback_cloned = Arc::clone(&callback_arc);
-            fn callback(id: c_int, cb: Arc<Mutex<PyObject>>) {
-                let _ = Python::with_gil(|py| -> PyResult<()> {
-                    let args = PyTuple::new(py, &[id.to_object(py)]);
-                    let cb_lock = cb.lock().unwrap();
-                    cb_lock.call1(py, args)?;
-                    Ok(())
-                });
-            }
-            src_go::rebuild_contexts(
-                context_ids,
-                Arc::new(Box::new(move |id| callback(id, callback_cloned.clone()))),
-            )
-        });
-
-        if let Err(err) = rebuild_result {
-            println!("Error rebuilding contexts: {:?}", err);
-            return Err(PyErr::new::<PyValueError, _>(err.join("\n")));
-        }
-
-        // We expect that each input path will have an `.js.out.map` file
-        // Make the paths referenced in this file absolute to make it clearer for
-        // downstream clients
-        for param in &params {
-            let original_script_path = Path::new(&param.path);
-            let original_extension = original_script_path.extension().unwrap();
-            let script_file_path = original_script_path
-                .with_extension(format!("{}.out", original_extension.to_string_lossy()));
-            let map_file_path = original_script_path
-                .with_extension(format!("{}.out.map", original_extension.to_string_lossy()));
-
-            // We can also copy these directly in-memory from the golang layer, but this requires
-            // keeping all file contents in memory until we reach this point. For larger projects
-            // this is a safer approach.
-            let mut map_contents = fs::read_to_string(&map_file_path).expect("Failed to read map");
-            map_contents = make_source_map_paths_absolute(&map_contents, original_script_path)
-                .expect("Error processing source map");
-
-            let mut script_contents =
-                fs::read_to_string(&script_file_path).expect("Failed to read script");
-
-            let script_name: String;
-            let map_name: String;
-
-            if !param.is_server {
-                // Only client files need the hash
-                let content_hash = format!(
-                    "{:x}",
-                    md5::compute(lexers::strip_js_comments(&script_contents, true).as_bytes())
-                );
-                script_name = format!("{}-{}.js", param.controller_name, content_hash);
-                map_name = format!("{}.map", script_name);
-            } else {
-                script_name = format!("{}.js", param.controller_name);
-                map_name = format!("{}.map", script_name);
-            }
-
-            // Point the contents to the new map location
-            // This should still be relatively positioned to the original script, so we just need
-            // to replace the name
-            script_contents = update_source_map_path(&script_contents, &map_name);
-
-            let output_dir = Path::new(&param.output_dir);
-            fs::write(output_dir.join(script_name), &script_contents)
-                .expect("Failed to write script");
-            fs::write(output_dir.join(map_name), &map_contents).expect("Failed to write map");
-        }
-
-        Ok(true)
+        bundle_prod::compile_production_bundle(
+            py,
+            paths,
+            node_modules_path,
+            environment,
+            minify,
+            live_reload_import,
+            is_server,
+        )
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn render_no_timeout() {
-        let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
-        let hard_timeout = 0;
-
-        let result = run_ssr(js_string, hard_timeout).unwrap();
-        assert_eq!(result, "<html></html>");
-    }
-
-    #[test]
-    fn render_with_timeout() {
-        let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
-        let hard_timeout = 2000;
-
-        let result = run_ssr(js_string, hard_timeout).unwrap();
-        assert_eq!(result, "<html></html>");
-    }
 }

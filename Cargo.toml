@@ -24,10 +24,11 @@ src_go = { path = "./src_go" }
 # Thread cancellation needs OS bindings
 libc = "0.2"
 winapi = { version = "0.3", features = ["processthreadsapi"] }
+tempfile = "3.10.1"
+
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
-tempfile = "3.10.1"
 
 [profile.release]
 opt-level = 3

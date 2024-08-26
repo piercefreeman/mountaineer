@@ -110,6 +110,18 @@ COPY --from=server-hooks-builder /usr/src/app/{my_webapp}/views /venv/lib/python
 CMD ["/venv/bin/uvicorn", "{my_webapp}.main:app", "--host", "0.0.0.0", "--port", "3000"]
 ```
 
+## Local Testing
+
+Once your Docker image is built, the best way to test it is to run it locally with `docker run`.
+However you can also simulate what the production service is doing by running:
+
+```bash
+poetry run build
+ENVIRONMENT=PRODUCTION poetry run uvicorn {my_webapp}.main:app --host localhost --port 5006
+```
+
+This runs with production-minified assets and the same configuration as the production server.
+
 ## Common Errors
 
 If you see "required file not found" when you try to run this docker image, double check that your venv is pointing to the correct version of Python within the container:

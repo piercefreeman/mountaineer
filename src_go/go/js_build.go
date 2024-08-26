@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"unsafe"
 
 	"github.com/evanw/esbuild/pkg/api"
 )
@@ -76,6 +77,12 @@ func GetBuildContext(
 		buildOptions.Define["process.env.SSR_RENDERING"] = "false"
 	}
 
+	// Split code into least common parts
+	// During a production build we will do this at the aggregate level
+	// to ensure that the code is as small as possible; at debugging
+	// we mostly want to keep local units isolate
+	// buildOptions.Splitting = true
+
 	ctx, err := api.Context(buildOptions)
 	if err != nil {
 		// Log the error
@@ -114,6 +121,7 @@ func RebuildContext(id C.int) (returnError *C.char) {
 		return C.CString(errorString)
 	}
 
+	// The internal API doesn't write these to disk, so we need to do it ourselves
 	for i := range result.OutputFiles {
 		outputFile := result.OutputFiles[i]
 		// Write the output to a file
@@ -142,6 +150,70 @@ func RemoveContext(id C.int) {
 
 	context.Context.Dispose()
 	delete(contexts, int(id))
+}
+
+//export BundleAll
+func BundleAll(
+	paths **C.char,
+	pathCount C.int,
+	nodeModulesPath *C.char,
+	environment *C.char,
+	minified C.int,
+	outdir *C.char,
+) (returnError *C.char) {
+	/*
+	 * No context required, does an adhoc rebuild of all of the requested client
+	 * files into a production bundle.
+	 */
+	// Convert C array of strings to Go slice
+	goPaths := make([]string, int(pathCount))
+	for i := 0; i < int(pathCount); i++ {
+		goPaths[i] = C.GoString(*paths)
+		paths = (**C.char)(unsafe.Pointer(uintptr(unsafe.Pointer(paths)) + unsafe.Sizeof(*paths)))
+	}
+	goNodeModulesPath := C.GoString(nodeModulesPath)
+	goEnvironment := C.GoString(environment)
+	goOutdir := C.GoString(outdir)
+	goMinify := minified == 1
+
+	buildOptions := api.BuildOptions{
+		EntryPoints:       goPaths,
+		Bundle:            true,
+		Outdir:            goOutdir,
+		Format:            api.FormatESModule,
+		Splitting:         true,
+		Sourcemap:         api.SourceMapExternal,
+		MinifySyntax:      goMinify,
+		MinifyWhitespace:  goMinify,
+		MinifyIdentifiers: goMinify,
+		Loader: map[string]api.Loader{
+			".tsx": api.LoaderTSX,
+			".jsx": api.LoaderJSX,
+		},
+		Define: map[string]string{
+			// Assume we're building for a production, client-side use case
+			"process.env.NODE_ENV":         fmt.Sprintf("\"%s\"", goEnvironment),
+			"process.env.LIVE_RELOAD_PORT": "0",
+			"process.env.SSR_RENDERING":    "false",
+		},
+		NodePaths: []string{goNodeModulesPath},
+	}
+	result := api.Build(buildOptions)
+	if len(result.Errors) > 0 {
+		errorMsg := fmt.Sprintf("Error executing esbuild: %v", result.Errors)
+		return C.CString(errorMsg)
+	}
+
+	for i := range result.OutputFiles {
+		outputFile := result.OutputFiles[i]
+		err := os.WriteFile(outputFile.Path, outputFile.Contents, 0644)
+		if err != nil {
+			fmt.Println(err)
+			return C.CString(err.Error())
+		}
+	}
+
+	return nil
 }
 
 func ParseErrorLocation(loc *api.Location) string {

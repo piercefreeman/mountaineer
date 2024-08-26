@@ -28,9 +28,11 @@
 
 use crate::errors::AppError;
 use crate::logging::StdoutWrapper;
+use crate::timeout;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ssr<'a> {
@@ -310,9 +312,43 @@ impl<'a> Ssr<'a> {
     }
 }
 
+pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
+    if hard_timeout > 0 {
+        timeout::run_thread_with_timeout(
+            || {
+                let js = Ssr::new(js_string, "SSR");
+                js.render_to_string(None)
+            },
+            Duration::from_millis(hard_timeout),
+        )
+    } else {
+        // Call inline, no timeout
+        let js = Ssr::new(js_string, "SSR");
+        js.render_to_string(None)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn render_no_timeout() {
+        let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
+        let hard_timeout = 0;
+
+        let result = run_ssr(js_string, hard_timeout).unwrap();
+        assert_eq!(result, "<html></html>");
+    }
+
+    #[test]
+    fn render_with_timeout() {
+        let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
+        let hard_timeout = 2000;
+
+        let result = run_ssr(js_string, hard_timeout).unwrap();
+        assert_eq!(result, "<html></html>");
+    }
 
     #[test]
     fn check_ssr_struct_instance() {

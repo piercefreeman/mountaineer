@@ -3,11 +3,11 @@ from uuid import UUID, uuid4
 
 from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
 from mountaineer.database import DatabaseDependencies
+from mountaineer.database.session import AsyncSession
 
 from fastapi import Request, Depends
 from pydantic import BaseModel
 from sqlmodel import select
-from mountaineer.database.session import AsyncSession
 
 from {{project_name}} import models
 

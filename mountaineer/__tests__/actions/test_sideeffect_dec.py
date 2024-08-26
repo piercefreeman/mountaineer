@@ -35,6 +35,8 @@ def test_markup_sideeffect():
         first_name: str
 
     class TestController(ControllerBase):
+        view_path = "/test.tsx"
+
         # We declare as complicated a payload as @sideeffect supports so we can
         # see the full amount of metadata properties that are set
         @sideeffect(
@@ -56,6 +58,7 @@ def test_markup_sideeffect():
 
 class ControllerCommon(ControllerBase):
     url: str = "/test/{query_id}/"
+    view_path = "/test.tsx"
 
     def __init__(self):
         super().__init__()
@@ -234,6 +237,7 @@ async def test_get_render_parameters(
 
     class TestController(ControllerBase):
         url: str = "/test/{path_param}/"
+        view_path = "/test.tsx"
 
         def render(
             self,
@@ -292,6 +296,7 @@ def test_limit_codepath_experimental(
 ):
     class ExampleController(ControllerBase):
         url: str = "/test/{query_id}/"
+        view_path = "/test.tsx"
 
         def render(
             self,

@@ -1,6 +1,6 @@
 import pytest
 
-from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.paths import ManagedViewPath
 
 

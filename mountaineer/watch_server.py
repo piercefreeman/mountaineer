@@ -20,9 +20,10 @@ class WatcherWebservice:
 
     """
 
-    def __init__(self, webservice_port: int | None = None):
+    def __init__(self, webservice_host: str, webservice_port: int | None = None):
         self.app = self.build_app()
         self.websockets: list[WebSocket] = []
+        self.host = webservice_host
         self.port = webservice_port or get_free_port()
         self.notification_queue: Queue[bool | None] = Queue()
 
@@ -65,6 +66,8 @@ class WatcherWebservice:
             next_obj = self.notification_queue.get()
             if next_obj is None:
                 break
+
+            # Run in another thread's context
             asyncio.run(self.broadcast_listeners())
 
     def start(self):
@@ -74,6 +77,7 @@ class WatcherWebservice:
         # UvicornThreads are daemon threads by default
         self.webservice_thread = UvicornThread(
             app=self.app,
+            host=self.host,
             port=self.port,
             log_level="warning",
         )

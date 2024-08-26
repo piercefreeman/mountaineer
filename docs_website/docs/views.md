@@ -50,8 +50,8 @@ A controller backs a view in a 1:1 relationship. It provides the backend plumbin
 
 from mountaineer import sideeffect, ControllerBase, RenderBase
 from mountaineer.database import DatabaseDependencies
-
 from mountaineer.database.session import AsyncSession
+
 from sqlmodel import select
 
 from myapp.models import TodoItem

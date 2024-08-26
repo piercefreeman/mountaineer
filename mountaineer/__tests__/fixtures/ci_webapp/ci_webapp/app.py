@@ -1,5 +1,5 @@
 from mountaineer import AppController, LinkAttribute, Metadata
-from mountaineer.js_compiler.postcss import PostCSSBundler
+from mountaineer.client_compiler.postcss import PostCSSBundler
 
 from ci_webapp.config import AppConfig
 from ci_webapp.controllers.complex import ComplexController

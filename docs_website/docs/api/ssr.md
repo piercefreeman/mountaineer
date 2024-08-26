@@ -10,4 +10,4 @@ Most SSR logic is handled in our embedded Rust layer. In Rust we spin up a V8 is
 
 ## Source Maps
 
-::: mountaineer.js_compiler.source_maps.SourceMapParser
+::: mountaineer.client_compiler.source_maps.SourceMapParser

@@ -1,3 +1,3 @@
 # PostCSS
 
-::: mountaineer.js_compiler.postcss.PostCSSBundler
+::: mountaineer.client_compiler.postcss.PostCSSBundler

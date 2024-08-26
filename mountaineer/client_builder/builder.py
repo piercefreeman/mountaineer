@@ -1,14 +1,12 @@
-import asyncio
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from json import dumps as json_dumps
 from pathlib import Path
-from shutil import move as shutil_move, rmtree as shutil_rmtree
-from tempfile import TemporaryDirectory
+from shutil import rmtree as shutil_rmtree
 from time import monotonic_ns
 from typing import Any
 
-from click import secho
 from fastapi import APIRouter
 from inflection import camelize
 from pydantic_core import ValidationError
@@ -31,12 +29,10 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
+from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.io import gather_with_concurrency
-from mountaineer.js_compiler.base import ClientBundleMetadata
-from mountaineer.js_compiler.exceptions import BuildProcessException
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
@@ -51,7 +47,10 @@ class RenderSpec:
 
 class ClientBuilder:
     """
-    Main entrypoint for building the auto-generated typescript code.
+    Main entrypoint for building the auto-generated typescript code. This includes
+    the server provided API used by useServer.
+
+    It delegates out the compilation to the js_compiler/* package.
 
     """
 
@@ -72,15 +71,28 @@ class ClientBuilder:
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
 
-    def build(self):
-        asyncio.run(self.async_build())
+    async def build_all(self):
+        # Totally clear away the old build cache, so we start fresh
+        # and don't have additional files hanging around
+        for clear_dir in [
+            self.view_root.get_managed_ssr_dir(),
+            self.view_root.get_managed_static_dir(),
+        ]:
+            if clear_dir.exists():
+                shutil_rmtree(clear_dir)
 
-    async def async_build(self):
+        await self.build_use_server()
+        # await self.build_fe_diff(None)
+
+    async def build_use_server(self):
+        start = monotonic_ns()
+
         # Avoid rebuilding if we don't need to
         if self.cache_is_outdated():
-            start = monotonic_ns()
-
-            with CONSOLE.status("Building useServer", spinner="dots"):
+            with (
+                self.catch_build_exception(),
+                CONSOLE.status("Building useServer", spinner="dots"),
+            ):
                 # Make sure our application definitions are in a valid state before we start
                 # to build the client code
                 self.validate_unique_paths()
@@ -101,14 +113,17 @@ class ClientBuilder:
                 f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
         else:
-            CONSOLE.print("[bold green]useServer up to date")
+            CONSOLE.print(
+                f"[bold green]Validated useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
+            )
 
-        await self.build_javascript_chunks()
-
-        # Update the cached paths attached to the app
-        for controller_definition in self.app.controllers:
-            controller = controller_definition.controller
-            controller.resolve_paths(self.view_root, force=True)
+    @contextmanager
+    def catch_build_exception(self):
+        try:
+            yield
+        except BuildProcessException as e:
+            self.app.build_exception = e
+            raise
 
     def generate_static_files(self):
         """
@@ -480,131 +495,6 @@ class ClientBuilder:
 
             (controller_code_dir / "index.ts").write_text("\n".join(chunks))
 
-    async def build_javascript_chunks(self, max_concurrency: int = 25):
-        """
-        Build the final javascript chunks that will render the react documents. Each page will get
-        one chunk associated with it. We suffix these files with the current md5 hash of the contents to
-        allow clients to aggressively cache these contents but invalidate the cache whenever the script
-        contents have rebuilt in the background.
-
-        """
-        metadata = ClientBundleMetadata(
-            live_reload_port=self.live_reload_port,
-        )
-
-        # Each build command is completely independent and there's some overhead with spawning
-        # each process. Make use of multi-core machines and spawn each process in its own
-        # management thread so we complete the build process in parallel.
-        controller_tasks = [
-            builder.handle_file(
-                self.view_root.get_controller_view_path(
-                    controller_definition.controller
-                ),
-                controller=controller_definition.controller,
-                metadata=metadata,
-            )
-            for controller_definition in self.app.controllers
-            for builder in self.app.builders
-        ]
-
-        # Optionally build static files the main views and plugin views
-        # This allows plugins to have custom handling for different file types
-        file_tasks = [
-            builder.handle_file(
-                path,
-                controller=None,
-                metadata=metadata,
-            )
-            for path in self.get_static_files()
-            for builder in self.app.builders
-        ]
-
-        start = monotonic_ns()
-        await gather_with_concurrency(
-            [builder.start_build() for builder in self.app.builders],
-            n=max_concurrency,
-        )
-        LOGGER.debug(f"Builder launch took {(monotonic_ns() - start) / 1e9}s")
-
-        start = monotonic_ns()
-        results = await gather_with_concurrency(
-            controller_tasks + file_tasks, n=max_concurrency, catch_exceptions=True
-        )
-        LOGGER.debug(f"Builder tasks took {(monotonic_ns() - start) / 1e9}s")
-
-        start = monotonic_ns()
-        await gather_with_concurrency(
-            [builder.finish_build() for builder in self.app.builders], n=max_concurrency
-        )
-        LOGGER.debug(f"Builder finish took in {(monotonic_ns() - start) / 1e9}s")
-
-        # Go through the exceptions, logging the build errors explicitly
-        has_build_error = False
-        final_exception: str = ""
-        for result in results:
-            if isinstance(result, Exception):
-                has_build_error = True
-                if isinstance(result, BuildProcessException):
-                    secho(f"Build error: {result}", fg="red")
-                final_exception += str(result)
-
-        if has_build_error:
-            raise BuildProcessException(final_exception)
-
-        self.move_build_artifacts_into_project()
-
-    def move_build_artifacts_into_project(self):
-        """
-        Now that we build has completed, we can clear out the old files and replace it
-        with the thus-far temporary files
-
-        This cleans up old controllers in the case that they were deleted, and prevents
-        outdated md5 content hashes from being served
-
-        """
-        with TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            tmp_static_dir = tmp_path / "static"
-            tmp_ssr_dir = tmp_path / "ssr"
-            tmp_metadata_dir = tmp_path / "metadata"
-
-            # Since the tmp builds are within their parent folder, we need to move
-            # them out of the way before we clear
-            # Unlike the standard rename operation, shutil will treat this move as a rename if the files
-            # exist within the same OS and will do a copy/replace if they live across volumes
-            # This is necessary for some docker build pipelines where /tmp is auto-mounted
-            # as a shared volume between stages and therefore the act of building temporary files
-            # would cause a "Invalid cross-device link" when we try to copy
-            shutil_move(
-                self.view_root.get_managed_static_dir(tmp_build=True), tmp_static_dir
-            )
-            shutil_move(self.view_root.get_managed_ssr_dir(tmp_build=True), tmp_ssr_dir)
-            shutil_move(
-                self.view_root.get_managed_metadata_dir(tmp_build=True),
-                tmp_metadata_dir,
-            )
-
-            static_dir = self.view_root.get_managed_static_dir()
-            ssr_dir = self.view_root.get_managed_ssr_dir()
-            metadata_dir = self.view_root.get_managed_metadata_dir()
-            for clear_dir in [static_dir, ssr_dir, metadata_dir]:
-                if clear_dir.exists():
-                    shutil_rmtree(clear_dir)
-
-            # Final move - shutil requires the destination directory to not exist, otherwise
-            # it will place the folder within the given folder. Since we just want a regular
-            # rename, we make sure to not create the destination directory
-            shutil_move(
-                tmp_static_dir, self.view_root.get_managed_static_dir(create_dir=False)
-            )
-            shutil_move(
-                tmp_ssr_dir, self.view_root.get_managed_ssr_dir(create_dir=False)
-            )
-            shutil_move(
-                tmp_metadata_dir,
-                self.view_root.get_managed_metadata_dir(create_dir=False),
-            )
-
     def cache_is_outdated(self):
         """
         Determines if our last build is outdated and we need to rebuild the client. Running
@@ -615,8 +505,9 @@ class ClientBuilder:
         if not self.build_cache:
             return True
 
-        cached_metadata = self.build_cache / "client_builder_openapi.json"
+        start = monotonic_ns()
 
+        cached_metadata = self.build_cache / "client_builder_openapi.json"
         cached_contents = {
             controller_definition.controller.__class__.__name__: {
                 "action": self.openapi_action_specs[controller_definition.controller],
@@ -626,7 +517,9 @@ class ClientBuilder:
             }
             for controller_definition in self.app.controllers
         }
+
         cached_str = json_dumps(cached_contents, sort_keys=True)
+        LOGGER.debug(f"Cache check took {(monotonic_ns() - start) / 1e9}s")
 
         if not cached_metadata.exists():
             cached_metadata.write_text(cached_str)
@@ -637,21 +530,6 @@ class ClientBuilder:
             return True
 
         return False
-
-    def get_static_files(self):
-        ignore_directories = ["_ssr", "_static", "_server", "_metadata", "node_modules"]
-
-        for view_root in self.get_all_root_views():
-            for dir_path, _, filenames in view_root.walk():
-                for filename in filenames:
-                    if any(
-                        [
-                            directory in dir_path.parts
-                            for directory in ignore_directories
-                        ]
-                    ):
-                        continue
-                    yield dir_path / filename
 
     def validate_unique_paths(self):
         """
@@ -696,29 +574,6 @@ class ClientBuilder:
                     f"View path {view_path} does not exist, ensure it is created before running the server"
                 )
 
-    def get_all_root_views(self) -> list[ManagedViewPath]:
-        """
-        The self.view_root variable is the root of the current user project. We may have other
-        "view roots" that store view for plugins.
-
-        This function inspects the controller path definitions and collects all of the
-        unique root view paths. The returned ManagedViewPaths are all copied and set to
-        share the same package root as the user project.
-
-        """
-        # Find the view roots
-        view_roots = {self.view_root.copy()}
-        for controller_definition in self.app.controllers:
-            view_path = controller_definition.controller.view_path
-            if isinstance(view_path, ManagedViewPath):
-                view_roots.add(view_path.get_root_link().copy())
-
-        # All the view roots should have the same package root
-        for view_root in view_roots:
-            view_root.package_root_link = self.view_root.package_root_link
-
-        return list(view_roots)
-
     def get_render_local_state(self, controller: ControllerBase):
         """
         Returns the local type name for the render model. Scoped for use
@@ -756,15 +611,15 @@ class ClientBuilder:
 
         """
         if not hasattr(self, "_openapi_action_specs"):
-            self._openapi_specs: dict[ControllerBase, dict[Any, Any]] = {}
+            self._openapi_action_specs: dict[ControllerBase, dict[Any, Any]] = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller
-                self._openapi_specs[controller] = self.openapi_from_controller(
+                self._openapi_action_specs[controller] = self.openapi_from_controller(
                     controller_definition
                 )
 
-        return self._openapi_specs
+        return self._openapi_action_specs
 
     @property
     def openapi_render_specs(self):
