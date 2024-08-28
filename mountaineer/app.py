@@ -238,6 +238,11 @@ class AppController:
             controller_output = render_output[controller.__class__.__name__]
             if not isinstance(controller_output, RenderBase):
                 return controller_output
+            if (
+                controller_output.metadata
+                and controller_output.metadata.explicit_response
+            ):
+                return controller_output.metadata.explicit_response
 
             LOGGER.debug(
                 f"Controller {controller.__class__.__name__} data acquired in {(monotonic_ns() - start) / 1e9}"
@@ -592,6 +597,7 @@ class AppController:
             if not metadata.ignore_global_metadata and self.global_metadata:
                 metadata = metadata.merge(self.global_metadata)
             header_str = "\n".join(metadata.build_header())
+
         else:
             header_str = ""
 
