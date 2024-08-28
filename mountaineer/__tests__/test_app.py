@@ -467,6 +467,6 @@ def test_explicit_response_metadata():
     app.register(RedirectController())
 
     with TestClient(app.app) as client:
-        response = client.get("/redirect", allow_redirects=False)
+        response = client.get("/redirect", follow_redirects=False)
         assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
         assert response.headers["location"] == "/"
