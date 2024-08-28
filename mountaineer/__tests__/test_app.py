@@ -4,7 +4,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, status
+from fastapi.responses import RedirectResponse
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -16,6 +17,7 @@ from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException
+from mountaineer.render import Metadata, RenderBase
 
 
 def test_requires_render_return_value():
@@ -440,3 +442,31 @@ def test_get_value_mask_for_signature():
         "a": 1,
         "b": "test",
     }
+
+
+class RedirectRender(RenderBase):
+    pass
+
+
+class RedirectController(ControllerBase):
+    url = "/redirect"
+    view_path = "/test.tsx"
+
+    async def render(self) -> RedirectRender:
+        return RedirectRender(
+            metadata=Metadata(
+                explicit_response=RedirectResponse(
+                    status_code=status.HTTP_307_TEMPORARY_REDIRECT, url="/"
+                )
+            )
+        )
+
+
+def test_explicit_response_metadata():
+    app = AppController(view_root=Path(""))
+    app.register(RedirectController())
+
+    with TestClient(app.app) as client:
+        response = client.get("/redirect", allow_redirects=False)
+        assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
+        assert response.headers["location"] == "/"
