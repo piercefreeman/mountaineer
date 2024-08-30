@@ -206,7 +206,7 @@ def handle_runserver(
                         f"[bold red]Error reloading {module_name}, stopping reload..."
                     )
                     CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
-                    continue
+                    return
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
 
