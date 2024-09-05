@@ -181,7 +181,6 @@ def handle_runserver(
                 continue
 
             if event.path.suffix == ".py":
-                updated_python.add(event.path)
                 module_name = app_manager.package_path_to_module(event.path)
 
                 # Get the IDs before we reload the module, since they'll change after
@@ -200,13 +199,20 @@ def handle_runserver(
                 try:
                     updated_module = importlib.import_module(module_name)
                     importlib.reload(updated_module)
+
+                    # Only follow the downstream dependencies if the module was successfully reloaded
+                    updated_python.add(event.path)
                 except Exception as e:
                     stacktrace = format_exc()
                     CONSOLE.print(
                         f"[bold red]Error reloading {module_name}, stopping reload..."
                     )
                     CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
-                    return
+
+                    # In the case of an exception in one module we still want to try to load
+                    # the other ones that were affected, since we want to keep the differential
+                    # state of the app up to date
+                    continue
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
 

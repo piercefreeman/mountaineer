@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy import text
 from sqlalchemy.engine.result import Result
 
@@ -47,6 +49,11 @@ class DatabaseSerializer:
                 yield column, dependencies + [table]
 
             async for constraint, dependencies in self.get_constraints(
+                session, table.table_name
+            ):
+                yield constraint, dependencies + [table]
+
+            async for constraint, dependencies in self.get_indexes(
                 session, table.table_name
             ):
                 yield constraint, dependencies + [table]
@@ -204,6 +211,44 @@ class DatabaseSerializer:
                 ),
                 [
                     # We require the columns to be created first
+                    DBColumnPointer(table_name=table_name, column_name=column)
+                    for column in columns
+                ],
+            )
+
+    async def get_indexes(self, session: AsyncSession, table_name: str):
+        # Query for indexes, excluding primary keys
+        index_query = text(
+            """
+            SELECT i.indexname, i.indexdef
+            FROM pg_indexes i
+            LEFT JOIN pg_constraint c ON c.conname = i.indexname
+            WHERE i.tablename = :table_name
+            AND c.conname IS NULL
+            AND i.indexdef NOT ILIKE '%UNIQUE INDEX%'
+        """
+        )
+        index_result = await session.execute(index_query, {"table_name": table_name})
+
+        for row in index_result:
+            index_name = row.indexname
+            index_def = row.indexdef
+
+            # Extract columns from index definition
+            columns_match = re.search(r"\((.*?)\)", index_def)
+            if columns_match:
+                columns = [col.strip() for col in columns_match.group(1).split(",")]
+            else:
+                columns = []
+
+            yield (
+                DBConstraint(
+                    table_name=table_name,
+                    columns=frozenset(columns),
+                    constraint_name=index_name,
+                    constraint_type=ConstraintType.INDEX,
+                ),
+                [
                     DBColumnPointer(table_name=table_name, column_name=column)
                     for column in columns
                 ],
