@@ -237,7 +237,9 @@ class DatabaseSerializer:
             # Extract columns from index definition
             columns_match = re.search(r"\((.*?)\)", index_def)
             if columns_match:
-                columns = [col.strip() for col in columns_match.group(1).split(",")]
+                columns = [
+                    col.strip().strip('"') for col in columns_match.group(1).split(",")
+                ]
             else:
                 columns = []
 

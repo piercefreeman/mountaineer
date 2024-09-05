@@ -429,28 +429,6 @@ class DatabaseActions:
             sql,
         )
 
-    async def add_index(
-        self,
-        table_name: str,
-        columns: list[str],
-        index_name: str,
-    ):
-        assert_is_safe_sql_identifier(table_name)
-        for column_name in columns:
-            assert_is_safe_sql_identifier(column_name)
-
-        columns_formatted = ", ".join(columns)
-        sql = f'CREATE INDEX {index_name} ON "{table_name}" ({columns_formatted});'
-        await self._record_signature(
-            self.add_index,
-            dict(
-                table_name=table_name,
-                columns=columns,
-                index_name=index_name,
-            ),
-            sql,
-        )
-
     async def drop_constraint(
         self,
         table_name: str,
@@ -469,6 +447,46 @@ class DatabaseActions:
             ALTER TABLE "{table_name}"
             DROP CONSTRAINT {constraint_name}
             """,
+        )
+
+    async def add_index(
+        self,
+        table_name: str,
+        columns: list[str],
+        index_name: str,
+    ):
+        assert_is_safe_sql_identifier(table_name)
+        for column_name in columns:
+            assert_is_safe_sql_identifier(column_name)
+
+        columns_formatted = ", ".join([f'"{column_name}"' for column_name in columns])
+        sql = f'CREATE INDEX {index_name} ON "{table_name}" ({columns_formatted});'
+        await self._record_signature(
+            self.add_index,
+            dict(
+                table_name=table_name,
+                columns=columns,
+                index_name=index_name,
+            ),
+            sql,
+        )
+
+    async def drop_index(
+        self,
+        table_name: str,
+        index_name: str,
+    ):
+        assert_is_safe_sql_identifier(table_name)
+        assert_is_safe_sql_identifier(index_name)
+
+        sql = f'ALTER TABLE "{table_name}" DROP INDEX {index_name};'
+        await self._record_signature(
+            self.drop_index,
+            dict(
+                table_name=table_name,
+                index_name=index_name,
+            ),
+            sql,
         )
 
     async def add_not_null(self, table_name: str, column_name: str):

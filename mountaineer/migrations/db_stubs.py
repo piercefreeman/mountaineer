@@ -278,10 +278,16 @@ class DBConstraint(DBObject):
             )
 
     async def destroy(self, actor: DatabaseActions):
-        await actor.drop_constraint(
-            self.table_name,
-            constraint_name=self.constraint_name,
-        )
+        if self.constraint_type == ConstraintType.INDEX:
+            await actor.drop_index(
+                self.table_name,
+                index_name=self.constraint_name,
+            )
+        else:
+            await actor.drop_constraint(
+                self.table_name,
+                constraint_name=self.constraint_name,
+            )
 
     async def migrate(self, previous: "DBConstraint", actor: DatabaseActions):
         if self.constraint_type != previous.constraint_type:
