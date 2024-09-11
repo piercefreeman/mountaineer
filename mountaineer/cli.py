@@ -101,6 +101,7 @@ def handle_runserver(
     host: str = "127.0.0.1",
     port: int,
     subscribe_to_mountaineer: bool = False,
+    live_reload_port: int | None = None,
 ):
     """
     Start a local development server. This will hot-reload your browser any time
@@ -124,7 +125,7 @@ def handle_runserver(
     # runserver, so a single websocket frontend can be notified across
     # multiple builds
     start = time()
-    watcher_webservice = WatcherWebservice(webservice_host=host)
+    watcher_webservice = WatcherWebservice(webservice_host=host, webservice_port=live_reload_port)
     watcher_webservice.start()
 
     app_manager = HotReloadManager.from_webcontroller(

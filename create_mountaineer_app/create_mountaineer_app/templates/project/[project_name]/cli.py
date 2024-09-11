@@ -1,3 +1,4 @@
+import os
 from click import command, option, group
 from mountaineer.cli import handle_runserver, handle_watch, handle_build
 from mountaineer.database.cli import handle_createdb
@@ -8,14 +9,17 @@ from {{project_name}} import models
 from {{project_name}}.config import AppConfig
 
 
+
 @command()
 @option("--port", default=5006, help="Port to run the server on")
-def runserver(port: int):
+@option("--live-reload-port", default=None, help="Port to run the live reload server on")
+def runserver(port: int, live_reload_port: int | None):
     handle_runserver(
         package="{{project_name}}",
         webservice="{{project_name}}.main:app",
         webcontroller="{{project_name}}.app:controller",
         port=port,
+        live_reload_port=live_reload_port,
     )
 
 
