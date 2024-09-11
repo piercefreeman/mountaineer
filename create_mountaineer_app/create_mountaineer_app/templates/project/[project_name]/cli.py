@@ -1,4 +1,3 @@
-import os
 from click import command, option, group
 from mountaineer.cli import handle_runserver, handle_watch, handle_build
 from mountaineer.database.cli import handle_createdb
