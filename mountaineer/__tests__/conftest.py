@@ -21,5 +21,14 @@ def ignore_memory_object_resource_warnings():
 
 
 @pytest.fixture(autouse=True)
+def ignore_pluggy_warnings():
+    filterwarnings(
+        "ignore",
+        category=pytest.PytestWarning,
+        message=".*PluggyTeardownRaisedWarning.*",
+    )
+
+
+@pytest.fixture(autouse=True)
 def clear_config_cache():
     unregister_config()

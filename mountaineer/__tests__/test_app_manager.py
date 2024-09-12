@@ -3,12 +3,14 @@ import sys
 from inspect import getmembers, isclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import sleep
 
 import pytest
 from fastapi import Request
 
 from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.app_manager import HotReloadManager
+from mountaineer.webservice import UvicornThread
 
 AppPackageType = tuple[str, Path, Path]
 
@@ -85,6 +87,18 @@ def test_update_module(manager: HotReloadManager, app_package: AppPackageType):
     # Check if the new attribute is present
     assert hasattr(manager.app_controller, "new_attribute")
     assert manager.app_controller.new_attribute == "test"  # type: ignore
+
+
+def test_restart_server(manager: HotReloadManager):
+    manager.restart_server()
+
+    assert manager.webservice_thread is not None
+    assert isinstance(manager.webservice_thread, UvicornThread)
+    assert manager.webservice_thread.is_alive()
+
+    # Give the server another second to boot
+    sleep(1)
+    manager.webservice_thread.stop()
 
 
 def test_objects_in_module(manager: HotReloadManager, app_package: AppPackageType):
