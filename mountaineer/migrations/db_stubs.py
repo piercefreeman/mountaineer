@@ -145,11 +145,9 @@ class DBColumn(DBColumnBase, DBObject):
             await actor.add_not_null(self.table_name, self.column_name)
 
     async def destroy(self, actor: DatabaseActions):
-        # If we are changing the type, we need to drop and re-create the column
+        # Destorying the column means we'll also drop constraints associated with it
+        # like not-null.
         await actor.drop_column(self.table_name, self.column_name)
-
-        if not self.nullable:
-            await actor.drop_not_null(self.table_name, self.column_name)
 
     async def migrate(self, previous: "DBColumn", actor: DatabaseActions):
         if (
