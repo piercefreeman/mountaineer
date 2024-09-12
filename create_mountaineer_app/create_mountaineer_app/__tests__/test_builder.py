@@ -144,16 +144,20 @@ def test_valid_permutations(
     create_db_process = environment.run_command(["createdb"], metadata.project_path)
     output, errors = create_db_process.communicate()
     if create_db_process.returncode != 0:
-        secho(output.decode("utf-8"), fg="red")
-        secho(errors.decode("utf-8"), fg="red")
+        if output:
+            secho(output.decode("utf-8"), fg="red")
+        if errors:
+            secho(errors.decode("utf-8"), fg="red")
         raise ValueError("Failed to create database.")
 
     # Make sure we can build the files without any errors
     build_process = environment.run_command(["build"], metadata.project_path)
     output, errors = build_process.communicate()
     if build_process.returncode != 0:
-        secho(output.decode("utf-8"), fg="red")
-        secho(errors.decode("utf-8"), fg="red")
+        if output:
+            secho(output.decode("utf-8"), fg="red")
+        if errors:
+            secho(errors.decode("utf-8"), fg="red")
         raise ValueError("Failed to build project.")
 
     # Now launch the server in the background
