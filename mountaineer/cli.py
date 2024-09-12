@@ -3,6 +3,7 @@ import importlib
 import sys
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
+from os import environ
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
@@ -149,6 +150,10 @@ def handle_runserver(
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 
+    # Now that we've started the server for the first time, any additional reloads
+    # must be hot-reloaded
+    environ["MOUNTAINEER_HOT_RELOADING"] = "1"
+
     def update_build(metadata: CallbackMetadata):
         start = time()
 
@@ -196,6 +201,7 @@ def handle_runserver(
             module_name, python_path = module_queue.pop(0)
             if module_name in seen_modules:
                 continue
+            seen_modules.add(module_name)
 
             # Get the IDs before we reload the module, since they'll change after
             # the re-import
@@ -212,6 +218,8 @@ def handle_runserver(
                 )
                 subclass_modules = {module for module, _ in obj_subclasses}
 
+                # Since these are just the direct subclass modules, we add it to the queue
+                # to bring in all recursive subclasses
                 for additional_module in subclass_modules:
                     module_path = app_manager.module_to_package_path(additional_module)
                     module_queue.append((additional_module, module_path))

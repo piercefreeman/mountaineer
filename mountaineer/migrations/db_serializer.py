@@ -228,7 +228,9 @@ class DatabaseSerializer:
             AND i.indexdef NOT ILIKE '%UNIQUE INDEX%'
         """
         )
-        index_result = await session.execute(index_query, {"table_name": table_name})
+        index_result = await session.exec(
+            index_query, params={"table_name": table_name}
+        )
 
         for row in index_result:
             index_name = row.indexname
@@ -237,6 +239,7 @@ class DatabaseSerializer:
             # Extract columns from index definition
             columns_match = re.search(r"\((.*?)\)", index_def)
             if columns_match:
+                # Reserved names are quoted in the response body
                 columns = [
                     col.strip().strip('"') for col in columns_match.group(1).split(",")
                 ]
