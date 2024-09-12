@@ -203,15 +203,19 @@ class MigrationGenerator:
             if isinstance(value, BaseModel):
                 model_dict = value.model_dump()
             elif is_dataclass(value) and not isinstance(value, type):
-                model_dict = asdict(value)
+                # Currently incorrect typehinting in pyright for isinstance(value, type)
+                # Still results in a type[DataclassInstance] possible type. This can remove
+                # the following 3 type ignores when fixed.
+                # https://github.com/microsoft/pyright/issues/8963
+                model_dict = asdict(value)  # type: ignore
             else:
                 raise TypeError(
                     "Value must be a BaseModel instance or a dataclass instance."
                 )
 
-            self.track_import(value.__class__)
+            self.track_import(value.__class__)  # type: ignore
 
-            code = f"{value.__class__.__name__}("
+            code = f"{value.__class__.__name__}("  # type: ignore
             code += ", ".join(
                 [
                     f"{k}={self.format_arg(v)}"

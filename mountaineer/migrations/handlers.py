@@ -314,6 +314,10 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
                 field_info.unique, PydanticUndefinedType
             ):
                 common_constraint.unique = field_info.unique
+            if field_info.index and not isinstance(
+                field_info.index, PydanticUndefinedType
+            ):
+                common_constraint.index = field_info.index
 
             # Primary keys have to be handled at the table-level so we can support
             # adding a composite primary key that spans multiple columns
@@ -325,6 +329,7 @@ class ConstraintWrapper(BaseModel):
     explicit_name: str | None = None
 
     unique: bool | None = None
+    index: bool | None = None
     primary_key: bool | None = None
     foreign_key: str | None = None
     check_expression: str | None = None
@@ -368,6 +373,24 @@ class ColumnConstraintHandler(HandlerBase[ConstraintWrapper]):
                             context.current_table,
                             next.columns,
                             ConstraintType.PRIMARY_KEY,
+                        )
+                    ),
+                ),
+                common_col_dependencies,
+            )
+        if next.index:
+            yield (
+                DBConstraint(
+                    table_name=context.current_table,
+                    constraint_type=ConstraintType.INDEX,
+                    columns=frozenset(next.columns),
+                    constraint_name=(
+                        next.explicit_name
+                        if next.explicit_name
+                        else DBConstraint.new_constraint_name(
+                            context.current_table,
+                            next.columns,
+                            ConstraintType.INDEX,
                         )
                     ),
                 ),
@@ -443,6 +466,13 @@ class SQLAlchemyColumnHandler(HandlerBase[sa.Column]):
             yield from self.serializer.delegate(
                 foreign_key, context, dependent_on=[db_obj for db_obj, _ in results]
             )
+
+        if next.index and context.current_column:
+            common_constraint = ConstraintWrapper(
+                columns=[context.current_column],
+                index=True,
+            )
+            yield from self.serializer.delegate(common_constraint, context)
 
 
 class SQLAlchemyForeignKeyHandler(HandlerBase[sa.ForeignKey]):
@@ -531,6 +561,44 @@ class TableConstraintHandler(HandlerBase[sa.UniqueConstraint]):
                 constraint_type=ConstraintType.UNIQUE,
                 constraint_name=DBConstraint.new_constraint_name(
                     context.current_table, column_names, ConstraintType.UNIQUE
+                ),
+                columns=frozenset(column_names),
+            ),
+            [
+                # Since we don't directly have access to the columns here, but still
+                # want to create this constraint only after the columns have been
+                # created, we use a object pointer.
+                DBColumnPointer(
+                    table_name=context.current_table, column_name=column_name
+                )
+                for column_name in column_names
+            ],
+        )
+
+
+class IndexConstraintHandler(HandlerBase[sa.Index]):
+    """
+    Indexes defined at the __table_args__ level that can span multiple
+    columns.
+
+    """
+
+    def convert(
+        self, next: sa.Index, context: DelegateContext
+    ) -> Generator[tuple[DBObject, list[DBObject | DBObjectPointer]], Any, None]:
+        if not context.current_table:
+            raise ValueError(
+                f"Table must be set before creating a table constraint: {context}"
+            )
+
+        column_names = [col.name for col in next.columns]
+
+        yield (
+            DBConstraint(
+                table_name=context.current_table,
+                constraint_type=ConstraintType.INDEX,
+                constraint_name=DBConstraint.new_constraint_name(
+                    context.current_table, column_names, ConstraintType.INDEX
                 ),
                 columns=frozenset(column_names),
             ),

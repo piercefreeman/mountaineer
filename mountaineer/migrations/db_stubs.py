@@ -236,6 +236,9 @@ class DBConstraint(DBObject):
         elif constraint_type == ConstraintType.UNIQUE:
             elements += sorted(columns)
             elements.append("unique")
+        elif constraint_type == ConstraintType.INDEX:
+            elements += sorted(columns)
+            elements.append("idx")
         else:
             elements += sorted(columns)
             elements.append("key")
@@ -260,6 +263,12 @@ class DBConstraint(DBObject):
                 constraint_args=self.check_constraint,
                 columns=list(self.columns),
             )
+        elif self.constraint_type == ConstraintType.INDEX:
+            await actor.add_index(
+                self.table_name,
+                columns=list(self.columns),
+                index_name=self.constraint_name,
+            )
         else:
             await actor.add_constraint(
                 self.table_name,
@@ -269,10 +278,16 @@ class DBConstraint(DBObject):
             )
 
     async def destroy(self, actor: DatabaseActions):
-        await actor.drop_constraint(
-            self.table_name,
-            constraint_name=self.constraint_name,
-        )
+        if self.constraint_type == ConstraintType.INDEX:
+            await actor.drop_index(
+                self.table_name,
+                index_name=self.constraint_name,
+            )
+        else:
+            await actor.drop_constraint(
+                self.table_name,
+                constraint_name=self.constraint_name,
+            )
 
     async def migrate(self, previous: "DBConstraint", actor: DatabaseActions):
         if self.constraint_type != previous.constraint_type:

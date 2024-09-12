@@ -2,6 +2,8 @@ import importlib
 import os
 import socket
 from importlib.metadata import distributions
+from inspect import getmembers, isclass
+from pathlib import Path
 from traceback import format_exception
 from types import ModuleType
 
@@ -121,7 +123,7 @@ class HotReloadManager:
             if hasattr(obj, "__module__") and obj.__module__ == module.__name__
         }
 
-    def package_path_to_module(self, file_path):
+    def package_path_to_module(self, file_path_raw: Path):
         """
         We are notified about changes to files on disk, this function converts
         the filename to Python's addressable module syntax.
@@ -137,7 +139,7 @@ class HotReloadManager:
         package_root = os.path.dirname(package.__file__)
 
         # Ensure the file_path is absolute
-        file_path = os.path.abspath(file_path)
+        file_path = os.path.abspath(str(file_path_raw))
 
         # Check if the file is within the package
         if not file_path.startswith(package_root):
@@ -153,6 +155,40 @@ class HotReloadManager:
         module_name = f"{self.package}.{module_path.replace(os.sep, '.')}"
 
         return module_name
+
+    def module_to_package_path(self, module_name):
+        """
+        Converts a Python module name to its corresponding file path on disk.
+        Returns a Path object.
+        """
+        # Get the package's root directory
+        package = importlib.import_module(self.package)
+        if not package.__file__:
+            raise ValueError(
+                f"The package {self.package} does not have a __file__ attribute"
+            )
+        package_root = Path(package.__file__).parent
+
+        # Ensure the module is within the package
+        if not module_name.startswith(self.package + "."):
+            raise ValueError(
+                f"The module {module_name} is not in the package {self.package}"
+            )
+
+        # Remove the package name from the module name
+        relative_module = module_name[len(self.package) + 1 :]
+
+        # Convert dots to path separators and add .py extension
+        relative_path = relative_module.replace(".", os.sep) + ".py"
+
+        # Construct the full path
+        full_path = package_root / relative_path
+
+        # Ensure the file exists
+        if not full_path.is_file():
+            raise FileNotFoundError(f"No file found for module {module_name}")
+
+        return full_path
 
     def get_submodules_with_objects(
         self, root_module: ModuleType, object_ids: set[int]
@@ -179,6 +215,27 @@ class HotReloadManager:
                         yield module
 
         yield from inner(root_module)
+
+    def get_modified_subclass_modules(
+        self, module: ModuleType, allowed_object_ids: set[int]
+    ):
+        """
+        Assuming we are being passed the module where allowed_object_ids are defined,
+        returns the direct subclasses of those objects.
+
+        """
+        result: set[tuple[str, str]] = set()
+
+        # Sniff out the IDs for different classes
+        module_classes = getmembers(module, isclass)
+        for name, cls in module_classes:
+            if id(cls) not in allowed_object_ids:
+                continue
+
+            for subclass in cls.__subclasses__():
+                result.add((subclass.__module__, subclass.__name__))
+
+        return list(result)
 
     def is_port_open(self, host, port):
         """

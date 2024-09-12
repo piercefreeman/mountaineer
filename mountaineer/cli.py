@@ -3,6 +3,7 @@ import importlib
 import sys
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
+from os import environ
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
@@ -149,6 +150,10 @@ def handle_runserver(
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
 
+    # Now that we've started the server for the first time, any additional reloads
+    # must be hot-reloaded
+    environ["MOUNTAINEER_HOT_RELOADING"] = "1"
+
     def update_build(metadata: CallbackMetadata):
         start = time()
 
@@ -170,7 +175,7 @@ def handle_runserver(
         objects_to_reload: set[int] = set()
 
         updated_js: set[Path] = set()
-        updated_python: set[Path] = set()
+        updated_modules: set[tuple[str, Path]] = set()
 
         for event in metadata.events:
             if (
@@ -181,34 +186,65 @@ def handle_runserver(
                 continue
 
             if event.path.suffix == ".py":
-                updated_python.add(event.path)
                 module_name = app_manager.package_path_to_module(event.path)
-
-                # Get the IDs before we reload the module, since they'll change after
-                # the re-import
-                # If module_name is not already in sys.modules, it hasn't been
-                # imported yet and we don't need to worry about refreshing dependent definitions
-                if module_name in sys.modules:
-                    LOGGER.debug(f"Changed Python: {event.path}")
-                    current_module = sys.modules[module_name]
-                    objects_to_reload |= app_manager.objects_in_module(current_module)
-                else:
-                    LOGGER.debug(f"Module {module_name} is new and not yet imported")
-
-                # Now, once we've cached the ids of objects currently in memory we can clear
-                # the actual model definition from the module cache
-                try:
-                    updated_module = importlib.import_module(module_name)
-                    importlib.reload(updated_module)
-                except Exception as e:
-                    stacktrace = format_exc()
-                    CONSOLE.print(
-                        f"[bold red]Error reloading {module_name}, stopping reload..."
-                    )
-                    CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
-                    continue
+                updated_modules.add((module_name, event.path))
             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
+
+        # Update the modules in a queue fashion so we can update the dependent modules
+        # where the subclasses live
+        module_queue = list(updated_modules)
+        seen_modules: set[str] = set()
+        updated_python: set[Path] = set()
+
+        while module_queue:
+            module_name, python_path = module_queue.pop(0)
+            if module_name in seen_modules:
+                continue
+            seen_modules.add(module_name)
+
+            # Get the IDs before we reload the module, since they'll change after
+            # the re-import
+            # If module_name is not already in sys.modules, it hasn't been
+            # imported yet and we don't need to worry about refreshing dependent definitions
+            if module_name in sys.modules:
+                LOGGER.debug(f"Changed Python: {python_path}")
+                current_module = sys.modules[module_name]
+                owned_by_module = app_manager.objects_in_module(current_module)
+
+                objects_to_reload |= owned_by_module
+                obj_subclasses = app_manager.get_modified_subclass_modules(
+                    current_module, owned_by_module
+                )
+                subclass_modules = {module for module, _ in obj_subclasses}
+
+                # Since these are just the direct subclass modules, we add it to the queue
+                # to bring in all recursive subclasses
+                for additional_module in subclass_modules:
+                    module_path = app_manager.module_to_package_path(additional_module)
+                    module_queue.append((additional_module, module_path))
+            else:
+                LOGGER.debug(f"Module {module_name} is new and not yet imported")
+
+            # Now, once we've cached the ids of objects currently in memory we can clear
+            # the actual model definition from the module cache
+            try:
+                updated_module = importlib.import_module(module_name)
+                importlib.reload(updated_module)
+
+                # Only follow the downstream dependencies if the module was successfully reloaded
+                updated_python.add(python_path)
+            except Exception as e:
+                stacktrace = format_exc()
+                CONSOLE.print(
+                    f"[bold red]Error reloading {module_name}, stopping reload..."
+                )
+                CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
+
+                # In the case of an exception in one module we still want to try to load
+                # the other ones that were affected, since we want to keep the differential
+                # state of the app up to date
+                continue
 
         # Pass all updated files to the app compiler to build stylesheets
         # and other asset compilations
