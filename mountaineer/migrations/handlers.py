@@ -186,6 +186,15 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
         # we try to create the column itself
         delegated_results = []
         is_nullable = is_field_noneable(next)
+        is_primary_key = (
+            (
+                next.primary_key
+                if not isinstance(next.primary_key, PydanticUndefinedType)
+                else False
+            )
+            if isinstance(next, SQLModelFieldInfo)
+            else False
+        )
 
         if isinstance(next, SQLModelFieldInfo):
             sa_type = (
@@ -216,11 +225,6 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
                     is_nullable = next.nullable
                 else:
                     # https://github.com/tiangolo/sqlmodel/blob/main/sqlmodel/main.py#L633
-                    is_primary_key = (
-                        next.primary_key
-                        if not isinstance(next.primary_key, PydanticUndefinedType)
-                        else False
-                    )
                     is_nullable = not is_primary_key and is_nullable
             else:
                 # We take the nullable value from the column definition
@@ -273,6 +277,17 @@ class ColumnHandler(HandlerBase[PydanticFieldInfo]):
             raise ValueError(
                 f"No column type found for column {context.current_column} in table {context.current_table}"
             )
+
+        # Special case handling for SERIAL keys: if an integer is a primary key,
+        # we should automatically convert it to a SERIAL type. We have to do here instead
+        # of at the type conversion level because the type conversion level doesn't have
+        # the context of the primary key
+        if (
+            is_primary_key
+            and type_payload.primitive_type
+            and type_payload.primitive_type == ColumnType.INTEGER
+        ):
+            column_type = ColumnType.SERIAL
 
         # We need to create the column itself once types have been created
         column = DBColumn(

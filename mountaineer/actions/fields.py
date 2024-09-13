@@ -28,7 +28,7 @@ from typing import (
 )
 
 import starlette.responses
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
@@ -316,6 +316,9 @@ def format_final_action_response(dict_payload: dict[str, Any]):
         return dict_payload
 
     response_key, response = responses[0]
+    assert isinstance(response, Response)
+    assert isinstance(response.body, bytes)
+
     dict_payload[response_key] = json_loads(response.body)
 
     # Now inject the newly formatted response into the response object

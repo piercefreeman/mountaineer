@@ -94,7 +94,7 @@ async def get_function_dependencies(
     )
 
     async with AsyncExitStack() as async_exit_stack:
-        values, errors, background_tasks, sub_response, _ = await solve_dependencies(
+        payload = await solve_dependencies(
             request=request,
             dependant=dependant,
             async_exit_stack=async_exit_stack,
@@ -103,17 +103,18 @@ async def get_function_dependencies(
                 if dependency_overrides
                 else None
             ),
+            embed_body_fields=False,
         )
-        if background_tasks:
+        if payload.background_tasks:
             raise RuntimeError(
                 "Background tasks are not supported when calling a static function, due to undesirable side-effects."
             )
-        if errors:
+        if payload.errors:
             raise RuntimeError(
-                f"Errors encountered while resolving dependencies: {errors}"
+                f"Errors encountered while resolving dependencies: {payload.errors}"
             )
 
-        yield values
+        yield payload.values
 
 
 def isolate_dependency_only_function(original_fn: Callable):

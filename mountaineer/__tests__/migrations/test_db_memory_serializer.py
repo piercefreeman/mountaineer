@@ -55,7 +55,8 @@ async def test_from_scratch_migration():
                 "column_name": "id",
                 "custom_data_type": None,
                 "explicit_data_is_list": False,
-                "explicit_data_type": ColumnType.INTEGER,
+                # Primary integers should be made to auto-increment
+                "explicit_data_type": ColumnType.SERIAL,
                 "table_name": "modela",
             },
         ),
@@ -256,7 +257,7 @@ async def test_duplicate_enum_migration():
                 "column_name": "id",
                 "custom_data_type": None,
                 "explicit_data_is_list": False,
-                "explicit_data_type": ColumnType.INTEGER,
+                "explicit_data_type": ColumnType.SERIAL,
                 "table_name": "model1",
             },
         ),
@@ -272,7 +273,7 @@ async def test_duplicate_enum_migration():
                 "column_name": "id",
                 "custom_data_type": None,
                 "explicit_data_is_list": False,
-                "explicit_data_type": ColumnType.INTEGER,
+                "explicit_data_type": ColumnType.SERIAL,
                 "table_name": "model2",
             },
         ),
@@ -325,6 +326,86 @@ async def test_duplicate_enum_migration():
                 "constraint_args": None,
                 "constraint_name": "model2_pkey",
                 "table_name": "model2",
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_required_db_default():
+    """
+    Even if we have a default value in Python, we should still force the content
+    to have a value at the db level.
+
+    """
+
+    class Model1(SQLModel):
+        id: int = Field(primary_key=True)
+        value: str = "ABC"
+        value2: str = Field(default="ABC")
+
+    migrator = DatabaseMemorySerializer()
+
+    db_objects = list(migrator.delegate([Model1], context=None))
+    next_ordering = migrator.order_db_objects(db_objects)
+
+    actor = DatabaseActions()
+    actions = await migrator.build_actions(
+        actor, [], {}, [obj for obj, _ in db_objects], next_ordering
+    )
+
+    assert actions == [
+        DryRunComment(text="\nNEW TABLE: model1\n"),
+        DryRunAction(fn=actor.add_table, kwargs={"table_name": "model1"}),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "id",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.SERIAL,
+                "table_name": "model1",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null, kwargs={"column_name": "id", "table_name": "model1"}
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "value",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.VARCHAR,
+                "table_name": "model1",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={"column_name": "value", "table_name": "model1"},
+        ),
+        DryRunAction(
+            fn=actor.add_column,
+            kwargs={
+                "column_name": "value2",
+                "custom_data_type": None,
+                "explicit_data_is_list": False,
+                "explicit_data_type": ColumnType.VARCHAR,
+                "table_name": "model1",
+            },
+        ),
+        DryRunAction(
+            fn=actor.add_not_null,
+            kwargs={"column_name": "value2", "table_name": "model1"},
+        ),
+        DryRunAction(
+            fn=actor.add_constraint,
+            kwargs={
+                "columns": ["id"],
+                "constraint": ConstraintType.PRIMARY_KEY,
+                "constraint_args": None,
+                "constraint_name": "model1_pkey",
+                "table_name": "model1",
             },
         ),
     ]
