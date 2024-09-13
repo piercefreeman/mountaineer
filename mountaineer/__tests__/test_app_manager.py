@@ -7,6 +7,7 @@ from time import sleep
 
 import pytest
 from fastapi import Request
+from fastapi.responses import Response
 
 from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.app_manager import HotReloadManager
@@ -179,6 +180,8 @@ async def test_handle_dev_exception(manager: HotReloadManager):
     response = await manager.handle_dev_exception(request, test_exception)
 
     # Check if the response contains the exception information
+    assert isinstance(response, Response)
+    assert isinstance(response.body, bytes)
     assert "ValueError: Test exception" in response.body.decode()
 
 

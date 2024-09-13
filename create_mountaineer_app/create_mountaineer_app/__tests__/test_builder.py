@@ -228,8 +228,6 @@ def test_build_version_number(use_poetry: bool, tmp_path: Path):
         use_tailwind=False,
         editor_config=None,
         create_stub_files=False,
-        # Stub, not used in template generation since we also have
-        # the mountaineer_dev_path
         mountaineer_min_version="0.2.5",
         mountaineer_dev_path=None,
     )
