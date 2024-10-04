@@ -78,7 +78,7 @@ def python_payload_to_typescript(payload: Any) -> str:
         )
 
 
-def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType):
+def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType, format: str | None = None):
     mapping = {
         "string": "string",
         "integer": "number",
@@ -86,7 +86,12 @@ def map_openapi_type_to_ts(openapi_type: OpenAPISchemaType):
         "boolean": "boolean",
         "null": "null",
     }
-    return mapping[openapi_type]
+    raw_value = mapping[openapi_type]
+
+    if raw_value == "string" and format == "binary":
+        return "Blob"
+
+    return raw_value
 
 
 def get_types_from_parameters(

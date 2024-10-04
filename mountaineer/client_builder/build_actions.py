@@ -1,6 +1,6 @@
 from typing import Any
 
-from inflection import underscore
+from inflection import camelize, underscore
 
 from mountaineer.client_builder.openapi import (
     ActionDefinition,
@@ -148,7 +148,9 @@ class OpenAPIToTypescriptActionConverter:
         ):
             # We expect that the interface defined within the /models.ts will have the same name as
             # the model in the current OpenAPI spec
-            model_name = action.requestBody.content_schema.schema_ref.ref.split("/")[-1]
+            model_name = camelize(
+                action.requestBody.content_schema.schema_ref.ref.split("/")[-1]
+            )
             parameters_dict["requestBody"] = TSLiteral("requestBody")
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
             request_types.append(model_name)

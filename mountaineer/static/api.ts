@@ -42,7 +42,24 @@ const handleOutputFormat = async (response: Response, format?: string) => {
 };
 
 export const __request = async (params: FetchParams) => {
-  const payloadBody = params.body ? JSON.stringify(params.body) : undefined;
+  let contentType: string | undefined = params.mediaType || "application/json";
+  let payloadBody: string | FormData | undefined = undefined;
+
+  if (params.body) {
+    if (contentType == "application/json") {
+      payloadBody = JSON.stringify(params.body);
+    } else if (contentType == "multipart/form-data") {
+      payloadBody = new FormData();
+      for (const [key, value] of Object.entries(params.body)) {
+        payloadBody.append(key, value);
+      }
+
+      // Manually specifying multipart/form-data alongside the FormData requires
+      // us to also send the boundary. We'd rather let the browser handle this.
+      contentType = undefined;
+    }
+  }
+
   let filledUrl = params.url;
 
   // Fill path parameters
@@ -59,7 +76,7 @@ export const __request = async (params: FetchParams) => {
     const response = await fetch(filledUrl, {
       method: params.method,
       headers: {
-        "Content-Type": params.mediaType || "application/json",
+        ...(contentType && { "Content-Type": contentType }),
       },
       body: payloadBody,
     });

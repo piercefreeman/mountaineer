@@ -65,11 +65,10 @@ def test_basic_interface():
         (bool, ["value: boolean"]),
         (float, ["value: number"]),
         (Any, ["value: any"]),
+        (bytes, ["value: Blob"]),
         # We don't consider types that would encompass other types, so right now
         # we just parse separately
         (Any | None, ["value: any | null"]),  # type: ignore
-        # OpenAPI doesn't support bytes, so it casts them as strings
-        (bytes, ["value: string"]),
         # OpenAPI doesn't support sets, so it casts them as arrays
         (set[str], ["value: Array<string>"]),
     ],

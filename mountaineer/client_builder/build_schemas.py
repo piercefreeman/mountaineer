@@ -142,7 +142,7 @@ class OpenAPIToTypescriptSchemaConverter:
             elif prop.variable_type:
                 # Should be the very last type to parsed, since all the other switch
                 # statements are more specific than a simple variable type
-                yield map_openapi_type_to_ts(prop.variable_type)
+                yield map_openapi_type_to_ts(prop.variable_type, format=prop.format)
             else:
                 LOGGER.warning(f"Unknown property type: {prop}")
 
