@@ -1,0 +1,1452 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../database/">
+      
+      
+        <link rel="next" href="../error_handling/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.34">
+    
+    
+      
+        <title>Database Migrations - Mountaineer</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.35f28582.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe+UI,Roboto,Helvetica+Neue,Arial,Noto+Sans,sans-serif,Apple+Color+Emoji,Segoe+UI+Emoji,Segoe+UI+Symbol,Noto+Color+Emoji:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica Neue,Arial,Noto Sans,sans-serif,Apple Color Emoji,Segoe UI Emoji,Segoe UI Symbol,Noto Color Emoji";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#database-migrations" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Mountaineer" class="md-header__button md-logo" aria-label="Mountaineer" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Mountaineer
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Database Migrations
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Mountaineer" class="md-nav__button md-logo" aria-label="Mountaineer" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Mountaineer
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Mountaineer
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cma/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Create Mountaineer App
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Quickstart
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Learn
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Learn
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../structure/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../views/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Views &amp; Layouts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client_actions/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Client Actions
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../metadata/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Page Metadata
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../database/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Database
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Database Migrations
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Database Migrations
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Integration
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Project Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Generate
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apply" class="md-nav__link">
+    <span class="md-ellipsis">
+      Apply
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollback" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rollback
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      Migration files
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-migration-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      Extending Migration Files
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alternatives" class="md-nav__link">
+    <span class="md-ellipsis">
+      Alternatives
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../error_handling/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Error Handling
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../links/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Links
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../static_analysis/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Static Analysis
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../postcss/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    PostCSS &amp; Tailwind
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../deploy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Deploy
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    API
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            API
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/app-controller/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    App Controller
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/controller/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    View Controller
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/actions/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Actions
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/cli/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    CLI Plugins
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/api_exception/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    API Exception
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/render/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Render
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Config
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/core_dependencies/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Core Dependencies
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/logging/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Logging
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/watch_server/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Watch server
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/ssr/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    SSR
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_12" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_12" id="__nav_5_12_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Database
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_12_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_12">
+            <span class="md-nav__icon md-icon"></span>
+            Database
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/database/config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Database Config
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/database/dependencies/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Database Dependencies
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/database/migrations/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Database Migrations
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_13" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_13" id="__nav_5_13_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Build Plugins
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_13">
+            <span class="md-nav__icon md-icon"></span>
+            Build Plugins
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/build_plugins/postcss/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    PostCSS
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/build_plugins/base/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Build Plugin Base
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Internal
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Internal
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../internal/core_library/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Core Library
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#project-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Project Integration
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Project Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#generate" class="md-nav__link">
+    <span class="md-ellipsis">
+      Generate
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#apply" class="md-nav__link">
+    <span class="md-ellipsis">
+      Apply
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rollback" class="md-nav__link">
+    <span class="md-ellipsis">
+      Rollback
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#migration-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      Migration files
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-migration-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      Extending Migration Files
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#alternatives" class="md-nav__link">
+    <span class="md-ellipsis">
+      Alternatives
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="database-migrations">Database Migrations</h1>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>This feature is experimental. Explore using it while developing locally but make sure to backup your data before applying changes. It should support all SQLModel definitions, but if you encounter a bug or lack of support, please report it so we can improve the test coverage.</p>
+</div>
+<h2 id="overview">Overview</h2>
+<p>Once your application is in production, you'll need some method of updating your database schema as you update your application's functionality. You <em>could</em> write raw SQL to accomplish these migrations, or manually modify database table definitions. But the former is inconvenient and the second is risky. Mountaineer ships with a migration tool that can automatically generate migration files for you and apply them to your database. Its features:</p>
+<ul>
+<li>Fast with no external dependencies outside of Mountaineer core.</li>
+<li>Zero config required, optional programmatic customization.</li>
+<li>Unit-testable migration paths that work with normal <code>pytest</code> harnesses.</li>
+<li>Baked-in support for common Postgres types that overlap with Python, most specifically Enums and datetimes.</li>
+<li>File-based groundtruth of migration logic, so it can be audited in source control and customized by you.</li>
+<li>Simple API surface, with atomic Python functions that perform the most common migration operations. Direct database queries (or integration with ORM objects in limited cases) can be used for more complex migration logic.</li>
+</ul>
+<h2 id="project-integration">Project Integration</h2>
+<p>Following the current standard for Mountaineer CLI integrations, we require client applications to explicitly define their CLI endpoints. We include basic handlers for import in <code>mountaineer.migrations.cli</code>. This should look very similar to the default handlers for <code>runserver</code> and <code>build</code>.</p>
+<p>You can integrate like so in your CLI file:</p>
+<div class="highlight"><span class="filename">myapp/cli.py</span><pre><span></span><code><span class="kn">from</span> <span class="nn">click</span> <span class="kn">import</span> <span class="n">group</span><span class="p">,</span> <span class="n">option</span>
+
+<span class="kn">from</span> <span class="nn">mountaineer.io</span> <span class="kn">import</span> <span class="n">async_to_sync</span>
+<span class="kn">from</span> <span class="nn">mountaineer.migrations.cli</span> <span class="kn">import</span> <span class="n">handle_apply</span><span class="p">,</span> <span class="n">handle_generate</span><span class="p">,</span> <span class="n">handle_rollback</span>
+<span class="kn">from</span> <span class="nn">myapp.config</span> <span class="kn">import</span> <span class="n">AppConfig</span>
+
+<span class="nd">@group</span>
+<span class="k">def</span> <span class="nf">migrate</span><span class="p">():</span>
+    <span class="k">pass</span>
+
+<span class="nd">@migrate</span><span class="o">.</span><span class="n">command</span><span class="p">()</span>
+<span class="nd">@option</span><span class="p">(</span><span class="s2">&quot;--message&quot;</span><span class="p">,</span> <span class="n">required</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+<span class="nd">@async_to_sync</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">generate</span><span class="p">(</span><span class="n">message</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">):</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">AppConfig</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+    <span class="k">await</span> <span class="n">handle_generate</span><span class="p">(</span><span class="n">message</span><span class="o">=</span><span class="n">message</span><span class="p">)</span>
+
+<span class="nd">@migrate</span><span class="o">.</span><span class="n">command</span><span class="p">()</span>
+<span class="nd">@async_to_sync</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">apply</span><span class="p">():</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">AppConfig</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+    <span class="k">await</span> <span class="n">handle_apply</span><span class="p">()</span>
+
+<span class="nd">@migrate</span><span class="o">.</span><span class="n">command</span><span class="p">()</span>
+<span class="nd">@async_to_sync</span>
+<span class="k">async</span> <span class="k">def</span> <span class="nf">rollback</span><span class="p">():</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">AppConfig</span><span class="p">()</span>  <span class="c1"># type: ignore</span>
+    <span class="k">await</span> <span class="n">handle_rollback</span><span class="p">()</span>
+</code></pre></div>
+<p>Also modify your project's pyproject.toml file.</p>
+<div class="highlight"><span class="filename">pyproject.toml</span><pre><span></span><code><span class="k">[tool.poetry.scripts]</span>
+<span class="n">migrate</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;myapp.cli:migrate&quot;</span>
+</code></pre></div>
+<h3 id="generate">Generate</h3>
+<div class="highlight"><pre><span></span><code>$<span class="w"> </span>poetry<span class="w"> </span>run<span class="w"> </span>migrate<span class="w"> </span>generate<span class="w"> </span>--message<span class="w"> </span><span class="s2">&quot;Add author column to article&quot;</span>
+</code></pre></div>
+<p>Generate a migration file, to update the database schema to the ones defined in your code.</p>
+<h3 id="apply">Apply</h3>
+<div class="highlight"><pre><span></span><code>$<span class="w"> </span>poetry<span class="w"> </span>run<span class="w"> </span>migrate<span class="w"> </span>apply
+</code></pre></div>
+<p>Apply all migration files that have not been applied to the database.</p>
+<h3 id="rollback">Rollback</h3>
+<div class="highlight"><pre><span></span><code>$<span class="w"> </span>poetry<span class="w"> </span>run<span class="w"> </span>migrate<span class="w"> </span>rollback
+</code></pre></div>
+<p>Rollback the last migration that was applied to the database.</p>
+<h2 id="migration-files">Migration files</h2>
+<p>All data changes live in separate migration files. You can generate them through the Mountaineer CLI and modify them as you need to handle your data migrations.</p>
+<p>The goal of a migration file is to determine the goal database state (ie. what you current have in code). It then figures out how to transition the current database state to the new goal state. As such, before generating your migration file, make sure your local database has the same schema configuration as your production database. Otherwise your migration files might be incorrect and not apply properly.</p>
+<div class="highlight"><pre><span></span><code>poetry<span class="w"> </span>run<span class="w"> </span>migrate<span class="w"> </span>generate<span class="w"> </span>--message<span class="w"> </span><span class="s2">&quot;Add author column to article&quot;</span>
+</code></pre></div>
+<p>The created migration will be placed into <code>myapp/migrations</code> and include a unix timestamp of when the migration was created. Since most IDEs will sort directories by integer value, you can look towards the bottom of your migrations directory to see the most recent migration that will be run.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span> <span class="nn">mountaineer.migrations.migrator</span> <span class="kn">import</span> <span class="n">Migrator</span>
+<span class="kn">from</span> <span class="nn">mountaineer.migrations.migration</span> <span class="kn">import</span> <span class="n">MigrationRevisionBase</span>
+<span class="kn">from</span> <span class="nn">mountaineer.migrations.dependency</span> <span class="kn">import</span> <span class="n">MigrationDependencies</span>
+<span class="kn">from</span> <span class="nn">fastapi.param_functions</span> <span class="kn">import</span> <span class="n">Depends</span>
+
+<span class="k">class</span> <span class="nc">MigrationRevision</span><span class="p">(</span><span class="n">MigrationRevisionBase</span><span class="p">):</span>
+    <span class="n">up_revision</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;1715044020&quot;</span>
+    <span class="n">down_revision</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">up</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">migrator</span><span class="p">:</span> <span class="n">Migrator</span> <span class="o">=</span> <span class="n">Depends</span><span class="p">(</span><span class="n">MigrationDependencies</span><span class="o">.</span><span class="n">get_migrator</span><span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">await</span> <span class="n">migrator</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">add_not_null</span><span class="p">(</span>
+            <span class="n">table_name</span><span class="o">=</span><span class="s2">&quot;article&quot;</span><span class="p">,</span>
+            <span class="n">column_name</span><span class="o">=</span><span class="s2">&quot;author&quot;</span>
+        <span class="p">)</span>
+
+    <span class="k">async</span> <span class="k">def</span> <span class="nf">down</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">migrator</span><span class="p">:</span> <span class="n">Migrator</span> <span class="o">=</span> <span class="n">Depends</span><span class="p">(</span><span class="n">MigrationDependencies</span><span class="o">.</span><span class="n">get_migrator</span><span class="p">),</span>
+    <span class="p">):</span>
+        <span class="k">await</span> <span class="n">migrator</span><span class="o">.</span><span class="n">actor</span><span class="o">.</span><span class="n">drop_not_null</span><span class="p">(</span>
+            <span class="n">table_name</span><span class="o">=</span><span class="s2">&quot;article&quot;</span><span class="p">,</span>
+            <span class="n">column_name</span><span class="o">=</span><span class="s2">&quot;author&quot;</span>
+        <span class="p">)</span>
+</code></pre></div>
+<p>Let's break down the migration file that was just generated:</p>
+<p>There's an <code>up</code> function that covers the migration to the new application state. These are standard dependency injection functions, so you can use any dependency injector in your application if you want to inject other variables. By default we just supply the migrator: Migrator which is a shallow wrapper that provides a database session (with an open connection) alongside an actor object that includes some common migration recipes.</p>
+<p>The <code>down</code> function does the inverse. It takes the database state after your migration has been run and downgrades it to the last version. It's useful to have this specified in case you need to rollback your migration to conform to the previously deployed service. This often requires some care at considering how you can safely rollback your migration, perhaps through keeping temporary columns around inbetween migrations that you know you might have to rollback.</p>
+<p>The <code>up_revision</code> and <code>down_revision</code> are used to track the migration state. The <code>up_revision</code> is the timestamp of the migration file, and the <code>down_revision</code> is the timestamp of the previous migration file. If you don't have a down revision, it will be set to <code>None</code>. These will be injected into a dynamic "migration_info" table in your database to track the current state of your migrations.</p>
+<h2 id="extending-migration-files">Extending Migration Files</h2>
+<p>The <code>Migrator</code> object is a thin wrapper around the <code>DatabaseActions</code> object, which is a collection of common migration operations. If you need to perform a more complex migration operation, you can customize the logic by calling <code>migrator.actor</code> yourself. Head over to the <a href="../api/database/migrations/">DatabaseActions documentation</a> to see the full list of available migration operations.</p>
+<p>In addition to the actor, you can also access the underlying database session object. This is useful if you need to run raw SQL queries that aren't covered by the actor object.</p>
+<div class="highlight"><pre><span></span><code><span class="k">async</span> <span class="k">def</span> <span class="nf">up</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span>
+    <span class="n">migrator</span><span class="p">:</span> <span class="n">Migrator</span> <span class="o">=</span> <span class="n">Depends</span><span class="p">(</span><span class="n">MigrationDependencies</span><span class="o">.</span><span class="n">get_migrator</span><span class="p">),</span>
+<span class="p">):</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">migrator</span><span class="o">.</span><span class="n">db_session</span><span class="o">.</span><span class="n">exec</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM article&quot;</span><span class="p">)</span>
+</code></pre></div>
+<p>We recommend using the actor object whenever possible, as it provides a more consistent and safe way to run migrations. If you are using the raw database session object, be aware that we require migrations to be run in a single transaction. This ensures that if a migration fails, the database will be rolled back to its previous state. We therefore disable calling <code>db_session.commit()</code> explicitly from within user code.</p>
+<h2 id="alternatives">Alternatives</h2>
+<p>While the Mountaineer core authors only support its native migration workflow, since the database primitives build off of SQLModel/SQLAlchemy there are other options in the ecosystem for migration generation.</p>
+<p>The industry standard migration package for SQLAlchemy is Alembic, which is a powerful and robust file-based migration library. A quick list of pros and our perceived cons:</p>
+<p>Pros:</p>
+<ul>
+<li>Mature project with a large user base and extensive documentation.</li>
+<li>It has a rich feature set, including support for multiple database backends and complex migration operations.</li>
+</ul>
+<p>Cons:</p>
+<ul>
+<li>Non-trivial setup complexity with configuration files and a separate CLI.</li>
+<li>In steady state it's sometimes unclear what migration responsibility Alembic owns, versus what should be delegated to SQLAlchemy.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <div class="mountaineer-footer">
+    <center>Move fast. Climb mountains. Don't break things.</center>
+</div>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.07f07601.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.56dfad97.min.js"></script>
+      
+    
+  </body>
+</html>
