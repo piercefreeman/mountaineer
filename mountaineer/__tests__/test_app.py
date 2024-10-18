@@ -222,14 +222,14 @@ def test_inherit_parent_spec():
     )
 
     # Test that the controller definitions remain separate
-    assert parent_controller.definition
-    assert child_controller.definition
+    assert parent_controller._definition
+    assert child_controller._definition
 
-    assert parent_controller.definition.render_router
-    assert child_controller.definition.render_router
+    assert parent_controller._definition.render_router
+    assert child_controller._definition.render_router
 
-    parent_routes = parent_controller.definition.render_router.routes
-    child_routes = child_controller.definition.render_router.routes
+    parent_routes = parent_controller._definition.render_router.routes
+    child_routes = child_controller._definition.render_router.routes
 
     assert len(parent_routes) == 1
     assert parent_routes[0].path == "/parent"  # type: ignore

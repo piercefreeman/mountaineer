@@ -88,25 +88,25 @@ def passthrough(*args, **kwargs):  # type: ignore
     `JSONResponse` if you need full flexibility on return headers and content structure.
 
     If you do return a JSONResponse note that we will handle the merging of the response for you - so
-    on the client side you will still access your endpoint contents with:
+    on the client side you will still access your endpoint contents as `response.passthrough`.
 
-    ```typescript
-    const response = await serverState.my_action({});
-    console.log(response.passthrough);
+    ```typescript {{ sticky: True }}
+    const response = await serverState.my_action({
+        name: "John Appleseed",
+    });
+    console.log(response.passthrough.name);
     ```
 
-    Usage:
-
-    ```python
+    ```python {{ sticky: True }}
     from pydantic import BaseModel
 
     class ResponseModel(BaseModel):
-        pass
+        name: str
 
     class MyController(ControllerBase):
         @passthrough
-        async def my_action(self) -> ResponseModel:
-            ...
+        async def my_action(self, name: str) -> ResponseModel:
+            return ResponseModel(name=name)
     ```
 
     :param exception_models: List of APIException subclasses that this function is known

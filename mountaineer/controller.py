@@ -36,25 +36,104 @@ RenderInput = ParamSpec("RenderInput")
 
 
 class ControllerBase(ABC, Generic[RenderInput]):
+    """
+    One Controller should be created for every frontend page in your webapp. The controller
+    is where you place all logic that's necessary for this one page - the data that's pushed
+    from the frontend and the data that's received from the page.
+
+    All data from `render` is passed to the frontend and usable with automatically
+    generated typehints.
+
+    ```python {{sticky: True}}
+    from mountaineer import ControllerBase, RenderBase
+
+    class MyControllerRender(RenderBase):
+        value: int
+
+    class MyController(ControllerBase):
+        url = "/my-page"
+        view_path = "/app/my-page.tsx"
+
+        async def render(self) -> MyControllerRender:
+            return MyControllerRender(value=10)
+    ```
+
+    ```typescript {{sticky: True}}
+    import { useServer } from "./_server";
+
+    const MyPage = () => {
+        const serverState = useServer();
+        return <div>{serverState.value}</div>;
+    }
+
+    export default MyPage;
+    ```
+
+    """
+
     url: str
-    # Typically, view paths should be a relative path to the local
-    # Paths are only used if you need to specify an absolute path to another
-    # file on disk
+    """
+    The URL that this controller will be mounted at. This can contain dynamic
+    path parameters, e.g. `/user/{user_id}`. Each parameter will be passed to your
+    render function as a keyword argument, so this function would
+    have a signature like `async def render(self, user_id: str) -> RenderBase`.
+
+    """
+
     view_path: str | ManagedViewPath
+    """
+    Typically, view paths should be a relative path to the local project root.
+    Paths are only used if you need to specify an absolute path to another
+    file on disk.
 
-    bundled_scripts: list[str]
+    """
 
-    # Upon registration, the AppController will mount a wrapper
-    # with state metadata
-    definition: Optional["ControllerDefinition"] = None
+    _bundled_scripts: list[str]
+    """
+    Client static scripts that are identified at runtime. Intended
+    for internal use.
+
+    """
+
+    _definition: Optional["ControllerDefinition"] = None
+    """
+    Upon registration, the AppController will mount a wrapper
+    with state metadata. This is a back-reference to allow clients
+    to access the definition directly from the controller. Intended
+    for internal use.
+
+    """
+
+    slow_ssr_threshold: float
+    """
+    If a server-side rendering operation takes longer than this threshold,
+    we will log the time and path parameters as a warning to help debugging.
+
+    """
+
+    hard_ssr_timeout: float | None
+    """
+    If a server-side rendering operation takes longer than this threshold,
+    we will automatically kill the V8 runtime and return an error to the client.
+    This helps avoid blocking other server render handlers if the React render
+    logic hangs.
+
+    """
+
+    source_map: SourceMapParser | None
+    """
+    During development, we will load server-side source maps alongside the raw
+    javascript code. This parser controls converting stack traces from the
+    minified code to the original source code.
+
+    """
 
     def __init__(
         self, slow_ssr_threshold: float = 0.1, hard_ssr_timeout: float | None = 10.0
     ):
         """
-        One Controller should be created for every frontend page in your webapp. Clients can override
-        this `__init__` function so long as they call `super().__init__()` at the start of their init
-        to setup the internal handlers.
+        Clients can override this `__init__` function so long as they call `super().__init__()` at
+        the start of their init to setup the internal handlers.
 
         :param slow_ssr_threshold: Each python process has a single V8 runtime associated with
         it, so SSR rendering can become a bottleneck if it requires processing. We log a warning
@@ -65,15 +144,14 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         """
         # Injected by the build framework
-        self.bundled_scripts: list[str] = []
-        self.initialized = True
+        self._bundled_scripts: list[str] = []
         self.slow_ssr_threshold = slow_ssr_threshold
         self.hard_ssr_timeout = hard_ssr_timeout
         self.source_map: SourceMapParser | None = None
 
         # Set by the path resolution layer
-        self.view_base_path: Path | None = None
-        self.ssr_path: Path | None = None
+        self._view_base_path: Path | None = None
+        self._ssr_path: Path | None = None
 
         self.resolve_paths()
 
@@ -155,7 +233,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         :return: Whether we have found all necessary files and fully updated the controller state.
 
         """
-        if not force and self.view_base_path is not None:
+        if not force and self._view_base_path is not None:
             return False
 
         # Try to resolve the view base path from the global config
@@ -172,7 +250,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
             # Unable to resolve, no-op
             return False
 
-        self.view_base_path = view_base
+        self._view_base_path = view_base
 
         # We'll update this bool if we can't find any dependencies
         found_dependencies = True
@@ -180,7 +258,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # The SSR path is going to be static
         ssr_path = view_base / "_ssr" / f"{self.script_name}.js"
         if ssr_path.exists():
-            self.ssr_path = ssr_path
+            self._ssr_path = ssr_path
             ssr_map_path = ssr_path.with_suffix(".js.map")
             self.source_map = (
                 SourceMapParser(ssr_map_path) if ssr_map_path.exists() else None
@@ -191,15 +269,15 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # Find the md5-converted cache path
         md5_script_pattern = re_compile(self.script_name + "-" + "[a-f0-9]{32}" + ".js")
         if (view_base / "_static").exists():
-            self.bundled_scripts = [
+            self._bundled_scripts = [
                 path.name
                 for path in (view_base / "_static").iterdir()
                 if md5_script_pattern.match(path.name) and ".js.map" not in path.name
             ]
-            if not self.bundled_scripts:
+            if not self._bundled_scripts:
                 found_dependencies = False
             LOGGER.debug(
-                f"[{self.__class__.__name__}] Resolved paths... {self.bundled_scripts}"
+                f"[{self.__class__.__name__}] Resolved paths... {self._bundled_scripts}"
             )
         else:
             found_dependencies = False
@@ -208,4 +286,9 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     @property
     def script_name(self):
+        """
+        The short-hand name of the controller, used to resolve the SSR script and other dependencies
+        from disk.
+
+        """
         return underscore(self.__class__.__name__)

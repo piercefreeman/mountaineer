@@ -94,7 +94,68 @@ class AppController:
     """
 
     builders: list[ClientBuilderBase]
+
     global_metadata: Metadata | None
+    """
+    Metadata that's injected into every page. This is useful for setting
+    global stylesheets and scripts. It's also useful for setting fallback
+    metadata if it isn't overloaded by individual pages like setting a page title.
+
+    """
+
+    config: ConfigBase | None
+    """
+    The configuration object for the application. This is the main place
+    to place runtime configuration values that might be changed across
+    environments. One instance is registered as a global singleton and cached
+    within the AppController class as well.
+
+    """
+
+    app: FastAPI
+    """
+    Internal FastAPI application instance used by Mountaineer. Exposed to add
+    API-only endpoints and middleware.
+
+    """
+
+    fastapi_args: dict[str, Any] | None
+    """
+    Override or add additional arguments to the FastAPI constructor. See
+    the FastAPI [documentation](https://fastapi.tiangolo.com/reference/fastapi/) for
+    the attributes of this constructor.
+
+    """
+
+    live_reload_port: int
+    """
+    Port to use for live reloading of the webserver. This will be used to create a websocket connection
+    to the browser to trigger a reload when the frontend has updates. By default
+    we will bind to port 0 to guarantee an open system port.
+
+    """
+
+    controllers: list[ControllerDefinition]
+    """
+    Mounted controllers that are used to render the web application. Add
+    a new one through `.register()`.
+
+    """
+
+    internal_api_prefix: str
+    """
+    URL prefix used for the action APIs that are auto-generated through @passthrough
+    and @sideeffect decorators.
+
+    """
+
+    hierarchy_paths: dict[Path, LayoutElement]
+    """
+    Mapping of disk paths to file-system metadata about the controller. This internally
+    builds up a DAG of the layout hierarchy to be used for rendering nested
+    pages and layouts.
+
+    """
 
     def __init__(
         self,
@@ -107,32 +168,26 @@ class AppController:
         config: ConfigBase | None = None,
         fastapi_args: dict[str, Any] | None = None,
     ):
-        """
-        :param global_metadata: Script and meta will be applied to every
-            page rendered by this application. Title will only be applied
-            if the page does not already have a title set.
-        :param config: Application global configuration.
-
-        """
         self.app = FastAPI(title=name, version=version, **(fastapi_args or {}))
         self.controllers: list[ControllerDefinition] = []
-        self.controller_names: set[str] = set()
         self.name = name
         self.version = version
         self.global_metadata = global_metadata
         self.builders = custom_builders if custom_builders else []
 
+        self._controller_names: set[str] = set()
+
         # If this flag is present, we will re-raise this error during render()
         # so users can see the error in the browser.
         # This is useful for debugging, but should not be used in production
-        self.build_exception: Exception | None = None
+        self._build_exception: Exception | None = None
 
         # Follow our managed path conventions
         if config is not None and config.PACKAGE is not None:
             package_path = resolve_package_path(config.PACKAGE)
-            self.view_root = ManagedViewPath.from_view_root(package_path / "views")
+            self._view_root = ManagedViewPath.from_view_root(package_path / "views")
         elif view_root is not None:
-            self.view_root = ManagedViewPath.from_view_root(view_root)
+            self._view_root = ManagedViewPath.from_view_root(view_root)
         else:
             raise ValueError(
                 "You must provide either a config.package or a view_root to the AppController"
@@ -146,7 +201,7 @@ class AppController:
         self.internal_api_prefix = "/internal/api"
 
         # The static directory has to exist before we try to mount it
-        static_dir = self.view_root.get_managed_static_dir()
+        static_dir = self._view_root.get_managed_static_dir()
 
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
@@ -156,7 +211,7 @@ class AppController:
             name="static",
         )
 
-        self.app.exception_handler(APIException)(self.handle_exception)
+        self.app.exception_handler(APIException)(self._handle_exception)
 
         self.app.openapi = self.generate_openapi  # type: ignore
 
@@ -180,7 +235,7 @@ class AppController:
         # Since the controller name is used to build dependent files, we ensure
         # that we only register one controller of a given name
         controller_name = controller.__class__.__name__
-        if controller_name in self.controller_names:
+        if controller_name in self._controller_names:
             raise ValueError(
                 f"Controller with name {controller_name} already registered."
             )
@@ -219,7 +274,7 @@ class AppController:
                     continue
 
                 time = monotonic_ns()
-                render_values = self.get_value_mask_for_signature(
+                render_values = self._get_value_mask_for_signature(
                     signature(node.controller.render), kwargs
                 )
                 server_data = node.controller.render(**render_values)
@@ -268,7 +323,7 @@ class AppController:
                     controller_node.cached_server_script = (
                         mountaineer_rs.compile_independent_bundles(
                             view_paths,
-                            str(self.view_root / "node_modules"),
+                            str(self._view_root / "node_modules"),
                             "development",
                             0,
                             str(get_static_path("live_reload.ts").resolve().absolute()),
@@ -279,7 +334,7 @@ class AppController:
                     controller_node.cached_client_script = (
                         mountaineer_rs.compile_independent_bundles(
                             view_paths,
-                            str(self.view_root / "node_modules"),
+                            str(self._view_root / "node_modules"),
                             "development",
                             self.live_reload_port,
                             str(get_static_path("live_reload.ts").resolve().absolute()),
@@ -308,7 +363,7 @@ class AppController:
                     inline_client_script=None,
                     external_client_imports=[
                         f"/static/{script_name}"
-                        for script_name in controller.bundled_scripts
+                        for script_name in controller._bundled_scripts
                     ],
                 )
 
@@ -360,8 +415,8 @@ class AppController:
         # a proactive error if any view will be unable to render when their script files
         # are missing
         if self.config and self.config.ENVIRONMENT != "development":
-            controller.resolve_paths(self.view_root, force=True)
-            if not controller.bundled_scripts:
+            controller.resolve_paths(self._view_root, force=True)
+            if not controller._bundled_scripts:
                 raise ValueError(
                     f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
                 )
@@ -442,12 +497,12 @@ class AppController:
             url_prefix=controller_url_prefix,
             render_router=view_router,
         )
-        controller.definition = controller_definition
+        controller._definition = controller_definition
 
         self.controllers.append(controller_definition)
-        self.controller_names.add(controller_name)
+        self._controller_names.add(controller_name)
 
-        self.merge_hierarchy_signatures(controller_definition)
+        self._merge_hierarchy_signatures(controller_definition)
 
     def _view_hierarchy_for_controller(self, controller: ControllerBase):
         """
@@ -475,7 +530,7 @@ class AppController:
 
         return controller_node, direct_hierarchy
 
-    def merge_hierarchy_signatures(self, controller_definition: ControllerDefinition):
+    def _merge_hierarchy_signatures(self, controller_definition: ControllerDefinition):
         # We should:
         # Update _this_ controller with anything in the above hierarchy (known layout controllers)
         # Update _child_ controller with this view (in the case that this definition is
@@ -591,6 +646,11 @@ class AppController:
         inline_client_script: str | None = None,
         external_client_imports: list[str] | None = None,
     ):
+        """
+        Compiles the HTML for a given page, with all the controller-returned
+        values hydrated into the page.
+
+        """
         # header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
         if page_metadata.metadata:
             metadata = page_metadata.metadata
@@ -737,7 +797,7 @@ class AppController:
 
         return view_element
 
-    async def handle_exception(self, request: Request, exc: APIException):
+    async def _handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.internal_model.model_dump(),
@@ -808,7 +868,7 @@ class AppController:
             )
             self.app.include_router(target_controller.render_router)
 
-    def get_value_mask_for_signature(
+    def _get_value_mask_for_signature(
         self,
         signature: Signature,
         values: dict[str, Any],
@@ -959,7 +1019,7 @@ class AppController:
         else:
             return schema
 
-    def definition_for_controller(
+    def _definition_for_controller(
         self, controller: ControllerBase
     ) -> ControllerDefinition:
         for controller_definition in self.controllers:
