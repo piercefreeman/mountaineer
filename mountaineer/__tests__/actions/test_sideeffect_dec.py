@@ -322,7 +322,7 @@ def test_limit_codepath_experimental(
     controller = ExampleController()
     app.register(controller)
 
-    controller_definition = app.definition_for_controller(controller)
+    controller_definition = app._definition_for_controller(controller)
     sideeffect_url = controller_definition.get_url_for_metadata(
         get_function_metadata(ExampleController.call_sideeffect)
     )

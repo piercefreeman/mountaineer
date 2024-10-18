@@ -79,6 +79,34 @@ def sideeffect(*args, **kwargs):  # type: ignore
     on return headers and content structure. Unlike @passthrough, it does not allow you to provide a non-JSON response since we need
     to internally merge it with render() sideeffect update.
 
+    ```python {{sticky: True}}
+    from mountaineer import sideeffect, RenderBase, ControllerBase, Depends
+    from iceaxe import DBConnection, select
+    from iceaxe.mountaineer import DatabaseDependencies
+
+    from myapp import models
+
+    class ControllerRender(RenderBase):
+        count: str
+
+    class MyController(ControllerBase):
+        async def render(
+            self,
+            db_connection: DBConnection = Depends(DatabaseDependencies.get_db_connection),
+        ) -> ControllerRender:
+            elements = await db_connection.exec(select(models.MyModel.id))
+            return ControllerRender(count=len(elements))
+
+        @sideeffect
+        async def increment_count(
+            self,
+            db_connection: DBConnection = Depends(DatabaseDependencies.get_db_connection),
+        ) -> None:
+            new_model = models.MyModel()
+            await db_connection.insert([new_model])
+
+    ```
+
     :param exception_models: List of APIException subclasses that this function is known
         to throw. These will be parsed and available to frontend clients.
     :type exception_models: list[Type[APIException]] | None
@@ -260,7 +288,7 @@ async def get_render_parameters(
         }
     )
 
-    if not controller.definition:
+    if not controller._definition:
         raise RuntimeError(
             "Controller definition is not set. This might indicate you're calling a"
             " sideeffect from outside of an AppController context."
@@ -272,8 +300,8 @@ async def get_render_parameters(
     # match non-relevant paths.
     # https://github.com/encode/starlette/blob/5c43dde0ec0917673bb280bcd7ab0c37b78061b7/starlette/routing.py#L544
     for route in (
-        controller.definition.render_router.routes
-        if controller.definition.render_router is not None
+        controller._definition.render_router.routes
+        if controller._definition.render_router is not None
         else []
     ):
         match, child_scope = route.matches(view_request.scope)

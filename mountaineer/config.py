@@ -43,6 +43,16 @@ APP_CONFIG: ConfigBase | None = None
 
 
 def register_config(config: ConfigBase):
+    """
+    Manually register a configuration instance into the global space. Each application
+    can have a maximum of one configuration instance registered. If you attempt to
+    register a second instance, an error will be thrown.
+
+    Registration should happen automatically by initializing a new instance of your
+    ConfigBase class on application start. This auto-registration is provided by
+    the configuration's metaclass in ConfigMeta.
+
+    """
     global APP_CONFIG
 
     if APP_CONFIG is not None and APP_CONFIG != config:
@@ -52,11 +62,20 @@ def register_config(config: ConfigBase):
 
 
 def unregister_config():
+    """
+    Unregister the current configuration instance.
+
+    """
     global APP_CONFIG
     APP_CONFIG = None
 
 
 def get_config() -> ConfigBase:
+    """
+    Get the current configuration instance that's registered globally. Will
+    throw an error if no configuration instance is registered.
+
+    """
     if APP_CONFIG is None:
         raise ValueError(
             "Configuration not registered. Either:\n"
@@ -72,6 +91,7 @@ def register_config_in_context(config: ConfigBase):
     """
     Change the global config object to the given config object
     temporarily. Useful for unit testing.
+
     """
     global APP_CONFIG
     previous_config = APP_CONFIG

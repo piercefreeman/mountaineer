@@ -78,6 +78,18 @@ class HashableAttribute(BaseModel):
 
 
 class MetaAttribute(HashableAttribute, BaseModel):
+    """
+    Represents a meta tag that can be included in the head of an HTML document.
+
+    ```python {{ sticky: True }}
+    MetaAttribute(
+        name="description",
+        content="This is a description of the page.",
+        optional_attributes={"lang": "en"},
+    )
+    ```
+
+    """
     name: str | None = None
     content: str | None = None
     optional_attributes: dict[str, str] = {}
@@ -87,7 +99,7 @@ class ThemeColorMeta(MetaAttribute):
     """
     Customizes the default color that is attached to the page.
 
-    ```python
+    ```python {{ sticky: True }}
     ThemeColorMeta(
         color="white",
         media="light",
@@ -112,7 +124,7 @@ class ViewportMeta(MetaAttribute):
     """
     Defines the bounds on the current page and how much users are able to zoom.
 
-    ```python
+    ```python {{ sticky: True }}
     ViewportMeta(
         initial_scale=1.0,
         maximum_scale=2.0,
@@ -137,12 +149,37 @@ class ViewportMeta(MetaAttribute):
 
 
 class LinkAttribute(HashableAttribute, BaseModel):
+    """
+    Inject a generic <link> tag into the <head> of the current page.
+
+    ```python {{ sticky: True }}
+    LinkAttribute(
+        rel="stylesheet",
+        href="https://example.com/styles.css",
+        optional_attributes={"media": "screen"},
+    )
+    ```
+
+    """
     rel: str
     href: str
     optional_attributes: dict[str, str] = {}
 
 
 class ScriptAttribute(HashableAttribute, BaseModel):
+    """
+    Inject a generic <script> tag into the <head> of the current page.
+
+    ```python {{ sticky: True }}
+    ScriptAttribute(
+        src="https://example.com/script.js",
+        asynchronous=True,
+        optional_attributes={"defer": "true"},
+        defer=False,
+    )
+    ```
+
+    """
     src: str
     asynchronous: bool = False
     defer: bool = False
@@ -153,7 +190,37 @@ class Metadata(BaseModel):
     """
     Metadata lets the client specify the different metadata definitions that should
     appear on the current page. These are outside the scope of React management so are
-    only handled once on the initial page render.
+    only handled once on the initial page render. But because they still receive the initial
+    render request, you can add any dynamic logic that you want to customize the behavior
+    of the page metadata. This includes templating the page title depending on a remote value,
+    modifying the scripts injected depending on the user, etc.
+
+    ```python {{ sticky: True }}
+    class MyController(Controller):
+        async def render(
+            self,
+            user_name: str,
+        ):
+            return MyControllerRender(
+                metadata=Metadata(
+                    title=f"Welcome, {user_name}!",
+                )
+            )
+    ```
+
+    ```python {{ sticky: True }}
+    Metadata(
+        title="My Page",
+        metas=[
+            MetaAttribute(...),
+            ThemeColorMeta(...),
+            ViewportMeta(...),
+        ],
+        links=[
+            LinkAttribute(...),
+        ]
+    )
+    ```
 
     """
 
