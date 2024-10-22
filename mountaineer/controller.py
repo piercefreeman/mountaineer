@@ -64,6 +64,8 @@ class ControllerBase(ABC, Generic[RenderInput]):
         avoiding blocking the reset of the server process if the React render logic hangs.
 
         """
+        super().__init__()
+
         # Injected by the build framework
         self.bundled_scripts: list[str] = []
         self.initialized = True
