@@ -1,0 +1,68 @@
+.md-typeset {
+    font-size: 16px !important;
+    color: rgb(53, 64, 78);
+}
+
+.md-header {
+    background-color: #FFFFFF;
+    color: rgb(53, 64, 78);
+    border-bottom: 1px solid #f3f3f3;
+}
+
+.md-search__input {
+    border-radius: 4px;
+    background-color: #FFFFFF;
+    outline: 1px solid #DDDDDD;
+}
+
+.md-search__icon .md-icon {
+    color: #CCCCCC;
+}
+
+.md-search__output, .md-nav__title {
+    box-shadow: none !important;
+}
+
+.md-search__input::placeholder {
+    color: rgb(53, 64, 78);
+}
+
+.md-header--shadow {
+    box-shadow: none;
+}
+
+.md-main__inner.md-grid {
+    margin-top: 0px !important;
+}
+
+.md-content__inner, .md-sidebar {
+    margin-top: 20px;
+}
+
+.md-content {
+    border-left: 1px solid #f3f3f3 !important;
+    border-right: 1px solid #f3f3f3 !important;
+}
+
+/*.md-sidebar--primary ul li a {
+    padding: 2px 10px;
+    border-radius: 4px;
+}
+
+.md-sidebar--primary ul li a.md-nav__link--active {
+    background: #3b82f6;
+    color: #FFFFFF;
+}
+
+.md-sidebar--primary ul li a.md-nav__link--active:hover {
+    background: #3b82f6;
+    color: #FFFFFF;
+    }*/
+
+.mountaineer-footer {
+    background-color: #FFFFFF;
+    color: rgb(53, 64, 78);
+    border-top: 1px solid #f3f3f3;
+    font-size: 16px;
+    padding: 20px;
+}
