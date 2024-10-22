@@ -163,7 +163,19 @@ class ManagedViewPath(type(Path())):  # type: ignore
         path.package_root_link = self.package_root_link
         return path
 
-    if sys.version_info >= (3, 12):
+    if sys.version_info >= (3, 13):
+
+        def rglob(
+            self,
+            pattern: str,
+            *,
+            case_sensitive: bool | None = None,
+            recurse_symlinks: bool = False,
+        ):
+            for path in super().rglob(pattern, case_sensitive=case_sensitive):
+                yield self._inherit_root_link(path)
+
+    elif sys.version_info >= (3, 12):
 
         def rglob(self, pattern: str, *, case_sensitive: bool | None = None):
             for path in super().rglob(pattern, case_sensitive=case_sensitive):

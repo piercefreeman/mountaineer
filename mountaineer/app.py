@@ -591,15 +591,18 @@ class AppController:
         inline_client_script: str | None = None,
         external_client_imports: list[str] | None = None,
     ):
-        # header_str = "\n".join(self._build_header(self._merge_metadatas(metadatas)))
+        header_str: str
         if page_metadata.metadata:
             metadata = page_metadata.metadata
             if not metadata.ignore_global_metadata and self.global_metadata:
                 metadata = metadata.merge(self.global_metadata)
             header_str = "\n".join(metadata.build_header())
-
         else:
-            header_str = ""
+            if self.global_metadata:
+                metadata = self.global_metadata
+                header_str = "\n".join(metadata.build_header())
+            else:
+                header_str = ""
 
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = {
