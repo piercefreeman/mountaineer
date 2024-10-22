@@ -86,7 +86,7 @@ class OpenAPIProperty(BaseModel):
     # Self-contained type: object, int, etc
     variable_type: OpenAPISchemaType | None = Field(alias="type", default=None)
     # Reference to another type
-    ref: str | None = Field(alias="$ref", default=None)
+    ref: str | None = Field(alias="$ref", default=None)  # type: ignore
     # Array of another type
     items: Union["OpenAPIProperty", EmptyAPIProperty, None] = None
     # Enum type
@@ -177,7 +177,7 @@ class OpenAPIProperty(BaseModel):
 
 class ContentDefinition(BaseModel):
     class Reference(BaseModel):
-        ref: str | None = Field(default=None, alias="$ref")
+        ref: str | None = Field(default=None, alias="$ref")  # type: ignore
 
         model_config = {"populate_by_name": True}
 
@@ -309,7 +309,7 @@ class OpenAPISchema(OpenAPIProperty):
 
     """
 
-    defs: dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)
+    defs: dict[str, OpenAPIProperty] = Field(alias="$defs", default_factory=dict)  # type: ignore
 
 
 class OpenAPIDefinition(BaseModel):
