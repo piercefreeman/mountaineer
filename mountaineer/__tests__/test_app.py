@@ -94,6 +94,7 @@ def test_generate_openapi():
     openapi_spec = app.generate_openapi()
     openapi_definition = OpenAPIDefinition(**openapi_spec)
 
+    assert openapi_definition.components.schemas
     assert openapi_definition.components.schemas.keys() == {
         "TestExceptionActionResponse",
         "ExampleException",
@@ -157,6 +158,7 @@ def test_handle_conflicting_exception_names():
     openapi_spec = app.generate_openapi()
     openapi_definition = OpenAPIDefinition(**openapi_spec)
 
+    assert openapi_definition.components.schemas
     assert openapi_definition.components.schemas.keys() == {
         "TestExceptionActionResponse",
         "mountaineer.__tests__.test_1.ExampleException",

@@ -132,6 +132,15 @@ class OpenAPIToTypescriptActionConverter:
         typehint_dict: dict[Any, Any] = {}
         request_types: list[str] = []
 
+        # All system parameters are optional, to allow users to call simple
+        # functions with no parameters
+        system_parameters = {
+            "signal": TSLiteral("signal"),
+        }
+        system_typehints = {
+            TSLiteral("signal?"): TSLiteral("AbortSignal"),
+        }
+
         for parameter in action.parameters:
             typehint_key, typehint_value = get_typehint_for_parameter(parameter)
             if parameter.in_location in {
@@ -155,14 +164,16 @@ class OpenAPIToTypescriptActionConverter:
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
             request_types.append(model_name)
 
-        if not parameters_dict:
-            # Empty query parameter
-            return "", request_types
+        # Merge in the system parameters
+        parameters_dict = {**parameters_dict, **system_parameters}
+        typehint_dict = {**typehint_dict, **system_typehints}
 
         parameters_str = python_payload_to_typescript(parameters_dict)
         typehint_str = python_payload_to_typescript(typehint_dict)
 
-        return f"{parameters_str}: {typehint_str}", request_types
+        # Default any unprovided value set to an empty object, in order
+        # to enable a no-requestbody function to be called with no arguments
+        return f"{parameters_str}: {typehint_str} = {{}}", request_types
 
     def build_action_payload(self, url: str, action: ActionDefinition):
         # Since our typescript common functions have variable inputs here, it's cleaner
@@ -175,6 +186,7 @@ class OpenAPIToTypescriptActionConverter:
             "path": {},
             "query": {},
             "errors": {},
+            "signal": TSLiteral("signal"),
         }
 
         if action.requestBody is not None:
