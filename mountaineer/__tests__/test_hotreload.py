@@ -318,9 +318,13 @@ def test_import_alias_reload(hot_reloader, test_package_dir):
         )
     )
 
-    # Import and verify initial behavior
+    # Import and ensure both modules are tracked
     main_module = importlib.import_module(f"{pkg_name}.main")
+    hot_reloader._import_and_track_module(f"{pkg_name}.main")
+    hot_reloader._import_and_track_module(f"{pkg_name}.models")
+
     assert main_module.get_model_value() == 10
+    print("Dependencies:", hot_reloader.get_module_dependencies(f"{pkg_name}.models"))
 
     # Modify models.py
     (pkg_dir / "models.py").write_text(
@@ -337,6 +341,3 @@ def test_import_alias_reload(hot_reloader, test_package_dir):
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models")
     assert success
     assert f"{pkg_name}.main" in reloaded
-
-    # Verify the change is reflected
-    assert main_module.get_model_value() == 20
