@@ -98,12 +98,21 @@ def test_preserve_object_state(hot_reloader, test_package_dir):
 def test_inheritance_changes(hot_reloader, test_package_dir):
     """Test inheritance changes."""
     pkg_dir, pkg_name = test_package_dir
+
+    # Import child first to establish initial inheritance
+    child_module = importlib.import_module(f"{pkg_name}.child")
+    initial_child = child_module.ChildClass()
+    assert initial_child.get_value() == 10
+
+    # Modify base with new intermediate class
     (pkg_dir / "base.py").write_text(
         textwrap.dedent(
             """
         class BaseClass:
+            def __init__(self):
+                self.value = 10
             def get_value(self):
-                return 10
+                return self.value
         class IntermediateClass(BaseClass):
             def get_intermediate_value(self):
                 return 15
@@ -115,9 +124,14 @@ def test_inheritance_changes(hot_reloader, test_package_dir):
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
     assert success
 
-    importlib.import_module(f"{pkg_name}.base")
+    # Verify both inheritance relationships
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
-    assert base_deps["subclasses"] == {"BaseClass": {"IntermediateClass"}}
+    assert base_deps["subclasses"] == {"BaseClass": {"IntermediateClass", "ChildClass"}}
+
+    # Verify child still works
+    child_module = importlib.import_module(f"{pkg_name}.child")
+    new_child = child_module.ChildClass()
+    assert new_child.get_value() == 10
 
 
 def test_cyclic_dependencies(hot_reloader, test_package_dir):
@@ -341,3 +355,122 @@ def test_import_alias_reload(hot_reloader, test_package_dir):
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models")
     assert success
     assert f"{pkg_name}.main" in reloaded
+
+def test_package_structure_scanning(hot_reloader, test_package_dir):
+    """Test package structure scanning with nested directories."""
+    pkg_dir, pkg_name = test_package_dir
+
+    # Create nested package structure
+    nested_dir = pkg_dir / "nested"
+    nested_dir.mkdir()
+    (nested_dir / "__init__.py").write_text("")
+    (nested_dir / "module.py").write_text("""
+class NestedClass:
+    pass
+""")
+
+    sub_nested = nested_dir / "subnested"
+    sub_nested.mkdir()
+    (sub_nested / "__init__.py").write_text("""
+class SubNestedInit:
+    pass
+""")
+
+    # Force rescan
+    hot_reloader._scan_package_structure()
+
+    # Verify modules are tracked
+    assert f"{pkg_name}.nested.module" in hot_reloader.dependency_graph
+    assert f"{pkg_name}.nested" in hot_reloader.dependency_graph
+    assert f"{pkg_name}.nested.subnested" in hot_reloader.dependency_graph
+
+def test_inheritance_tree_building(hot_reloader, test_package_dir):
+    """Test inheritance tree building with complex inheritance."""
+    pkg_dir, pkg_name = test_package_dir
+
+    # Create a hierarchy of classes
+    (pkg_dir / "base.py").write_text("""
+class BaseClass:
+    pass
+
+class AnotherBase:
+    pass
+""")
+
+    (pkg_dir / "middle.py").write_text(f"""
+from {pkg_name}.base import BaseClass, AnotherBase
+
+class MiddleClass(BaseClass):
+    pass
+
+class MultipleInheritance(BaseClass, AnotherBase):
+    pass
+""")
+
+    (pkg_dir / "leaf.py").write_text(f"""
+from {pkg_name}.middle import MiddleClass
+
+class LeafClass(MiddleClass):
+    pass
+""")
+
+    hot_reloader._scan_package_structure()
+
+    # Verify inheritance relationships
+    base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
+    middle_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.middle")
+    leaf_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.leaf")
+
+    assert "MiddleClass" in base_deps["subclasses"]["BaseClass"]
+    assert "MultipleInheritance" in base_deps["subclasses"]["BaseClass"]
+    assert "MultipleInheritance" in base_deps["subclasses"]["AnotherBase"]
+    assert "LeafClass" in middle_deps["subclasses"]["MiddleClass"]
+    assert leaf_deps["superclasses"]["LeafClass"] == {"MiddleClass"}
+
+def test_package_structure_excluded_dirs(hot_reloader, test_package_dir):
+    """Test that certain directories are excluded from scanning."""
+    pkg_dir, pkg_name = test_package_dir
+
+    # Create directories that should be excluded
+    (pkg_dir / ".hidden").mkdir()
+    (pkg_dir / ".hidden" / "module.py").write_text("class Hidden: pass")
+
+    (pkg_dir / "__pycache__").mkdir()
+    (pkg_dir / "__pycache__" / "cached.py").write_text("class Cached: pass")
+
+    hot_reloader._scan_package_structure()
+
+    # Verify excluded modules aren't tracked
+    for module in hot_reloader.dependency_graph:
+        assert not module.endswith("Hidden")
+        assert not module.endswith("Cached")
+
+def test_inheritance_tree_module_updates(hot_reloader, test_package_dir):
+    """Test inheritance tree updates when modules change."""
+    pkg_dir, pkg_name = test_package_dir
+
+    # Initial class structure
+    (pkg_dir / "dynamic.py").write_text(f"""
+from {pkg_name}.base import BaseClass
+
+class DynamicClass(BaseClass):
+    pass
+""")
+
+    hot_reloader._scan_package_structure()
+    base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
+    assert "DynamicClass" in base_deps["subclasses"]["BaseClass"]
+
+    # Update inheritance
+    (pkg_dir / "dynamic.py").write_text("""
+class DynamicClass:  # No longer inherits from BaseClass
+    pass
+""")
+
+    time.sleep(0.1)
+    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.dynamic")
+    assert success
+
+    # Verify inheritance is updated
+    base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
+    assert "DynamicClass" not in base_deps["subclasses"].get("BaseClass", set())

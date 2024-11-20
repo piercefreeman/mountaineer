@@ -1,9 +1,9 @@
 import ast
-from enum import Enum
 import importlib
 import inspect
 import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -39,14 +39,18 @@ class HotReloader:
         self.dependency_graph: Dict[str, DependencyNode] = {}
         self.module_cache: Dict[str, ModuleType] = {}
 
-        package_init = package_path / "__init__.py"
-        if package_init.exists():
-            self.dependency_graph[root_package] = DependencyNode(
-                module_name=root_package,
-                file_path=package_init,
-                last_modified=package_init.stat().st_mtime,
-            )
-            self.module_cache[root_package] = importlib.import_module(root_package)
+        # package_init = package_path / "__init__.py"
+        # if package_init.exists():
+        #     self.dependency_graph[root_package] = DependencyNode(
+        #         module_name=root_package,
+        #         file_path=package_init,
+        #         last_modified=package_init.stat().st_mtime,
+        #     )
+        #     self.module_cache[root_package] = importlib.import_module(root_package)
+
+        self._scan_package_structure()
+
+        print("DEPENDENCIES", self.dependency_graph)
 
     def _track_imports(self, module_path: Path, node: DependencyNode) -> None:
         try:
@@ -62,16 +66,22 @@ class HotReloader:
                             node.imports.add(name.name)
                             self._ensure_module_loaded(name.name)
                             if name.name in self.dependency_graph:
-                                self.dependency_graph[name.name].imported_by.add(node.module_name)
+                                self.dependency_graph[name.name].imported_by.add(
+                                    node.module_name
+                                )
 
                 elif isinstance(ast_node, ast.ImportFrom):
-                    if ast_node.module and ast_node.module.startswith(self.root_package):
+                    if ast_node.module and ast_node.module.startswith(
+                        self.root_package
+                    ):
                         # Track the module itself
                         logger.debug(f"Found module import: {ast_node.module}")
                         node.imports.add(ast_node.module)
                         self._ensure_module_loaded(ast_node.module)
                         if ast_node.module in self.dependency_graph:
-                            self.dependency_graph[ast_node.module].imported_by.add(node.module_name)
+                            self.dependency_graph[ast_node.module].imported_by.add(
+                                node.module_name
+                            )
 
                         # Track specific imports
                         for name in ast_node.names:
@@ -79,17 +89,21 @@ class HotReloader:
                                 full_import = f"{ast_node.module}.{name.name}"
                             else:
                                 module_parts = node.module_name.split(".")
-                                relative_path = module_parts[:-ast_node.level]
+                                relative_path = module_parts[: -ast_node.level]
                                 full_import = f"{'.'.join(relative_path)}.{name.name}"
 
                             logger.debug(f"Found from import: {full_import}")
                             node.imports.add(full_import)
                             self._ensure_module_loaded(full_import)
                             if full_import in self.dependency_graph:
-                                self.dependency_graph[full_import].imported_by.add(node.module_name)
+                                self.dependency_graph[full_import].imported_by.add(
+                                    node.module_name
+                                )
 
         except Exception as e:
-            logger.error(f"Failed to parse imports for {module_path}: {e}", exc_info=True)
+            logger.error(
+                f"Failed to parse imports for {module_path}: {e}", exc_info=True
+            )
             raise
 
     def _ensure_module_loaded(self, module_name: str) -> None:
@@ -97,11 +111,7 @@ class HotReloader:
             self._import_and_track_module(module_name)
 
     def _import_and_track_module(self, module_name: str) -> Optional[ModuleType]:
-        logger.debug(f"Importing and tracking module: {module_name}")
         try:
-            if module_name in self.module_cache:
-                return self.module_cache[module_name]
-
             module_parts = module_name.split(".")
             if len(module_parts) > 1:
                 relative_path = Path(*module_parts[1:])
@@ -112,6 +122,7 @@ class HotReloader:
             if not module_path.exists():
                 return None
 
+            # Create/update node first
             if module_name not in self.dependency_graph:
                 node = DependencyNode(
                     module_name=module_name,
@@ -121,31 +132,16 @@ class HotReloader:
                 self.dependency_graph[module_name] = node
             else:
                 node = self.dependency_graph[module_name]
+                node.subclasses.clear()
+                node.superclasses.clear()
 
-            self._track_imports(module_path, node)
-
+            # Load module first
             module = importlib.import_module(module_name)
             self.module_cache[module_name] = module
 
-            for name, obj in inspect.getmembers(module, inspect.isclass):
-                if not obj.__module__.startswith(self.root_package):
-                    continue
-
-                for base in obj.__bases__:
-                    if base.__module__.startswith(self.root_package):
-                        base_module = base.__module__
-                        base_name = base.__name__
-
-                        if base_module in self.dependency_graph:
-                            base_node = self.dependency_graph[base_module]
-                            if base_name not in base_node.subclasses:
-                                base_node.subclasses[base_name] = set()
-                            base_node.subclasses[base_name].add(name)
-
-                        if name not in node.superclasses:
-                            node.superclasses[name] = {base_name}
-                        else:
-                            node.superclasses[name].add(base_name)
+            # Now track imports and inheritance
+            self._track_imports(module_path, node)
+            self._update_inheritance_relationships(module_name)
 
             return module
 
@@ -154,6 +150,34 @@ class HotReloader:
             if module_name in self.dependency_graph:
                 del self.dependency_graph[module_name]
             return None
+
+    def _update_inheritance_relationships(self, module_name: str) -> None:
+        """Update inheritance relationships for a module after it's loaded."""
+        if module_name not in self.module_cache:
+            return
+
+        module = self.module_cache[module_name]
+        node = self.dependency_graph[module_name]
+
+        for name, obj in inspect.getmembers(module, inspect.isclass):
+            if not obj.__module__.startswith(self.root_package):
+                continue
+
+            for base in obj.__bases__:
+                if base.__module__.startswith(self.root_package):
+                    base_module = base.__module__
+                    base_name = base.__name__
+
+                    if base_module in self.dependency_graph:
+                        base_node = self.dependency_graph[base_module]
+                        if base_name not in base_node.subclasses:
+                            base_node.subclasses[base_name] = set()
+                        base_node.subclasses[base_name].add(name)
+
+                    if name not in node.superclasses:
+                        node.superclasses[name] = {base_name}
+                    else:
+                        node.superclasses[name].add(base_name)
 
     def _get_affected_modules(self, changed_module: str) -> Set[str]:
         affected = {changed_module}
@@ -314,3 +338,71 @@ class HotReloader:
             "subclasses": node.subclasses,
             "superclasses": node.superclasses,
         }
+
+    def _scan_package_structure(self) -> None:
+        """Recursively scan the package directory to build initial dependency graph."""
+        logger.debug(f"Starting deep package scan at {self.package_path}")
+
+        def scan_directory(directory: Path) -> None:
+            for item in directory.iterdir():
+                if item.is_file() and item.suffix == ".py":
+                    module_parts = (
+                        item.relative_to(self.package_path).with_suffix("").parts
+                    )
+                    if item.name == "__init__.py":
+                        if len(module_parts) > 0:
+                            module_name = (
+                                f"{self.root_package}.{'.'.join(module_parts[:-1])}"
+                            )
+                        else:
+                            module_name = self.root_package
+                    else:
+                        module_name = f"{self.root_package}.{'.'.join(module_parts)}"
+
+                    logger.debug(f"Found module: {module_name} at {item}")
+                    self._import_and_track_module(module_name)
+
+                elif (
+                    item.is_dir()
+                    and not item.name.startswith(".")
+                    and not item.name == "__pycache__"
+                ):
+                    init_file = item / "__init__.py"
+                    if init_file.exists():
+                        scan_directory(item)
+
+        scan_directory(self.package_path)
+        self._build_inheritance_tree()
+
+    def _build_inheritance_tree(self) -> None:
+        """Build complete inheritance relationships after all modules are loaded."""
+        for module_name, module in self.module_cache.items():
+            for name, obj in inspect.getmembers(module, inspect.isclass):
+                if obj.__module__.startswith(self.root_package):
+                    for base in obj.__bases__:
+                        if base.__module__.startswith(self.root_package):
+                            # Track subclass relationship
+                            base_module = base.__module__
+                            if base_module in self.dependency_graph:
+                                if (
+                                    base.__name__
+                                    not in self.dependency_graph[base_module].subclasses
+                                ):
+                                    self.dependency_graph[base_module].subclasses[
+                                        base.__name__
+                                    ] = set()
+                                self.dependency_graph[base_module].subclasses[
+                                    base.__name__
+                                ].add(obj.__name__)
+
+                            # Track superclass relationship
+                            if (
+                                obj.__name__
+                                not in self.dependency_graph[module_name].superclasses
+                            ):
+                                self.dependency_graph[module_name].superclasses[
+                                    obj.__name__
+                                ] = set()
+                            self.dependency_graph[module_name].superclasses[
+                                obj.__name__
+                            ].add(base.__name__)
