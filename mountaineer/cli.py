@@ -1,14 +1,12 @@
 import asyncio
-import importlib
-import sys
 from hashlib import md5
+import importlib
 from multiprocessing import get_start_method, set_start_method
-from os import environ
+import os
 from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
-from time import sleep, time
-from traceback import format_exc
+from time import time
 from typing import Callable
 
 from inflection import underscore
@@ -16,13 +14,12 @@ from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.app_manager import HotReloadManager, find_packages_with_prefix
-from mountaineer.cache import LRUCache
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
+from mountaineer.hotreload import HotReloader
 from mountaineer.logging import LOGGER
-from mountaineer.ssr import render_ssr
 from mountaineer.static import get_static_path
 from mountaineer.watch import (
     CallbackDefinition,
@@ -94,6 +91,354 @@ def handle_watch(
     watchdog.start_watching()
 
 
+# def handle_runserver(
+#     *,
+#     package: str,
+#     webservice: str,
+#     webcontroller: str,
+#     host: str = "127.0.0.1",
+#     port: int,
+#     subscribe_to_mountaineer: bool = False,
+# ):
+#     """
+#     Start a local development server. This will hot-reload your browser any time
+#     your frontend or backend code changes.
+
+#     :param package: Ex. "ci_webapp"
+#     :param webservice: Ex. "ci_webapp.app:app"
+#     :param webcontroller: Ex. "ci_webapp.app:controller"
+#     :param port: Desired port for the webapp while running locally
+#     :param subscribe_to_mountaineer: See `handle_watch` for more details.
+
+#     """
+#     update_multiprocessing_settings()
+#     rich_traceback_install()
+
+#     # The global cache will let us keep cache files warm across
+#     # different builds
+#     global_build_cache = Path(mkdtemp())
+
+#     # Start the webservice - it should persist for the lifetime of the
+#     # runserver, so a single websocket frontend can be notified across
+#     # multiple builds
+#     start = time()
+#     watcher_webservice = WatcherWebservice(webservice_host=host)
+#     watcher_webservice.start()
+
+#     app_manager = HotReloadManager.from_webcontroller(
+#         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
+#     )
+#     LOGGER.debug(f"Initial load of {webcontroller} complete.")
+
+#     js_compiler = ClientBuilder(
+#         app_manager.app_controller,
+#         live_reload_port=watcher_webservice.port,
+#         build_cache=global_build_cache,
+#     )
+#     asyncio.run(js_compiler.build_all())
+
+#     app_compiler = ClientCompiler(
+#         app=app_manager.app_controller,
+#         view_root=app_manager.app_controller.view_root,
+#     )
+#     asyncio.run(app_compiler.run_builder_plugins())
+
+#     # Start the initial thread
+#     app_manager.restart_server()
+#     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
+
+#     # Now that we've started the server for the first time, any additional reloads
+#     # must be hot-reloaded
+#     environ["MOUNTAINEER_HOT_RELOADING"] = "1"
+
+#     def update_build(metadata: CallbackMetadata):
+#         start = time()
+
+#         # Consider the case where we have the app controller that imports a given module
+#         # ```
+#         # import myapp.controller as controller
+#         # ```
+#         # And within this controller we have an import from the file that we've changed as part
+#         # of this modification
+#         # ```
+#         # from myapp.module import MyController as MyController
+#         # ```
+#         # By default, an importlib.refresh(app_controller_module) won't update this given sub-dependency, since
+#         # Python holds tighly to objects that are brought into scope and are not only global system modules.
+#         #
+#         # We keep track of the unique objects that are contained within the updated files, so we can
+#         # manually inspect the project for any objects that are still referencing the old module.
+#         # and update them manually.
+#         objects_to_reload: set[int] = set()
+
+#         updated_js: set[Path] = set()
+#         updated_modules: set[tuple[str, Path]] = set()
+
+#         for event in metadata.events:
+#             if (
+#                 event.action != CallbackType.MODIFIED
+#                 and event.action != CallbackType.CREATED
+#             ):
+#                 # Keep deleted files around for now
+#                 continue
+
+#             if event.path.suffix == ".py":
+#                 module_name = app_manager.package_path_to_module(event.path)
+#                 updated_modules.add((module_name, event.path))
+#             elif event.path.suffix in KNOWN_JS_EXTENSIONS:
+#                 updated_js.add(event.path)
+
+#         # Update the modules in a queue fashion so we can update the dependent modules
+#         # where the subclasses live
+#         module_queue = list(updated_modules)
+#         seen_modules: set[str] = set()
+#         updated_python: set[Path] = set()
+
+#         while module_queue:
+#             module_name, python_path = module_queue.pop(0)
+#             if module_name in seen_modules:
+#                 continue
+#             seen_modules.add(module_name)
+
+#             # Get the IDs before we reload the module, since they'll change after
+#             # the re-import
+#             # If module_name is not already in sys.modules, it hasn't been
+#             # imported yet and we don't need to worry about refreshing dependent definitions
+#             if module_name in sys.modules:
+#                 LOGGER.debug(f"Changed Python: {python_path}")
+#                 current_module = sys.modules[module_name]
+#                 owned_by_module = app_manager.objects_in_module(current_module)
+
+#                 objects_to_reload |= owned_by_module
+#                 obj_subclasses = app_manager.get_modified_subclass_modules(
+#                     current_module, owned_by_module
+#                 )
+#                 subclass_modules = {module for module, _ in obj_subclasses}
+
+#                 # Since these are just the direct subclass modules, we add it to the queue
+#                 # to bring in all recursive subclasses
+#                 for additional_module in subclass_modules:
+#                     module_path = app_manager.module_to_package_path(additional_module)
+#                     module_queue.append((additional_module, module_path))
+#             else:
+#                 LOGGER.debug(f"Module {module_name} is new and not yet imported")
+
+#             # Now, once we've cached the ids of objects currently in memory we can clear
+#             # the actual model definition from the module cache
+#             try:
+#                 updated_module = importlib.import_module(module_name)
+#                 importlib.reload(updated_module)
+
+#                 # Only follow the downstream dependencies if the module was successfully reloaded
+#                 updated_python.add(python_path)
+#             except Exception as e:
+#                 stacktrace = format_exc()
+#                 CONSOLE.print(
+#                     f"[bold red]Error reloading {module_name}, stopping reload..."
+#                 )
+#                 CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
+
+#                 # In the case of an exception in one module we still want to try to load
+#                 # the other ones that were affected, since we want to keep the differential
+#                 # state of the app up to date
+#                 continue
+
+#         # Pass all updated files to the app compiler to build stylesheets
+#         # and other asset compilations
+#         asyncio.run(
+#             app_compiler.run_builder_plugins(
+#                 limit_paths=list(updated_js) + list(updated_python)
+#             )
+#         )
+
+#         # Logging in the following section assumes we're actually doing some
+#         # work; if we're not, we should just exit early
+#         if not updated_js and not updated_python:
+#             return
+
+#         if updated_python:
+#             LOGGER.debug(f"Changed Python: {updated_python}")
+#             asyncio.run(js_compiler.build_use_server())
+
+#         if updated_js:
+#             LOGGER.debug(f"Changed JS: {updated_js}")
+#             # asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
+
+#             for path in updated_js:
+#                 app_manager.app_controller.invalidate_view(path)
+
+#         if updated_python:
+#             # Update the nested dependencies of our app that are brought into runtime
+#             # and still hold on to an outdated version of the module. We reload these
+#             # so they'll proceed to fetch and update themselves with the contents of the new module.
+#             all_updated_components = list(
+#                 app_manager.get_submodules_with_objects(
+#                     app_manager.module, objects_to_reload
+#                 )
+#             )
+#             LOGGER.debug(
+#                 f"Found dependent modules: {all_updated_components} ({app_manager.module}: {objects_to_reload})"
+#             )
+
+#             for updated_module in all_updated_components:
+#                 importlib.reload(updated_module)
+
+#             # Now we re-mount the app entrypoint, which should initialize the changed
+#             # controllers with their new values
+#             app_manager.update_module()
+
+#             # Clear the cache so changes to the python logic should re-calculate
+#             # their ssr views
+#             if hasattr("render_ssr", "_cache"):
+#                 lru_cache: LRUCache = getattr(render_ssr, "_cache")
+#                 LOGGER.debug(f"Clearing SSR cache of {len(lru_cache.cache)} items")
+#                 lru_cache.clear()
+
+#             app_manager.restart_server()
+
+#         if updated_js or updated_python:
+#             # Wait up to 5s for our webserver to start, so when we push our refresh
+#             # websocket the new page is ready immediately.
+#             start_time = time()
+#             max_wait_time = 5
+#             while time() - start_time < max_wait_time:
+#                 if app_manager.is_port_open(host, port):
+#                     CONSOLE.print(f"[blue]Webserver is ready on {host}:{port}!")
+#                     break
+#                 sleep(0.1)  # Short sleep to prevent busy-waiting
+
+#             watcher_webservice.notification_queue.put(True)
+
+#         CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
+
+#     # Install a signal handler to catch SIGINT and try to
+#     # shut down gracefully
+#     def graceful_shutdown(signum, frame):
+#         if watcher_webservice is not None:
+#             watcher_webservice.stop()
+#         CONSOLE.print("[yellow]Services shutdown, now exiting...")
+#         exit(0)
+
+#     signal(SIGINT, graceful_shutdown)
+
+#     watchdog = build_common_watchdog(
+#         package,
+#         update_build,
+#         subscribe_to_mountaineer=subscribe_to_mountaineer,
+#     )
+#     watchdog.start_watching()
+
+
+def create_hot_reload_server(
+    package: str,
+    webservice: str,
+    webcontroller: str,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    subscribe_to_mountaineer: bool = False,
+):
+    """
+    Create and configure a hot reload server with all necessary components.
+    """
+    global_build_cache = Path(mkdtemp())
+
+    # Initialize components
+    watcher_webservice = WatcherWebservice(webservice_host=host)
+    watcher_webservice.start()
+
+    app_manager = HotReloadManager.from_webcontroller(
+        webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
+    )
+
+    js_compiler = ClientBuilder(
+        app_manager.app_controller,
+        live_reload_port=watcher_webservice.port,
+        build_cache=global_build_cache,
+    )
+
+    app_compiler = ClientCompiler(
+        app=app_manager.app_controller,
+        view_root=app_manager.app_controller.view_root,
+    )
+
+    # Create hot reloader
+    print("WEBCONTROLLER", webcontroller)
+    hot_reloader = HotReloader(
+        root_package=webcontroller.split(":")[0],
+        package_path=Path(package.replace(".", "/")),
+        #app_manager=app_manager,
+        #js_compiler=js_compiler,
+        #app_compiler=app_compiler,
+        #watcher_webservice=watcher_webservice,
+        #host=host,
+        #port=port,
+        #build_cache=global_build_cache,
+    )
+
+    return hot_reloader, app_manager, watcher_webservice
+
+
+def package_path_to_module(package: str, file_path_raw: Path) -> str:
+    """
+    Convert a file path to its corresponding Python module path.
+
+    Args:
+        package: The root package name (e.g. 'amplify')
+        file_path_raw: The file path to convert
+
+    Returns:
+        The full module path (e.g. 'amplify.controllers.auth')
+    """
+    # Get the package's root directory
+    package_module = importlib.import_module(package)
+    if not package_module.__file__:
+        raise ValueError(f"The package {package} does not have a __file__ attribute")
+
+    package_root = os.path.dirname(package_module.__file__)
+    file_path = os.path.abspath(str(file_path_raw))
+
+    # Check if the file is within the package
+    if not file_path.startswith(package_root):
+        raise ValueError(f"The file {file_path} is not in the package {package}")
+
+    # Remove the package root and the file extension
+    relative_path = os.path.relpath(file_path, package_root)
+    module_path = os.path.splitext(relative_path)[0]
+
+    # Convert path separators to dots and add the package name
+    return f"{package}.{module_path.replace(os.sep, '.')}"
+
+def module_to_package_path(package: str, module_name: str) -> Path:
+    """
+    Convert a Python module path to its corresponding file path.
+
+    Args:
+        package: The root package name (e.g. 'amplify')
+        module_name: The module name to convert (e.g. 'amplify.controllers.auth')
+
+    Returns:
+        Path to the module's file
+    """
+    package_module = importlib.import_module(package)
+    if not package_module.__file__:
+        raise ValueError(f"The package {package} does not have a __file__ attribute")
+
+    package_root = Path(package_module.__file__).parent
+
+    if not module_name.startswith(package + "."):
+        raise ValueError(f"The module {module_name} is not in the package {package}")
+
+    # Remove the package name from the module name
+    relative_module = module_name[len(package) + 1:]
+    # Convert dots to path separators and add .py extension
+    relative_path = relative_module.replace(".", os.sep) + ".py"
+    full_path = package_root / relative_path
+
+    if not full_path.is_file():
+        raise FileNotFoundError(f"No file found for module {module_name}")
+
+    return full_path
+
 def handle_runserver(
     *,
     package: str,
@@ -104,233 +449,116 @@ def handle_runserver(
     subscribe_to_mountaineer: bool = False,
 ):
     """
-    Start a local development server. This will hot-reload your browser any time
-    your frontend or backend code changes.
-
-    :param package: Ex. "ci_webapp"
-    :param webservice: Ex. "ci_webapp.app:app"
-    :param webcontroller: Ex. "ci_webapp.app:controller"
-    :param port: Desired port for the webapp while running locally
-    :param subscribe_to_mountaineer: See `handle_watch` for more details.
-
+    Start a local development server with hot reloading capabilities.
     """
     update_multiprocessing_settings()
     rich_traceback_install()
 
-    # The global cache will let us keep cache files warm across
-    # different builds
-    global_build_cache = Path(mkdtemp())
+    start_time = time()
 
-    # Start the webservice - it should persist for the lifetime of the
-    # runserver, so a single websocket frontend can be notified across
-    # multiple builds
-    start = time()
+    # Initialize components
     watcher_webservice = WatcherWebservice(webservice_host=host)
     watcher_webservice.start()
 
     app_manager = HotReloadManager.from_webcontroller(
-        webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
+        webcontroller,
+        host=host,
+        port=port,
+        live_reload_port=watcher_webservice.port
     )
-    LOGGER.debug(f"Initial load of {webcontroller} complete.")
 
+    global_build_cache = Path(mkdtemp())
     js_compiler = ClientBuilder(
         app_manager.app_controller,
         live_reload_port=watcher_webservice.port,
         build_cache=global_build_cache,
     )
-    asyncio.run(js_compiler.build_all())
 
     app_compiler = ClientCompiler(
         app=app_manager.app_controller,
         view_root=app_manager.app_controller.view_root,
     )
+
+    # Initialize hot reloader with root package
+    root_package = webcontroller.split(":")[0]
+    hot_reloader = HotReloader(
+        root_package=root_package,
+        package_path=Path(package.replace(".", "/")),
+    )
+
+    # Initial build
+    asyncio.run(js_compiler.build_all())
     asyncio.run(app_compiler.run_builder_plugins())
 
-    # Start the initial thread
     app_manager.restart_server()
-    CONSOLE.print(f"[bold green]🚀 App launched in {time() - start:.2f} seconds")
+    CONSOLE.print(f"[bold green]🚀 App launched in {time() - start_time:.2f} seconds")
 
-    # Now that we've started the server for the first time, any additional reloads
-    # must be hot-reloaded
-    environ["MOUNTAINEER_HOT_RELOADING"] = "1"
-
-    def update_build(metadata: CallbackMetadata):
+    async def handle_file_changes(metadata: CallbackMetadata):
         start = time()
-
-        # Consider the case where we have the app controller that imports a given module
-        # ```
-        # import myapp.controller as controller
-        # ```
-        # And within this controller we have an import from the file that we've changed as part
-        # of this modification
-        # ```
-        # from myapp.module import MyController as MyController
-        # ```
-        # By default, an importlib.refresh(app_controller_module) won't update this given sub-dependency, since
-        # Python holds tighly to objects that are brought into scope and are not only global system modules.
-        #
-        # We keep track of the unique objects that are contained within the updated files, so we can
-        # manually inspect the project for any objects that are still referencing the old module.
-        # and update them manually.
-        objects_to_reload: set[int] = set()
-
-        updated_js: set[Path] = set()
-        updated_modules: set[tuple[str, Path]] = set()
+        updated_js = set()
+        updated_python = set()
 
         for event in metadata.events:
-            if (
-                event.action != CallbackType.MODIFIED
-                and event.action != CallbackType.CREATED
-            ):
-                # Keep deleted files around for now
-                continue
-
-            if event.path.suffix == ".py":
-                module_name = app_manager.package_path_to_module(event.path)
-                updated_modules.add((module_name, event.path))
-            elif event.path.suffix in KNOWN_JS_EXTENSIONS:
+            if event.path.suffix in KNOWN_JS_EXTENSIONS:
                 updated_js.add(event.path)
+            elif event.path.suffix == ".py":
+                updated_python.add(event.path)
 
-        # Update the modules in a queue fashion so we can update the dependent modules
-        # where the subclasses live
-        module_queue = list(updated_modules)
-        seen_modules: set[str] = set()
-        updated_python: set[Path] = set()
-
-        while module_queue:
-            module_name, python_path = module_queue.pop(0)
-            if module_name in seen_modules:
-                continue
-            seen_modules.add(module_name)
-
-            # Get the IDs before we reload the module, since they'll change after
-            # the re-import
-            # If module_name is not already in sys.modules, it hasn't been
-            # imported yet and we don't need to worry about refreshing dependent definitions
-            if module_name in sys.modules:
-                LOGGER.debug(f"Changed Python: {python_path}")
-                current_module = sys.modules[module_name]
-                owned_by_module = app_manager.objects_in_module(current_module)
-
-                objects_to_reload |= owned_by_module
-                obj_subclasses = app_manager.get_modified_subclass_modules(
-                    current_module, owned_by_module
-                )
-                subclass_modules = {module for module, _ in obj_subclasses}
-
-                # Since these are just the direct subclass modules, we add it to the queue
-                # to bring in all recursive subclasses
-                for additional_module in subclass_modules:
-                    module_path = app_manager.module_to_package_path(additional_module)
-                    module_queue.append((additional_module, module_path))
-            else:
-                LOGGER.debug(f"Module {module_name} is new and not yet imported")
-
-            # Now, once we've cached the ids of objects currently in memory we can clear
-            # the actual model definition from the module cache
-            try:
-                updated_module = importlib.import_module(module_name)
-                importlib.reload(updated_module)
-
-                # Only follow the downstream dependencies if the module was successfully reloaded
-                updated_python.add(python_path)
-            except Exception as e:
-                stacktrace = format_exc()
-                CONSOLE.print(
-                    f"[bold red]Error reloading {module_name}, stopping reload..."
-                )
-                CONSOLE.print(f"[bold red]{e}\n{stacktrace}")
-
-                # In the case of an exception in one module we still want to try to load
-                # the other ones that were affected, since we want to keep the differential
-                # state of the app up to date
-                continue
-
-        # Pass all updated files to the app compiler to build stylesheets
-        # and other asset compilations
-        asyncio.run(
-            app_compiler.run_builder_plugins(
-                limit_paths=list(updated_js) + list(updated_python)
-            )
-        )
-
-        # Logging in the following section assumes we're actually doing some
-        # work; if we're not, we should just exit early
-        if not updated_js and not updated_python:
+        if not (updated_js or updated_python):
             return
 
+        # Handle Python changes
         if updated_python:
-            LOGGER.debug(f"Changed Python: {updated_python}")
-            asyncio.run(js_compiler.build_use_server())
+            any_reloaded = False
+            for module_path in updated_python:
+                try:
+                    module_name = package_path_to_module(package, module_path)
+                    success, reloaded = hot_reloader.reload_module(module_name)
 
+                    if not success:
+                        CONSOLE.print(f"[bold red]Failed to reload {module_name}")
+                        continue
+
+                    any_reloaded = any_reloaded or reloaded
+
+                except (ValueError, FileNotFoundError) as e:
+                    CONSOLE.print(f"[bold red]{str(e)}")
+                    continue
+
+            if any_reloaded:
+                await js_compiler.build_use_server()
+                app_manager.update_module()
+                app_manager.restart_server()
+
+        # Handle JS changes
         if updated_js:
-            LOGGER.debug(f"Changed JS: {updated_js}")
-            # asyncio.run(js_compiler.build_fe_diff(list(updated_js)))
-
+            await app_compiler.run_builder_plugins(limit_paths=list(updated_js))
             for path in updated_js:
                 app_manager.app_controller.invalidate_view(path)
 
-        if updated_python:
-            # Update the nested dependencies of our app that are brought into runtime
-            # and still hold on to an outdated version of the module. We reload these
-            # so they'll proceed to fetch and update themselves with the contents of the new module.
-            all_updated_components = list(
-                app_manager.get_submodules_with_objects(
-                    app_manager.module, objects_to_reload
-                )
-            )
-            LOGGER.debug(
-                f"Found dependent modules: {all_updated_components} ({app_manager.module}: {objects_to_reload})"
-            )
+        # Wait for server to be ready
+        start_time = time()
+        while time() - start_time < 5:
+            if app_manager.is_port_open(host, port):
+                break
+            await asyncio.sleep(0.1)
 
-            for updated_module in all_updated_components:
-                importlib.reload(updated_module)
-
-            # Now we re-mount the app entrypoint, which should initialize the changed
-            # controllers with their new values
-            app_manager.update_module()
-
-            # Clear the cache so changes to the python logic should re-calculate
-            # their ssr views
-            if hasattr("render_ssr", "_cache"):
-                lru_cache: LRUCache = getattr(render_ssr, "_cache")
-                LOGGER.debug(f"Clearing SSR cache of {len(lru_cache.cache)} items")
-                lru_cache.clear()
-
-            app_manager.restart_server()
-
-        if updated_js or updated_python:
-            # Wait up to 5s for our webserver to start, so when we push our refresh
-            # websocket the new page is ready immediately.
-            start_time = time()
-            max_wait_time = 5
-            while time() - start_time < max_wait_time:
-                if app_manager.is_port_open(host, port):
-                    CONSOLE.print(f"[blue]Webserver is ready on {host}:{port}!")
-                    break
-                sleep(0.1)  # Short sleep to prevent busy-waiting
-
-            watcher_webservice.notification_queue.put(True)
-
+        watcher_webservice.notification_queue.put(True)
         CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
 
-    # Install a signal handler to catch SIGINT and try to
-    # shut down gracefully
-    def graceful_shutdown(signum, frame):
-        if watcher_webservice is not None:
-            watcher_webservice.stop()
+    def handle_shutdown(signum, frame):
+        watcher_webservice.stop()
         CONSOLE.print("[yellow]Services shutdown, now exiting...")
         exit(0)
 
-    signal(SIGINT, graceful_shutdown)
+    signal(SIGINT, handle_shutdown)
 
     watchdog = build_common_watchdog(
         package,
-        update_build,
+        lambda metadata: asyncio.run(handle_file_changes(metadata)),
         subscribe_to_mountaineer=subscribe_to_mountaineer,
     )
     watchdog.start_watching()
-
 
 def handle_build(
     *,
