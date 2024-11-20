@@ -329,55 +329,6 @@ def handle_watch(
 #     watchdog.start_watching()
 
 
-def create_hot_reload_server(
-    package: str,
-    webservice: str,
-    webcontroller: str,
-    host: str = "127.0.0.1",
-    port: int = 8000,
-    subscribe_to_mountaineer: bool = False,
-):
-    """
-    Create and configure a hot reload server with all necessary components.
-    """
-    global_build_cache = Path(mkdtemp())
-
-    # Initialize components
-    watcher_webservice = WatcherWebservice(webservice_host=host)
-    watcher_webservice.start()
-
-    app_manager = HotReloadManager.from_webcontroller(
-        webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
-    )
-
-    js_compiler = ClientBuilder(
-        app_manager.app_controller,
-        live_reload_port=watcher_webservice.port,
-        build_cache=global_build_cache,
-    )
-
-    app_compiler = ClientCompiler(
-        app=app_manager.app_controller,
-        view_root=app_manager.app_controller.view_root,
-    )
-
-    # Create hot reloader
-    print("WEBCONTROLLER", webcontroller)
-    hot_reloader = HotReloader(
-        root_package=webcontroller.split(":")[0],
-        package_path=Path(package.replace(".", "/")),
-        # app_manager=app_manager,
-        # js_compiler=js_compiler,
-        # app_compiler=app_compiler,
-        # watcher_webservice=watcher_webservice,
-        # host=host,
-        # port=port,
-        # build_cache=global_build_cache,
-    )
-
-    return hot_reloader, app_manager, watcher_webservice
-
-
 def package_path_to_module(package: str, file_path_raw: Path) -> str:
     """
     Convert a file path to its corresponding Python module path.
@@ -479,10 +430,10 @@ def handle_runserver(
     )
 
     # Initialize hot reloader with root package
-    root_package = webcontroller.split(":")[0]
     hot_reloader = HotReloader(
-        root_package=root_package,
+        root_package=package,
         package_path=Path(package.replace(".", "/")),
+        entrypoint=webcontroller.rsplit(":")[0],
     )
 
     # Initial build
@@ -526,6 +477,14 @@ def handle_runserver(
 
             if any_reloaded:
                 await js_compiler.build_use_server()
+
+                import sys
+                print("before updating module reload", [
+                    key
+                    for key in sys.modules.keys()
+                    if "amplify" in key
+                ])
+
                 app_manager.update_module()
                 app_manager.restart_server()
 

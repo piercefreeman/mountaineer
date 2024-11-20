@@ -3,6 +3,7 @@ import socket
 from importlib.metadata import distributions
 from traceback import format_exception
 from types import ModuleType
+import sys
 
 from fastapi import Request
 from fastapi.responses import Response
@@ -77,10 +78,11 @@ class HotReloadManager:
         )
 
     def update_module(self):
-        print("SHOULD UPDATE MODULE")
-        # Now we re-mount the app entrypoint, which should initialize the changed
-        # controllers with their new values
-        self.module = importlib.reload(self.module)
+        print("SHOULD UPDATE MODULE", self.module.__name__)
+        # By the time we get to this point, our hot reloader should
+        # have already reloaded the module in global space
+        self.module = sys.modules[self.module.__name__]
+        #self.module = importlib.reload(self.module)
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
 
