@@ -28,6 +28,7 @@ interface FetchParams {
   mediaType?: string;
   outputFormat?: "json" | "text" | "raw";
   eventStreamResponse?: boolean;
+  signal?: AbortSignal;
 }
 
 const handleOutputFormat = async (response: Response, format?: string) => {
@@ -79,6 +80,7 @@ export const __request = async (params: FetchParams) => {
         ...(contentType && { "Content-Type": contentType }),
       },
       body: payloadBody,
+      signal: params.signal,
     });
 
     if (response.status >= 200 && response.status < 300) {

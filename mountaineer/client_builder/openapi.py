@@ -320,7 +320,8 @@ class OpenAPIDefinition(BaseModel):
     """
 
     class Components(BaseModel):
-        schemas: dict[str, OpenAPIProperty]
+        schemas: dict[str, OpenAPIProperty] | None = None
+        securitySchemes: Any | None = None
 
     # { path: { action: ActionDefinition }}
     paths: dict[str, EndpointDefinition]

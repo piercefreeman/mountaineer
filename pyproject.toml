@@ -18,6 +18,9 @@ sqlmodel = "^0.0.20"
 asyncpg = "^0.29.0"
 sqlalchemy = { extras = ["asyncio"], version = "^2.0.26" }
 
+# Pinned until uvicorn is upgraded: https://github.com/encode/uvicorn/issues/1908
+websockets = "<14.0"
+
 # TODO: Move to optional dependencies, since release configurations
 # will not need these.
 watchdog = "^3.0.0"
@@ -79,18 +82,19 @@ addopts = "-m 'not integration_tests'"
 # since these can't pick up poetry's data definitions
 name = "mountaineer"
 dependencies = [
-    "pydantic",
-    "fastapi",
-    "inflection",
-    "click",
-    "uvicorn[standard]",
-    "packaging",
-    "watchdog",
-    "pydantic-settings",
-    "sqlmodel",
-    "asyncpg",
-    "sqlalchemy[asyncio]",
-    "rich",
+    "pydantic>=2.5.3,<3.0.0",
+    "fastapi>=0.114.1,<1.0.0",
+    "inflection>=0.5.1,<1.0.0",
+    "click>=8.1.7,<9.0.0",
+    "uvicorn[standard]>=0.27.0.post1,<1.0.0",
+    "packaging>23.2",
+    "watchdog>=3.0.0,<4.0.0",
+    "pydantic-settings>=2.1.0,<3.0.0",
+    "sqlmodel>=0.0.20,<1.0.0",
+    "asyncpg>=0.29.0,<1.0.0",
+    "sqlalchemy[asyncio]>=2.0.26,<3.0.0",
+    "rich>=13.7.1,<14.0.0",
+    "websockets<14.0",
 ]
 
 # Excluded in sdist packaging
