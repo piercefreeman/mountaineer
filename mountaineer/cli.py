@@ -479,11 +479,11 @@ def handle_runserver(
                 await js_compiler.build_use_server()
 
                 import sys
-                print("before updating module reload", [
-                    key
-                    for key in sys.modules.keys()
-                    if "amplify" in key
-                ])
+
+                print(
+                    "before updating module reload",
+                    [key for key in sys.modules.keys() if "amplify" in key],
+                )
 
                 app_manager.update_module()
                 app_manager.restart_server()

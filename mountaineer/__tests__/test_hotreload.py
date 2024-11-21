@@ -1,11 +1,11 @@
 import importlib
+import sys
 import textwrap
 import time
-import sys
 
 import pytest
 
-from mountaineer.hotreload import HotReloader
+from mountaineer.hotreload import HotReloader, resolve_relative_import
 
 
 @pytest.fixture
@@ -325,6 +325,7 @@ def test_enum_reload(test_package_dir):
     status_module = importlib.import_module(f"{pkg_name}.status")
     assert hasattr(status_module.Status, "ARCHIVED")
 
+
 def test_import_alias_dependency_graph(test_package_dir):
     """Test that the dependency graph correctly tracks imports with aliases."""
     pkg_dir, pkg_name = test_package_dir
@@ -365,11 +366,15 @@ def test_import_alias_dependency_graph(test_package_dir):
 
     # Ensure the dependency graph is built correctly
     main_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.main")
-    assert f"{pkg_name}.models" in main_deps["imports"], "models should be in main's imports"
+    assert (
+        f"{pkg_name}.models" in main_deps["imports"]
+    ), "models should be in main's imports"
 
     # Check that models knows it's imported by main
     models_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
-    assert f"{pkg_name}.main" in models_deps["imported_by"], "main should be in models' imported_by"
+    assert (
+        f"{pkg_name}.main" in models_deps["imported_by"]
+    ), "main should be in models' imported_by"
 
     # Verify that the code works
     assert main_module.get_model_value() == 10
@@ -398,11 +403,11 @@ def test_import_alias_dependency_graph(test_package_dir):
     assert main_module.get_model_value() == 200
 
 
-def test_import_sub_dependency_graph(test_package_dir):
+def test_relative_import(test_package_dir):
     """Test that the dependency graph correctly tracks imports with aliases."""
     pkg_dir, pkg_name = test_package_dir
 
-    # Create models.py with initial class
+    # Create the package structure
     (pkg_dir / "models").mkdir()
     (pkg_dir / "models/example.py").write_text(
         textwrap.dedent(
@@ -420,44 +425,41 @@ def test_import_sub_dependency_graph(test_package_dir):
             """
         )
     )
-
-    # Create main.py that imports models using an alias
     (pkg_dir / "main.py").write_text(
         textwrap.dedent(
             f"""
             from {pkg_name} import models
-            print("Reloading main with mod import:", id(models))
-            print("Reloading value", models.MyModel().get_value())
+            print("Main module loaded with models id:", id(models))
 
             def get_model_value():
-                print("USING MOD", id(models))
+                print("get_model_value using models id:", id(models))
                 model = models.MyModel()
+                print("MyModel class id:", id(models.MyModel))
                 return model.get_value()
             """
         )
     )
 
-    # Import modules
-    importlib.import_module(f"{pkg_name}.models")
+    # Import and verify initial state
+    models_module = importlib.import_module(f"{pkg_name}.models")
     main_module = importlib.import_module(f"{pkg_name}.main")
-
-    # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.main")
 
-    # Ensure the dependency graph is built correctly
-    main_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.main")
-    assert f"{pkg_name}.models" in main_deps["imports"], "models should be in main's imports"
+    # Verify initial dependency graph
+    deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
+    print("DEPS", deps)
+    assert (
+        f"{pkg_name}.models.example" in deps["imports"]
+    ), "models should import example"
+    assert (
+        f"{pkg_name}.main" in deps["imported_by"]
+    ), "models should be imported by main"
 
-    # Check that models knows it's imported by main
-    models_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
-    assert f"{pkg_name}.main" in models_deps["imported_by"], "main should be in models' imported_by"
+    # Verify initial functionality
+    initial_value = main_module.get_model_value()
+    assert initial_value == 10, f"Expected 10, got {initial_value}"
 
-    # Verify that the code works
-    assert main_module.get_model_value() == 10
-
-    # Modify models.py - note this file needs to change in a way that's significant
-    # enough for the module refresher to actually reload the logic. Switching 10 -> 20
-    # for instance (same amount of chars) is not enough for it to reload.
+    # Modify the model
     (pkg_dir / "models/example.py").write_text(
         textwrap.dedent(
             """
@@ -468,15 +470,114 @@ def test_import_sub_dependency_graph(test_package_dir):
         )
     )
 
+    # Force file timestamp change
     time.sleep(0.1)
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models")
-    assert success
-    assert f"{pkg_name}.main" in reloaded
 
-    # Verify that the updated value is reflected
-    main_module = sys.modules[f"{pkg_name}.main"]
-    print("GET VALUE", id(main_module))
-    assert main_module.get_model_value() == 200
+    # Reload and verify
+    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models.example")
+    assert success, "Reload should succeed"
+    assert f"{pkg_name}.models.example" in reloaded, "example.py should be reloaded"
+    assert f"{pkg_name}.models" in reloaded, "models/__init__.py should be reloaded"
+    assert f"{pkg_name}.main" in reloaded, "main.py should be reloaded"
+
+    # Verify the module was actually reloaded with new code
+    new_value = main_module.get_model_value()
+    assert new_value == 200, f"Expected 200, got {new_value}"
+
+
+def test_ignores_irrelevant_files(test_package_dir):
+    # TODO: Make this cleaner, more streamlined
+    pkg_dir, pkg_name = test_package_dir
+
+    # Create the package structure
+    (pkg_dir / "models").mkdir()
+    (pkg_dir / "models/example.py").write_text(
+        textwrap.dedent(
+            f"""
+            from {pkg_name}.other_item import OtherFile
+            class MyModel:
+                def get_value(self):
+                    return 10
+            """
+        )
+    )
+    (pkg_dir / "models/__init__.py").write_text(
+        textwrap.dedent(
+            """
+            from .example import MyModel as MyModel
+            """
+        )
+    )
+    (pkg_dir / "other_item.py").write_text(
+        textwrap.dedent(
+            """
+            class OtherFile:
+                pass
+            """
+        )
+    )
+    (pkg_dir / "main.py").write_text(
+        textwrap.dedent(
+            f"""
+            from {pkg_name} import models
+            from {pkg_name}.other_item import OtherFile
+            print("Main module loaded with models id:", id(models))
+
+            def get_model_value():
+                print("get_model_value using models id:", id(models))
+                model = models.MyModel()
+                print("MyModel class id:", id(models.MyModel))
+                return model.get_value()
+            """
+        )
+    )
+
+    # Import and verify initial state
+    models_module = importlib.import_module(f"{pkg_name}.models")
+    main_module = importlib.import_module(f"{pkg_name}.main")
+    hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.main")
+
+    # Verify initial dependency graph
+    deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
+    print("DEPS", deps)
+    assert (
+        f"{pkg_name}.models.example" in deps["imports"]
+    ), "models should import example"
+    assert (
+        f"{pkg_name}.main" in deps["imported_by"]
+    ), "models should be imported by main"
+
+    # Verify initial functionality
+    initial_value = main_module.get_model_value()
+    assert initial_value == 10, f"Expected 10, got {initial_value}"
+
+    # Modify the model
+    (pkg_dir / "models/example.py").write_text(
+        textwrap.dedent(
+            """
+            class MyModel:
+                def get_value(self):
+                    return 200
+            """
+        )
+    )
+
+    # Force file timestamp change
+    time.sleep(0.1)
+
+    # Reload and verify
+    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models.example")
+    assert success, "Reload should succeed"
+    assert f"{pkg_name}.models.example" in reloaded, "example.py should be reloaded"
+    assert f"{pkg_name}.models" in reloaded, "models/__init__.py should be reloaded"
+    assert f"{pkg_name}.main" in reloaded, "main.py should be reloaded"
+    assert (
+        f"{pkg_name}.other_item" not in reloaded
+    ), "other_item.py should not be reloaded"
+
+    # Verify the module was actually reloaded with new code
+    new_value = main_module.get_model_value()
+    assert new_value == 200, f"Expected 200, got {new_value}"
 
 
 def test_package_structure_scanning(test_package_dir):
@@ -487,17 +588,21 @@ def test_package_structure_scanning(test_package_dir):
     nested_dir = pkg_dir / "nested"
     nested_dir.mkdir()
     (nested_dir / "__init__.py").write_text("")
-    (nested_dir / "module.py").write_text("""
+    (nested_dir / "module.py").write_text(
+        """
 class NestedClass:
     pass
-""")
+"""
+    )
 
     sub_nested = nested_dir / "subnested"
     sub_nested.mkdir()
-    (sub_nested / "__init__.py").write_text("""
+    (sub_nested / "__init__.py").write_text(
+        """
 class SubNestedInit:
     pass
-""")
+"""
+    )
 
     # Import modules
     importlib.import_module(f"{pkg_name}.nested")
@@ -518,15 +623,18 @@ def test_inheritance_tree_building(test_package_dir):
     pkg_dir, pkg_name = test_package_dir
 
     # Create a hierarchy of classes
-    (pkg_dir / "base.py").write_text("""
+    (pkg_dir / "base.py").write_text(
+        """
 class BaseClass:
     pass
 
 class AnotherBase:
     pass
-""")
+"""
+    )
 
-    (pkg_dir / "middle.py").write_text(f"""
+    (pkg_dir / "middle.py").write_text(
+        f"""
 from {pkg_name}.base import BaseClass, AnotherBase
 
 class MiddleClass(BaseClass):
@@ -534,14 +642,17 @@ class MiddleClass(BaseClass):
 
 class MultipleInheritance(BaseClass, AnotherBase):
     pass
-""")
+"""
+    )
 
-    (pkg_dir / "leaf.py").write_text(f"""
+    (pkg_dir / "leaf.py").write_text(
+        f"""
 from {pkg_name}.middle import MiddleClass
 
 class LeafClass(MiddleClass):
     pass
-""")
+"""
+    )
 
     # Import modules
     importlib.import_module(f"{pkg_name}.base")
@@ -593,12 +704,14 @@ def test_inheritance_tree_module_updates(test_package_dir):
     pkg_dir, pkg_name = test_package_dir
 
     # Initial class structure
-    (pkg_dir / "dynamic.py").write_text(f"""
+    (pkg_dir / "dynamic.py").write_text(
+        f"""
 from {pkg_name}.base import BaseClass
 
 class DynamicClass(BaseClass):
     pass
-""")
+"""
+    )
 
     # Import modules
     importlib.import_module(f"{pkg_name}.base")
@@ -611,10 +724,12 @@ class DynamicClass(BaseClass):
     assert "DynamicClass" in base_deps["subclasses"]["BaseClass"]
 
     # Update inheritance
-    (pkg_dir / "dynamic.py").write_text("""
+    (pkg_dir / "dynamic.py").write_text(
+        """
 class DynamicClass:  # No longer inherits from BaseClass
     pass
-""")
+"""
+    )
 
     time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.dynamic")
@@ -623,3 +738,90 @@ class DynamicClass:  # No longer inherits from BaseClass
     # Verify inheritance is updated
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
     assert "DynamicClass" not in base_deps["subclasses"].get("BaseClass", set())
+
+
+@pytest.mark.parametrize(
+    "root_package, module_name, relative_path, level, expected",
+    [
+        # Absolute imports (level=0)
+        (
+            "my_package",
+            "my_package.module",
+            "other_module",
+            0,
+            "my_package.other_module",
+        ),
+        (
+            "my_package",
+            "my_package.module",
+            "my_package.submodule",
+            0,
+            "my_package.submodule",
+        ),
+        ("my_package", "my_package.module", "", 0, "my_package"),
+        # Relative imports within a module
+        ("my_package", "my_package.module", "", 1, "my_package.module"),
+        (
+            "my_package",
+            "my_package.module",
+            "submodule",
+            1,
+            "my_package.module.submodule",
+        ),
+        ("my_package", "my_package.module", "", 2, "my_package"),
+        ("my_package", "my_package.module", "submodule", 2, "my_package.submodule"),
+        (
+            "my_package",
+            "my_package.sub.module",
+            "submodule",
+            2,
+            "my_package.sub.submodule",
+        ),
+        ("my_package", "my_package.sub.module", "submodule", 3, "my_package.submodule"),
+        # Relative imports within a package (__init__.py)
+        ("my_package", "my_package.__init__", "", 1, "my_package"),
+        ("my_package", "my_package.__init__", "submodule", 1, "my_package.submodule"),
+        ("my_package", "my_package.sub.__init__", "", 1, "my_package.sub"),
+        ("my_package", "my_package.sub.__init__", "module", 1, "my_package.sub.module"),
+        ("my_package", "my_package.sub.__init__", "module", 2, "my_package.module"),
+        # Edge cases
+        ("my_package", "my_package.module", "", 0, "my_package"),
+        ("my_package", "my_package.module", "", 5, None),  # Invalid level
+        ("my_package", "my_package.module", "submodule", -1, None),  # Invalid level
+        # Relative imports from deeply nested modules
+        # ("my_package", "my_package.a.b.c.module", "utils", 2, "my_package.a.b.utils"),
+        # ("my_package", "my_package.a.b.c.module", "utils", 3, "my_package.a.utils"),
+        # ("my_package", "my_package.a.b.c.module", "utils", 4, "my_package.utils"),
+        # Relative imports from __init__.py in nested packages
+        (
+            "my_package",
+            "my_package.a.b.c.__init__",
+            "utils",
+            1,
+            "my_package.a.b.c.utils",
+        ),
+        ("my_package", "my_package.a.b.c.__init__", "utils", 2, "my_package.a.b.utils"),
+        ("my_package", "my_package.a.b.c.__init__", "utils", 3, "my_package.a.utils"),
+        # Importing from the root package
+        ("my_package", "my_package.sub.module", "", 3, "my_package"),
+        # Invalid cases
+        ("my_package", "my_package.module", "submodule", 100, None),  # Level too high
+        (
+            "my_package",
+            "my_package.module",
+            "submodule",
+            0,
+            "my_package.submodule",
+        ),  # Absolute import
+        # Relative import with no relative_path
+        ("my_package", "my_package.module", "", 1, "my_package.module"),
+        ("my_package", "my_package.module", "", 2, "my_package"),
+    ],
+)
+def test_resolve_relative_import(
+    root_package, module_name, relative_path, level, expected
+):
+    result = resolve_relative_import(root_package, module_name, relative_path, level)
+    assert (
+        result == expected
+    ), f"Failed for module {module_name}, path {relative_path}, level {level}"
