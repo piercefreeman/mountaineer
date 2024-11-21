@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "create-mountaineer-app"
 version = "0.1.0"
-description = ""
+description = "Easily get started with a new Mountaineer project."
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
 
