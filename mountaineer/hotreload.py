@@ -117,56 +117,30 @@ class HotReloader:
                         f"  Names: {[n.name + (' as ' + n.asname if n.asname else '') for n in ast_node.names]}"
                     )
 
-                    base_module = resolve_relative_import(
-                        self.root_package,
-                        node.module_name,
-                        ast_node.module or "",
-                        ast_node.level,
-                    )
-                    logger.info(f"Resolved base module: {base_module}")
+                    for import_element in ast_node.names:
+                        absolute_module = resolve_relative_import(
+                            root_package=self.root_package,
+                            current_module=node.module_name,
+                            from_import=ast_node.module or "",
+                            from_import_level=ast_node.level,
+                            sys_modules=set(sys.modules.keys()),
+                            import_name=import_element.name,
+                        )
+                        logger.info(f"Resolved base module: {absolute_module}")
 
-                    if base_module and base_module.startswith(self.root_package):
-                        # Handle each imported name
-                        for alias in ast_node.names:
-                            # Check if the import target is a module
-                            potential_module = f"{base_module}.{alias.name}"
-                            module_exists = (
-                                # potential_module in sys.modules or
-                                # self._find_module_file(potential_module) is not None
-                                potential_module in sys.modules
+                        if not absolute_module:
+                            continue
+
+                        # Add to imports
+                        node.imports.add(absolute_module)
+
+                        if absolute_module in self.dependency_graph:
+                            logger.info(
+                                f"Marking {absolute_module} as imported by {node.module_name}"
                             )
-
-                            # If it's a module, track the full path
-                            # If it's a symbol, just track the base module
-                            full_import_name = (
-                                potential_module if module_exists else base_module
+                            self.dependency_graph[absolute_module].imported_by.add(
+                                node.module_name
                             )
-                            logger.debug(
-                                f"Full import name: {full_import_name} (is_module={module_exists})"
-                            )
-
-                            # Add to imports
-                            node.imports.add(full_import_name)
-
-                            # Handle alias if present
-                            if alias.asname:
-                                logger.debug(
-                                    f"Recording alias: {alias.asname} -> {full_import_name}"
-                                )
-                                self.module_aliases[alias.asname] = full_import_name
-
-                            # Update imported_by relationship for the imported module
-                            # and all its parent modules
-                            module_parts = full_import_name.split(".")
-                            for i in range(1, len(module_parts) + 1):
-                                potential_module = ".".join(module_parts[:i])
-                                if potential_module in self.dependency_graph:
-                                    logger.info(
-                                        f"Marking {potential_module} as imported by {node.module_name}"
-                                    )
-                                    self.dependency_graph[
-                                        potential_module
-                                    ].imported_by.add(node.module_name)
 
             logger.info("=== Final import state ===")
             logger.info(f"Imports: {node.imports}")
@@ -494,45 +468,73 @@ class HotReloader:
 
 
 def resolve_relative_import(
-    root_package: str, module_name: str, relative_path: str, level: int
+    *,
+    root_package: str,
+    current_module: str,
+    from_import: str,
+    from_import_level: int,
+    import_name: str,
+    sys_modules: set[str],
 ) -> Optional[str]:
     """
-    Resolve relative and absolute imports to their full module path.
-    Args:
-        root_package: The root package name (e.g., 'my_package')
-        module_name: The current module's full name (e.g., 'my_package.sub.module')
-        relative_path: The relative import path (e.g., 'submodule')
-        level: The number of dots in the relative import (0 for absolute imports)
-    Returns:
-        The resolved full module path or None if invalid
+    Resolves the absolute module name for a potentially relative import. Let's consider some
+    different forms that an import can take:
+
+    from myfile import MyClass
+    from mymodule import myfile
+    from .myfile import MyClass
+    from ..mymodule import myfile
+    from mypackage.mymodule import myfile
+
+    The general structure is:
+
+    from {dots:from_import_level}{from_import} import {import_name}
+
     """
-    logger.debug(
-        f"Resolving import: module={module_name}, path={relative_path}, level={level}"
-    )
 
     # Handle invalid level
-    if level < 0:
-        logger.warning(f"Invalid negative level {level}")
+    if from_import_level < 0:
+        logger.warning(f"Invalid negative level {from_import_level}")
         return None
 
-    # Handle absolute imports (level = 0)
-    if level == 0:
-        if not relative_path:
-            return root_package
-        if relative_path.startswith(root_package):
-            return relative_path
-        return f"{root_package}.{relative_path}"
+    # Handle absolute imports or local path imports (level = 0)
+    if from_import_level == 0:
+        # Prioritize local path imports, then absolute imports
+        proposed_components = [
+            # Local path - import name as a module
+            [current_module, from_import, import_name],
+            # Local path - import name as a class/function
+            [current_module, from_import],
+            # Absolute import - import name as a module
+            [from_import, import_name],
+            # Absolute import - import name as a class/function
+            [from_import],
+        ]
+        proposed_paths = [
+            ".".join([component for component in components if component.strip()])
+            for components in proposed_components
+        ]
 
-    parts = module_name.split(".")
+        for absolute_path in proposed_paths:
+            if absolute_path in sys_modules:
+                return absolute_path
 
-    # Handle invalid level that's too high
-    if level > len(parts):
+        # Otherwise, we can't find the module
         logger.warning(
-            f"Invalid relative import: level {level} too high for module {module_name}"
+            f"No matching level-0 modules found in sys.modules, tried: {proposed_paths}"
         )
         return None
 
-    # For __init__.py, we're already at the package level
+    parts = current_module.split(".")
+
+    # Handle invalid level that's too high and goes outside of the package
+    if from_import_level > len(parts):
+        logger.warning(
+            f"Invalid relative import: level {from_import_level} too high for module {current_module}"
+        )
+        return None
+
+    # __init__ files should just map to their parent module
     if parts[-1] == "__init__":
         parts = parts[:-1]
 
@@ -541,18 +543,23 @@ def resolve_relative_import(
     # level=2: remove one directory
     # level=3: remove two directories
     # etc.
-    if level == 1:
-        # For single dot, use full path up to current directory
+    if from_import_level == 1:
+        # For single dot, use the current directory
         base_path = ".".join(parts)
     else:
         # For multiple dots, remove (level-1) components
-        base_path = ".".join(parts[: -(level - 1)])
+        base_path = ".".join(parts[: -(from_import_level - 1)])
 
     # Handle empty base path (we've gone up to root)
     if not base_path:
         base_path = root_package
 
-    # Build final path
-    if not relative_path:
-        return base_path
-    return f"{base_path}.{relative_path}"
+    # Build final path - at this point the level should be 0
+    return resolve_relative_import(
+        root_package=root_package,
+        current_module=base_path,
+        from_import=from_import,
+        from_import_level=0,
+        import_name=import_name,
+        sys_modules=sys_modules,
+    )

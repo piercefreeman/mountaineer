@@ -691,88 +691,153 @@ class DynamicClass:  # No longer inherits from BaseClass
     assert "DynamicClass" not in base_deps["subclasses"].get("BaseClass", set())
 
 
+def parse_relative_import(import_str: str) -> tuple[str, int]:
+    """Parse a relative import string into (import_path, level).
+
+    Examples:
+        "module" -> ("module", 0)
+        ".module" -> ("module", 1)
+        "..module" -> ("module", 2)
+        "..." -> ("", 3)
+    """
+    level = 0
+    for char in import_str:
+        if char == ".":
+            level += 1
+        else:
+            break
+    return import_str[level:], level
+
+
 @pytest.mark.parametrize(
-    "root_package, module_name, relative_path, level, expected",
+    "current_module, from_import_str, import_name, sys_modules, expected",
     [
-        # Absolute imports (level=0)
+        # Absolute imports (no dots)
         (
-            "my_package",
             "my_package.module",
             "other_module",
-            0,
-            "my_package.other_module",
+            "MyClass",
+            {"my_package.module.other_module", "my_package.other_module"},
+            "my_package.module.other_module",
         ),
         (
-            "my_package",
             "my_package.module",
             "my_package.submodule",
-            0,
+            "MyClass",
+            {"my_package.submodule"},
             "my_package.submodule",
         ),
-        ("my_package", "my_package.module", "", 0, "my_package"),
-        # Relative imports within a module
-        ("my_package", "my_package.module", "", 1, "my_package.module"),
+        # Single dot relative imports (current directory)
         (
-            "my_package",
             "my_package.module",
-            "submodule",
-            1,
+            ".submodule",
+            "MyClass",
+            {"my_package.module.submodule"},
             "my_package.module.submodule",
         ),
-        ("my_package", "my_package.module", "", 2, "my_package"),
-        ("my_package", "my_package.module", "submodule", 2, "my_package.submodule"),
         (
-            "my_package",
-            "my_package.sub.module",
-            "submodule",
-            2,
-            "my_package.sub.submodule",
-        ),
-        ("my_package", "my_package.sub.module", "submodule", 3, "my_package.submodule"),
-        # Relative imports within a package (__init__.py)
-        ("my_package", "my_package.__init__", "", 1, "my_package"),
-        ("my_package", "my_package.__init__", "submodule", 1, "my_package.submodule"),
-        ("my_package", "my_package.sub.__init__", "", 1, "my_package.sub"),
-        ("my_package", "my_package.sub.__init__", "module", 1, "my_package.sub.module"),
-        ("my_package", "my_package.sub.__init__", "module", 2, "my_package.module"),
-        # Edge cases
-        ("my_package", "my_package.module", "", 0, "my_package"),
-        ("my_package", "my_package.module", "", 5, None),  # Invalid level
-        ("my_package", "my_package.module", "submodule", -1, None),  # Invalid level
-        # Relative imports from deeply nested modules
-        # ("my_package", "my_package.a.b.c.module", "utils", 2, "my_package.a.b.utils"),
-        # ("my_package", "my_package.a.b.c.module", "utils", 3, "my_package.a.utils"),
-        # ("my_package", "my_package.a.b.c.module", "utils", 4, "my_package.utils"),
-        # Relative imports from __init__.py in nested packages
-        (
-            "my_package",
-            "my_package.a.b.c.__init__",
-            "utils",
-            1,
-            "my_package.a.b.c.utils",
-        ),
-        ("my_package", "my_package.a.b.c.__init__", "utils", 2, "my_package.a.b.utils"),
-        ("my_package", "my_package.a.b.c.__init__", "utils", 3, "my_package.a.utils"),
-        # Importing from the root package
-        ("my_package", "my_package.sub.module", "", 3, "my_package"),
-        # Invalid cases
-        ("my_package", "my_package.module", "submodule", 100, None),  # Level too high
-        (
-            "my_package",
-            "my_package.module",
-            "submodule",
-            0,
+            "my_package.__init__",
+            ".submodule",
+            "MyClass",
+            {"my_package.submodule"},
             "my_package.submodule",
-        ),  # Absolute import
-        # Relative import with no relative_path
-        ("my_package", "my_package.module", "", 1, "my_package.module"),
-        ("my_package", "my_package.module", "", 2, "my_package"),
+        ),
+        # Two dot relative imports (parent directory)
+        (
+            "my_package.sub.module",
+            "..other_module",
+            "MyClass",
+            {"my_package.sub.other_module"},
+            "my_package.sub.other_module",
+        ),
+        (
+            "my_package.sub.module",
+            "..other_package.module",
+            "MyClass",
+            {"my_package.sub.other_package.module"},
+            "my_package.sub.other_package.module",
+        ),
+        # Three or more dot relative imports
+        (
+            "my_package.a.b.c.module",
+            "...utils",
+            "MyClass",
+            {"my_package.a.b.utils"},
+            "my_package.a.b.utils",
+        ),
+        (
+            "my_package.deep.nested.module",
+            "....top_level",
+            "MyClass",
+            {"my_package.top_level"},
+            "my_package.top_level",
+        ),
+        # Empty imports (importing the package itself)
+        (
+            "my_package.module",
+            ".",
+            "MyClass",
+            {"my_package.module"},
+            "my_package.module",
+        ),
+        (
+            "my_package.sub.module",
+            "..",
+            "MyClass",
+            {"my_package.sub"},
+            "my_package.sub",
+        ),
+        (
+            "my_package.a.b.module",
+            "...",
+            "MyClass",
+            {"my_package.a"},
+            "my_package.a",
+        ),
+        # Edge and error cases
+        (
+            "my_package.module",
+            ".....",  # Too many dots
+            "MyClass",
+            set(),
+            None,
+        ),
+        (
+            "my_package.module",
+            "nonexistent_module",
+            "MyClass",
+            set(),
+            None,
+        ),
+        (
+            "my_package.module",
+            "my_package.nonexistent",
+            "MyClass",
+            set(),
+            None,
+        ),
     ],
 )
 def test_resolve_relative_import(
-    root_package, module_name, relative_path, level, expected
+    current_module: str,
+    from_import_str: str,
+    import_name: str,
+    sys_modules: set[str],
+    expected: str | None,
 ):
-    result = resolve_relative_import(root_package, module_name, relative_path, level)
-    assert (
-        result == expected
-    ), f"Failed for module {module_name}, path {relative_path}, level {level}"
+    from_import, level = parse_relative_import(from_import_str)
+
+    result = resolve_relative_import(
+        root_package="my_package",
+        current_module=current_module,
+        from_import=from_import,
+        from_import_level=level,
+        import_name=import_name,
+        sys_modules=sys_modules,
+    )
+
+    assert result == expected, (
+        f"Failed for import '{from_import_str}' in module '{current_module}'\n"
+        f"Expected: {expected}\n"
+        f"Got: {result}"
+    )
