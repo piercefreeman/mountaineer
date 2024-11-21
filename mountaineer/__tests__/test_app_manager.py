@@ -10,7 +10,7 @@ from fastapi import Request
 from fastapi.responses import Response
 
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.app_manager import HotReloadManager
+from mountaineer.app_manager import DevAppManager
 from mountaineer.webservice import UvicornThread
 
 AppPackageType = tuple[str, Path, Path]
@@ -56,9 +56,9 @@ def app_package(tmp_app_package_dir: Path):
 
 
 @pytest.fixture
-def manager(app_package: AppPackageType) -> HotReloadManager:
+def manager(app_package: AppPackageType) -> DevAppManager:
     package_name, _, _ = app_package
-    return HotReloadManager.from_webcontroller(  # type: ignore
+    return DevAppManager.from_webcontroller(  # type: ignore
         f"{package_name}.test_controller:test_controller",
         host="localhost",
         port=8000,
@@ -66,7 +66,7 @@ def manager(app_package: AppPackageType) -> HotReloadManager:
     )
 
 
-def test_from_webcontroller(manager: HotReloadManager, app_package: AppPackageType):
+def test_from_webcontroller(manager: DevAppManager, app_package: AppPackageType):
     package_name, _, _ = app_package
     assert manager.package == package_name
     assert manager.module_name == f"{package_name}.test_controller"
@@ -76,7 +76,7 @@ def test_from_webcontroller(manager: HotReloadManager, app_package: AppPackageTy
     assert manager.live_reload_port == 8001
 
 
-def test_update_module(manager: HotReloadManager, app_package: AppPackageType):
+def test_update_module(manager: DevAppManager, app_package: AppPackageType):
     _, _, controller_file = app_package
 
     # Modify the controller file
@@ -90,7 +90,7 @@ def test_update_module(manager: HotReloadManager, app_package: AppPackageType):
     assert manager.app_controller.new_attribute == "test"  # type: ignore
 
 
-def test_restart_server(manager: HotReloadManager):
+def test_restart_server(manager: DevAppManager):
     manager.restart_server()
 
     assert manager.webservice_thread is not None
@@ -102,7 +102,7 @@ def test_restart_server(manager: HotReloadManager):
     manager.webservice_thread.stop()
 
 
-def test_objects_in_module(manager: HotReloadManager, app_package: AppPackageType):
+def test_objects_in_module(manager: DevAppManager, app_package: AppPackageType):
     package_name, _, _ = app_package
     module = importlib.import_module(f"{package_name}.test_controller")
 
@@ -112,7 +112,7 @@ def test_objects_in_module(manager: HotReloadManager, app_package: AppPackageTyp
     assert len(objects) == 1
 
 
-def test_package_path_to_module(manager: HotReloadManager, app_package: AppPackageType):
+def test_package_path_to_module(manager: DevAppManager, app_package: AppPackageType):
     package_name, temp_dir, _ = app_package
     file_path = temp_dir / package_name / "test_controller.py"
     module_name = manager.package_path_to_module(file_path)
@@ -120,7 +120,7 @@ def test_package_path_to_module(manager: HotReloadManager, app_package: AppPacka
     assert module_name == f"{package_name}.test_controller"
 
 
-def test_module_to_package_path(manager: HotReloadManager, app_package: AppPackageType):
+def test_module_to_package_path(manager: DevAppManager, app_package: AppPackageType):
     package_name, temp_dir, _ = app_package
     module_name = manager.module_to_package_path(f"{package_name}.test_controller")
 
@@ -128,7 +128,7 @@ def test_module_to_package_path(manager: HotReloadManager, app_package: AppPacka
 
 
 def test_get_submodules_with_objects(
-    manager: HotReloadManager, app_package: AppPackageType
+    manager: DevAppManager, app_package: AppPackageType
 ):
     package_name, _, _ = app_package
     root_module = importlib.import_module(package_name)
@@ -163,13 +163,13 @@ def test_is_port_open(manager):
     server_socket.close()
 
 
-def test_mount_exceptions(manager: HotReloadManager):
+def test_mount_exceptions(manager: DevAppManager):
     # Check if the exception handler is mounted
     assert Exception in manager.app_controller.app.exception_handlers
 
 
 @pytest.mark.asyncio
-async def test_handle_dev_exception(manager: HotReloadManager):
+async def test_handle_dev_exception(manager: DevAppManager):
     # Create a mock request
     request = Request({"type": "http", "method": "GET"})
 
@@ -200,7 +200,7 @@ async def test_handle_dev_exception(manager: HotReloadManager):
 def test_get_objects_with_superclasses(
     superclass_names: list[str],
     expected_subclasses: list[str],
-    manager: HotReloadManager,
+    manager: DevAppManager,
     app_package: AppPackageType,
 ):
     package_name, package_root, _ = app_package

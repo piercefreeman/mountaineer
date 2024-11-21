@@ -21,13 +21,15 @@ class ClientCompiler:
 
     def __init__(
         self,
-        view_root: ManagedViewPath,
         app: AppController,
     ):
-        self.view_root = view_root
-        self.app = app
-
         self.tmp_dir = Path(mkdtemp())
+
+        self.update_controller(app)
+
+    def update_controller(self, controller: AppController):
+        self.app = controller
+        self.view_root = controller.view_root
 
     async def run_builder_plugins(
         self,

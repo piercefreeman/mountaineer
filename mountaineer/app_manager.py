@@ -2,6 +2,8 @@ import importlib
 import socket
 import sys
 from importlib.metadata import distributions
+from pathlib import Path
+from tempfile import mkdtemp
 from traceback import format_exception
 from types import ModuleType
 
@@ -9,16 +11,16 @@ from fastapi import Request
 from fastapi.responses import Response
 
 from mountaineer.app import AppController
+from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import ExceptionController
 from mountaineer.webservice import UvicornThread
 
 
-class HotReloadManager:
+class DevAppManager:
     """
-    Manages the lifecycle of a single app controller, including its webservice thread
-    and utilities for hot-reloading.
-
-    This is only intended for development use.
+    Manages the lifecycle of a single app controller. This is only intended
+    for development use.
 
     """
 
@@ -50,6 +52,17 @@ class HotReloadManager:
         # Initial mount
         self.mount_exceptions(app_controller)
 
+        global_build_cache = Path(mkdtemp())
+        self.js_compiler = ClientBuilder(
+            app_controller,
+            live_reload_port=live_reload_port,
+            build_cache=global_build_cache,
+        )
+
+        self.app_compiler = ClientCompiler(
+            app=app_controller,
+        )
+
     @classmethod
     def from_webcontroller(
         cls,
@@ -78,7 +91,6 @@ class HotReloadManager:
         )
 
     def update_module(self):
-        print("SHOULD UPDATE MODULE", self.module.__name__)
         # By the time we get to this point, our hot reloader should
         # have already reloaded the module in global space
         self.module = sys.modules[self.module.__name__]
@@ -88,6 +100,10 @@ class HotReloadManager:
 
         # Re-mount the exceptions now that we have a new app controller
         self.mount_exceptions(self.app_controller)
+
+        # We also have to update our builders
+        self.js_compiler.update_controller(self.app_controller)
+        self.app_compiler.update_controller(self.app_controller)
 
     def restart_server(self):
         if not self.port:

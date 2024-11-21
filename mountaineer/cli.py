@@ -13,7 +13,7 @@ from inflection import underscore
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.app_manager import HotReloadManager, find_packages_with_prefix
+from mountaineer.app_manager import DevAppManager, find_packages_with_prefix
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.console import CONSOLE
@@ -56,7 +56,7 @@ def handle_watch(
     # different builds
     global_build_cache = Path(mkdtemp())
 
-    app_manager = HotReloadManager.from_webcontroller(webcontroller)
+    app_manager = DevAppManager.from_webcontroller(webcontroller)
     js_compiler = ClientBuilder(
         app_manager.app_controller,
         live_reload_port=None,
@@ -125,7 +125,7 @@ def handle_watch(
 #     watcher_webservice = WatcherWebservice(webservice_host=host)
 #     watcher_webservice.start()
 
-#     app_manager = HotReloadManager.from_webcontroller(
+#     app_manager = DevAppManager.from_webcontroller(
 #         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
 #     )
 #     LOGGER.debug(f"Initial load of {webcontroller} complete.")
@@ -413,20 +413,8 @@ def handle_runserver(
     watcher_webservice = WatcherWebservice(webservice_host=host)
     watcher_webservice.start()
 
-    app_manager = HotReloadManager.from_webcontroller(
+    app_manager = DevAppManager.from_webcontroller(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
-    )
-
-    global_build_cache = Path(mkdtemp())
-    js_compiler = ClientBuilder(
-        app_manager.app_controller,
-        live_reload_port=watcher_webservice.port,
-        build_cache=global_build_cache,
-    )
-
-    app_compiler = ClientCompiler(
-        app=app_manager.app_controller,
-        view_root=app_manager.app_controller.view_root,
     )
 
     # Initialize hot reloader with root package
@@ -437,8 +425,8 @@ def handle_runserver(
     )
 
     # Initial build
-    asyncio.run(js_compiler.build_all())
-    asyncio.run(app_compiler.run_builder_plugins())
+    asyncio.run(app_manager.js_compiler.build_all())
+    asyncio.run(app_manager.app_compiler.run_builder_plugins())
 
     app_manager.restart_server()
     CONSOLE.print(f"[bold green]🚀 App launched in {time() - start_time:.2f} seconds")
@@ -459,38 +447,25 @@ def handle_runserver(
 
         # Handle Python changes
         if updated_python:
-            any_reloaded = False
-            for module_path in updated_python:
-                try:
-                    module_name = package_path_to_module(package, module_path)
-                    success, reloaded = hot_reloader.reload_module(module_name)
+            module_names = [
+                package_path_to_module(package, module_path)
+                for module_path in updated_python
+            ]
+            success, reloaded = hot_reloader.reload_modules(module_names)
 
-                    if not success:
-                        CONSOLE.print(f"[bold red]Failed to reload {module_name}")
-                        continue
-
-                    any_reloaded = any_reloaded or reloaded
-
-                except (ValueError, FileNotFoundError) as e:
-                    CONSOLE.print(f"[bold red]{str(e)}")
-                    continue
-
-            if any_reloaded:
-                await js_compiler.build_use_server()
-
-                import sys
-
-                print(
-                    "before updating module reload",
-                    [key for key in sys.modules.keys() if "amplify" in key],
-                )
-
+            if reloaded:
                 app_manager.update_module()
+                await app_manager.js_compiler.build_use_server()
                 app_manager.restart_server()
+
+            if not success:
+                CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
 
         # Handle JS changes
         if updated_js:
-            await app_compiler.run_builder_plugins(limit_paths=list(updated_js))
+            await app_manager.app_compiler.run_builder_plugins(
+                limit_paths=list(updated_js)
+            )
             for path in updated_js:
                 app_manager.app_controller.invalidate_view(path)
 
@@ -536,7 +511,7 @@ def handle_build(
     :param minify: Minify the JS bundle, strip debug symbols
 
     """
-    app_manager = HotReloadManager.from_webcontroller(webcontroller)
+    app_manager = DevAppManager.from_webcontroller(webcontroller)
 
     js_compiler = ClientBuilder(
         app_manager.app_controller,

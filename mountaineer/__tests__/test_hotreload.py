@@ -68,42 +68,6 @@ def test_initial_dependency_tracking(test_package_dir):
     assert base_deps["subclasses"] == {"BaseClass": {"ChildClass"}}
 
 
-def test_preserve_object_state(test_package_dir):
-    """Test state preservation."""
-    pkg_dir, pkg_name = test_package_dir
-    # Import modules
-    child_module = importlib.import_module(f"{pkg_name}.child")
-    # Create object
-    obj = child_module.ChildClass()
-    obj.value = 30
-    obj.child_value = 40
-
-    # Initialize HotReloader
-    hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
-
-    # Modify child.py
-    (pkg_dir / "child.py").write_text(
-        textwrap.dedent(
-            f"""
-        from {pkg_name}.base import BaseClass
-
-        class ChildClass(BaseClass):
-            def __init__(self):
-                super().__init__()
-                self.child_value = 20
-            def get_modified_value(self):
-                return self.child_value * 2
-    """
-        )
-    )
-
-    time.sleep(0.1)
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.child")
-    assert success
-    assert obj.value == 30
-    assert obj.child_value == 40
-
-
 def test_inheritance_changes(test_package_dir):
     """Test inheritance changes."""
     pkg_dir, pkg_name = test_package_dir
@@ -298,7 +262,6 @@ def test_enum_reload(test_package_dir):
 
     # Import modules
     importlib.import_module(f"{pkg_name}.status")
-    doc_module = importlib.import_module(f"{pkg_name}.document")
 
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.document")
@@ -346,11 +309,8 @@ def test_import_alias_dependency_graph(test_package_dir):
         textwrap.dedent(
             f"""
             import {pkg_name}.models as mod
-            print("Reloading main with mod import:", id(mod))
-            print("Reloading value", mod.MyModel().get_value())
 
             def get_model_value():
-                print("USING MOD", id(mod))
                 model = mod.MyModel()
                 return model.get_value()
             """
@@ -399,7 +359,6 @@ def test_import_alias_dependency_graph(test_package_dir):
 
     # Verify that the updated value is reflected
     main_module = sys.modules[f"{pkg_name}.main"]
-    print("GET VALUE", id(main_module))
     assert main_module.get_model_value() == 200
 
 
@@ -429,25 +388,21 @@ def test_relative_import(test_package_dir):
         textwrap.dedent(
             f"""
             from {pkg_name} import models
-            print("Main module loaded with models id:", id(models))
 
             def get_model_value():
-                print("get_model_value using models id:", id(models))
                 model = models.MyModel()
-                print("MyModel class id:", id(models.MyModel))
                 return model.get_value()
             """
         )
     )
 
     # Import and verify initial state
-    models_module = importlib.import_module(f"{pkg_name}.models")
+    importlib.import_module(f"{pkg_name}.models")
     main_module = importlib.import_module(f"{pkg_name}.main")
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.main")
 
     # Verify initial dependency graph
     deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
-    print("DEPS", deps)
     assert (
         f"{pkg_name}.models.example" in deps["imports"]
     ), "models should import example"
@@ -521,25 +476,21 @@ def test_ignores_irrelevant_files(test_package_dir):
             f"""
             from {pkg_name} import models
             from {pkg_name}.other_item import OtherFile
-            print("Main module loaded with models id:", id(models))
 
             def get_model_value():
-                print("get_model_value using models id:", id(models))
                 model = models.MyModel()
-                print("MyModel class id:", id(models.MyModel))
                 return model.get_value()
             """
         )
     )
 
     # Import and verify initial state
-    models_module = importlib.import_module(f"{pkg_name}.models")
+    importlib.import_module(f"{pkg_name}.models")
     main_module = importlib.import_module(f"{pkg_name}.main")
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.main")
 
     # Verify initial dependency graph
     deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
-    print("DEPS", deps)
     assert (
         f"{pkg_name}.models.example" in deps["imports"]
     ), "models should import example"

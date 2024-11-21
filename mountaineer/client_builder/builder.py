@@ -66,10 +66,19 @@ class ClientBuilder:
         self.openapi_action_converter = OpenAPIToTypescriptActionConverter()
         self.openapi_link_converter = OpenAPIToTypescriptLinkConverter()
 
-        self.app = app
-        self.view_root = ManagedViewPath.from_view_root(app.view_root)
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
+
+        self._openapi_action_specs = None
+        self._openapi_render_specs = None
+
+        self.update_controller(app)
+
+    def update_controller(self, controller: AppController):
+        self.app = controller
+        self.view_root = ManagedViewPath.from_view_root(controller.view_root)
+        self._openapi_action_specs = None
+        self._openapi_render_specs = None
 
     async def build_all(self):
         # Totally clear away the old build cache, so we start fresh
@@ -161,7 +170,7 @@ class ClientBuilder:
             )
 
     def _generate_controller_schema(self, controller: ControllerBase):
-        action_spec_openapi = self.openapi_action_specs[controller]
+        action_spec_openapi = self.openapi_action_specs[controller.__class__.__name__]
 
         try:
             action_base = OpenAPIDefinition(**action_spec_openapi)
@@ -171,7 +180,7 @@ class ClientBuilder:
             )
             raise e
 
-        render_spec_openapi = self.openapi_render_specs[controller]
+        render_spec_openapi = self.openapi_render_specs[controller.__class__.__name__]
         render_base = (
             OpenAPISchema(**render_spec_openapi.spec)
             if render_spec_openapi.spec
@@ -510,9 +519,13 @@ class ClientBuilder:
         cached_metadata = self.build_cache / "client_builder_openapi.json"
         cached_contents = {
             controller_definition.controller.__class__.__name__: {
-                "action": self.openapi_action_specs[controller_definition.controller],
+                "action": self.openapi_action_specs[
+                    controller_definition.controller.__class__.__name__
+                ],
                 "render": asdict(
-                    self.openapi_render_specs[controller_definition.controller]
+                    self.openapi_render_specs[
+                        controller_definition.controller.__class__.__name__
+                    ]
                 ),
             }
             for controller_definition in self.app.controllers
@@ -610,14 +623,14 @@ class ClientBuilder:
         are defined differently. We internally cache this for all stages that require it.
 
         """
-        if not hasattr(self, "_openapi_action_specs"):
-            self._openapi_action_specs: dict[ControllerBase, dict[Any, Any]] = {}
+        if self._openapi_action_specs is None:
+            self._openapi_action_specs: dict[str, dict[Any, Any]] = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller
-                self._openapi_action_specs[controller] = self.openapi_from_controller(
-                    controller_definition
-                )
+                self._openapi_action_specs[
+                    controller.__class__.__name__
+                ] = self.openapi_from_controller(controller_definition)
 
         return self._openapi_action_specs
 
@@ -631,8 +644,8 @@ class ClientBuilder:
         defined controllers with no return model.
 
         """
-        if not hasattr(self, "_openapi_render_specs"):
-            self._openapi_render_specs: dict[ControllerBase, RenderSpec] = {}
+        if self._openapi_render_specs is None:
+            self._openapi_render_specs: dict[str, RenderSpec] = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller
@@ -645,7 +658,7 @@ class ClientBuilder:
                     if render_model
                     else None
                 )
-                self._openapi_render_specs[controller] = RenderSpec(
+                self._openapi_render_specs[controller.__class__.__name__] = RenderSpec(
                     url=None
                     if isinstance(controller, LayoutControllerBase)
                     else controller.url,

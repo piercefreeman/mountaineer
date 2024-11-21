@@ -54,21 +54,14 @@ class HotReloader:
 
         # Ensure the entrypoint is imported
         if entrypoint not in sys.modules:
-            print(f"Importing entrypoint: {entrypoint}")
+            logger.info(f"Importing entrypoint: {entrypoint}")
             importlib.import_module(entrypoint)
         else:
-            print(f"Entrypoint already imported: {entrypoint}")
-
-        print(
-            "Found sys modules: ",
-            [key for key in sys.modules.keys() if key.startswith(root_package)],
-        )
+            logger.info(f"Entrypoint already imported: {entrypoint}")
 
         # Build the dependency graph by inspecting the already imported modules
         self._build_dependency_graph()
         self._log_dependency_state()
-
-        print("Dependency graph: ", self.dependency_graph)
 
     def _log_dependency_state(self):
         """Log the current state of the dependency graph"""
@@ -141,13 +134,6 @@ class HotReloader:
                                 # potential_module in sys.modules or
                                 # self._find_module_file(potential_module) is not None
                                 potential_module in sys.modules
-                            )
-
-                            print(
-                                "POTENTIAL",
-                                potential_module,
-                                module_exists,
-                                self._find_module_file(potential_module),
                             )
 
                             # If it's a module, track the full path
@@ -308,7 +294,6 @@ class HotReloader:
 
     def _get_affected_modules(self, changed_module: str) -> Set[str]:
         """Get all modules affected by a change, including submodules."""
-        print("CHANGED MODULE", changed_module)
         affected = {changed_module}
         to_process = {changed_module}
 
@@ -373,17 +358,33 @@ class HotReloader:
         return result
 
     def reload_module(self, module_name: str) -> Tuple[bool, List[str]]:
+        return self.reload_modules([module_name])
+
+    def reload_modules(self, module_names: list[str]) -> Tuple[bool, List[str]]:
         """Reload a module and all its dependencies."""
-        logger.info(f"=== Starting reload of {module_name} ===")
+        logger.info(f"=== Starting reload of {module_names} ===")
         self._log_dependency_state()
 
         reloaded_modules = []
-        try:
-            if module_name not in self.module_cache:
-                logger.error(f"Module {module_name} is not loaded. Cannot reload.")
+        valid_modules = {
+            module_name
+            for module_name in module_names
+            if module_name in self.module_cache
+        }
+        invalid_modules = set(module_names) - valid_modules
+
+        if invalid_modules:
+            logger.error(f"Modules {invalid_modules} are not loaded. Cannot reload.")
+
+            if not valid_modules:
                 return False, reloaded_modules
 
-            affected = self._get_affected_modules(module_name)
+        try:
+            affected = {
+                dependency
+                for module_name in valid_modules
+                for dependency in self._get_affected_modules(module_name)
+            }
             logger.info(f"Affected modules: {affected}")
             sorted_modules = self._sort_modules_by_dependencies(affected)
             logger.info(f"Reload order: {sorted_modules}")
@@ -415,7 +416,7 @@ class HotReloader:
             return True, reloaded_modules
 
         except Exception as e:
-            logger.error(f"Failed to reload {module_name}: {e}", exc_info=True)
+            logger.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)
             return False, reloaded_modules
 
     def get_module_dependencies(self, module_name: str) -> Dict[str, Any]:
