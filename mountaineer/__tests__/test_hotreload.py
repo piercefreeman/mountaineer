@@ -1,7 +1,6 @@
 import importlib
 import sys
 import textwrap
-import time
 from pathlib import Path
 
 import pytest
@@ -110,7 +109,6 @@ def test_inheritance_changes(test_package_dir: tuple[Path, str]):
         )
     )
 
-    time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
     assert success
 
@@ -183,7 +181,6 @@ def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
         )
     )
 
-    time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.child")
     assert not success
 
@@ -228,7 +225,6 @@ def test_multiple_inheritance(test_package_dir: tuple[Path, str]):
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
 
-    time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.child")
     assert success
 
@@ -291,7 +287,6 @@ def test_enum_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.status")
     assert success
 
@@ -364,7 +359,6 @@ def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
         )
     )
 
-    time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models")
     assert success
     assert f"{pkg_name}.main" in reloaded
@@ -435,9 +429,6 @@ def test_relative_import(test_package_dir: tuple[Path, str]):
             """
         )
     )
-
-    # Force file timestamp change
-    time.sleep(0.1)
 
     # Reload and verify
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models.example")
@@ -522,9 +513,6 @@ def test_ignores_irrelevant_files(test_package_dir: tuple[Path, str]):
             """
         )
     )
-
-    # Force file timestamp change
-    time.sleep(0.1)
 
     # Reload and verify
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models.example")
@@ -710,7 +698,6 @@ def test_inheritance_tree_module_updates(test_package_dir: tuple[Path, str]):
         )
     )
 
-    time.sleep(0.1)
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.dynamic")
     assert success
 
