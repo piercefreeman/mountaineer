@@ -6,6 +6,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass, field
+from importlib.abc import SourceLoader
 from pathlib import Path
 from types import ModuleType
 
@@ -549,10 +550,11 @@ def safe_reload(module: ModuleType) -> ModuleType:
         # Clear out the bytecode to force recompilation
         current_time = int(time.time())
         try:
-            source_mtime = int(spec.loader.path_stats(source_path)["mtime"])
-            if source_mtime == current_time:
-                bytecode_path = importlib.util.cache_from_source(source_path)
-                os.remove(bytecode_path)
+            if spec.loader and isinstance(spec.loader, SourceLoader):
+                source_mtime = int(spec.loader.path_stats(source_path)["mtime"])
+                if source_mtime == current_time:
+                    bytecode_path = importlib.util.cache_from_source(source_path)
+                    os.remove(bytecode_path)
         except (AttributeError, OSError, KeyError):
             pass
 

@@ -2,6 +2,7 @@ import importlib
 import sys
 import textwrap
 from pathlib import Path
+from time import sleep
 
 import pytest
 
@@ -729,6 +730,9 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
             """
         )
     )
+
+    # Wait for the file to write + flush before we can import it
+    sleep(1)
 
     # Calling this should also start tracking the new file
     new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
