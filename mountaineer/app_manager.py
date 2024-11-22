@@ -15,7 +15,6 @@ from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import (
     ExceptionController,
-    get_formatted_traceback,
 )
 from mountaineer.webservice import UvicornThread
 
@@ -153,11 +152,12 @@ class DevAppManager:
         # If we're receiving a GET request, show the exception. Otherwise fall back
         # on the normal REST handlers
         if request.method == "GET":
-            print(get_formatted_traceback(exc))
-
             html = await self.exception_controller.definition.view_route(
                 exception=str(exc),
                 stack="".join(format_exception(exc)),
+                parsed_exception=self.exception_controller.traceback_parser.parse_exception(
+                    exc
+                ),
             )
             return html
         else:

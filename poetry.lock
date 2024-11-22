@@ -1128,6 +1128,17 @@ slack = ["slack-sdk"]
 telegram = ["requests"]
 
 [[package]]
+name = "types-docutils"
+version = "0.21.0.20241005"
+description = "Typing stubs for docutils"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "types-docutils-0.21.0.20241005.tar.gz", hash = "sha256:48f804a2b50da3a1b1681c4ca1b6184416a6e4129e302d15c44e9d97c59b3365"},
+    {file = "types_docutils-0.21.0.20241005-py3-none-any.whl", hash = "sha256:4d9021422f2f3fca8b0726fb8949395f66a06c0d951479eb3b1387d75b134430"},
+]
+
+[[package]]
 name = "types-psycopg2"
 version = "2.9.21.20240311"
 description = "Typing stubs for psycopg2"
@@ -1137,6 +1148,21 @@ files = [
     {file = "types-psycopg2-2.9.21.20240311.tar.gz", hash = "sha256:722945dffa6a729bebc660f14137f37edfcead5a2c15eb234212a7d017ee8072"},
     {file = "types_psycopg2-2.9.21.20240311-py3-none-any.whl", hash = "sha256:2e137ae2b516ee0dbaab6f555086b6cfb723ba4389d67f551b0336adf4efcf1b"},
 ]
+
+[[package]]
+name = "types-pygments"
+version = "2.18.0.20240506"
+description = "Typing stubs for Pygments"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "types-Pygments-2.18.0.20240506.tar.gz", hash = "sha256:4b4c37812c87bbde687dbf27adf5bac593745a321e57f678dbc311571ba2ac9d"},
+    {file = "types_Pygments-2.18.0.20240506-py3-none-any.whl", hash = "sha256:11c90bc1737c9af55e5569558b88df7c2233e12325cb516215f722271444e91d"},
+]
+
+[package.dependencies]
+types-docutils = "*"
+types-setuptools = "*"
 
 [[package]]
 name = "types-setuptools"
@@ -1476,4 +1502,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "88748acc66822fad7ff3e70686f9036c179ef9394d32b3a44513176eaf5b0800"
+content-hash = "34906a1f5b0b9683a3c9e995b234a8c0459bb0e0e23caa795f01793c3b0bc94f"

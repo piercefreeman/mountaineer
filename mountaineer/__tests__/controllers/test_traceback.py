@@ -1,3 +1,4 @@
+from pathlib import Path
 from textwrap import dedent
 
 import pytest
@@ -6,15 +7,15 @@ from mountaineer.controllers.traceback import ExceptionParser
 
 
 def nested_function(x: int) -> None:
-    local_var = "test string"
-    nested_dict = {"key": "value"}
+    local_var = "test string"  # noqa: F841
+    nested_dict = {"key": "value"}  # noqa: F841
     raise ValueError(f"Test error with {x}")
 
 
 def function_with_locals() -> None:
     x = 42
-    y = "string"
-    z = [1, 2, 3]
+    y = "string"  # noqa: F841
+    z = [1, 2, 3]  # noqa: F841
     nested_function(x)
 
 
@@ -73,7 +74,7 @@ def test_nested_exception_with_locals(parser, complex_exception):
 
 def test_syntax_highlighting(parser):
     try:
-        x = {"complex": [1, 2, 3], "dict": {"nested": True}}
+        x = {"complex": [1, 2, 3], "dict": {"nested": True}}  # noqa: F841
         raise Exception("Test")
     except Exception as e:
         result = parser.parse_exception(e)
@@ -108,7 +109,7 @@ def test_different_file_types(parser, tmp_path):
         result = parser.parse_exception(e)
 
     frame = result.frames[-1]
-    assert frame.file_name == str(py_file)
+    assert frame.file_name == "test.py"
     assert "test_function" in frame.code_context
     assert "<span" in frame.code_context
 
@@ -130,8 +131,8 @@ def test_exception_without_traceback(parser):
 
 def test_line_numbers_accuracy(parser):
     def error_on_specific_line():
-        x = 1
-        y = 2
+        x = 1  # noqa: F841
+        y = 2  # noqa: F841
         raise ValueError("Test")
 
     try:
@@ -142,3 +143,64 @@ def test_line_numbers_accuracy(parser):
     frame = result.frames[-1]
     assert "ValueError" in frame.code_context
     assert frame.line_number > 0
+
+
+@pytest.fixture
+def mock_project(tmp_path):
+    """Create a mock project structure with packages"""
+    # Main package
+    package_root = tmp_path / "myproject"
+    package_root.mkdir()
+    (package_root / "__init__.py").touch()
+
+    # Subpackage
+    subpackage = package_root / "subpackage"
+    subpackage.mkdir()
+    (subpackage / "__init__.py").touch()
+
+    # Some modules
+    (package_root / "module.py").touch()
+    (subpackage / "submodule.py").touch()
+
+    # Non-package directory
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "standalone.py").touch()
+
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "project_path, expected_path",
+    [
+        ("myproject/module.py", "myproject/module.py"),
+        ("myproject/subpackage/submodule.py", "myproject/subpackage/submodule.py"),
+        ("outside/standalone.py", "standalone.py"),
+    ],
+)
+def test_package_module(
+    project_path: str, expected_path: str, mock_project: Path, parser: ExceptionParser
+):
+    path = str(mock_project / project_path)
+    assert parser.get_package_path(path) == expected_path
+
+
+def test_nonexistent_path(parser: ExceptionParser):
+    path = "/nonexistent/path/file.py"
+    assert parser.get_package_path(path) == "file.py"
+
+
+def test_nested_package_structure(tmp_path, parser: ExceptionParser):
+    # Create deep nested structure
+    structure = tmp_path / "root" / "pkg1" / "pkg2" / "pkg3"
+    structure.mkdir(parents=True)
+
+    # Create __init__.py files at different levels
+    (tmp_path / "root" / "pkg1" / "__init__.py").touch()
+    (tmp_path / "root" / "pkg1" / "pkg2" / "__init__.py").touch()
+    (tmp_path / "root" / "pkg1" / "pkg2" / "pkg3" / "__init__.py").touch()
+
+    test_file = structure / "module.py"
+    test_file.touch()
+
+    assert parser.get_package_path(str(test_file)) == "pkg1/pkg2/pkg3/module.py"
