@@ -57,6 +57,18 @@ def test_package_dir(tmp_path: Path, request):
     return pkg_dir, pkg_name
 
 
+def immediate_flush_to_disk(path: Path):
+    """
+    Help deal with test unreliability when we reload a file
+    that has changed via python but hasn't yet been flushed to
+    the filesystem. reload seems to do a full filesystem pull and bipass
+    Python's write caching logic.
+
+    """
+    # Seems to be the only consistent approach
+    time.sleep(1)
+
+
 def test_initial_dependency_tracking(test_package_dir: tuple[Path, str]):
     """
     Test initial dependency tracking on load.
@@ -153,10 +165,6 @@ def test_cyclic_dependencies(test_package_dir: tuple[Path, str]):
         )
     )
 
-    # Import modules
-    importlib.import_module(f"{pkg_name}.module_b")
-    importlib.import_module(f"{pkg_name}.module_a")
-
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.module_a")
 
@@ -170,10 +178,6 @@ def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
 
     """
     pkg_dir, pkg_name = test_package_dir
-
-    # Import base and child
-    importlib.import_module(f"{pkg_name}.base")
-    importlib.import_module(f"{pkg_name}.child")
 
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
@@ -233,11 +237,6 @@ def test_multiple_inheritance(test_package_dir: tuple[Path, str]):
         )
     )
 
-    # Import necessary modules
-    importlib.import_module(f"{pkg_name}.base")
-    importlib.import_module(f"{pkg_name}.mixin")
-    importlib.import_module(f"{pkg_name}.child")
-
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
 
@@ -286,9 +285,6 @@ def test_enum_reload(test_package_dir: tuple[Path, str]):
             """
         )
     )
-
-    # Import modules
-    importlib.import_module(f"{pkg_name}.status")
 
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.document")
@@ -348,7 +344,6 @@ def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
     )
 
     # Import modules
-    importlib.import_module(f"{pkg_name}.models")
     main_module = importlib.import_module(f"{pkg_name}.main")
 
     # Initialize HotReloader
@@ -432,7 +427,6 @@ def test_relative_import(test_package_dir: tuple[Path, str]):
     )
 
     # Import and verify initial state
-    importlib.import_module(f"{pkg_name}.models")
     main_module = importlib.import_module(f"{pkg_name}.main")
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.main")
 
@@ -520,7 +514,6 @@ def test_ignores_irrelevant_files(test_package_dir: tuple[Path, str]):
     )
 
     # Import and verify initial state
-    importlib.import_module(f"{pkg_name}.models")
     main_module = importlib.import_module(f"{pkg_name}.main")
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.main")
 
@@ -594,7 +587,6 @@ def test_package_structure_scanning(test_package_dir: tuple[Path, str]):
         )
     )
 
-    # Import modules
     importlib.import_module(f"{pkg_name}.nested")
     importlib.import_module(f"{pkg_name}.nested.module")
     importlib.import_module(f"{pkg_name}.nested.subnested")
@@ -652,11 +644,6 @@ def test_inheritance_tree_building(test_package_dir: tuple[Path, str]):
             """
         )
     )
-
-    # Import modules
-    importlib.import_module(f"{pkg_name}.base")
-    importlib.import_module(f"{pkg_name}.middle")
-    importlib.import_module(f"{pkg_name}.leaf")
 
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.leaf")
@@ -721,10 +708,6 @@ def test_inheritance_tree_module_updates(test_package_dir: tuple[Path, str]):
         )
     )
 
-    # Import modules
-    importlib.import_module(f"{pkg_name}.base")
-    importlib.import_module(f"{pkg_name}.dynamic")
-
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.dynamic")
 
@@ -760,7 +743,6 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
     pkg_dir, pkg_name = test_package_dir
 
     # Import initial modules
-    importlib.import_module(f"{pkg_name}.base")
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.base")
 
     # Create new file that imports base
@@ -776,16 +758,24 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    # Verify dependency tracking
-    new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
-    base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
+    immediate_flush_to_disk(pkg_dir / "new_module.py")
 
+    # Calling this should also start tracking the new file
+    new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
     assert new_deps
+
+    # Verify we have also updated the old file bidirectionally
+    base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
     assert base_deps
 
     assert f"{pkg_name}.base" in new_deps.imports
     assert new_deps.superclasses == {"NewClass": {"BaseClass"}}
     assert "NewClass" in base_deps.subclasses["BaseClass"]
+
+    # Verify that the new module was reloaded
+    new_module = sys.modules[f"{pkg_name}.new_module"]
+    obj = new_module.NewClass()
+    assert obj.get_special_value() == 20
 
     # Modify the base module
     (pkg_dir / "base.py").write_text(
@@ -800,7 +790,8 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    time.sleep(0.1)
+    immediate_flush_to_disk(pkg_dir / "base.py")
+
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
     assert success
     assert reloaded == [f"{pkg_name}.base", f"{pkg_name}.new_module"]
@@ -808,7 +799,7 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
     # Verify that the new module was reloaded
     new_module = sys.modules[f"{pkg_name}.new_module"]
     obj = new_module.NewClass()
-    assert obj.get_special_value() == 20
+    assert obj.get_special_value() == 40
 
 
 #
