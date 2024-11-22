@@ -152,7 +152,7 @@ class DevAppManager:
         # If we're receiving a GET request, show the exception. Otherwise fall back
         # on the normal REST handlers
         if request.method == "GET":
-            html = await self.exception_controller.definition.view_route(
+            html = await self.exception_controller.definition.view_route(  # type: ignore
                 exception=str(exc),
                 stack="".join(format_exception(exc)),
                 parsed_exception=self.exception_controller.traceback_parser.parse_exception(

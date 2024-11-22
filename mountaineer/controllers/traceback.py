@@ -1,8 +1,8 @@
-# NOTE: Only import on dev
 import inspect
 import linecache
 import traceback
 from pathlib import Path
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel
 from pygments import highlight
@@ -12,6 +12,7 @@ from pygments.util import ClassNotFound
 
 
 class ExceptionFrame(BaseModel):
+    id: UUID
     file_name: str
     line_number: int
     function_name: str
@@ -106,6 +107,7 @@ class ExceptionParser:
 
             frames.append(
                 ExceptionFrame(
+                    id=uuid4(),
                     file_name=self.get_package_path(filename),
                     line_number=lineno or -1,
                     function_name=function,
@@ -122,7 +124,7 @@ class ExceptionParser:
 
     def get_style_defs(self) -> str:
         """Get CSS style definitions for syntax highlighting"""
-        return self.formatter.get_style_defs() # type: ignore
+        return self.formatter.get_style_defs()  # type: ignore
 
     def get_package_path(self, filepath: str) -> str:
         """

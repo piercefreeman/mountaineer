@@ -1,9 +1,10 @@
+import importlib.util
 from pathlib import Path
 from textwrap import dedent
 
 import pytest
 
-from mountaineer.controllers.traceback import ExceptionParser
+from mountaineer.controllers.traceback import ExceptionParser, ParsedException
 
 
 def nested_function(x: int) -> None:
@@ -97,16 +98,22 @@ def test_different_file_types(parser, tmp_path):
         )
     )
 
-    import importlib.util
-
     spec = importlib.util.spec_from_file_location("test_module", py_file)
+    assert spec
+
     module = importlib.util.module_from_spec(spec)
+    assert module
+    assert spec.loader
+
     spec.loader.exec_module(module)
 
+    result: ParsedException | None = None
     try:
         module.test_function()
     except ValueError as e:
         result = parser.parse_exception(e)
+
+    assert result
 
     frame = result.frames[-1]
     assert frame.file_name == "test.py"
@@ -135,11 +142,13 @@ def test_line_numbers_accuracy(parser):
         y = 2  # noqa: F841
         raise ValueError("Test")
 
+    result: ParsedException | None = None
     try:
         error_on_specific_line()
     except ValueError as e:
         result = parser.parse_exception(e)
 
+    assert result
     frame = result.frames[-1]
     assert "ValueError" in frame.code_context
     assert frame.line_number > 0
