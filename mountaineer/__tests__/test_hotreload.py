@@ -730,7 +730,7 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    print("All files", list(pkg_dir.iterdir()))  # noqa: T201
+    print("All files", list(pkg_dir.iterdir()), sys.path)  # noqa: T201
 
     # Calling this should also start tracking the new file
     new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
