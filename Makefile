@@ -47,10 +47,6 @@ install-deps-create-mountaineer-app:
 	@echo "Installing dependencies for $(CREATE_MOUNTAINEER_APP_DIR)..."
 	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && poetry install)
 
-install-deps-docs-website:
-	@echo "Installing dependencies for $(DOCS_WEBSITE_DIR)..."
-	@(cd $(DOCS_WEBSITE_DIR) && poetry install --no-root)
-
 install-deps-scripts:
 	@echo "Installing dependencies for $(SCRIPTS_DIR)..."
 	@(cd $(SCRIPTS_DIR) && poetry install)

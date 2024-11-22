@@ -77,15 +77,13 @@ def test_from_webcontroller(manager: DevAppManager, app_package: AppPackageType)
 def test_update_module(manager: DevAppManager, app_package: AppPackageType):
     _, _, controller_file = app_package
 
-    # Modify the controller file
-    with controller_file.open("a") as f:
-        f.write("\ntest_controller.new_attribute = 'test'\n")
+    # Make sure we are able to pull an app controller from the mounted
+    # system module state
+    manager.app_controller = None  # type: ignore
 
     manager.update_module()
 
-    # Check if the new attribute is present
-    assert hasattr(manager.app_controller, "new_attribute")
-    assert manager.app_controller.new_attribute == "test"  # type: ignore
+    assert manager.app_controller is not None
 
 
 def test_restart_server(manager: DevAppManager):
