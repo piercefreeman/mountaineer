@@ -1,9 +1,10 @@
 import importlib
 import os
 import socket
+import sys
 from importlib.metadata import distributions
-from inspect import getmembers, isclass
 from pathlib import Path
+from tempfile import mkdtemp
 from traceback import format_exception
 from types import ModuleType
 
@@ -11,16 +12,16 @@ from fastapi import Request
 from fastapi.responses import Response
 
 from mountaineer.app import AppController
+from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import ExceptionController
 from mountaineer.webservice import UvicornThread
 
 
-class HotReloadManager:
+class DevAppManager:
     """
-    Manages the lifecycle of a single app controller, including its webservice thread
-    and utilities for hot-reloading.
-
-    This is only intended for development use.
+    Manages the lifecycle of a single app controller. This is only intended
+    for development use.
 
     """
 
@@ -52,6 +53,17 @@ class HotReloadManager:
         # Initial mount
         self.mount_exceptions(app_controller)
 
+        global_build_cache = Path(mkdtemp())
+        self.js_compiler = ClientBuilder(
+            app_controller,
+            live_reload_port=live_reload_port,
+            build_cache=global_build_cache,
+        )
+
+        self.app_compiler = ClientCompiler(
+            app=app_controller,
+        )
+
     @classmethod
     def from_webcontroller(
         cls,
@@ -80,14 +92,19 @@ class HotReloadManager:
         )
 
     def update_module(self):
-        # Now we re-mount the app entrypoint, which should initialize the changed
-        # controllers with their new values
-        self.module = importlib.reload(self.module)
+        # By the time we get to this point, our hot reloader should
+        # have already reloaded the module in global space
+        self.module = sys.modules[self.module.__name__]
+        # self.module = importlib.reload(self.module)
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
 
         # Re-mount the exceptions now that we have a new app controller
         self.mount_exceptions(self.app_controller)
+
+        # We also have to update our builders
+        self.js_compiler.update_controller(self.app_controller)
+        self.app_compiler.update_controller(self.app_controller)
 
     def restart_server(self):
         if not self.port:
@@ -106,136 +123,6 @@ class HotReloadManager:
             port=self.port,
         )
         self.webservice_thread.start()
-
-    def objects_in_module(self, module: ModuleType):
-        """
-        Given a module like `myapp.controllers.my_controller` it will find all
-        the objects that are actually defined in that file (versus imported
-        into that file but with a root definition elsewhere).
-
-        """
-        return {
-            id(obj)
-            for name in dir(module)
-            for obj in [getattr(module, name)]
-            # Only include objects defined in this file versus imports into this file
-            # from external sources
-            if hasattr(obj, "__module__") and obj.__module__ == module.__name__
-        }
-
-    def package_path_to_module(self, file_path_raw: Path):
-        """
-        We are notified about changes to files on disk, this function converts
-        the filename to Python's addressable module syntax.
-
-        """
-        # Get the package's root directory
-        package = importlib.import_module(self.package)
-        if not package.__file__:
-            raise ValueError(
-                f"The package {self.package} does not have a __file__ attribute"
-            )
-
-        package_root = os.path.dirname(package.__file__)
-
-        # Ensure the file_path is absolute
-        file_path = os.path.abspath(str(file_path_raw))
-
-        # Check if the file is within the package
-        if not file_path.startswith(package_root):
-            raise ValueError(
-                f"The file {file_path} is not in the package {self.package}"
-            )
-
-        # Remove the package root and the file extension
-        relative_path = os.path.relpath(file_path, package_root)
-        module_path = os.path.splitext(relative_path)[0]
-
-        # Convert path separators to dots and add the package name
-        module_name = f"{self.package}.{module_path.replace(os.sep, '.')}"
-
-        return module_name
-
-    def module_to_package_path(self, module_name):
-        """
-        Converts a Python module name to its corresponding file path on disk.
-        Returns a Path object.
-        """
-        # Get the package's root directory
-        package = importlib.import_module(self.package)
-        if not package.__file__:
-            raise ValueError(
-                f"The package {self.package} does not have a __file__ attribute"
-            )
-        package_root = Path(package.__file__).parent
-
-        # Ensure the module is within the package
-        if not module_name.startswith(self.package + "."):
-            raise ValueError(
-                f"The module {module_name} is not in the package {self.package}"
-            )
-
-        # Remove the package name from the module name
-        relative_module = module_name[len(self.package) + 1 :]
-
-        # Convert dots to path separators and add .py extension
-        relative_path = relative_module.replace(".", os.sep) + ".py"
-
-        # Construct the full path
-        full_path = package_root / relative_path
-
-        # Ensure the file exists
-        if not full_path.is_file():
-            raise FileNotFoundError(f"No file found for module {module_name}")
-
-        return full_path
-
-    def get_submodules_with_objects(
-        self, root_module: ModuleType, object_ids: set[int]
-    ):
-        already_seen_modules = set()
-
-        def inner(module):
-            if id(module) in already_seen_modules:
-                return
-            already_seen_modules.add(id(module))
-
-            for attribute_name in dir(module):
-                attribute_value = getattr(module, attribute_name)
-
-                if isinstance(attribute_value, type(module)):
-                    # Only consider modules that are part of our project
-                    if not attribute_value.__name__.startswith(self.package):
-                        continue
-                    yield from self.get_submodules_with_objects(
-                        attribute_value, object_ids
-                    )
-                else:
-                    if id(attribute_value) in object_ids:
-                        yield module
-
-        yield from inner(root_module)
-
-    def get_modified_subclass_modules(
-        self, module: ModuleType, allowed_object_ids: set[int]
-    ):
-        """
-        Assuming we are being passed the module where allowed_object_ids are defined,
-        returns the direct subclasses of those objects.
-
-        """
-        result: set[tuple[str, str]] = set()
-
-        # Sniff out the IDs for different classes
-        module_classes = getmembers(module, isclass)
-        for name, cls in module_classes:
-            if id(cls) not in allowed_object_ids:
-                continue
-
-            for subclass in cls.__subclasses__():
-                result.add((subclass.__module__, subclass.__name__))
-
-        return list(result)
 
     def is_port_open(self, host, port):
         """
@@ -288,3 +175,34 @@ def find_packages_with_prefix(prefix: str):
         for dist in distributions()
         if dist.metadata["Name"].startswith(prefix)
     ]
+
+
+def package_path_to_module(package: str, file_path_raw: Path) -> str:
+    """
+    Convert a file path to its corresponding Python module path.
+
+    Args:
+        package: The root package name (e.g. 'amplify')
+        file_path_raw: The file path to convert
+
+    Returns:
+        The full module path (e.g. 'amplify.controllers.auth')
+    """
+    # Get the package's root directory
+    package_module = importlib.import_module(package)
+    if not package_module.__file__:
+        raise ValueError(f"The package {package} does not have a __file__ attribute")
+
+    package_root = os.path.dirname(package_module.__file__)
+    file_path = os.path.abspath(str(file_path_raw))
+
+    # Check if the file is within the package
+    if not file_path.startswith(package_root):
+        raise ValueError(f"The file {file_path} is not in the package {package}")
+
+    # Remove the package root and the file extension
+    relative_path = os.path.relpath(file_path, package_root)
+    module_path = os.path.splitext(relative_path)[0]
+
+    # Convert path separators to dots and add the package name
+    return f"{package}.{module_path.replace(os.sep, '.')}"

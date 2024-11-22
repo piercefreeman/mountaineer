@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "mountaineer"
 version = "0.1.0"
-description = ""
+description = "Mountaineer is a batteries-included web framework for Python."
 authors = ["Pierce Freeman <pierce@freeman.vc>"]
 readme = "README.md"
 

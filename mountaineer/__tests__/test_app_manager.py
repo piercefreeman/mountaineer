@@ -1,6 +1,4 @@
-import importlib
 import sys
-from inspect import getmembers, isclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from time import sleep
@@ -10,7 +8,7 @@ from fastapi import Request
 from fastapi.responses import Response
 
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.app_manager import HotReloadManager
+from mountaineer.app_manager import DevAppManager, package_path_to_module
 from mountaineer.webservice import UvicornThread
 
 AppPackageType = tuple[str, Path, Path]
@@ -56,9 +54,9 @@ def app_package(tmp_app_package_dir: Path):
 
 
 @pytest.fixture
-def manager(app_package: AppPackageType) -> HotReloadManager:
+def manager(app_package: AppPackageType) -> DevAppManager:
     package_name, _, _ = app_package
-    return HotReloadManager.from_webcontroller(  # type: ignore
+    return DevAppManager.from_webcontroller(  # type: ignore
         f"{package_name}.test_controller:test_controller",
         host="localhost",
         port=8000,
@@ -66,7 +64,7 @@ def manager(app_package: AppPackageType) -> HotReloadManager:
     )
 
 
-def test_from_webcontroller(manager: HotReloadManager, app_package: AppPackageType):
+def test_from_webcontroller(manager: DevAppManager, app_package: AppPackageType):
     package_name, _, _ = app_package
     assert manager.package == package_name
     assert manager.module_name == f"{package_name}.test_controller"
@@ -76,21 +74,19 @@ def test_from_webcontroller(manager: HotReloadManager, app_package: AppPackageTy
     assert manager.live_reload_port == 8001
 
 
-def test_update_module(manager: HotReloadManager, app_package: AppPackageType):
+def test_update_module(manager: DevAppManager, app_package: AppPackageType):
     _, _, controller_file = app_package
 
-    # Modify the controller file
-    with controller_file.open("a") as f:
-        f.write("\ntest_controller.new_attribute = 'test'\n")
+    # Make sure we are able to pull an app controller from the mounted
+    # system module state
+    manager.app_controller = None  # type: ignore
 
     manager.update_module()
 
-    # Check if the new attribute is present
-    assert hasattr(manager.app_controller, "new_attribute")
-    assert manager.app_controller.new_attribute == "test"  # type: ignore
+    assert manager.app_controller is not None
 
 
-def test_restart_server(manager: HotReloadManager):
+def test_restart_server(manager: DevAppManager):
     manager.restart_server()
 
     assert manager.webservice_thread is not None
@@ -102,46 +98,12 @@ def test_restart_server(manager: HotReloadManager):
     manager.webservice_thread.stop()
 
 
-def test_objects_in_module(manager: HotReloadManager, app_package: AppPackageType):
-    package_name, _, _ = app_package
-    module = importlib.import_module(f"{package_name}.test_controller")
-
-    objects = manager.objects_in_module(module)
-
-    # Only counts the TestController class, not the test_controller object
-    assert len(objects) == 1
-
-
-def test_package_path_to_module(manager: HotReloadManager, app_package: AppPackageType):
+def test_package_path_to_module(app_package: AppPackageType):
     package_name, temp_dir, _ = app_package
     file_path = temp_dir / package_name / "test_controller.py"
-    module_name = manager.package_path_to_module(file_path)
+    module_name = package_path_to_module(package_name, file_path)
 
     assert module_name == f"{package_name}.test_controller"
-
-
-def test_module_to_package_path(manager: HotReloadManager, app_package: AppPackageType):
-    package_name, temp_dir, _ = app_package
-    module_name = manager.module_to_package_path(f"{package_name}.test_controller")
-
-    assert module_name == temp_dir / package_name / "test_controller.py"
-
-
-def test_get_submodules_with_objects(
-    manager: HotReloadManager, app_package: AppPackageType
-):
-    package_name, _, _ = app_package
-    root_module = importlib.import_module(package_name)
-    objects = set(
-        manager.objects_in_module(
-            importlib.import_module(f"{package_name}.test_controller")
-        )
-    )
-
-    submodules = list(manager.get_submodules_with_objects(root_module, objects))
-
-    assert len(submodules) == 1
-    assert submodules[0].__name__ == f"{package_name}.test_controller"
 
 
 def test_is_port_open(manager):
@@ -163,13 +125,13 @@ def test_is_port_open(manager):
     server_socket.close()
 
 
-def test_mount_exceptions(manager: HotReloadManager):
+def test_mount_exceptions(manager: DevAppManager):
     # Check if the exception handler is mounted
     assert Exception in manager.app_controller.app.exception_handlers
 
 
 @pytest.mark.asyncio
-async def test_handle_dev_exception(manager: HotReloadManager):
+async def test_handle_dev_exception(manager: DevAppManager):
     # Create a mock request
     request = Request({"type": "http", "method": "GET"})
 
@@ -183,58 +145,3 @@ async def test_handle_dev_exception(manager: HotReloadManager):
     assert isinstance(response, Response)
     assert isinstance(response.body, bytes)
     assert "ValueError: Test exception" in response.body.decode()
-
-
-@pytest.mark.parametrize(
-    "superclass_names, expected_subclasses",
-    [
-        # Our function only finds direct subclasses
-        (["SuperClass1"], ["SubClass1"]),
-        (["SuperClass2"], ["SubClass2"]),
-        (["SuperClass1", "SuperClass2"], ["SubClass1", "SubClass2"]),
-        (["SubClass1"], ["SubSubClass"]),
-        (["UnrelatedClass"], []),
-        (["SuperClass1", "UnrelatedClass"], ["SubClass1"]),
-    ],
-)
-def test_get_objects_with_superclasses(
-    superclass_names: list[str],
-    expected_subclasses: list[str],
-    manager: HotReloadManager,
-    app_package: AppPackageType,
-):
-    package_name, package_root, _ = app_package
-
-    # Create a simple class hierarchy
-    class_definitions = [
-        ("simple_classes_1.py", "simple_classes_1"),
-        ("simple_classes_2.py", "simple_classes_2"),
-    ]
-    for original_path, module_name in class_definitions:
-        controller_path = package_root / package_name / f"{module_name}.py"
-        controller_path.write_text(
-            (get_fixture_path("mock_webapp") / original_path).read_text()
-        )
-
-    superclass_ids: set[int] = set()
-
-    for _, module_name in class_definitions:
-        class_module = importlib.import_module(f"{package_name}.{module_name}")
-
-        # Sniff out the IDs for different classes
-        module_classes = getmembers(class_module, isclass)
-        for name, cls in module_classes:
-            if name in superclass_names:
-                superclass_ids.add(id(cls))
-
-    assert len(superclass_ids) == len(superclass_names)
-
-    subclasses = []
-    for _, module_name in class_definitions:
-        class_module = importlib.import_module(f"{package_name}.{module_name}")
-
-        subclasses += manager.get_modified_subclass_modules(
-            class_module, superclass_ids
-        )
-
-    assert {subclass for _, subclass in subclasses} == set(expected_subclasses)
