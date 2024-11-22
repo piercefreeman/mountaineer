@@ -2,6 +2,7 @@ import importlib
 import sys
 import textwrap
 import time
+from pathlib import Path
 
 import pytest
 
@@ -9,14 +10,19 @@ from mountaineer.hotreload import HotReloader, resolve_relative_import
 
 
 @pytest.fixture
-def test_package_dir(tmp_path, request):
-    """Create test package structure with unique name per test."""
+def test_package_dir(tmp_path: Path, request):
+    """
+    Create test package structure with unique name per test so we allow
+    client functions to modify their files without adverse affects on other tests.
+
+    """
     test_name = request.node.name.replace("test_", "")
     pkg_name = f"test_package_{test_name}"
+
     pkg_dir = tmp_path / pkg_name
     pkg_dir.mkdir()
-    (pkg_dir / "__init__.py").write_text("")
 
+    (pkg_dir / "__init__.py").write_text("")
     (pkg_dir / "base.py").write_text(
         textwrap.dedent(
             """
@@ -51,28 +57,36 @@ def test_package_dir(tmp_path, request):
     return pkg_dir, pkg_name
 
 
-def test_initial_dependency_tracking(test_package_dir):
-    """Test dependency tracking."""
+def test_initial_dependency_tracking(test_package_dir: tuple[Path, str]):
+    """
+    Test initial dependency tracking on load.
+
+    """
     pkg_dir, pkg_name = test_package_dir
-    # Import the modules
-    importlib.import_module(f"{pkg_name}.base")
-    importlib.import_module(f"{pkg_name}.child")
-    # Initialize the HotReloader with entrypoint
+
+    # Initialize the HotReloader with entrypoint, this should take
+    # care of loading the child+base files
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
 
     child_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.child")
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
 
-    assert f"{pkg_name}.base" in child_deps["imports"]
-    assert child_deps["superclasses"] == {"ChildClass": {"BaseClass"}}
-    assert base_deps["subclasses"] == {"BaseClass": {"ChildClass"}}
+    assert child_deps
+    assert base_deps
+
+    assert f"{pkg_name}.base" in child_deps.imports
+    assert child_deps.superclasses == {"ChildClass": {"BaseClass"}}
+    assert base_deps.subclasses == {"BaseClass": {"ChildClass"}}
 
 
-def test_inheritance_changes(test_package_dir):
-    """Test inheritance changes."""
+def test_inheritance_changes(test_package_dir: tuple[Path, str]):
+    """
+    Test inheritance changes if the base model is changed.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
-    # Import child first to establish initial inheritance
+    # Verify initial class logic
     child_module = importlib.import_module(f"{pkg_name}.child")
     initial_child = child_module.ChildClass()
     assert initial_child.get_value() == 10
@@ -102,7 +116,8 @@ def test_inheritance_changes(test_package_dir):
 
     # Verify both inheritance relationships
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
-    assert base_deps["subclasses"] == {"BaseClass": {"IntermediateClass", "ChildClass"}}
+    assert base_deps
+    assert base_deps.subclasses == {"BaseClass": {"IntermediateClass", "ChildClass"}}
 
     # Verify child still works
     child_module = importlib.import_module(f"{pkg_name}.child")
@@ -110,8 +125,11 @@ def test_inheritance_changes(test_package_dir):
     assert new_child.get_value() == 10
 
 
-def test_cyclic_dependencies(test_package_dir):
-    """Test cyclic dependencies."""
+def test_cyclic_dependencies(test_package_dir: tuple[Path, str]):
+    """
+    Test cyclic dependencies.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Write module files
@@ -146,8 +164,11 @@ def test_cyclic_dependencies(test_package_dir):
     assert success
 
 
-def test_partial_reload_failure(test_package_dir):
-    """Test partial reload failure."""
+def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
+    """
+    Test partial reload failure.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Import base and child
@@ -180,8 +201,11 @@ def test_partial_reload_failure(test_package_dir):
     assert obj.get_value() == 10
 
 
-def test_multiple_inheritance(test_package_dir):
-    """Test multiple inheritance."""
+def test_multiple_inheritance(test_package_dir: tuple[Path, str]):
+    """
+    Test multiple inheritance.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Write mixin.py
@@ -227,8 +251,11 @@ def test_multiple_inheritance(test_package_dir):
     assert obj.log() == "logged"
 
 
-def test_enum_reload(test_package_dir):
-    """Test that enums are properly handled during reload."""
+def test_enum_reload(test_package_dir: tuple[Path, str]):
+    """
+    Test that enums are properly handled during reload.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create initial enum file
@@ -289,8 +316,11 @@ def test_enum_reload(test_package_dir):
     assert hasattr(status_module.Status, "ARCHIVED")
 
 
-def test_import_alias_dependency_graph(test_package_dir):
-    """Test that the dependency graph correctly tracks imports with aliases."""
+def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
+    """
+    Test that the dependency graph correctly tracks imports with aliases.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create models.py with initial class
@@ -326,14 +356,16 @@ def test_import_alias_dependency_graph(test_package_dir):
 
     # Ensure the dependency graph is built correctly
     main_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.main")
+    assert main_deps
     assert (
-        f"{pkg_name}.models" in main_deps["imports"]
+        f"{pkg_name}.models" in main_deps.imports
     ), "models should be in main's imports"
 
     # Check that models knows it's imported by main
     models_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
+    assert models_deps
     assert (
-        f"{pkg_name}.main" in models_deps["imported_by"]
+        f"{pkg_name}.main" in models_deps.imported_by
     ), "main should be in models' imported_by"
 
     # Verify that the code works
@@ -362,8 +394,11 @@ def test_import_alias_dependency_graph(test_package_dir):
     assert main_module.get_model_value() == 200
 
 
-def test_relative_import(test_package_dir):
-    """Test that the dependency graph correctly tracks imports with aliases."""
+def test_relative_import(test_package_dir: tuple[Path, str]):
+    """
+    Test that the dependency graph correctly tracks imports with aliases.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create the package structure
@@ -403,12 +438,9 @@ def test_relative_import(test_package_dir):
 
     # Verify initial dependency graph
     deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
-    assert (
-        f"{pkg_name}.models.example" in deps["imports"]
-    ), "models should import example"
-    assert (
-        f"{pkg_name}.main" in deps["imported_by"]
-    ), "models should be imported by main"
+    assert deps
+    assert f"{pkg_name}.models.example" in deps.imports, "models should import example"
+    assert f"{pkg_name}.main" in deps.imported_by, "models should be imported by main"
 
     # Verify initial functionality
     initial_value = main_module.get_model_value()
@@ -440,8 +472,11 @@ def test_relative_import(test_package_dir):
     assert new_value == 200, f"Expected 200, got {new_value}"
 
 
-def test_ignores_irrelevant_files(test_package_dir):
-    # TODO: Make this cleaner, more streamlined
+def test_ignores_irrelevant_files(test_package_dir: tuple[Path, str]):
+    """
+    Ignores files that aren't directly in the DAG path of the original file
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create the package structure
@@ -491,12 +526,9 @@ def test_ignores_irrelevant_files(test_package_dir):
 
     # Verify initial dependency graph
     deps = hot_reloader.get_module_dependencies(f"{pkg_name}.models")
-    assert (
-        f"{pkg_name}.models.example" in deps["imports"]
-    ), "models should import example"
-    assert (
-        f"{pkg_name}.main" in deps["imported_by"]
-    ), "models should be imported by main"
+    assert deps
+    assert f"{pkg_name}.models.example" in deps.imports, "models should import example"
+    assert f"{pkg_name}.main" in deps.imported_by, "models should be imported by main"
 
     # Verify initial functionality
     initial_value = main_module.get_model_value()
@@ -531,8 +563,11 @@ def test_ignores_irrelevant_files(test_package_dir):
     assert new_value == 200, f"Expected 200, got {new_value}"
 
 
-def test_package_structure_scanning(test_package_dir):
-    """Test package structure scanning with nested directories."""
+def test_package_structure_scanning(test_package_dir: tuple[Path, str]):
+    """
+    Test package structure scanning with nested directories.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create nested package structure
@@ -540,19 +575,23 @@ def test_package_structure_scanning(test_package_dir):
     nested_dir.mkdir()
     (nested_dir / "__init__.py").write_text("")
     (nested_dir / "module.py").write_text(
-        """
-class NestedClass:
-    pass
-"""
+        textwrap.dedent(
+            """
+            class NestedClass:
+                pass
+            """
+        )
     )
 
     sub_nested = nested_dir / "subnested"
     sub_nested.mkdir()
     (sub_nested / "__init__.py").write_text(
-        """
-class SubNestedInit:
-    pass
-"""
+        textwrap.dedent(
+            """
+            class SubNestedInit:
+                pass
+            """
+        )
     )
 
     # Import modules
@@ -569,40 +608,49 @@ class SubNestedInit:
     assert f"{pkg_name}.nested.subnested" in hot_reloader.dependency_graph
 
 
-def test_inheritance_tree_building(test_package_dir):
-    """Test inheritance tree building with complex inheritance."""
+def test_inheritance_tree_building(test_package_dir: tuple[Path, str]):
+    """
+    Test inheritance tree building with complex inheritance.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create a hierarchy of classes
     (pkg_dir / "base.py").write_text(
-        """
-class BaseClass:
-    pass
+        textwrap.dedent(
+            """
+            class BaseClass:
+                pass
 
-class AnotherBase:
-    pass
-"""
+            class AnotherBase:
+                pass
+            """
+        )
     )
 
     (pkg_dir / "middle.py").write_text(
-        f"""
-from {pkg_name}.base import BaseClass, AnotherBase
+        textwrap.dedent(
+            f"""
+            from {pkg_name}.base import BaseClass, AnotherBase
 
-class MiddleClass(BaseClass):
-    pass
+            class MiddleClass(BaseClass):
+                pass
 
-class MultipleInheritance(BaseClass, AnotherBase):
-    pass
-"""
+            class MultipleInheritance(BaseClass, AnotherBase):
+                pass
+            """
+        )
     )
 
     (pkg_dir / "leaf.py").write_text(
-        f"""
-from {pkg_name}.middle import MiddleClass
+        textwrap.dedent(
+            f"""
+            from {pkg_name}.middle import MiddleClass
 
-class LeafClass(MiddleClass):
-    pass
-"""
+            class LeafClass(MiddleClass):
+                pass
+            """
+        )
     )
 
     # Import modules
@@ -618,15 +666,22 @@ class LeafClass(MiddleClass):
     middle_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.middle")
     leaf_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.leaf")
 
-    assert "MiddleClass" in base_deps["subclasses"]["BaseClass"]
-    assert "MultipleInheritance" in base_deps["subclasses"]["BaseClass"]
-    assert "MultipleInheritance" in base_deps["subclasses"]["AnotherBase"]
-    assert "LeafClass" in middle_deps["subclasses"]["MiddleClass"]
-    assert leaf_deps["superclasses"]["LeafClass"] == {"MiddleClass"}
+    assert base_deps
+    assert middle_deps
+    assert leaf_deps
+
+    assert "MiddleClass" in base_deps.subclasses["BaseClass"]
+    assert "MultipleInheritance" in base_deps.subclasses["BaseClass"]
+    assert "MultipleInheritance" in base_deps.subclasses["AnotherBase"]
+    assert "LeafClass" in middle_deps.subclasses["MiddleClass"]
+    assert leaf_deps.superclasses["LeafClass"] == {"MiddleClass"}
 
 
-def test_package_structure_excluded_dirs(test_package_dir):
-    """Test that certain directories are excluded from scanning."""
+def test_package_structure_excluded_dirs(test_package_dir: tuple[Path, str]):
+    """
+    Test that certain directories are excluded from scanning.
+
+    """
     pkg_dir, pkg_name = test_package_dir
 
     # Create directories that should be excluded
@@ -650,18 +705,20 @@ def test_package_structure_excluded_dirs(test_package_dir):
         assert not module.endswith("Cached")
 
 
-def test_inheritance_tree_module_updates(test_package_dir):
+def test_inheritance_tree_module_updates(test_package_dir: tuple[Path, str]):
     """Test inheritance tree updates when modules change."""
     pkg_dir, pkg_name = test_package_dir
 
     # Initial class structure
     (pkg_dir / "dynamic.py").write_text(
-        f"""
-from {pkg_name}.base import BaseClass
+        textwrap.dedent(
+            f"""
+            from {pkg_name}.base import BaseClass
 
-class DynamicClass(BaseClass):
-    pass
-"""
+            class DynamicClass(BaseClass):
+                pass
+            """
+        )
     )
 
     # Import modules
@@ -672,14 +729,17 @@ class DynamicClass(BaseClass):
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.dynamic")
 
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
-    assert "DynamicClass" in base_deps["subclasses"]["BaseClass"]
+    assert base_deps
+    assert "DynamicClass" in base_deps.subclasses["BaseClass"]
 
     # Update inheritance
     (pkg_dir / "dynamic.py").write_text(
-        """
-class DynamicClass:  # No longer inherits from BaseClass
-    pass
-"""
+        textwrap.dedent(
+            """
+            class DynamicClass:  # No longer inherits from BaseClass
+                pass
+            """
+        )
     )
 
     time.sleep(0.1)
@@ -688,17 +748,84 @@ class DynamicClass:  # No longer inherits from BaseClass
 
     # Verify inheritance is updated
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
-    assert "DynamicClass" not in base_deps["subclasses"].get("BaseClass", set())
+    assert base_deps
+    assert "DynamicClass" not in base_deps.subclasses.get("BaseClass", set())
+
+
+def test_new_file_reload(test_package_dir: tuple[Path, str]):
+    """
+    Test adding and reloading a new file that imports other modules.
+
+    """
+    pkg_dir, pkg_name = test_package_dir
+
+    # Import initial modules
+    importlib.import_module(f"{pkg_name}.base")
+    hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.base")
+
+    # Create new file that imports base
+    (pkg_dir / "new_module.py").write_text(
+        textwrap.dedent(
+            f"""
+            from {pkg_name}.base import BaseClass
+
+            class NewClass(BaseClass):
+                def get_special_value(self):
+                    return self.get_value() * 2
+            """
+        )
+    )
+
+    # Verify dependency tracking
+    new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
+    base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
+
+    assert new_deps
+    assert base_deps
+
+    assert f"{pkg_name}.base" in new_deps.imports
+    assert new_deps.superclasses == {"NewClass": {"BaseClass"}}
+    assert "NewClass" in base_deps.subclasses["BaseClass"]
+
+    # Modify the base module
+    (pkg_dir / "base.py").write_text(
+        textwrap.dedent(
+            """
+            class BaseClass:
+                def __init__(self):
+                    self.value = 20
+                def get_value(self):
+                    return self.value
+            """
+        )
+    )
+
+    time.sleep(0.1)
+    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
+    assert success
+    assert reloaded == [f"{pkg_name}.base", f"{pkg_name}.new_module"]
+
+    # Verify that the new module was reloaded
+    new_module = sys.modules[f"{pkg_name}.new_module"]
+    obj = new_module.NewClass()
+    assert obj.get_special_value() == 20
+
+
+#
+# absolute imports
+#
 
 
 def parse_relative_import(import_str: str) -> tuple[str, int]:
-    """Parse a relative import string into (import_path, level).
+    """
+    Parse a relative import string into (import_path, level).
 
     Examples:
         "module" -> ("module", 0)
         ".module" -> ("module", 1)
         "..module" -> ("module", 2)
         "..." -> ("", 3)
+
     """
     level = 0
     for char in import_str:

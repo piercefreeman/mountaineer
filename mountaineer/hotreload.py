@@ -5,7 +5,6 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Set, Tuple
 
 from mountaineer.logging import setup_logger
 
@@ -17,12 +16,10 @@ class DependencyNode:
     module_name: str
     file_path: Path
     last_modified: float
-    imports: Set[str] = field(default_factory=set)
-    imported_by: Set[str] = field(default_factory=set)
-    subclasses: Dict[str, Set[str]] = field(default_factory=dict)
-    superclasses: Dict[str, Set[str]] = field(default_factory=dict)
-    preserved_state: Dict[int, dict] = field(default_factory=dict)
-    submodules: Set[str] = field(default_factory=set)
+    imports: set[str] = field(default_factory=set)
+    imported_by: set[str] = field(default_factory=set)
+    subclasses: dict[str, set[str]] = field(default_factory=dict)
+    superclasses: dict[str, set[str]] = field(default_factory=dict)
 
     def __str__(self):
         return (
@@ -30,7 +27,6 @@ class DependencyNode:
             f"  file: {self.file_path}\n"
             f"  imports: {self.imports}\n"
             f"  imported_by: {self.imported_by}\n"
-            f"  submodules: {self.submodules}\n"
         )
 
 
@@ -42,15 +38,13 @@ class HotReloader:
         self.root_package = root_package
         self.package_path = package_path
         self.entrypoint = entrypoint
+        self.allow_manual_import = False
 
         sys.path.insert(0, str(package_path.parent))
         sys.path.insert(0, str(package_path))
 
-        self.dependency_graph: Dict[str, DependencyNode] = {}
-        self.module_cache: Dict[str, ModuleType] = {}
-
-        # Track module aliases
-        self.module_aliases: Dict[str, str] = {}
+        self.dependency_graph: dict[str, DependencyNode] = {}
+        self.module_cache: dict[str, ModuleType] = {}
 
         # Ensure the entrypoint is imported
         if entrypoint not in sys.modules:
@@ -63,8 +57,15 @@ class HotReloader:
         self._build_dependency_graph()
         self._log_dependency_state()
 
+        # Once the initial graph is built, anything else that is tracked (like a new file)
+        # will have to be imported manually
+        self.allow_manual_import = True
+
     def _log_dependency_state(self):
-        """Log the current state of the dependency graph"""
+        """
+        Log the current state of the dependency graph
+
+        """
         logger.info("Current Dependency Graph State:")
         for module_name, node in self.dependency_graph.items():
             logger.info(str(node))
@@ -77,15 +78,94 @@ class HotReloader:
                 )
 
     def _build_dependency_graph(self) -> None:
-        """Build the dependency graph by inspecting the already imported modules in sys.modules."""
+        """
+        Build the dependency graph by inspecting the already imported modules in sys.modules.
+
+        """
         logger.debug("Building dependency graph from already imported modules.")
-        for module_name in sys.modules:
+        static_modules = [module_name for module_name in sys.modules]
+        for module_name in static_modules:
             if module_name.startswith(self.root_package):
                 self._import_and_track_module(module_name)
         self._build_inheritance_tree()
 
+    def _import_and_track_module(self, module_name: str) -> ModuleType | None:
+        if module_name not in sys.modules:
+            if self.allow_manual_import:
+                # Import the entrypoint if not already imported
+                try:
+                    module = importlib.import_module(module_name)
+                    sys.modules[module_name] = module
+                except Exception as e:
+                    logger.error(
+                        f"Failed to import new module {module_name}: {e}", exc_info=True
+                    )
+                    return None
+            else:
+                # Do not import modules unless they are already imported
+                logger.debug(
+                    f"Module {module_name} is not loaded and manual loading is not allowed. Skipping."
+                )
+                return None
+
+        try:
+            module = sys.modules[module_name]
+
+            # Determine the module path
+            module_parts = module_name.split(".")
+            relative_parts = module_parts[1:]
+            relative_path = Path(*relative_parts)
+
+            # First, check if it's a package (directory with __init__.py)
+            package_init = self.package_path / relative_path / "__init__.py"
+            if package_init.exists():
+                module_path = package_init
+            else:
+                # Else, assume it's a module (.py file)
+                module_py = self.package_path / relative_path.with_suffix(".py")
+                if module_py.exists():
+                    module_path = module_py
+                else:
+                    logger.error(
+                        f"Found module {module_name} path not resolved, proposed {module_py}"
+                    )
+                    return None
+
+            # Create/update node
+            if module_name not in self.dependency_graph:
+                node = DependencyNode(
+                    module_name=module_name,
+                    file_path=module_path,
+                    last_modified=module_path.stat().st_mtime,
+                )
+                self.dependency_graph[module_name] = node
+
+            else:
+                node = self.dependency_graph[module_name]
+                # Clear imports and inheritance relationships
+                node.imports.clear()
+                node.subclasses.clear()
+                node.superclasses.clear()
+
+            self.module_cache[module_name] = module
+
+            # Now track imports and inheritance
+            self._track_imports(module_path, node)
+            self._update_inheritance_relationships(module_name)
+
+            return module
+
+        except Exception as e:
+            logger.error(f"Failed to process module {module_name}: {e}", exc_info=True)
+            if module_name in self.dependency_graph:
+                del self.dependency_graph[module_name]
+            return None
+
     def _track_imports(self, module_path: Path, node: DependencyNode) -> None:
-        """Track all imports in a module file."""
+        """
+        Track all imports in a module file.
+
+        """
         try:
             logger.debug(f"Tracking imports for {module_path}")
             with open(module_path) as f:
@@ -95,15 +175,9 @@ class HotReloader:
             for ast_node in ast.walk(tree):
                 if isinstance(ast_node, ast.Import):
                     for name in ast_node.names:
-                        logger.debug(f"Found Import in {node.module_name}: {name.name}")
+                        logger.debug(f"Found import in {node.module_name}: {name.name}")
                         if name.name.startswith(self.root_package):
                             node.imports.add(name.name)
-                            if name.asname:
-                                logger.debug(
-                                    f"Recording alias: {name.asname} -> {name.name}"
-                                )
-                                self.module_aliases[name.asname] = name.name
-                            self._ensure_module_loaded(name.name)
                             if name.name in self.dependency_graph:
                                 self.dependency_graph[name.name].imported_by.add(
                                     node.module_name
@@ -152,94 +226,11 @@ class HotReloader:
             )
             raise
 
-    def _ensure_module_loaded(self, module_name: str) -> None:
-        if module_name not in self.module_cache:
-            if module_name in sys.modules:
-                self._import_and_track_module(module_name)
-            else:
-                logger.debug(f"Module {module_name} is not loaded. Skipping.")
-
-    def _import_and_track_module(self, module_name: str) -> Optional[ModuleType]:
-        if module_name not in sys.modules:
-            if module_name == self.entrypoint:
-                # Import the entrypoint if not already imported
-                try:
-                    module = importlib.import_module(module_name)
-                    sys.modules[module_name] = module
-                except Exception as e:
-                    logger.error(
-                        f"Failed to import entrypoint {module_name}: {e}", exc_info=True
-                    )
-                    return None
-            else:
-                # Do not import modules unless they are already imported
-                logger.debug(
-                    f"Module {module_name} is not loaded and is not the entrypoint. Skipping."
-                )
-                return None
-
-        try:
-            module = sys.modules[module_name]
-
-            # Determine the module path
-            module_parts = module_name.split(".")
-            relative_parts = module_parts[1:]
-            relative_path = Path(*relative_parts)
-
-            # First, check if it's a package (directory with __init__.py)
-            package_init = self.package_path / relative_path / "__init__.py"
-            if package_init.exists():
-                module_path = package_init
-            else:
-                # Else, assume it's a module (.py file)
-                module_py = self.package_path / relative_path.with_suffix(".py")
-                if module_py.exists():
-                    module_path = module_py
-                else:
-                    logger.error(
-                        f"Found module {module_name} path not resolved, proposed {module_py}"
-                    )
-                    return None
-
-            # Create/update node
-            if module_name not in self.dependency_graph:
-                node = DependencyNode(
-                    module_name=module_name,
-                    file_path=module_path,
-                    last_modified=module_path.stat().st_mtime,
-                )
-                self.dependency_graph[module_name] = node
-
-                # Track submodule relationship based on path components
-                parts = module_name.split(".")
-                if len(parts) > 2:  # e.g. pkg.models.example
-                    parent_module = ".".join(parts[:-1])  # pkg.models
-                    if parent_module in self.dependency_graph:
-                        self.dependency_graph[parent_module].submodules.add(module_name)
-
-            else:
-                node = self.dependency_graph[module_name]
-                # Clear imports and inheritance relationships
-                node.imports.clear()
-                node.subclasses.clear()
-                node.superclasses.clear()
-
-            self.module_cache[module_name] = module
-
-            # Now track imports and inheritance
-            self._track_imports(module_path, node)
-            self._update_inheritance_relationships(module_name)
-
-            return module
-
-        except Exception as e:
-            logger.error(f"Failed to process module {module_name}: {e}", exc_info=True)
-            if module_name in self.dependency_graph:
-                del self.dependency_graph[module_name]
-            return None
-
     def _update_inheritance_relationships(self, module_name: str) -> None:
-        """Update inheritance relationships for a module after it's loaded."""
+        """
+        Update inheritance relationships for a module after it's loaded.
+
+        """
         if module_name not in self.module_cache:
             return
 
@@ -266,8 +257,13 @@ class HotReloader:
                     else:
                         node.superclasses[name].add(base_name)
 
-    def _get_affected_modules(self, changed_module: str) -> Set[str]:
-        """Get all modules affected by a change, including submodules."""
+    def _get_affected_modules(self, changed_module: str) -> set[str]:
+        """
+        Get all modules affected by a change. For now we assume that any file
+        that imports modified files is affected, which is recursively true
+        for the whole project.
+
+        """
         affected = {changed_module}
         to_process = {changed_module}
 
@@ -278,29 +274,19 @@ class HotReloader:
 
             node = self.dependency_graph[current]
 
-            # Add submodules
-            # for submodule in node.submodules:
-            #    if submodule not in affected:
-            #        affected.add(submodule)
-            #        to_process.add(submodule)
-
             # Add modules that import this one (dependents)
             for dependent in node.imported_by:
                 if dependent not in affected:
                     affected.add(dependent)
                     to_process.add(dependent)
 
-            # Add parent package if this is a submodule
-            # parent_module = ".".join(current.split(".")[:-1])
-            # if parent_module and parent_module in self.dependency_graph:
-            #    if parent_module not in affected:
-            #        affected.add(parent_module)
-            #        to_process.add(parent_module)
-
         return affected
 
-    def _sort_modules_by_dependencies(self, modules: Set[str]) -> List[str]:
-        """Sort modules ensuring submodules are reloaded before their parents."""
+    def _sort_modules_by_dependencies(self, modules: set[str]) -> list[str]:
+        """
+        Sort modules ensuring parent modules are reloaded before their children.
+
+        """
         result = []
         visited = set()
 
@@ -317,11 +303,6 @@ class HotReloader:
                     if imp in modules:  # Make sure it's an affected module
                         visit(imp)
 
-                # Then visit submodules
-                for submodule in node.submodules:
-                    if submodule in modules:
-                        visit(submodule)
-
             result.append(module_name)
 
         # Still start with deepest paths first
@@ -331,22 +312,32 @@ class HotReloader:
 
         return result
 
-    def reload_module(self, module_name: str) -> Tuple[bool, List[str]]:
+    def reload_module(self, module_name: str) -> tuple[bool, list[str]]:
         return self.reload_modules([module_name])
 
-    def reload_modules(self, module_names: list[str]) -> Tuple[bool, List[str]]:
-        """Reload a module and all its dependencies."""
+    def reload_modules(self, module_names: list[str]) -> tuple[bool, list[str]]:
+        """
+        Reload a module and all its dependencies.
+
+        """
         logger.info(f"=== Starting reload of {module_names} ===")
         self._log_dependency_state()
 
+        # Try to import any modules that haven't been indexed yet
+        valid_modules: set[str] = set()
+        for module_name in module_names:
+            if module_name not in self.module_cache:
+                module = self._import_and_track_module(module_name)
+                if module:
+                    valid_modules.add(module_name)
+            else:
+                valid_modules.add(module_name)
+
         reloaded_modules: list[str] = []
-        valid_modules = {
-            module_name
-            for module_name in module_names
-            if module_name in self.module_cache
-        }
         invalid_modules = set(module_names) - valid_modules
 
+        # Flag an error on any errors but continue reloading the ones that we're
+        # able to find
         if invalid_modules:
             logger.error(f"Modules {invalid_modules} are not loaded. Cannot reload.")
 
@@ -364,10 +355,6 @@ class HotReloader:
             logger.info(f"Reload order: {sorted_modules}")
 
             for mod_name in sorted_modules:
-                if mod_name not in sys.modules:
-                    logger.warning(f"Module {mod_name} not in sys.modules.")
-                    continue
-
                 try:
                     old_module = sys.modules[mod_name]
                     logger.info(f"Reloading {mod_name} (old id: {id(old_module)})")
@@ -393,27 +380,21 @@ class HotReloader:
             logger.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)
             return False, reloaded_modules
 
-    def get_module_dependencies(self, module_name: str) -> Dict[str, Any]:
+    def get_module_dependencies(self, module_name: str):
+        """
+        Helper function for clients to access the current DAG node of a module. We return a sythetic
+        DAG with no dependencies.
+
+        """
         logger.debug(f"Getting dependencies for {module_name}")
         if module_name not in self.dependency_graph:
             self._import_and_track_module(module_name)
 
         if module_name not in self.dependency_graph:
             logger.debug(f"Module {module_name} not found in dependency graph")
-            return {
-                "imports": set(),
-                "imported_by": set(),
-                "subclasses": {},
-                "superclasses": {},
-            }
+            return None
 
-        node = self.dependency_graph[module_name]
-        return {
-            "imports": node.imports,
-            "imported_by": node.imported_by,
-            "subclasses": node.subclasses,
-            "superclasses": node.superclasses,
-        }
+        return self.dependency_graph[module_name]
 
     def _build_inheritance_tree(self) -> None:
         for module_name, module in self.module_cache.items():
@@ -442,29 +423,6 @@ class HotReloader:
                             node.superclasses[name] = {base_name}
                         else:
                             node.superclasses[name].add(base_name)
-
-    def _find_module_file(self, module_name: str) -> Optional[Path]:
-        """Find the file path for a module, handling packages and submodules."""
-        module_parts = module_name.split(".")
-        relative_parts = module_parts[1:]  # Skip root package
-        current_path = self.package_path
-
-        for part in relative_parts:
-            current_path = current_path / part
-
-            # Check if it's a package
-            init_file = current_path / "__init__.py"
-            if init_file.exists():
-                if part == relative_parts[-1]:  # This is our target
-                    return init_file
-                continue
-
-            # Check if it's a module
-            module_file = current_path.parent / f"{part}.py"
-            if module_file.exists():
-                return module_file
-
-        return None
 
 
 def resolve_relative_import(
