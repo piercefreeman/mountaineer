@@ -172,12 +172,22 @@ def test_cache_is_outdated_existing_data(
         json_dumps(
             {
                 "ExampleHomeController": {
-                    "action": builder.openapi_action_specs[home_controller],
-                    "render": asdict(builder.openapi_render_specs[home_controller]),
+                    "action": builder.openapi_action_specs[
+                        home_controller.__class__.__name__
+                    ],
+                    "render": asdict(
+                        builder.openapi_render_specs[home_controller.__class__.__name__]
+                    ),
                 },
                 "ExampleDetailController": {
-                    "action": builder.openapi_action_specs[detail_controller],
-                    "render": asdict(builder.openapi_render_specs[detail_controller]),
+                    "action": builder.openapi_action_specs[
+                        detail_controller.__class__.__name__
+                    ],
+                    "render": asdict(
+                        builder.openapi_render_specs[
+                            detail_controller.__class__.__name__
+                        ]
+                    ),
                 },
             },
             sort_keys=True,
@@ -200,19 +210,29 @@ def test_cache_is_outdated_url_change(
         json_dumps(
             {
                 "ExampleHomeController": {
-                    "action": builder.openapi_action_specs[home_controller],
+                    "action": builder.openapi_action_specs[
+                        home_controller.__class__.__name__
+                    ],
                     "render": asdict(
                         # Only modify the render attribute. Simulate a user changing the URL
                         # of a component, which does require a FE rebuild.
                         replace(
-                            builder.openapi_render_specs[home_controller],
+                            builder.openapi_render_specs[
+                                home_controller.__class__.__name__
+                            ],
                             url="/new_url",
                         )
                     ),
                 },
                 "ExampleDetailController": {
-                    "action": builder.openapi_action_specs[detail_controller],
-                    "render": asdict(builder.openapi_render_specs[detail_controller]),
+                    "action": builder.openapi_action_specs[
+                        detail_controller.__class__.__name__
+                    ],
+                    "render": asdict(
+                        builder.openapi_render_specs[
+                            detail_controller.__class__.__name__
+                        ]
+                    ),
                 },
             },
             sort_keys=True,

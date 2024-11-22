@@ -69,8 +69,8 @@ class ClientBuilder:
         self.live_reload_port = live_reload_port
         self.build_cache = build_cache
 
-        self._openapi_action_specs = None
-        self._openapi_render_specs = None
+        self._openapi_action_specs: dict[str, dict[Any, Any]] | None = None
+        self._openapi_render_specs: dict[str, RenderSpec] | None = None
 
         self.update_controller(app)
 
@@ -624,7 +624,7 @@ class ClientBuilder:
 
         """
         if self._openapi_action_specs is None:
-            self._openapi_action_specs: dict[str, dict[Any, Any]] = {}
+            self._openapi_action_specs = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller
@@ -645,7 +645,7 @@ class ClientBuilder:
 
         """
         if self._openapi_render_specs is None:
-            self._openapi_render_specs: dict[str, RenderSpec] = {}
+            self._openapi_render_specs = {}
 
             for controller_definition in self.app.controllers:
                 controller = controller_definition.controller

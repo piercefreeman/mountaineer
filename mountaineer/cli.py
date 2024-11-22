@@ -1,6 +1,4 @@
 import asyncio
-import importlib
-import os
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
@@ -13,7 +11,11 @@ from inflection import underscore
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.app_manager import DevAppManager, find_packages_with_prefix
+from mountaineer.app_manager import (
+    DevAppManager,
+    find_packages_with_prefix,
+    package_path_to_module,
+)
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.console import CONSOLE
@@ -329,69 +331,6 @@ def handle_watch(
 #     watchdog.start_watching()
 
 
-def package_path_to_module(package: str, file_path_raw: Path) -> str:
-    """
-    Convert a file path to its corresponding Python module path.
-
-    Args:
-        package: The root package name (e.g. 'amplify')
-        file_path_raw: The file path to convert
-
-    Returns:
-        The full module path (e.g. 'amplify.controllers.auth')
-    """
-    # Get the package's root directory
-    package_module = importlib.import_module(package)
-    if not package_module.__file__:
-        raise ValueError(f"The package {package} does not have a __file__ attribute")
-
-    package_root = os.path.dirname(package_module.__file__)
-    file_path = os.path.abspath(str(file_path_raw))
-
-    # Check if the file is within the package
-    if not file_path.startswith(package_root):
-        raise ValueError(f"The file {file_path} is not in the package {package}")
-
-    # Remove the package root and the file extension
-    relative_path = os.path.relpath(file_path, package_root)
-    module_path = os.path.splitext(relative_path)[0]
-
-    # Convert path separators to dots and add the package name
-    return f"{package}.{module_path.replace(os.sep, '.')}"
-
-
-def module_to_package_path(package: str, module_name: str) -> Path:
-    """
-    Convert a Python module path to its corresponding file path.
-
-    Args:
-        package: The root package name (e.g. 'amplify')
-        module_name: The module name to convert (e.g. 'amplify.controllers.auth')
-
-    Returns:
-        Path to the module's file
-    """
-    package_module = importlib.import_module(package)
-    if not package_module.__file__:
-        raise ValueError(f"The package {package} does not have a __file__ attribute")
-
-    package_root = Path(package_module.__file__).parent
-
-    if not module_name.startswith(package + "."):
-        raise ValueError(f"The module {module_name} is not in the package {package}")
-
-    # Remove the package name from the module name
-    relative_module = module_name[len(package) + 1 :]
-    # Convert dots to path separators and add .py extension
-    relative_path = relative_module.replace(".", os.sep) + ".py"
-    full_path = package_root / relative_path
-
-    if not full_path.is_file():
-        raise FileNotFoundError(f"No file found for module {module_name}")
-
-    return full_path
-
-
 def handle_runserver(
     *,
     package: str,
@@ -518,7 +457,6 @@ def handle_build(
         live_reload_port=None,
     )
     client_compiler = ClientCompiler(
-        app_manager.app_controller.view_root,
         app_manager.app_controller,
     )
     start = time()

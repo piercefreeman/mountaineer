@@ -339,7 +339,7 @@ class HotReloader:
         logger.info(f"=== Starting reload of {module_names} ===")
         self._log_dependency_state()
 
-        reloaded_modules = []
+        reloaded_modules: list[str] = []
         valid_modules = {
             module_name
             for module_name in module_names
@@ -475,7 +475,7 @@ def resolve_relative_import(
     from_import_level: int,
     import_name: str,
     sys_modules: set[str],
-) -> Optional[str]:
+) -> str | None:
     """
     Resolves the absolute module name for a potentially relative import. Let's consider some
     different forms that an import can take:
