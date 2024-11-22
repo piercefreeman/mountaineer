@@ -9,12 +9,13 @@ from traceback import format_exception
 from types import ModuleType
 
 from fastapi import Request
-from fastapi.responses import Response
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import ClientBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
-from mountaineer.controllers.exception_controller import ExceptionController
+from mountaineer.controllers.exception_controller import (
+    ExceptionController,
+)
 from mountaineer.webservice import UvicornThread
 
 
@@ -95,7 +96,6 @@ class DevAppManager:
         # By the time we get to this point, our hot reloader should
         # have already reloaded the module in global space
         self.module = sys.modules[self.module.__name__]
-        # self.module = importlib.reload(self.module)
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
 
@@ -152,15 +152,14 @@ class DevAppManager:
         # If we're receiving a GET request, show the exception. Otherwise fall back
         # on the normal REST handlers
         if request.method == "GET":
-            # raise NotImplementedError
-            # response = await self.exception_controller._generate_html(
-            #     global_metadata=None,
-            #     exception=str(exc),
-            #     stack="".join(format_exception(exc)),
-            # )
-            # response.status_code = 500
-            # return response
-            return Response("".join(format_exception(exc)))
+            html = await self.exception_controller.definition.view_route(  # type: ignore
+                exception=str(exc),
+                stack="".join(format_exception(exc)),
+                parsed_exception=self.exception_controller.traceback_parser.parse_exception(
+                    exc
+                ),
+            )
+            return html
         else:
             raise exc
 
