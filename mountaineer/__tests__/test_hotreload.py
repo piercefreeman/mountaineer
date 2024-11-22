@@ -57,18 +57,6 @@ def test_package_dir(tmp_path: Path, request):
     return pkg_dir, pkg_name
 
 
-def immediate_flush_to_disk(path: Path):
-    """
-    Help deal with test unreliability when we reload a file
-    that has changed via python but hasn't yet been flushed to
-    the filesystem. reload seems to do a full filesystem pull and bipass
-    Python's write caching logic.
-
-    """
-    # Seems to be the only consistent approach
-    time.sleep(1)
-
-
 def test_initial_dependency_tracking(test_package_dir: tuple[Path, str]):
     """
     Test initial dependency tracking on load.
@@ -366,15 +354,12 @@ def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
     # Verify that the code works
     assert main_module.get_model_value() == 10
 
-    # Modify models.py - note this file needs to change in a way that's significant
-    # enough for the module refresher to actually reload the logic. Switching 10 -> 20
-    # for instance (same amount of chars) is not enough for it to reload.
     (pkg_dir / "models.py").write_text(
         textwrap.dedent(
             """
             class MyModel:
                 def get_value(self):
-                    return 200
+                    return 20
             """
         )
     )
@@ -386,7 +371,7 @@ def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
 
     # Verify that the updated value is reflected
     main_module = sys.modules[f"{pkg_name}.main"]
-    assert main_module.get_model_value() == 200
+    assert main_module.get_model_value() == 20
 
 
 def test_relative_import(test_package_dir: tuple[Path, str]):
@@ -758,8 +743,6 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    immediate_flush_to_disk(pkg_dir / "new_module.py")
-
     # Calling this should also start tracking the new file
     new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
     assert new_deps
@@ -789,8 +772,6 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
             """
         )
     )
-
-    immediate_flush_to_disk(pkg_dir / "base.py")
 
     success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
     assert success

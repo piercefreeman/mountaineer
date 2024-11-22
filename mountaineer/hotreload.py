@@ -1,7 +1,10 @@
 import ast
 import importlib
+import importlib.util
 import inspect
+import os
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -317,7 +320,8 @@ class HotReloader:
 
     def reload_modules(self, module_names: list[str]) -> tuple[bool, list[str]]:
         """
-        Reload a module and all its dependencies.
+        Reload a module and all its dependencies. Note that this requires the underlying bite
+        length to have changed: https://bugs.python.org/issue31772
 
         """
         logger.info(f"=== Starting reload of {module_names} ===")
@@ -359,7 +363,7 @@ class HotReloader:
                     old_module = sys.modules[mod_name]
                     logger.info(f"Reloading {mod_name} (old id: {id(old_module)})")
 
-                    module = importlib.reload(old_module)
+                    module = safe_reload(old_module)
                     logger.info(f"Reloaded {mod_name} (new id: {id(module)})")
 
                     # Update cache and track reload
@@ -521,3 +525,35 @@ def resolve_relative_import(
         import_name=import_name,
         sys_modules=sys_modules,
     )
+
+
+def safe_reload(module: ModuleType) -> ModuleType:
+    """
+    Safely reload a module, ensuring bytecode is regenerated when the source file
+    has been modified, even within the same second. Local fix for https://bugs.python.org/issue31772
+
+    Since this only runs in the hot-path for development code, the additional os stat overhead
+    isn't meaningful.
+
+    :param module: The module to reload
+
+    """
+    # Get the module spec
+    spec = importlib.util.find_spec(module.__name__)
+    if not spec or not spec.origin:
+        return importlib.reload(module)
+
+    # Remove any cached bytecode if source mtime matches current time
+    source_path = spec.origin
+    if source_path.endswith(".py"):
+        # Clear out the bytecode to force recompilation
+        current_time = int(time.time())
+        try:
+            source_mtime = int(spec.loader.path_stats(source_path)["mtime"])
+            if source_mtime == current_time:
+                bytecode_path = importlib.util.cache_from_source(source_path)
+                os.remove(bytecode_path)
+        except (AttributeError, OSError, KeyError):
+            pass
+
+    return importlib.reload(module)
