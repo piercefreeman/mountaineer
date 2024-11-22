@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mountaineer import AppController, ControllerBase
+from mountaineer import AppController, ConfigBase, ControllerBase
 
 
 class TestController(ControllerBase):
@@ -11,5 +11,15 @@ class TestController(ControllerBase):
         pass
 
 
-test_controller = AppController(view_root=Path(__file__).parent.joinpath("views"))
+# We need a development config to test dev utilities
+class SimpleConfig(ConfigBase):
+    pass
+
+
+config = SimpleConfig()
+
+test_controller = AppController(
+    view_root=Path(__file__).parent.joinpath("views"),
+    config=config,
+)
 test_controller.register(TestController())

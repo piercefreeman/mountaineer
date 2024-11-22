@@ -1,3 +1,5 @@
+import json
+import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -14,6 +16,43 @@ from mountaineer.webservice import UvicornThread
 AppPackageType = tuple[str, Path, Path]
 
 
+def create_package_json(package_path: Path) -> None:
+    """
+    Create a package.json file with necessary React dependencies.
+
+    """
+    package_json = {
+        "name": "test-package",
+        "version": "1.0.0",
+        "description": "Test package for mountaineer",
+        "main": "index.js",
+        "scripts": {"test": 'echo "Error: no test specified" && exit 1'},
+        "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0"},
+        "devDependencies": {
+            "@types/react": "^18.2.0",
+            "@types/react-dom": "^18.2.0",
+            "typescript": "^5.0.0",
+        },
+    }
+
+    with open(package_path / "package.json", "w") as f:
+        json.dump(package_json, f, indent=2)
+
+
+def setup_npm_environment(package_path: Path) -> None:
+    """
+    Install npm dependencies in the package directory.
+
+    """
+    subprocess.run(
+        ["npm", "install"],
+        cwd=package_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 @pytest.fixture(scope="module")
 def tmp_app_package_dir():
     # The pytest bundled tmp_path only works for function
@@ -26,8 +65,8 @@ def tmp_app_package_dir():
 @pytest.fixture(scope="module")
 def app_package(tmp_app_package_dir: Path):
     """
-    A simple AppController, with a single component controller. Stub view
-    files but no implemented views.
+    A simple AppController, with a single component controller. Sets up a complete
+    React environment with necessary dependencies.
 
     """
     package_name = "test_package"
@@ -37,15 +76,21 @@ def app_package(tmp_app_package_dir: Path):
     # Package init
     (package_path / "__init__.py").touch()
 
+    # Views directory with TypeScript React component
+    views_dir = package_path / "views"
+    views_dir.mkdir()
+
+    # Set up package.json and install dependencies
+    create_package_json(views_dir)
+    setup_npm_environment(views_dir)
+
     # Controller
     controller_file = package_path / "test_controller.py"
     controller_file.write_text(
         (get_fixture_path("mock_webapp") / "simple_controller.py").read_text()
     )
 
-    # Views
-    (package_path / "views").mkdir()
-    (package_path / "views" / "test.tsx").touch()
+    (views_dir / "test.tsx").write_text("")
 
     # Make the path reachable only within this test scope
     sys.path.insert(0, str(tmp_app_package_dir))
@@ -72,6 +117,19 @@ def test_from_webcontroller(manager: DevAppManager, app_package: AppPackageType)
     assert manager.host == "localhost"
     assert manager.port == 8000
     assert manager.live_reload_port == 8001
+
+
+def test_npm_setup(app_package: AppPackageType):
+    """Test that npm dependencies were installed correctly."""
+    _, tmp_dir, _ = app_package
+    package_path = tmp_dir / "test_package"
+
+    # Check that node_modules exists
+    assert (package_path / "views" / "node_modules").exists()
+
+    # Check that React was installed
+    assert (package_path / "views" / "node_modules" / "react").exists()
+    assert (package_path / "views" / "node_modules" / "react-dom").exists()
 
 
 def test_update_module(manager: DevAppManager, app_package: AppPackageType):
@@ -136,9 +194,27 @@ async def test_handle_dev_exception(manager: DevAppManager):
     request = Request({"type": "http", "method": "GET"})
 
     # Create a test exception
-    test_exception = ValueError("Test exception")
+    test_exception: Exception | None = None
+    try:
+        raise ValueError("Test exception")
+    except Exception as e:
+        test_exception = e
+
+    assert test_exception
+
+    # Force un-mount so we can mount again
+    manager.app_controller.controllers = [
+        controller
+        for controller in manager.app_controller.controllers
+        if controller.controller.__class__.__name__
+        != manager.exception_controller.__class__.__name__
+    ]
+    manager.app_controller.controller_names.remove(
+        manager.exception_controller.__class__.__name__
+    )
 
     # Call the exception handler
+    manager.mount_exceptions(manager.app_controller)
     response = await manager.handle_dev_exception(request, test_exception)
 
     # Check if the response contains the exception information
