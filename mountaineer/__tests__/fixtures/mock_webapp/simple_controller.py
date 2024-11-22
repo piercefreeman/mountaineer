@@ -4,7 +4,7 @@ from mountaineer import AppController, ConfigBase, ControllerBase
 
 
 class TestController(ControllerBase):
-    view_path = "/test.tsx"
+    view_path = "/test_controller/page.tsx"
     url = "/"
 
     async def render(self) -> None:

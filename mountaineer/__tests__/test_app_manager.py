@@ -90,7 +90,8 @@ def app_package(tmp_app_package_dir: Path):
         (get_fixture_path("mock_webapp") / "simple_controller.py").read_text()
     )
 
-    (views_dir / "test.tsx").write_text("")
+    (views_dir / "test_controller").mkdir()
+    (views_dir / "test_controller" / "page.tsx").write_text("")
 
     # Make the path reachable only within this test scope
     sys.path.insert(0, str(tmp_app_package_dir))
@@ -190,6 +191,9 @@ def test_mount_exceptions(manager: DevAppManager):
 
 @pytest.mark.asyncio
 async def test_handle_dev_exception(manager: DevAppManager):
+    await manager.js_compiler.build_all()
+    await manager.app_compiler.run_builder_plugins()
+
     # Create a mock request
     request = Request({"type": "http", "method": "GET"})
 
