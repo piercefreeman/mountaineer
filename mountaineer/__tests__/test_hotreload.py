@@ -2,7 +2,6 @@ import importlib
 import sys
 import textwrap
 from pathlib import Path
-from time import sleep
 
 import pytest
 
@@ -17,7 +16,7 @@ def test_package_dir(tmp_path: Path, request):
 
     """
     test_name = request.node.name.replace("test_", "")
-    pkg_name = f"test_package_{test_name}"
+    pkg_name = f"test_package_{test_name}".replace("[", "_").replace("]", "_")
 
     pkg_dir = tmp_path / pkg_name
     pkg_dir.mkdir()
@@ -731,8 +730,7 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    # Wait for the file to write + flush before we can import it
-    sleep(5)
+    print("All files", list(pkg_dir.iterdir()))  # noqa: T201
 
     # Calling this should also start tracking the new file
     new_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.new_module")
