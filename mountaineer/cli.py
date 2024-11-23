@@ -99,6 +99,7 @@ def handle_runserver(
     webcontroller: str,
     host: str = "127.0.0.1",
     port: int,
+    hotreload_host: str | None = None,
     hotreload_port: int | None = None,
     subscribe_to_mountaineer: bool = False,
 ):
@@ -120,7 +121,7 @@ def handle_runserver(
 
     # Initialize components
     watcher_webservice = WatcherWebservice(
-        webservice_host=host, webservice_port=hotreload_port
+        webservice_host=hotreload_host or host, webservice_port=hotreload_port
     )
     watcher_webservice.start()
 
