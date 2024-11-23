@@ -8,7 +8,7 @@ interface CustomProcess {
   env: {
     LIVE_RELOAD_PORT?: string;
     NODE_ENV?: string;
-    SSR_RENDERING?: string;
+    SSR_RENDERING?: boolean;
   };
 }
 
@@ -113,7 +113,7 @@ class ReconnectWebSocket {
 const mountLiveReload = ({ host, port }: { host?: string; port?: number }) => {
   // Noop if we're not in development mode
   if (
-    process.env.SSR_RENDERING === "true" ||
+    process.env.SSR_RENDERING === true ||
     process.env.NODE_ENV !== "development"
   ) {
     return;
