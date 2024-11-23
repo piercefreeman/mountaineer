@@ -70,6 +70,9 @@ func GetBuildContext(
 	if isSSR == 1 {
 		buildOptions.GlobalName = "SSR"
 		buildOptions.Format = api.FormatIIFE
+
+		// These values are literals, so true/false will resolve to a boolean
+		// in the javascript side
 		buildOptions.Define["process.env.SSR_RENDERING"] = "true"
 		buildOptions.Define["global"] = "window"
 	} else {
