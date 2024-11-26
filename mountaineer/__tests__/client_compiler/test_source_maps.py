@@ -99,7 +99,7 @@ def test_map_exception():
         "",
         """
     Example client error
-        at Page (test.ts:500:10)
-        at renderWithHooks (test.ts:600:20)
+        at Page (:500:10)
+        at renderWithHooks (:600:20)
     """,
     )

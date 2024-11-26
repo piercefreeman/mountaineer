@@ -132,7 +132,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
         live_reload_port: i32,
         live_reload_import: String,
         is_server: bool,
-    ) -> PyResult<Vec<String>> {
+    ) -> PyResult<(Vec<String>, Vec<String>)> {
         /*
          * Accepts a list of page definitions and creates fully isolated bundles
          * that can be executed in a JS runtime with zero dependencies / external imports. For

@@ -16,8 +16,9 @@ pub fn compile_independent_bundles(
     live_reload_port: i32,
     live_reload_import: String,
     is_server: bool,
-) -> PyResult<Vec<String>> {
+) -> PyResult<(Vec<String>, Vec<String>)> {
     let mut output_files = Vec::new();
+    let mut sourcemap_files = Vec::new();
 
     for path_group in paths.iter() {
         let temp_dir = create_temp_dir()?;
@@ -31,11 +32,15 @@ pub fn compile_independent_bundles(
             is_server,
         )?;
         rebuild_context(py, context_id)?;
+
         let compiled_content = read_compiled_file(&temp_file_path)?;
+        let sourcemap_content = read_sourcemap_file(&temp_file_path)?;
+
         output_files.push(compiled_content);
+        sourcemap_files.push(sourcemap_content);
     }
 
-    Ok(output_files)
+    Ok((output_files, sourcemap_files))
 }
 
 fn create_temp_dir() -> PyResult<TempDir> {
@@ -96,6 +101,16 @@ fn read_compiled_file(temp_file_path: &Path) -> PyResult<String> {
         println!("Error reading compiled file: {:?}", err);
         PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
             "Failed to read compiled file: {}",
+            err
+        ))
+    })
+}
+
+fn read_sourcemap_file(temp_file_path: &Path) -> PyResult<String> {
+    fs::read_to_string(temp_file_path.with_extension("jsx.out.map")).map_err(|err| {
+        println!("Error reading sourcemap file: {:?}", err);
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to read sourcemap file: {}",
             err
         ))
     })

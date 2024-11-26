@@ -285,7 +285,7 @@ def handle_build(
 
     # Now we go one-by-one to provide the SSR files, which will be consolidated
     # into a single runnable script for ease of use by the V8 engine
-    result_scripts = mountaineer_rs.compile_independent_bundles(
+    result_scripts, _ = mountaineer_rs.compile_independent_bundles(
         all_view_paths,
         str(app_manager.app_controller.view_root / "node_modules"),
         "production",
