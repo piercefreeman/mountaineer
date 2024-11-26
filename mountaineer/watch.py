@@ -189,7 +189,6 @@ class PackageWatchdog:
             self.observer.start()
 
             try:
-                CONSOLE.print("Starting observer...")
                 self.observer.join()
             except KeyboardInterrupt:
                 self.observer.stop()
