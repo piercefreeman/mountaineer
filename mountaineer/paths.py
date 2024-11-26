@@ -114,6 +114,20 @@ class ManagedViewPath(type(Path())):  # type: ignore
             path.mkdir(exist_ok=True)
         return path
 
+    def get_managed_metadata_dir(
+        self, tmp_build: bool = False, create_dir: bool = True
+    ):
+        # Only root paths can have SSR directories
+        if not self.is_root_link:
+            raise ValueError(
+                "Cannot get SSR directory from a non-root linked view path"
+            )
+        path = self.get_managed_dir_common("_metadata", create_dir=create_dir)
+        if tmp_build:
+            path = path / "tmp"
+            path.mkdir(exist_ok=True)
+        return path
+
     def get_managed_dir_common(
         self,
         managed_dir: str,
@@ -163,7 +177,19 @@ class ManagedViewPath(type(Path())):  # type: ignore
         path.package_root_link = self.package_root_link
         return path
 
-    if sys.version_info >= (3, 12):
+    if sys.version_info >= (3, 13):
+
+        def rglob(
+            self,
+            pattern: str,
+            *,
+            case_sensitive: bool | None = None,
+            recurse_symlinks: bool = False,
+        ):
+            for path in super().rglob(pattern, case_sensitive=case_sensitive):
+                yield self._inherit_root_link(path)
+
+    elif sys.version_info >= (3, 12):
 
         def rglob(self, pattern: str, *, case_sensitive: bool | None = None):
             for path in super().rglob(pattern, case_sensitive=case_sensitive):

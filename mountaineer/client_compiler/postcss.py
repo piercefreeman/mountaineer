@@ -7,14 +7,14 @@ from time import monotonic_ns
 
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
-from mountaineer.client_compiler.base import ClientBuilderBase
+from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.console import CONSOLE
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 
 
-class PostCSSBundler(ClientBuilderBase):
+class PostCSSBundler(APIBuilderBase):
     """
     Support PostCSS processing for CSS files.
 

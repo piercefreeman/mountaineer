@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from mountaineer.actions import sideeffect
 from mountaineer.app import AppController
-from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.render import RenderBase
@@ -60,30 +60,30 @@ def simple_app_controller(
 
 @pytest.fixture
 def builder(simple_app_controller: AppController):
-    return ClientBuilder(simple_app_controller)
+    return APIBuilder(simple_app_controller)
 
 
-def test_generate_static_files(builder: ClientBuilder):
+def test_generate_static_files(builder: APIBuilder):
     builder.generate_static_files()
 
 
-def test_generate_model_definitions(builder: ClientBuilder):
+def test_generate_model_definitions(builder: APIBuilder):
     builder.generate_model_definitions()
 
 
-def test_generate_action_definitions(builder: ClientBuilder):
+def test_generate_action_definitions(builder: APIBuilder):
     builder.generate_action_definitions()
 
 
-def test_generate_view_definitions(builder: ClientBuilder):
+def test_generate_view_definitions(builder: APIBuilder):
     builder.generate_link_shortcuts()
 
 
-def test_generate_link_aggregator(builder: ClientBuilder):
+def test_generate_link_aggregator(builder: APIBuilder):
     builder.generate_link_aggregator()
 
 
-def test_generate_link_aggregator_ignores_layout(builder: ClientBuilder):
+def test_generate_link_aggregator_ignores_layout(builder: APIBuilder):
     class ExampleLayout(LayoutControllerBase):
         view_path = "/test.tsx"
 
@@ -100,12 +100,12 @@ def test_generate_link_aggregator_ignores_layout(builder: ClientBuilder):
     assert "ExampleDetailControllerGetLinks" in global_links
 
 
-def test_generate_view_servers(builder: ClientBuilder):
+def test_generate_view_servers(builder: APIBuilder):
     builder.generate_view_servers()
 
 
 @pytest.mark.parametrize("empty_links", [True, False])
-def test_generate_index_file_ignores_empty(builder: ClientBuilder, empty_links: bool):
+def test_generate_index_file_ignores_empty(builder: APIBuilder, empty_links: bool):
     # Create some stub files. We simulate a case where the links file
     # is created but empty
     file_contents = "import React from 'react';\n"
@@ -138,13 +138,13 @@ def test_generate_index_file_ignores_empty(builder: ClientBuilder, empty_links: 
         ]
 
 
-def test_cache_is_outdated_no_cache(builder: ClientBuilder):
+def test_cache_is_outdated_no_cache(builder: APIBuilder):
     # No cache
     builder.build_cache = None
     assert builder.cache_is_outdated() is True
 
 
-def test_cache_is_outdated_no_existing_data(builder: ClientBuilder, tmp_path: Path):
+def test_cache_is_outdated_no_existing_data(builder: APIBuilder, tmp_path: Path):
     builder.build_cache = tmp_path
 
     assert builder.cache_is_outdated() is True
@@ -159,7 +159,7 @@ def test_cache_is_outdated_no_existing_data(builder: ClientBuilder, tmp_path: Pa
 
 
 def test_cache_is_outdated_existing_data(
-    builder: ClientBuilder,
+    builder: APIBuilder,
     tmp_path: Path,
     home_controller: ExampleHomeController,
     detail_controller: ExampleDetailController,
@@ -172,12 +172,22 @@ def test_cache_is_outdated_existing_data(
         json_dumps(
             {
                 "ExampleHomeController": {
-                    "action": builder.openapi_action_specs[home_controller],
-                    "render": asdict(builder.openapi_render_specs[home_controller]),
+                    "action": builder.openapi_action_specs[
+                        home_controller.__class__.__name__
+                    ],
+                    "render": asdict(
+                        builder.openapi_render_specs[home_controller.__class__.__name__]
+                    ),
                 },
                 "ExampleDetailController": {
-                    "action": builder.openapi_action_specs[detail_controller],
-                    "render": asdict(builder.openapi_render_specs[detail_controller]),
+                    "action": builder.openapi_action_specs[
+                        detail_controller.__class__.__name__
+                    ],
+                    "render": asdict(
+                        builder.openapi_render_specs[
+                            detail_controller.__class__.__name__
+                        ]
+                    ),
                 },
             },
             sort_keys=True,
@@ -188,7 +198,7 @@ def test_cache_is_outdated_existing_data(
 
 
 def test_cache_is_outdated_url_change(
-    builder: ClientBuilder,
+    builder: APIBuilder,
     tmp_path: Path,
     home_controller: ExampleHomeController,
     detail_controller: ExampleDetailController,
@@ -200,19 +210,29 @@ def test_cache_is_outdated_url_change(
         json_dumps(
             {
                 "ExampleHomeController": {
-                    "action": builder.openapi_action_specs[home_controller],
+                    "action": builder.openapi_action_specs[
+                        home_controller.__class__.__name__
+                    ],
                     "render": asdict(
                         # Only modify the render attribute. Simulate a user changing the URL
                         # of a component, which does require a FE rebuild.
                         replace(
-                            builder.openapi_render_specs[home_controller],
+                            builder.openapi_render_specs[
+                                home_controller.__class__.__name__
+                            ],
                             url="/new_url",
                         )
                     ),
                 },
                 "ExampleDetailController": {
-                    "action": builder.openapi_action_specs[detail_controller],
-                    "render": asdict(builder.openapi_render_specs[detail_controller]),
+                    "action": builder.openapi_action_specs[
+                        detail_controller.__class__.__name__
+                    ],
+                    "render": asdict(
+                        builder.openapi_render_specs[
+                            detail_controller.__class__.__name__
+                        ]
+                    ),
                 },
             },
             sort_keys=True,
@@ -223,7 +243,7 @@ def test_cache_is_outdated_url_change(
 
 
 def test_validate_unique_paths_exact_definition(
-    builder: ClientBuilder,
+    builder: APIBuilder,
 ):
     """
     Two controllers can't manage the same view path.
@@ -247,7 +267,7 @@ def test_validate_unique_paths_exact_definition(
 
 
 def test_validate_unique_paths_conflicting_layout(
-    builder: ClientBuilder,
+    builder: APIBuilder,
 ):
     """
     Layouts need to be placed in their own directory. Even if the literal paths
@@ -271,7 +291,7 @@ def test_validate_unique_paths_conflicting_layout(
 
 
 def test_generate_controller_schema_sideeffect_required_attributes(
-    builder: ClientBuilder,
+    builder: APIBuilder,
 ):
     """
     Ensure that we treat @sideeffect and @passthrough return models like

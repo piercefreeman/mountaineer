@@ -81,8 +81,18 @@ def log_time_duration(message: str):
     LOGGER.debug(f"{message} : Took {(monotonic_ns() - start)/1e9:.2f}s")
 
 
-# Our global logger should only surface warnings and above by default
-LOGGER = setup_logger(
-    __name__,
-    log_level=VERBOSITY_MAPPING[environ.get("MOUNTAINEER_LOG_LEVEL", "WARNING")],
-)
+def setup_internal_logger(name: str):
+    """ "
+    Our global logger should only surface warnings and above by default.
+
+    To adjust Mountaineer logging, set the MOUNTAINEER_LOG_LEVEL environment
+    variable in your local session. By default it is set to WARNING and above.
+
+    """
+    return setup_logger(
+        name,
+        log_level=VERBOSITY_MAPPING[environ.get("MOUNTAINEER_LOG_LEVEL", "WARNING")],
+    )
+
+
+LOGGER = setup_internal_logger(__name__)

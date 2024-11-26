@@ -19,7 +19,7 @@ class ClientBundleMetadata:
     live_reload_port: int | None = None
 
 
-class ClientBuilderBase(ABC):
+class APIBuilderBase(ABC):
     """
     Base class for client builders. When mounted to an AppController, these build plugins
     will be called for every file defined in the view/app directory. It's up to the plugin

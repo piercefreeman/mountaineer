@@ -108,7 +108,13 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
             (
                 """
                 export const my_method_fn = (
-                    {requestBody}: {requestBody: ExampleModel}
+                    {
+                        requestBody,
+                        signal
+                    }: {
+                        requestBody: ExampleModel,
+                        signal?: AbortSignal
+                    } = {}
                 ): Promise<ExampleResponseModel> => {
                     return __request({
                         'method': 'POST',
@@ -116,6 +122,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         'errors': {
                             422: HTTPValidationErrorException
                         },
+                        signal,
                         'body': requestBody,
                         'mediaType': 'application/json'
                     });
@@ -143,13 +150,20 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
             ),
             (
                 """
-                export const my_method_fn = (): Promise<ExampleResponseModel> => {
+                export const my_method_fn = (
+                    {
+                        signal
+                    } : {
+                        signal?: AbortSignal
+                    } = {}
+                ): Promise<ExampleResponseModel> => {
                     return __request({
                         'method': 'POST',
                         'url': '/testing/url',
                         'errors': {
                             422: HTTPValidationErrorException
-                        }
+                        },
+                        signal
                     });
                 }
                 """
@@ -229,13 +243,15 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                         item_id,
                         query_param_required_id,
                         query_param_optional_id,
-                        requestBody
+                        requestBody,
+                        signal
                     }: {
                         item_id: string,
                         query_param_required_id: string,
                         query_param_optional_id?: string,
-                        requestBody: ExampleModel
-                    }
+                        requestBody: ExampleModel,
+                        signal?: AbortSignal
+                    } = {}
                 ): Promise<ExampleResponseModel> => {
                     return __request({
                         'method': 'POST',
@@ -247,6 +263,7 @@ EXAMPLE_RESPONSE_400 = ContentBodyDefinition(
                             query_param_required_id,
                             query_param_optional_id
                         },
+                        signal,
                         'body': requestBody,
                         'mediaType': 'application/json'
                     });
@@ -301,7 +318,13 @@ def test_build_action(
             (
                 """
                 export const my_method_fn = (
-                    {requestBody}: {requestBody: ExampleModel}
+                    {
+                        requestBody,
+                        signal
+                    }: {
+                        requestBody: ExampleModel,
+                        signal?: AbortSignal
+                    } = {}
                 ): Promise<AsyncGenerator<ExampleResponseModel, void, unknown>> => {
                     return __request({
                         'method': 'POST',
@@ -309,6 +332,7 @@ def test_build_action(
                         'errors': {
                             422: HTTPValidationErrorException
                         },
+                        signal,
                         'body': requestBody,
                         'mediaType': 'application/json',
                         'eventStreamResponse': true
@@ -364,7 +388,13 @@ def test_build_server_side_event_action(
             (
                 """
                 export const my_method_fn = (
-                    {requestBody}: {requestBody: ExampleModel}
+                    {
+                        requestBody,
+                        signal
+                    }: {
+                        requestBody: ExampleModel,
+                        signal?: AbortSignal
+                    } = {}
                 ): Promise<Response> => {
                     return __request({
                         'method': 'POST',
@@ -372,6 +402,7 @@ def test_build_server_side_event_action(
                         'errors': {
                             422: HTTPValidationErrorException
                         },
+                        signal,
                         'body': requestBody,
                         'mediaType': 'application/json',
                         'outputFormat': 'raw'
