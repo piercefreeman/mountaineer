@@ -26,6 +26,7 @@ from mountaineer.actions import (
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_compiler.base import APIBuilderBase
+from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
@@ -214,7 +215,8 @@ class AppController:
             render_overhead_by_controller = {}
             render_output = {}
             for node in direct_hierarchy:
-                # Must be a layout-only component
+                # If not set, must be a layout-only component. In this case we don't
+                # need to do any rendering of internal data
                 if not node.controller:
                     continue
 
@@ -359,7 +361,7 @@ class AppController:
         # This allows each view to avoid having to find these on disk, as well as gives
         # a proactive error if any view will be unable to render when their script files
         # are missing
-        if self.config and self.config.ENVIRONMENT != "development":
+        if self.development_enabled:
             controller.resolve_paths(self.view_root, force=True)
             if not controller.bundled_scripts:
                 raise ValueError(
@@ -596,11 +598,15 @@ class AppController:
             metadata = page_metadata.metadata
             if not metadata.ignore_global_metadata and self.global_metadata:
                 metadata = metadata.merge(self.global_metadata)
-            header_str = "\n".join(metadata.build_header())
+            header_str = "\n".join(
+                metadata.build_header(build_metadata=self.get_build_metadata())
+            )
         else:
             if self.global_metadata:
                 metadata = self.global_metadata
-                header_str = "\n".join(metadata.build_header())
+                header_str = "\n".join(
+                    metadata.build_header(build_metadata=self.get_build_metadata())
+                )
             else:
                 header_str = ""
 
@@ -969,3 +975,27 @@ class AppController:
             if controller_definition.controller == controller:
                 return controller_definition
         raise ValueError(f"Controller {controller} not found")
+
+    def get_build_metadata(self):
+        """
+        Will cache the build metadata in production but not in development, since
+        we expect production developments will compile their metadata once and then
+        use it for all endpoints.
+
+        """
+        if not self.development_enabled:
+            # Determine if we've already cached the build
+            if hasattr(self, "_build_metadata"):
+                return getattr(self, "_build_metadata")
+
+        metadata_path = self.view_root.get_managed_metadata_dir() / "metadata.json"
+        if not metadata_path.exists():
+            return None
+        self._build_metadata = BuildMetadata.model_validate_json(
+            metadata_path.read_text()
+        )
+        return self._build_metadata
+
+    @property
+    def development_enabled(self):
+        return self.config and self.config.ENVIRONMENT != "development"

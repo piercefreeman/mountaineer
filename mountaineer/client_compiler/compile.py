@@ -4,25 +4,14 @@ from shutil import move as shutil_move
 from tempfile import mkdtemp
 from time import monotonic_ns
 
-from pydantic import BaseModel
-
 from mountaineer.app import AppController
 from mountaineer.client_compiler.base import ClientBundleMetadata
+from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.console import CONSOLE
 from mountaineer.io import gather_with_concurrency
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
-
-
-class ClientCompilerMetadata(BaseModel):
-    """
-    Metadata added during compile_time that should be maintained in the
-    bundle for production hosting.
-
-    """
-
-    static_artifact_shas: dict[str, str]
 
 
 class ClientCompiler:
@@ -105,7 +94,7 @@ class ClientCompiler:
         # should get the md5 hash of the content for our archive
         metadata = self._build_static_metadata()
         (self.view_root.get_managed_metadata_dir() / "metadata.json").write_text(
-            metadata.dump_json()
+            metadata.model_dump_json()
         )
 
     def _init_builders(self):
@@ -217,4 +206,4 @@ class ClientCompiler:
                     file_contents
                 ).hexdigest()
 
-        return ClientCompilerMetadata(static_artifact_shas=static_artifact_shas)
+        return BuildMetadata(static_artifact_shas=static_artifact_shas)
