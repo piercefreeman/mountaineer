@@ -287,7 +287,7 @@ def test_view_root_from_config(tmp_path: Path):
         mock_resolve_package_path.return_value = tmp_path
 
         app = AppController(config=MockConfig())
-        assert app.view_root == tmp_path / "views"
+        assert app._view_root == tmp_path / "views"
 
         assert mock_resolve_package_path.call_count == 1
         assert mock_resolve_package_path.call_args[0] == ("test_webapp",)
@@ -437,7 +437,7 @@ def test_get_value_mask_for_signature():
     }
 
     app = AppController(view_root=Path(""))
-    assert app.get_value_mask_for_signature(
+    assert app._get_value_mask_for_signature(
         signature(target_fn),
         values,
     ) == {

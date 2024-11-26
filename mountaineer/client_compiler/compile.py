@@ -31,7 +31,7 @@ class ClientCompiler:
 
     def update_controller(self, controller: AppController):
         self.app = controller
-        self.view_root = controller.view_root
+        self.view_root = controller._view_root
 
     async def run_builder_plugins(
         self,

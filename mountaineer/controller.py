@@ -150,6 +150,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         self.slow_ssr_threshold = slow_ssr_threshold
         self.hard_ssr_timeout = hard_ssr_timeout
         self.source_map: SourceMapParser | None = None
+        self.initialized = True
 
         # Set by the path resolution layer
         self._view_base_path: Path | None = None

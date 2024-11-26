@@ -422,12 +422,12 @@ class AppController:
                 raise ValueError(
                     f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
                 )
-            if not controller.ssr_path:
+            if not controller._ssr_path:
                 raise ValueError(
                     f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
                 )
 
-            controller_node.cached_server_script = controller.ssr_path.read_text()
+            controller_node.cached_server_script = controller._ssr_path.read_text()
 
         # Register the rendering view to an isolated APIRoute, so we can keep track of its
         # the resulting router independently of the rest of the application
@@ -747,7 +747,7 @@ class AppController:
                 )
 
             full_view_path = (
-                self.view_root / known_controller.view_path.lstrip("/")
+                self._view_root / known_controller.view_path.lstrip("/")
                 if isinstance(known_controller.view_path, str)
                 else known_controller.view_path
             )
@@ -1048,7 +1048,7 @@ class AppController:
             if hasattr(self, "_build_metadata"):
                 return getattr(self, "_build_metadata")
 
-        metadata_path = self.view_root.get_managed_metadata_dir() / "metadata.json"
+        metadata_path = self._view_root.get_managed_metadata_dir() / "metadata.json"
         if not metadata_path.exists():
             return None
         self._build_metadata = BuildMetadata.model_validate_json(
