@@ -18,11 +18,11 @@ from mountaineer.console import CONSOLE
 class ServerStatus:
     def __init__(self, name: str, emoticon: str):
         self.status = "Starting server..."
-        self.final_status = None
+        self.final_status: str | None = None
         self.url: str | None = None
-
         self.name = name
         self.emoticon = emoticon
+        self._spinner = Spinner("dots", style="status.spinner", speed=1.0)
 
     def update(self, message: str, url: str | None = None, final: bool = False) -> None:
         self.status = message
@@ -30,7 +30,7 @@ class ServerStatus:
         if final:
             self.final_status = message
 
-    def __rich__(self) -> Text:
+    def __rich__(self) -> Text | Spinner:
         if self.final_status:
             if self.url:
                 text = Text()
@@ -39,14 +39,13 @@ class ServerStatus:
                 return text
             return Text(self.final_status)
 
-        # Create a composite text with spinner and status
-        return Spinner("dots", text=self.status, style="status.spinner", speed=1.0)
+        self._spinner.update(text=self.status)
+        return self._spinner
 
 
 def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
     """
     Replace Uvicorn's default logging with an updating status display.
-
     """
     # Remove all existing handlers
     for logger_name in ["uvicorn", "uvicorn.error"]:
@@ -57,7 +56,9 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
 
     # Create our status tracker
     status = ServerStatus(name=name, emoticon=emoticon)
-    live = Live(status, console=CONSOLE, refresh_per_second=15)
+
+    # Increase refresh rate for smoother animation
+    live = Live(status, console=CONSOLE, refresh_per_second=30)
     live.start()
 
     def log_adapter(logger_name: str):
@@ -65,20 +66,10 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
             if "Started server process" in msg:
                 process_id = args[0] if args else "Unknown"
                 status.update(f"Starting server process [cyan]{process_id}[/cyan]...")
-
-                from time import sleep
-
-                sleep(2)
             elif "Waiting for application startup" in msg:
                 status.update("Initializing application...")
-                from time import sleep
-
-                sleep(2)
             elif "Application startup complete" in msg:
                 status.update("Application initialized...")
-                from time import sleep
-
-                sleep(2)
             elif "Uvicorn running on" in msg:
                 scheme, host, port = (
                     args[:3] if len(args) >= 3 else ("http", "unknown", "unknown")

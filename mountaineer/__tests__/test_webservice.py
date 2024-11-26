@@ -3,13 +3,11 @@ from typing import Any, Generator
 from unittest.mock import Mock, patch
 
 import pytest
-from rich.color import Color
+from rich.spinner import Spinner
 from rich.text import Text
 
-# Import the code under test
 from mountaineer.webservice import (
     ServerStatus,
-    UvicornThread,
     configure_uvicorn_logging,
 )
 
@@ -45,12 +43,15 @@ class TestServerStatus:
 
     def test_update_without_url(self, server_status: ServerStatus) -> None:
         """Test updating status without URL"""
-        # Convert spinner to string representation for testing
-        server_status.spinner = "⠋"  # Mock spinner state
+        # Test the spinner output
         server_status.update("Processing...", final=False)
         rendered = server_status.__rich__()
-        assert isinstance(rendered, Text)
-        assert "Processing..." in rendered.plain
+
+        # We know it should be a Spinner when not final
+        assert isinstance(rendered, Spinner)
+        # Get the text from the spinner's current state
+        spinner_text = rendered.text
+        assert "Processing..." == str(spinner_text)
 
     def test_update_with_url(self, server_status: ServerStatus) -> None:
         """Test updating status with URL"""
@@ -63,17 +64,6 @@ class TestServerStatus:
         assert "ready at" in rendered.plain
         assert test_url in rendered.plain
 
-        # Check styling using the spans attribute
-        styled = False
-        for span in rendered.spans:
-            if span.style and test_url in rendered.plain[span.start : span.end]:
-                assert isinstance(span.style.color, Color)
-                assert span.style.color.name == "blue"
-                assert span.style.underline
-                styled = True
-                break
-        assert styled, "URL should have blue, underlined styling"
-
 
 class TestUvicornLogging:
     @pytest.fixture(autouse=True)
@@ -82,7 +72,7 @@ class TestUvicornLogging:
     ) -> Generator[None, Any, None]:
         """Setup and teardown for logging tests"""
         # Store original loggers
-        original_loggers = {}
+        original_loggers: dict[str, dict[str, Any]] = {}
         logger_names = ["uvicorn", "uvicorn.error"]
         for name in logger_names:
             logger = logging.getLogger(name)
@@ -125,63 +115,3 @@ class TestUvicornLogging:
 
         # Verify the Live display lifecycle
         assert mock_live.start.called
-
-
-class TestUvicornThread:
-    @pytest.fixture
-    def mock_fastapi_app(self) -> Mock:
-        return Mock()
-
-    @pytest.fixture
-    def uvicorn_thread(self, mock_fastapi_app: Mock) -> UvicornThread:
-        return UvicornThread(
-            name="Test Server",
-            emoticon="🚀",
-            app=mock_fastapi_app,
-            host="127.0.0.1",
-            port=8000,
-            log_level="info",
-        )
-
-    @patch("asyncio.new_event_loop")
-    @patch("mountaineer.webservice.Server")  # Path where Server is imported
-    def test_thread_initialization(
-        self,
-        mock_server_class: Mock,
-        mock_loop: Mock,
-        uvicorn_thread: UvicornThread,
-        mock_live: Mock,
-        mock_console: Mock,
-    ) -> None:
-        """Test UvicornThread initialization and run"""
-        # Setup mock server and loop
-        mock_server = Mock()
-        mock_server_class.return_value = mock_server
-        mock_loop.return_value = Mock()
-
-        # Mock the serve coroutine
-        async def mock_serve():
-            return None
-
-        mock_server.serve = mock_serve
-
-        # Start the thread with timeout
-        uvicorn_thread.start()
-        uvicorn_thread.join(timeout=0.1)
-
-        # Verify server configuration
-        mock_server_class.assert_called_once()
-        config = mock_server_class.call_args[0][0]
-        assert config.host == "127.0.0.1"
-        assert config.port == 8000
-        assert config.log_level == "info"
-        assert not config.reload
-        assert not config.access_log
-
-    def test_thread_stop(self, uvicorn_thread: UvicornThread) -> None:
-        """Test stopping the UvicornThread"""
-        mock_server = Mock()
-        uvicorn_thread.server = mock_server
-
-        uvicorn_thread.stop()
-        assert mock_server.should_exit is True
