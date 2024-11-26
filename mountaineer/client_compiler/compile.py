@@ -1,7 +1,10 @@
+from hashlib import md5
 from pathlib import Path
 from shutil import move as shutil_move
 from tempfile import mkdtemp
 from time import monotonic_ns
+
+from pydantic import BaseModel
 
 from mountaineer.app import AppController
 from mountaineer.client_compiler.base import ClientBundleMetadata
@@ -10,6 +13,16 @@ from mountaineer.console import CONSOLE
 from mountaineer.io import gather_with_concurrency
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
+
+
+class ClientCompilerMetadata(BaseModel):
+    """
+    Metadata added during compile_time that should be maintained in the
+    bundle for production hosting.
+
+    """
+
+    static_artifact_shas: dict[str, str]
 
 
 class ClientCompiler:
@@ -87,6 +100,13 @@ class ClientCompiler:
         # Up until now builders have placed their results into a temporary
         # directory, we want to merge this with the project directory
         self._move_build_artifacts_into_project()
+
+        # Now that we have prepared the static folder in its final form, we
+        # should get the md5 hash of the content for our archive
+        metadata = self._build_static_metadata()
+        (self.view_root.get_managed_metadata_dir() / "metadata.json").write_text(
+            metadata.dump_json()
+        )
 
     def _init_builders(self):
         metadata = ClientBundleMetadata(
@@ -184,3 +204,17 @@ class ClientCompiler:
             for tmp_file in tmp_path.glob("*"):
                 final_file = final_path / tmp_file.name
                 shutil_move(tmp_file, final_file)
+
+    def _build_static_metadata(self):
+        static_artifact_shas: dict[str, str] = {}
+        static_dir = self.view_root.get_managed_static_dir()
+
+        for base_path, dirs, files in static_dir.walk():
+            for file in files:
+                static_path = base_path / file
+                file_contents = static_path.read_bytes()
+                static_artifact_shas[str(static_path.relative_to(static_dir))] = md5(
+                    file_contents
+                ).hexdigest()
+
+        return ClientCompilerMetadata(static_artifact_shas=static_artifact_shas)

@@ -25,7 +25,7 @@ from mountaineer.actions import (
 )
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.client_compiler.base import ClientBuilderBase
+from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
@@ -93,7 +93,7 @@ class AppController:
 
     """
 
-    builders: list[ClientBuilderBase]
+    builders: list[APIBuilderBase]
     global_metadata: Metadata | None
 
     def __init__(
@@ -103,7 +103,7 @@ class AppController:
         version: str = "0.1.0",
         view_root: Path | None = None,
         global_metadata: Metadata | None = None,
-        custom_builders: list[ClientBuilderBase] | None = None,
+        custom_builders: list[APIBuilderBase] | None = None,
         config: ConfigBase | None = None,
         fastapi_args: dict[str, Any] | None = None,
     ):
