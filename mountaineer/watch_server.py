@@ -37,7 +37,7 @@ class WatcherWebservice:
 
         @app.get("/")
         def home():
-            return {"message": "Hello World"}
+            return {"message": "This is the mountaineer hot-reload server."}
 
         @app.websocket("/build-events")
         async def build_updated(websocket: WebSocket):
@@ -76,10 +76,13 @@ class WatcherWebservice:
 
         # UvicornThreads are daemon threads by default
         self.webservice_thread = UvicornThread(
+            name="Hot reload server",
+            emoticon="🦉",
             app=self.app,
             host=self.host,
             port=self.port,
             log_level="warning",
+            use_logs=False,
         )
 
         LOGGER.debug("Starting WatcherWebservice on port %d", self.port)

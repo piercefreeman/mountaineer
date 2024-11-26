@@ -1,69 +1,127 @@
 import asyncio
 import logging
-from logging import getLogger
 from threading import Thread
 from time import sleep
 from typing import Optional
+
 from fastapi import FastAPI
-from rich.logging import RichHandler
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.style import Style
+from rich.text import Text
 from uvicorn import Config
 from uvicorn.server import Server
+
 from mountaineer.console import CONSOLE
 
-def configure_uvicorn_logging(log_level: str) -> None:
-    """Replace Uvicorn's default logging completely."""
+
+class ServerStatus:
+    def __init__(self, name: str, emoticon: str):
+        self.status = "Starting server..."
+        self.final_status = None
+        self.url: str | None = None
+
+        self.name = name
+        self.emoticon = emoticon
+
+    def update(self, message: str, url: str | None = None, final: bool = False) -> None:
+        self.status = message
+        self.url = url
+        if final:
+            self.final_status = message
+
+    def __rich__(self) -> Text:
+        if self.final_status:
+            if self.url:
+                text = Text()
+                text.append(f"{self.emoticon} {self.name} ready at ", style="bold")
+                text.append(self.url, style=Style(color="blue", underline=True))
+                return text
+            return Text(self.final_status)
+
+        # Create a composite text with spinner and status
+        return Spinner("dots", text=self.status, style="status.spinner", speed=1.0)
+
+
+def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
+    """
+    Replace Uvicorn's default logging with an updating status display.
+
+    """
     # Remove all existing handlers
-    uvicorn_logger = logging.getLogger("uvicorn")
-    uvicorn_logger.handlers = []
-    uvicorn_error_logger = logging.getLogger("uvicorn.error")
-    uvicorn_error_logger.handlers = []
+    for logger_name in ["uvicorn", "uvicorn.error"]:
+        logger = logging.getLogger(logger_name)
+        logger.handlers = []
+        logger.propagate = False
+        logger.setLevel(log_level.upper())
 
-    # Disable propagation to avoid double logging
-    uvicorn_logger.propagate = False
-    uvicorn_error_logger.propagate = False
+    # Create our status tracker
+    status = ServerStatus(name=name, emoticon=emoticon)
+    live = Live(status, console=CONSOLE, refresh_per_second=15)
+    live.start()
 
-    # Set levels
-    uvicorn_logger.setLevel(log_level.upper())
-    uvicorn_error_logger.setLevel(log_level.upper())
-
-    # Create our custom logger
     def log_adapter(logger_name: str):
         def _log(msg: str, *args, **kwargs):
             if "Started server process" in msg:
                 process_id = args[0] if args else "Unknown"
-                CONSOLE.print(f"⚡️ Server process [cyan]{process_id}[/cyan]")
+                status.update(f"Starting server process [cyan]{process_id}[/cyan]...")
+
+                from time import sleep
+
+                sleep(2)
             elif "Waiting for application startup" in msg:
-                CONSOLE.print("🔄 Initializing application...")
+                status.update("Initializing application...")
+                from time import sleep
+
+                sleep(2)
             elif "Application startup complete" in msg:
-                CONSOLE.print("✨ Application ready")
+                status.update("Application initialized...")
+                from time import sleep
+
+                sleep(2)
             elif "Uvicorn running on" in msg:
-                scheme, host, port = args[:3] if len(args) >= 3 else ("http", "unknown", "unknown")
-                CONSOLE.print(f"🌎 Listening on [link]{scheme}://{host}:{port}[/link]")
+                scheme, host, port = (
+                    args[:3] if len(args) >= 3 else ("http", "unknown", "unknown")
+                )
+                url = f"{scheme}://{host}:{port}"
+                status.update("Server ready", url=url, final=True)
+                live.stop()
+
         return _log
 
     # Replace the info methods directly
-    uvicorn_logger.info = log_adapter("uvicorn")
-    uvicorn_error_logger.info = log_adapter("uvicorn.error")
+    uvicorn_logger = logging.getLogger("uvicorn")
+    uvicorn_error_logger = logging.getLogger("uvicorn.error")
+    uvicorn_logger.info = log_adapter("uvicorn")  # type: ignore
+    uvicorn_error_logger.info = log_adapter("uvicorn.error")  # type: ignore
+
 
 class UvicornThread(Thread):
     def __init__(
         self,
         *,
+        name: str,
+        emoticon: str,
         app: FastAPI,
         host: str,
         port: int,
-        log_level: str = "info"
+        log_level: str = "info",
+        use_logs: bool = True,
     ):
         super().__init__(daemon=True)
         self.app = app
         self.port = port
         self.host = host
         self.log_level = log_level
+        self.name = name
+        self.emoticon = emoticon
         self.server: Optional[Server] = None
+        self.use_logs = use_logs
 
     def run(self) -> None:
         # Configure logging before creating the server
-        configure_uvicorn_logging(self.log_level)
+        if self.use_logs:
+            configure_uvicorn_logging(self.name, self.emoticon, self.log_level)
 
         loop = asyncio.new_event_loop()
         config = Config(
@@ -75,8 +133,11 @@ class UvicornThread(Thread):
             loop="asyncio",
             log_level=self.log_level,
         )
-        self.server = Server(config)
-        loop.run_until_complete(self.server.serve())
+
+        server = Server(config)
+        self.server = server
+
+        loop.run_until_complete(server.serve())
 
     def stop(self) -> None:
         if self.server is not None:

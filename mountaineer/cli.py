@@ -117,8 +117,6 @@ def handle_runserver(
     update_multiprocessing_settings()
     rich_traceback_install()
 
-    start_time = time()
-
     # Initialize components
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
@@ -141,9 +139,9 @@ def handle_runserver(
     asyncio.run(app_manager.app_compiler.run_builder_plugins())
 
     app_manager.restart_server()
-    CONSOLE.print(f"[bold green]🚀 App launched in {time() - start_time:.2f} seconds")
 
     async def handle_file_changes(metadata: CallbackMetadata):
+        LOGGER.info(f"Handling file changes: {metadata}")
         start = time()
         updated_js = set()
         updated_python = set()
