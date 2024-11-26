@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from os.path import commonpath
 from pathlib import Path
 from re import finditer as re_finditer, sub
 from time import monotonic_ns
@@ -29,39 +30,69 @@ class SourceMapParser:
     """
     Parse sourcemaps according to the official specification:
     https://sourcemaps.info/spec.html
-
     """
 
-    def __init__(self, path: str | Path):
-        """
-        :param relative_to: If specified, will output source paths relative
-        to this path.
-
-        """
-        self.path = Path(path)
+    def __init__(
+        self,
+        path: str | Path | None = None,
+        script: str | None = None,
+    ):
+        self.path = Path(path) if path else None
+        self.script = script
 
         self.source_map: SourceMapSchema | None = None
+        self._common_prefix_cache: dict[frozenset[str], str | None] = {}
 
         # { (line, column) : MapMetadata }
         self.parsed_mappings: dict[
             tuple[int, int], mountaineer_rs.MapMetadata
         ] | None = None
 
+    def find_common_prefix(self, paths: list[str]) -> str | None:
+        """
+        Find the common prefix among all non-anonymous paths.
+        Caches results based on the set of input paths.
+        """
+        # Convert paths to a frozenset for cache key
+        paths_set = frozenset(paths)
+
+        # Check cache first
+        if paths_set in self._common_prefix_cache:
+            return self._common_prefix_cache[paths_set]
+
+        # Filter out anonymous paths and empty paths
+        valid_paths = [
+            p for p in paths if p and not p.startswith("<") and not p.endswith(">")
+        ]
+
+        if not valid_paths:
+            result = None
+        else:
+            try:
+                common = commonpath(valid_paths)
+                result = common if common != "/" else None
+            except ValueError:
+                result = None
+
+        # Cache the result
+        self._common_prefix_cache[paths_set] = result
+        return result
+
     def parse(self):
         """
-        Parse the source map file and build up the internal mappings. This is
-        deterministic with respect to the initialized source map path, so this
-        will be a no-op if it's already been run.
-
+        Parse the source map file and build up the internal mappings.
+        Common prefix calculation is deferred until needed.
         """
         # If we've already parsed this file, don't do it again
         if self.parsed_mappings is not None:
             return
 
+        text = Path(self.path).read_text() if self.path else self.script
+        if not text:
+            raise ValueError("No source map found")
+
         start_parse = monotonic_ns()
-        self.source_map = SourceMapSchema.model_validate_json(
-            Path(self.path).read_text()
-        )
+        self.source_map = SourceMapSchema.model_validate_json(text)
         LOGGER.debug(f"Parsed source map in {(monotonic_ns() - start_parse)/1e9:.2f}s")
 
         start_parse = monotonic_ns()
@@ -74,10 +105,6 @@ class SourceMapParser:
         """
         For a compiled line and column, return the original line and column where they appeared
         in the pre-built file.
-
-        :param line: The line number in the compiled file
-        :param column: The column number in the compiled file
-
         """
         if self.parsed_mappings is None:
             raise ValueError("SourceMapParser has not been parsed yet")
@@ -92,7 +119,6 @@ class SourceMapParser:
 
         :return: The exception string with the original file and line numbers. Note that some
             exception stack traces may not be mappable, and will be left as-is.
-
         """
         if self.source_map is None or self.parsed_mappings is None:
             raise ValueError("SourceMapParser has not been parsed yet")
@@ -100,14 +126,34 @@ class SourceMapParser:
         # Build up the replacements all at once, since the matched indexes will be tied
         # to the original string
         text_replacements: dict[tuple[int, int], str] = {}
-        for match in re_finditer(r"\(([<>A-Za-z0-9]+?):(\d+?):(\d+?)\)", exception):
+        relevant_sources = set()
+
+        # First pass: collect all relevant source indices
+        for match in re_finditer(
+            r"\(([<>A-Za-z0-9/_.()]+?):(\d+?):(\d+?)\)", exception
+        ):
+            original_match = self.get_original_location(
+                int(match.group(2)), int(match.group(3))
+            )
+            if original_match and original_match.source_index is not None:
+                source = self.source_map.sources[original_match.source_index]
+                relevant_sources.add(source)
+
+        # Only calculate common prefix for sources that are actually used
+        common_prefix = self.find_common_prefix(list(relevant_sources))
+
+        # Second pass: build replacements
+        for match in re_finditer(
+            r"\(([<>A-Za-z0-9/_.()]+?):(\d+?):(\d+?)\)", exception
+        ):
             original_match = self.get_original_location(
                 int(match.group(2)), int(match.group(3))
             )
 
             if original_match and original_match.source_index is not None:
-                text_replacements[match.span(1)] = self.convert_relative_path(
-                    self.source_map.sources[original_match.source_index]
+                source = self.source_map.sources[original_match.source_index]
+                text_replacements[match.span(1)] = self._convert_relative_path(
+                    source, common_prefix
                 )
                 text_replacements[match.span(2)] = str(original_match.source_line)
                 text_replacements[match.span(3)] = str(original_match.source_column)
@@ -123,25 +169,22 @@ class SourceMapParser:
 
         return exception
 
-    def convert_relative_path(self, absolute_path: str):
+    def _convert_relative_path(self, path: str, common_prefix: str | None) -> str:
         """
-        Absolute paths are convenient for internal use since they fully qualify
-        a given file. However, for display they often get long and repetitive across
-        multiple lines. This function will convert an absolute path to a relative path
-        if it's within the same directory as the current working directory.
-
-        :param absolute_path: The absolute path to convert
-
-        :return: The relative path if it's within the current working directory, otherwise
-            the unmodified absolute path.
-
+        Convert a path by stripping common prefix and cleaning up.
+        - Keeps anonymous paths (<anonymous>) unchanged
+        - Strips common prefix from regular paths
+        - Removes leading "../" sequences
         """
-        source_path = Path(absolute_path)
+        # Don't modify anonymous paths
+        if path.startswith("<") and path.endswith(">"):
+            return path
 
-        if source_path.is_relative_to(Path.cwd()):
-            return "./" + str(source_path.relative_to(Path.cwd()))
+        # Strip the common prefix if it exists
+        if common_prefix and path.startswith(common_prefix):
+            path = path[len(common_prefix) :].lstrip("/")
 
-        return absolute_path
+        return path
 
 
 def get_cleaned_js_contents(contents: str):
