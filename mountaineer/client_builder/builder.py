@@ -45,7 +45,7 @@ class RenderSpec:
     spec: dict[Any, Any] | None
 
 
-class ClientBuilder:
+class APIBuilder:
     """
     Main entrypoint for building the auto-generated typescript code. This includes
     the server provided API used by useServer.

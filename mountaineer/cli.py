@@ -16,7 +16,7 @@ from mountaineer.app_manager import (
     find_packages_with_prefix,
     package_path_to_module,
 )
-from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.hotreload import HotReloader
@@ -58,7 +58,7 @@ def handle_watch(
     global_build_cache = Path(mkdtemp())
 
     app_manager = DevAppManager.from_webcontroller(webcontroller)
-    js_compiler = ClientBuilder(
+    js_compiler = APIBuilder(
         app_manager.app_controller,
         live_reload_port=None,
         build_cache=global_build_cache,

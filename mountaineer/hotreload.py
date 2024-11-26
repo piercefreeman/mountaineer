@@ -10,9 +10,9 @@ from importlib.abc import SourceLoader
 from pathlib import Path
 from types import ModuleType
 
-from mountaineer.logging import setup_logger
+from mountaineer.logging import setup_internal_logger
 
-logger = setup_logger(__name__)
+logger = setup_internal_logger(__name__)
 
 
 @dataclass

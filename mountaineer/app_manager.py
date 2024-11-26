@@ -11,7 +11,7 @@ from types import ModuleType
 from fastapi import Request
 
 from mountaineer.app import AppController
-from mountaineer.client_builder.builder import ClientBuilder
+from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import (
     ExceptionController,
@@ -55,7 +55,7 @@ class DevAppManager:
         self.mount_exceptions(app_controller)
 
         global_build_cache = Path(mkdtemp())
-        self.js_compiler = ClientBuilder(
+        self.js_compiler = APIBuilder(
             app_controller,
             live_reload_port=live_reload_port,
             build_cache=global_build_cache,

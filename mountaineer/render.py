@@ -1,12 +1,15 @@
 from hashlib import sha256
 from json import dumps as json_dumps
 from typing import TYPE_CHECKING, Any, Mapping, Type, TypeVar
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from fastapi import Response
 from pydantic import BaseModel, model_validator
 from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import Field, FieldInfo
 from typing_extensions import dataclass_transform
+
+from mountaineer.client_compiler.build_metadata import BuildMetadata
 
 T = TypeVar("T")
 
@@ -141,6 +144,35 @@ class LinkAttribute(HashableAttribute, BaseModel):
     href: str
     optional_attributes: dict[str, str] = {}
 
+    # A sha will only be added automatically for link imports
+    # that reference files built into the _static directory at runtime. Other
+    # links will remain as-is without a resolved sha.
+    add_static_sha: bool = True
+
+    def set_sha(self, sha: str):
+        """
+        Updates the URL by adding or modifying the 'sha' query parameter. If a sha
+        is already provided as part of href, will override the existing sha.
+
+        """
+        # Existing URL components
+        parsed_url = urlparse(self.href)
+        query_params = parse_qs(parsed_url.query)
+
+        query_params["sha"] = [sha]
+        new_query = urlencode(query_params, doseq=True)
+
+        self.href = urlunparse(
+            (
+                parsed_url.scheme,
+                parsed_url.netloc,
+                parsed_url.path,
+                parsed_url.params,
+                new_query,
+                parsed_url.fragment,
+            )
+        )
+
 
 class ScriptAttribute(HashableAttribute, BaseModel):
     src: str
@@ -195,7 +227,7 @@ class Metadata(BaseModel):
             ignore_global_metadata=self.ignore_global_metadata,
         )
 
-    def build_header(self) -> list[str]:
+    def build_header(self, build_metadata: BuildMetadata | None) -> list[str]:
         """
         Builds the header for this controller. Returns the list of tags that will be injected into the
         <head> tag of the rendered page.
@@ -239,11 +271,27 @@ class Metadata(BaseModel):
             tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
 
         for link_definition in self.links:
+            if build_metadata and link_definition.add_static_sha:
+                # By convention, static files should be mounted to the application in a /static endpoint. These
+                # may be served outside of mountaineer (via a CDN or similar) but we still expect
+                # these paths to reference the proper paths
+                link_sha: str | None = None
+                for (
+                    static_path,
+                    static_sha,
+                ) in build_metadata.static_artifact_shas.items():
+                    # Allow for alternative endings to support existing query parameters
+                    if link_definition.href.startswith(f"/static/{static_path}"):
+                        link_sha = static_sha
+                if link_sha:
+                    link_definition.set_sha(link_sha)
+
             link_attributes = {
                 "rel": link_definition.rel,
                 "href": link_definition.href,
                 **link_definition.optional_attributes,
             }
+
             tags.append(f"<link {format_optional_keys(link_attributes)} />")
 
         return tags
