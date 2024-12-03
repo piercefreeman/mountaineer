@@ -246,15 +246,15 @@ def handle_build(
     # Compile the final client bundle
     client_bundle_result = mountaineer_rs.compile_production_bundle(
         all_view_paths,
-        str(app_manager.app_controller.view_root / "node_modules"),
+        str(app_manager.app_controller._view_root / "node_modules"),
         "production",
         minify,
         str(get_static_path("live_reload.ts").resolve().absolute()),
         False,
     )
 
-    static_output = app_manager.app_controller.view_root.get_managed_static_dir()
-    ssr_output = app_manager.app_controller.view_root.get_managed_ssr_dir()
+    static_output = app_manager.app_controller._view_root.get_managed_static_dir()
+    ssr_output = app_manager.app_controller._view_root.get_managed_ssr_dir()
 
     # If we don't have the same number of entrypoints as controllers, something went wrong
     if len(client_bundle_result["entrypoints"]) != len(
@@ -287,7 +287,7 @@ def handle_build(
     # into a single runnable script for ease of use by the V8 engine
     result_scripts, _ = mountaineer_rs.compile_independent_bundles(
         all_view_paths,
-        str(app_manager.app_controller.view_root / "node_modules"),
+        str(app_manager.app_controller._view_root / "node_modules"),
         "production",
         0,
         str(get_static_path("live_reload.ts").resolve().absolute()),
