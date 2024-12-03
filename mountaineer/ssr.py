@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
+from mountaineer.client_compiler.source_maps import SourceMapParser
 from mountaineer.static import get_static_path
 
 
@@ -44,7 +45,10 @@ def fix_exception_lines(*, exception: str, injected_script: str):
 
 @extended_lru_cache(maxsize=128, max_size_mb=5)
 def render_ssr(
-    script: str, render_data: dict[str, Any], hard_timeout: int | float | None = None
+    script: str,
+    render_data: dict[str, Any],
+    hard_timeout: int | float | None = None,
+    sourcemap: str | None = None,
 ) -> str:
     """
     Render the React component in the provided SSR javascript bundle. This file will
@@ -78,8 +82,15 @@ def render_ssr(
     except ConnectionAbortedError:
         raise TimeoutError("SSR render was interrupted after hard timeout")
     except ValueError as e:
-        raise V8RuntimeError(
-            fix_exception_lines(exception=str(e), injected_script=injected_script)
+        js_stack = fix_exception_lines(
+            exception=str(e), injected_script=injected_script
         )
+
+        if sourcemap:
+            sourcemap_parser = SourceMapParser(script=sourcemap)
+            sourcemap_parser.parse()
+            js_stack = sourcemap_parser.map_exception(js_stack)
+
+        raise V8RuntimeError(js_stack)
 
     return cast(str, render_result)

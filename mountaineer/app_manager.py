@@ -118,6 +118,8 @@ class DevAppManager:
         self.app_controller.live_reload_port = self.live_reload_port or 0
 
         self.webservice_thread = UvicornThread(
+            name="Dev webserver",
+            emoticon="🚀",
             app=self.app_controller.app,
             host=self.host or "127.0.0.1",
             port=self.port,

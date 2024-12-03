@@ -85,6 +85,7 @@ class LayoutElement:
     children: list["LayoutElement"] = field(default_factory=list)
 
     cached_server_script: str | None = None
+    cached_server_sourcemap: str | None = None
     cached_client_script: str | None = None
 
 
@@ -317,32 +318,34 @@ class AppController:
             # If we're in development mode, we should recompile the script on page
             # load to make sure we have the latest if there's any chance that it
             # was affected by recent code changes
-            if self.config and self.config.ENVIRONMENT == "development":
+            if self.development_enabled:
                 # Caching the build files saves about 0.3 on every load
                 # during development
                 start = monotonic_ns()
                 if not controller_node.cached_server_script:
-                    controller_node.cached_server_script = (
-                        mountaineer_rs.compile_independent_bundles(
-                            view_paths,
-                            str(self._view_root / "node_modules"),
-                            "development",
-                            0,
-                            str(get_static_path("live_reload.ts").resolve().absolute()),
-                            True,
-                        )[0]
+                    (
+                        script_payloads,
+                        sourcemap_payloads,
+                    ) = mountaineer_rs.compile_independent_bundles(
+                        view_paths,
+                        str(self._view_root / "node_modules"),
+                        "development",
+                        0,
+                        str(get_static_path("live_reload.ts").resolve().absolute()),
+                        True,
                     )
+                    controller_node.cached_server_script = script_payloads[0]
+                    controller_node.cached_server_sourcemap = sourcemap_payloads[0]
                 if not controller_node.cached_client_script:
-                    controller_node.cached_client_script = (
-                        mountaineer_rs.compile_independent_bundles(
-                            view_paths,
-                            str(self._view_root / "node_modules"),
-                            "development",
-                            self.live_reload_port,
-                            str(get_static_path("live_reload.ts").resolve().absolute()),
-                            False,
-                        )[0]
+                    script_payloads, _ = mountaineer_rs.compile_independent_bundles(
+                        view_paths,
+                        str(self._view_root / "node_modules"),
+                        "development",
+                        self.live_reload_port,
+                        str(get_static_path("live_reload.ts").resolve().absolute()),
+                        False,
                     )
+                    controller_node.cached_client_script = script_payloads[0]
                 LOGGER.debug(
                     f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
                 )
@@ -355,6 +358,7 @@ class AppController:
                         str, controller_node.cached_client_script
                     ),
                     external_client_imports=None,
+                    sourcemap=controller_node.cached_server_sourcemap,
                 )
             else:
                 # Production payload
@@ -367,6 +371,7 @@ class AppController:
                         f"/static/{script_name}"
                         for script_name in controller._bundled_scripts
                     ],
+                    sourcemap=controller_node.cached_server_sourcemap,
                 )
 
             LOGGER.debug(
@@ -416,7 +421,7 @@ class AppController:
         # This allows each view to avoid having to find these on disk, as well as gives
         # a proactive error if any view will be unable to render when their script files
         # are missing
-        if self.config and self.config.ENVIRONMENT != "development":
+        if not self.development_enabled:
             controller.resolve_paths(self._view_root, force=True)
             if not controller._bundled_scripts:
                 raise ValueError(
@@ -624,6 +629,7 @@ class AppController:
         *,
         inline_client_script: str,
         external_client_imports: None,
+        sourcemap: str | None,
     ):
         ...
 
@@ -636,6 +642,7 @@ class AppController:
         *,
         inline_client_script: None,
         external_client_imports: list[str],
+        sourcemap: str | None,
     ):
         ...
 
@@ -647,6 +654,7 @@ class AppController:
         *,
         inline_client_script: str | None = None,
         external_client_imports: list[str] | None = None,
+        sourcemap: str | None = None,
     ):
         """
         Compiles the HTML for a given page, with all the controller-returned
@@ -681,6 +689,7 @@ class AppController:
             server_data_json,
             # TODO: Update to build param
             hard_timeout=10,
+            sourcemap=sourcemap,
         )
 
         client_import: str
@@ -1058,4 +1067,4 @@ class AppController:
 
     @property
     def development_enabled(self):
-        return self.config and self.config.ENVIRONMENT != "development"
+        return not self.config or self.config.ENVIRONMENT == "development"

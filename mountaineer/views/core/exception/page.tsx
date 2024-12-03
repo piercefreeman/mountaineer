@@ -21,12 +21,12 @@ const Page = () => {
             <br />
             Environment: {process.env.NODE_ENV}
           </div>
-          <h1 className="font-mono text-xl font-semibold text-zinc-800">
+          <h1 className="font-mono text-xl font-semibold text-zinc-800 whitespace-pre-wrap">
             {serverState.exception}
           </h1>
         </div>
         <div className="space-y-4">
-          <div className="flex items-center space-x-1 text-red-600 font-semibold">
+          <div className="flex items-center space-x-1 text-red-600 font-semibold whitespace-pre-wrap">
             <span>{serverState.parsed_exception.exc_type}:</span>
             <span>{serverState.parsed_exception.exc_value}</span>
           </div>
