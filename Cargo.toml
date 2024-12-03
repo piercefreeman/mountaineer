@@ -53,3 +53,8 @@ harness = false
 path = "src/benches/lexers_benchmark.rs"
 name = "lexers_benchmark"
 harness = false
+
+[lints.rust]
+# Global allow to fix pymethods's macro expansion, which can't be
+# escaped with an inline #[allow]
+non_local_definitions = "allow"

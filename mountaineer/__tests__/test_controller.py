@@ -45,6 +45,6 @@ def test_resolve_paths(tmp_path: Path):
     assert controller.resolve_paths(view_base)
 
     # Now ensure that the paths are correctly set
-    assert controller.view_base_path == view_base
-    assert controller.ssr_path == ssr_base / "stub_controller.js"
-    assert controller.bundled_scripts == [f"stub_controller-{random_hash}.js"]
+    assert controller._view_base_path == view_base
+    assert controller._ssr_path == ssr_base / "stub_controller.js"
+    assert controller._bundled_scripts == [f"stub_controller-{random_hash}.js"]

@@ -76,7 +76,7 @@ class APIBuilder:
 
     def update_controller(self, controller: AppController):
         self.app = controller
-        self.view_root = ManagedViewPath.from_view_root(controller.view_root)
+        self.view_root = ManagedViewPath.from_view_root(controller._view_root)
         self._openapi_action_specs = None
         self._openapi_render_specs = None
 
@@ -131,7 +131,7 @@ class APIBuilder:
         try:
             yield
         except BuildProcessException as e:
-            self.app.build_exception = e
+            self.app._build_exception = e
             raise
 
     def generate_static_files(self):

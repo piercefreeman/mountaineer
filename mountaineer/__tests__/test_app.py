@@ -224,14 +224,14 @@ def test_inherit_parent_spec():
     )
 
     # Test that the controller definitions remain separate
-    assert parent_controller.definition
-    assert child_controller.definition
+    assert parent_controller._definition
+    assert child_controller._definition
 
-    assert parent_controller.definition.render_router
-    assert child_controller.definition.render_router
+    assert parent_controller._definition.render_router
+    assert child_controller._definition.render_router
 
-    parent_routes = parent_controller.definition.render_router.routes
-    child_routes = child_controller.definition.render_router.routes
+    parent_routes = parent_controller._definition.render_router.routes
+    child_routes = child_controller._definition.render_router.routes
 
     assert len(parent_routes) == 1
     assert parent_routes[0].path == "/parent"  # type: ignore
@@ -287,7 +287,7 @@ def test_view_root_from_config(tmp_path: Path):
         mock_resolve_package_path.return_value = tmp_path
 
         app = AppController(config=MockConfig())
-        assert app.view_root == tmp_path / "views"
+        assert app._view_root == tmp_path / "views"
 
         assert mock_resolve_package_path.call_count == 1
         assert mock_resolve_package_path.call_args[0] == ("test_webapp",)
@@ -437,7 +437,7 @@ def test_get_value_mask_for_signature():
     }
 
     app = AppController(view_root=Path(""))
-    assert app.get_value_mask_for_signature(
+    assert app._get_value_mask_for_signature(
         signature(target_fn),
         values,
     ) == {

@@ -188,7 +188,7 @@ async def test_can_call_iterable():
     assert isinstance(return_value_sync, StreamingResponse)
 
     # StreamingResponses are intended to be read by an ASGI server, so we'll use the TestClient to simulate one instead of calling directly
-    controller_definition = app.definition_for_controller(controller)
+    controller_definition = app._definition_for_controller(controller)
     passthrough_url = controller_definition.get_url_for_metadata(
         get_function_metadata(controller.get_data)
     )
@@ -229,7 +229,7 @@ async def test_raw_response():
     controller = ExampleController()
     app.register(controller)
 
-    controller_definition = app.definition_for_controller(controller)
+    controller_definition = app._definition_for_controller(controller)
 
     client = TestClient(app.app)
     response = client.post(

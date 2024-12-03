@@ -213,7 +213,7 @@ async def test_handle_dev_exception(manager: DevAppManager):
         if controller.controller.__class__.__name__
         != manager.exception_controller.__class__.__name__
     ]
-    manager.app_controller.controller_names.remove(
+    manager.app_controller._controller_names.remove(
         manager.exception_controller.__class__.__name__
     )
 
