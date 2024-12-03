@@ -23,6 +23,7 @@ impl ToPyObject for MapMetadata {
     }
 }
 
+#[allow(non_local_definitions)]
 #[pymethods]
 impl MapMetadata {
     #[new]

@@ -39,6 +39,7 @@ struct BuildContextParams {
     output_dir: String,
 }
 
+#[allow(non_local_definitions)]
 #[pymethods]
 impl BuildContextParams {
     #[new]
