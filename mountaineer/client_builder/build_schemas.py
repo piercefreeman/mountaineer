@@ -39,7 +39,7 @@ class TypescriptSchema:
         if self.include_superclasses:
             interface_full += f" extends {', '.join(self.include_superclasses)}"
 
-        interface_full += f"{{\n{self.body}\n}}"
+        interface_full += f" {{\n{self.body}\n}}"
 
         if self.include_export:
             interface_full = f"export {interface_full}"
@@ -253,7 +253,7 @@ class OpenAPIToTypescriptSchemaConverter:
         return TypescriptSchema(
             interface_type="enum",
             name=self.get_typescript_interface_name(model),
-            body=interface_body,
+            body=interface_body.strip().lstrip("{").rstrip("}"),
             include_export=self.export_interface,
         )
 

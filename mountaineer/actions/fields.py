@@ -170,6 +170,18 @@ class FunctionMetadata(BaseModel):
             raise ValueError("Return model not set")
         return self.return_model
 
+    def get_openapi_extras(self):
+        openapi_extra: dict[str, Any] = {
+            "is_raw_response": self.get_is_raw_response()
+        }
+
+        if not self.get_is_raw_response():
+            # Pass along relevant tags in the OpenAPI meta struct
+            # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
+            if self.get_media_type():
+                openapi_extra["media_type"] = self.get_media_type()
+
+        return openapi_extra
 
 METADATA_ATTRIBUTE = "_mountaineer_metadata"
 

@@ -431,7 +431,7 @@ class APIBuilder:
         all_controllers = self.sort_classes_by_dependency(all_controllers)
         all_renders = self.sort_classes_by_dependency(all_renders)
 
-        models_content = ""
+        schemas: dict[str, str] = {}
 
         for controller in all_controllers:
             print(controller)
@@ -446,42 +446,91 @@ class APIBuilder:
                 # We should generate a stub interface so something is valid
                 continue
 
+            print("------")
             for name, func, metadata in found_actions:
                 print(name, func, metadata)
 
-                controller_api.post(f"/{metadata.function_name}")(func)
+                print("METADATA", metadata.get_openapi_extras())
+                controller_api.post(f"/{metadata.function_name}", openapi_extra=metadata.get_openapi_extras())(func)
 
-            # Generate the OpenAPI spec for the controller
             openapi_raw = self.app.generate_openapi(routes=controller_api.routes)
-            print(openapi_raw)
+            openapi_spec = OpenAPIDefinition(**openapi_raw)
 
+            # Generate the models that are required
+            # Convert all the other models defined in sideeffect routes
+            # Iterate through all paths and their actions
+            convert_models = defaultdict(set)
+            for path, endpoint in openapi_spec.paths.items():
+                for action in endpoint.actions:
+                    model_schemas : list[tuple[ContentDefinition, string]] = []
+
+                    # Request bodies support optional types
+                    if action.requestBody:
+                        content_definition = action.requestBody.content_schema
+                        model_schemas.append((content_definition, "request"))
+
+                    # Response bodies will be fully hydrated from the server and therefore
+                    # will contain every value
+                    for status_code, response in action.responses.items():
+                        content_definition = response.content_schema
+                        model_schemas.append((content_definition, "response"))
+
+                    for content_definition, tag in model_schemas:
+                        if not content_definition.schema_ref.ref:
+                            continue
+                        all_models = gather_all_models(
+                            openapi_spec,
+                            resolve_ref(content_definition.schema_ref.ref, openapi_spec),
+                        )
+                        for model in all_models:
+                            convert_models[model].add("request")
+
+            for model, schema_types in convert_models.items():
+                # If there are any request models, we should make them all optional
+                # We'll have to do this until we have different models for request/response
+                all_fields_required = all(
+                    schema_type == "response" for schema_type in schema_types
+                )
+
+                schemas[
+                    model.title
+                ] = self.openapi_schema_converter.convert_schema_to_interface(
+                    model,
+                    base=openapi_spec,
+                    # Don't require client data uploads to have all the fields
+                    # if there's a value specified server side. Note that this will apply
+                    # to both requests/response models right now, so clients might need
+                    # to do additional validation on the response side to confirm that
+                    # the server did send down the default values.
+                    # This is in contrast to the render() where we always know the response
+                    # payloads should be force required.
+                    all_fields_required=all_fields_required,
+                ).to_js()
+
+            # Generate the interface for all the actions
             action_definitions, error_definitions = self.openapi_action_converter.convert(
                 openapi_raw
             )
-            # These signatures should become our core definitions
-            print(action_definitions)
-
             controller_definition = {}
             for action_definition in action_definitions:
-                controller_definition[TSLiteral(action_definition.name)] = TSLiteral(action_definition.signature)
+                controller_definition[TSLiteral(action_definition.name)] = TSLiteral(
+                    f"({action_definition.parameters}) => {action_definition.response_type}"
+                )
 
             superclass_names = ", ".join(
                 superclass.__name__ for superclass in controller.__mro__
                 if superclass in all_controllers and superclass != controller
             )
 
-            models_content += (
+            schemas[controller.__name__] = (
                 f"export interface {controller.__name__} "
                 + (f"extends {superclass_names}" if superclass_names else "")
-                + " {\n"
                 + f"{python_payload_to_typescript(controller_definition)}\n"
-                + "}\n"
             )
 
         for render in all_renders:
             spec = self.openapi_schema_converter.get_unique_subclass_json_schema(render)
             render_base = OpenAPISchema(**spec)
-            schemas: dict[str, str] = {}
 
             # Convert the render model. This results in a one-to-many creation of schemas since
             # we also have to bring in all the sub-models that are referenced in the render model
@@ -502,13 +551,12 @@ class APIBuilder:
                     ]
                 schemas[schema_name] = component.to_js()
 
-            models_content += "\n\n".join(
-                [
-                    schema for schema in schemas.values()
-                ]
-            )
+        global_code_dir = self.view_root.get_managed_code_dir()
+        (global_code_dir / "controllers.ts").write_text(
+            "\n\n".join(schemas.values())
+        )
 
-        print(models_content)
+        print("\n\n".join(schemas.values()))
 
     def generate_view_servers(self):
         """

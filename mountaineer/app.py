@@ -457,10 +457,6 @@ class AppController:
             f"{self.internal_api_prefix}/{underscore(controller.__class__.__name__)}"
         )
         for _, fn, metadata in controller._get_client_functions():
-            openapi_extra: dict[str, Any] = {
-                "is_raw_response": metadata.get_is_raw_response()
-            }
-
             if not metadata.get_is_raw_response():
                 # We need to delay adding the typehint for each function until we are here, adding the view. Since
                 # decorators run before the class is actually mounted, they're isolated from the larger class/controller
@@ -477,13 +473,8 @@ class AppController:
                     return_annotation=metadata.return_model
                 )
 
-                # Pass along relevant tags in the OpenAPI meta struct
-                # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
-                if metadata.get_media_type():
-                    openapi_extra["media_type"] = metadata.get_media_type()
-
             controller_api.post(
-                f"/{metadata.function_name}", openapi_extra=openapi_extra
+                f"/{metadata.function_name}", openapi_extra=metadata.get_openapi_extras()
             )(fn)
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__

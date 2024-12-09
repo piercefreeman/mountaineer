@@ -19,12 +19,14 @@ from dataclasses import dataclass
 @dataclass
 class TypescriptAction:
     name: str
-    signature: str
+    parameters: str
+    default_parameters: str
+    response_type: str
     body: str
     required_models: list[str]
 
     def to_js(self):
-        return f"export const {self.name} = {self.signature} => {{ {self.body} }}"
+        return f"export const {self.name} = ({self.parameters} = {self.default_parameters}): {self.response_type} => {{ {self.body} }}"
 
 @dataclass
 class TypescriptError:
@@ -90,8 +92,9 @@ class OpenAPIToTypescriptActionConverter:
             });
         }
         """
+        print("URL ACTIONS", url, action)
         arguments, response_types = self.build_action_payload(url, action)
-        parameters, request_types = self.build_action_parameters(action)
+        parameters, default_parameters, request_types = self.build_action_parameters(action)
 
         response_type_template: str
         if action.media_type == STREAM_EVENT_TYPE:
@@ -110,7 +113,9 @@ class OpenAPIToTypescriptActionConverter:
 
         return TypescriptAction(
             name=method_name,
-            signature=f"({parameters}): {response_type}",
+            parameters=parameters,
+            default_parameters=default_parameters,
+            response_type=response_type,
             body=f"return __request({arguments});",
             required_models=list(set(request_types + response_types))
         )
@@ -186,7 +191,7 @@ class OpenAPIToTypescriptActionConverter:
 
         # Default any unprovided value set to an empty object, in order
         # to enable a no-requestbody function to be called with no arguments
-        return f"{parameters_str}: {typehint_str} = {{}}", request_types
+        return f"{parameters_str}: {typehint_str}", "{}", request_types
 
     def build_action_payload(self, url: str, action: ActionDefinition):
         # Since our typescript common functions have variable inputs here, it's cleaner
