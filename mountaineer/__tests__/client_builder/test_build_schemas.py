@@ -229,3 +229,20 @@ def test_get_typescript_interface_name(model_title: str, expected_interface: str
         )
         == expected_interface
     )
+
+
+def test_get_unique_subclass_json_schema():
+    class SuperclassItem(BaseModel):
+        super_value: str
+
+    class SubclassItem(SuperclassItem):
+        sub_value: str
+
+    converter = OpenAPIToTypescriptSchemaConverter()
+
+    json_schema = OpenAPISchema(**converter.get_unique_subclass_json_schema(SubclassItem))
+    result = converter.convert_schema_to_typescript(json_schema)
+
+    assert set(result.keys()) == {"SubclassItem"}
+    assert "sub_value" in result["SubclassItem"]
+    assert "super_value" not in result["SubclassItem"]

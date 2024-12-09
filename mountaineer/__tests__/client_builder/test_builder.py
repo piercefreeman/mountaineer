@@ -338,3 +338,41 @@ def test_generate_controller_schema_sideeffect_required_attributes(
     assert "a: Array<DataBundle>" in schemas["SimpleRender"]
     assert "a: Array<DataBundle>" in schemas["MySideeffectResponseSideEffect"]
     assert "b: Array<DataBundle>" in schemas["MySideeffectResponsePassthrough"]
+
+def test_generate_controller_definitions_superclasses(
+    builder: APIBuilder,
+):
+    """
+    Test that controller definitions are generated for superclasses
+    and create mixins for the subclasses.
+
+    """
+
+    class CommonRender(RenderBase):
+        super_value: str
+
+    class ChildRender(CommonRender):
+        sub_value: str
+
+    class CommonController(ControllerBase):
+        @sideeffect
+        async def super_action(self) -> None:
+            pass
+
+    class ChildController(CommonController):
+        url = "/sideeffect/"
+        view_path = "/sideeffect/page.tsx"
+
+        def render(self) -> ChildRender:
+            return ChildRender(super_value="super", sub_value="sub")
+
+        @sideeffect
+        async def sub_action(self) -> None:
+            pass
+
+    controller = ChildController()
+    builder.app.register(controller)
+
+    schemas = builder.generate_controller_definitions()
+
+    assert print(schemas)

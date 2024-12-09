@@ -14,7 +14,26 @@ from mountaineer.client_builder.typescript import (
     python_payload_to_typescript,
 )
 from mountaineer.constants import STREAM_EVENT_TYPE
+from dataclasses import dataclass
 
+@dataclass
+class TypescriptAction:
+    name: str
+    signature: str
+    body: str
+    required_models: list[str]
+
+    def to_js(self):
+        return f"export const {self.name} = {self.signature} => {{ {self.body} }}"
+
+@dataclass
+class TypescriptError:
+    name: str
+    base_name: str
+    required_models: list[str]
+
+    def to_js(self):
+        return f"export class {self.name} extends FetchErrorBase<{self.base_name}> {{}}"
 
 class OpenAPIToTypescriptActionConverter:
     """
@@ -23,7 +42,7 @@ class OpenAPIToTypescriptActionConverter:
 
     """
 
-    def convert(self, openapi: dict[str, Any]) -> tuple[dict[str, str], list[str]]:
+    def convert(self, openapi: dict[str, Any]) -> tuple[list[TypescriptAction], list[TypescriptError]]:
         """
         Our conversion pipeline focuses on creating the action definitions of one file.
 
@@ -31,27 +50,21 @@ class OpenAPIToTypescriptActionConverter:
 
         """
         schema = OpenAPIDefinition(**openapi)
-        output_actions: dict[str, str] = {}
-        output_errors: dict[str, str] = {}
-        all_required_types: set[str] = set()
+
+        action_definitions : list[TypescriptAction] = []
+        error_definitions : list[TypescriptError] = []
+
         for url, endpoint_definition in schema.paths.items():
             for action, method_name in zip(
                 endpoint_definition.actions,
                 self.get_method_names(url, endpoint_definition.actions),
             ):
-                rendered_str, required_types = self.build_action(
-                    url, action, method_name
-                )
-                error_strs, error_types = self.build_error(action)
+                action_definitions.append(self.build_action(url, action, method_name))
+                error_definitions.extend(self.build_error(action))
 
-                output_actions[method_name] = rendered_str
-                output_errors.update(error_strs)
-                all_required_types.update(required_types)
-                all_required_types.update(error_types)
+        return action_definitions, error_definitions
 
-        return {**output_actions, **output_errors}, list(all_required_types)
-
-    def build_action(self, url: str, action: ActionDefinition, method_name: str):
+    def build_action(self, url: str, action: ActionDefinition, method_name: str) -> TypescriptAction:
         """
         Builds the action function. This should be more-or-less compatible with the common
         server fetch provided by `openapi-typescript-codegen`. Example return value:
@@ -80,8 +93,6 @@ class OpenAPIToTypescriptActionConverter:
         arguments, response_types = self.build_action_payload(url, action)
         parameters, request_types = self.build_action_parameters(action)
 
-        lines: list[str] = []
-
         response_type_template: str
         if action.media_type == STREAM_EVENT_TYPE:
             response_type_template = (
@@ -97,21 +108,19 @@ class OpenAPIToTypescriptActionConverter:
                 response_type=" | ".join(response_types)
             )
 
-        lines.append(
-            f"export const {method_name} = ({parameters}): {response_type} => {{\n"
-            + "return __request(\n"
-            + arguments
-            + "\n);\n"
-            + "}"
+        return TypescriptAction(
+            name=method_name,
+            signature=f"({parameters}): {response_type}",
+            body=f"return __request({arguments});",
+            required_models=list(set(request_types + response_types))
         )
-        return "\n".join(lines), list(set(request_types + response_types))
 
-    def build_error(self, action: ActionDefinition):
+    def build_error(self, action: ActionDefinition) -> list[TypescriptError]:
         """
         Build an error class that wraps the typehinted error contents payload.
         """
-        error_classes: dict[str, str] = {}
-        required_types: list[str] = []
+        error_definitions : list[TypescriptError] = []
+
         for error_code, response in action.responses.items():
             status_int = int(error_code)
             if self.status_code_is_valid(status_int):
@@ -120,12 +129,16 @@ class OpenAPIToTypescriptActionConverter:
                 continue
 
             model_name = response.content_schema.schema_ref.ref.split("/")[-1]
-            error_classes[
-                model_name
-            ] = f"export class {self.get_exception_class_name(model_name)} extends FetchErrorBase<{model_name}> {{}}"
-            required_types.append(model_name)
 
-        return error_classes, required_types
+            error_definitions.append(
+                TypescriptError(
+                    name=self.get_exception_class_name(model_name),
+                    base_name=model_name,
+                    required_models=[model_name]
+                )
+            )
+
+        return error_definitions
 
     def build_action_parameters(self, action: ActionDefinition):
         parameters_dict: dict[Any, Any] = {}

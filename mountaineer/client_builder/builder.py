@@ -5,7 +5,7 @@ from json import dumps as json_dumps
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 from time import monotonic_ns
-from typing import Any
+from typing import Any, Type
 
 from fastapi import APIRouter
 from inflection import camelize
@@ -29,6 +29,7 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
+from graphlib import TopologicalSorter
 from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.console import CONSOLE
 from mountaineer.controller import ControllerBase
@@ -36,6 +37,11 @@ from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
+from mountaineer.render import RenderBase, RenderNull
+from typing import TypeVar
+
+T = TypeVar('T', bound=type)
+
 
 
 @dataclass
@@ -108,6 +114,8 @@ class APIBuilder:
 
                 # Static files that don't depend on client code
                 self.generate_static_files()
+
+                self.generate_controller_definitions()
 
                 # The order of these generators don't particularly matter since most TSX linters
                 # won't refresh until they're all complete. However, this ordering better aligns
@@ -375,6 +383,132 @@ class APIBuilder:
         ]
 
         (global_code_dir / "links.ts").write_text("\n".join(lines))
+
+    def generate_controller_definitions(self):
+        """
+        We generate centralized controller definitions (render + actions interfaces) so we can
+        model the semantic dependencies between base controllers used in different places.
+
+        For superclasses to show up here we still need them to subclass ControllerBase.
+
+        """
+        all_controllers : set[Type[ControllerBase]] = set()
+        all_renders: set[Type[RenderBase]] = set()
+
+        # Get all the controller definitions and their superclasses
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            all_controllers.add(controller.__class__)
+            all_controllers.update(
+                [
+                    superclass
+                    for superclass in controller.__class__.__mro__
+                    if issubclass(superclass, ControllerBase)
+                ]
+            )
+
+            # Use the render functions from the actually concrete subclasses
+            # We then break these apart
+            render_model = get_function_metadata(controller.render).get_render_model()
+            if render_model:
+                all_renders.add(render_model)
+                all_renders.update(
+                    [
+                        superclass
+                        for superclass in render_model.__mro__
+                        if issubclass(superclass, RenderBase)
+                    ]
+                )
+
+        # Exclude the actual base classes (standard + layout) themselves
+        all_controllers.discard(ControllerBase)
+        all_controllers.discard(LayoutControllerBase)
+        all_renders.discard(RenderBase)
+        all_renders.discard(RenderNull)
+
+        # Sort these all in MRO ordering so we can generate the definitions in the correct order
+        # to have dependencies resolved later in the file
+        all_controllers = self.sort_classes_by_dependency(all_controllers)
+        all_renders = self.sort_classes_by_dependency(all_renders)
+
+        models_content = ""
+
+        for controller in all_controllers:
+            print(controller)
+
+            # Create a synthetic APIRouter to hold all the controller actions that just
+            # belong to this class. Actual action implementations should be scoped to just
+            # the subclasses that have been registered.
+            controller_api = APIRouter()
+            found_actions = list(controller._get_client_functions_cls())
+
+            if not found_actions:
+                # We should generate a stub interface so something is valid
+                continue
+
+            for name, func, metadata in found_actions:
+                print(name, func, metadata)
+
+                controller_api.post(f"/{metadata.function_name}")(func)
+
+            # Generate the OpenAPI spec for the controller
+            openapi_raw = self.app.generate_openapi(routes=controller_api.routes)
+            print(openapi_raw)
+
+            action_definitions, error_definitions = self.openapi_action_converter.convert(
+                openapi_raw
+            )
+            # These signatures should become our core definitions
+            print(action_definitions)
+
+            controller_definition = {}
+            for action_definition in action_definitions:
+                controller_definition[TSLiteral(action_definition.name)] = TSLiteral(action_definition.signature)
+
+            superclass_names = ", ".join(
+                superclass.__name__ for superclass in controller.__mro__
+                if superclass in all_controllers and superclass != controller
+            )
+
+            models_content += (
+                f"export interface {controller.__name__} "
+                + (f"extends {superclass_names}" if superclass_names else "")
+                + " {\n"
+                + f"{python_payload_to_typescript(controller_definition)}\n"
+                + "}\n"
+            )
+
+        for render in all_renders:
+            spec = self.openapi_schema_converter.get_unique_subclass_json_schema(render)
+            render_base = OpenAPISchema(**spec)
+            schemas: dict[str, str] = {}
+
+            # Convert the render model. This results in a one-to-many creation of schemas since
+            # we also have to bring in all the sub-models that are referenced in the render model
+            for (
+                schema_name,
+                component,
+            ) in self.openapi_schema_converter.convert_schema_to_typescript(
+                render_base,
+                # Render models are sent server -> client, so we know they'll provide all their
+                # values in the initial payload
+                all_fields_required=True,
+            ).items():
+                if schema_name == render.__name__:
+                    component.include_superclasses = [
+                        superclass.__name__
+                        for superclass in render.__mro__
+                        if superclass in all_renders and superclass != render
+                    ]
+                schemas[schema_name] = component.to_js()
+
+            models_content += "\n\n".join(
+                [
+                    schema for schema in schemas.values()
+                ]
+            )
+
+        print(models_content)
 
     def generate_view_servers(self):
         """
@@ -667,3 +801,21 @@ class APIBuilder:
                 )
 
         return self._openapi_render_specs
+
+    def sort_classes_by_dependency(self, classes: set[Type[T]]) -> list[Type[T]]:
+        """
+        Sorts classes based on their inheritance dependencies using topological sorting.
+        Classes will be ordered so that base classes appear before their derivatives.
+
+        """
+        # Create dependency graph mapping each class to its direct superclasses
+        graph = {
+            cls: {
+                base for base in cls.__bases__
+                if base in classes and base is not object
+            }
+            for cls in classes
+        }
+
+        # Use TopologicalSorter to get dependency-aware ordering
+        return list(TopologicalSorter(graph).static_order())

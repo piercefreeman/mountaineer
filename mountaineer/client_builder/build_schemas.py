@@ -22,6 +22,29 @@ from mountaineer.client_builder.typescript import (
     python_payload_to_typescript,
 )
 from mountaineer.logging import LOGGER
+from dataclasses import dataclass, field
+from typing import Literal
+
+@dataclass
+class TypescriptSchema:
+    interface_type: Literal["interface", "enum"]
+    name: str
+    body: str
+    include_export: bool
+    include_superclasses: list[str] = field(default_factory=list)
+
+    def to_js(self):
+        interface_full = f"{self.interface_type} {self.name}"
+
+        if self.include_superclasses:
+            interface_full += f" extends {', '.join(self.include_superclasses)}"
+
+        interface_full += f"{{\n{self.body}\n}}"
+
+        if self.include_export:
+            interface_full = f"export {interface_full}"
+
+        return interface_full
 
 
 class OpenAPIToTypescriptSchemaConverter:
@@ -48,6 +71,46 @@ class OpenAPIToTypescriptSchemaConverter:
             field: (field_info.annotation, field_info)
             for field, field_info in model.model_fields.items()
             if not field_info.exclude
+        }
+
+        synthetic_model = create_model(
+            model.__name__,
+            __config__=model.model_config,
+            **include_fields,  # type: ignore
+        )
+
+        return synthetic_model.model_json_schema()
+
+    def get_unique_subclass_json_schema(self, model: Type[BaseModel]):
+        """
+        Get the instance unique to the model and not the superclass
+
+        """
+        self.validate_typescript_candidate(model)
+
+        model_to_annotations = {}
+
+        for mro_class in [model, *model.__mro__]:
+            if issubclass(mro_class, BaseModel):
+                model_to_annotations[mro_class] = {
+                    field: (field_info.annotation, field_info)
+                    for field, field_info in mro_class.model_fields.items()
+                    if not field_info.exclude
+                }
+
+        main_definitions = model_to_annotations.pop(model)
+        superclass_definitions = {
+            field: annotation
+            for model, definitions in model_to_annotations.items()
+            for field, (annotation, _) in definitions.items()
+        }
+
+        include_fields = {
+            field: (annotation, field_info)
+            for field, (annotation, field_info) in main_definitions.items()
+            if (
+                field not in superclass_definitions or superclass_definitions[field] != annotation
+            )
         }
 
         synthetic_model = create_model(
@@ -159,13 +222,12 @@ class OpenAPIToTypescriptSchemaConverter:
 
             fields.append(f"  {prop_name}{'?' if not is_required else ''}: {ts_type};")
 
-        interface_body = "\n".join(fields)
-        interface_full = f"interface {self.get_typescript_interface_name(model)} {{\n{interface_body}\n}}"
-
-        if self.export_interface:
-            interface_full = f"export {interface_full}"
-
-        return interface_full
+        return TypescriptSchema(
+            interface_type="interface",
+            name=self.get_typescript_interface_name(model),
+            body="\n".join(fields),
+            include_export=self.export_interface,
+        )
 
     def _convert_enum_to_interface(self, model: OpenAPIProperty):
         fields: dict[str, Any] = {}
@@ -187,14 +249,13 @@ class OpenAPIToTypescriptSchemaConverter:
 
         # Enums use an equal assignment syntax
         interface_body = python_payload_to_typescript(fields).replace(":", " =")
-        interface_full = (
-            f"enum {self.get_typescript_interface_name(model)} {interface_body}"
+
+        return TypescriptSchema(
+            interface_type="enum",
+            name=self.get_typescript_interface_name(model),
+            body=interface_body,
+            include_export=self.export_interface,
         )
-
-        if self.export_interface:
-            interface_full = f"export {interface_full}"
-
-        return interface_full
 
     def get_typescript_interface_name(self, model: OpenAPIProperty):
         if not model.title:
