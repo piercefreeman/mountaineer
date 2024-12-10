@@ -4,6 +4,7 @@ Python definitions.
 
 """
 from typing import Any
+from inflection import camelize
 
 from mountaineer.client_builder.openapi import (
     EmptyAPIProperty,
@@ -182,3 +183,13 @@ def get_typehint_for_parameter(
     )
 
     return key, value
+
+
+def normalize_interface(title: str):
+    replace_chars = {" ", "[", "]"}
+
+    for char in replace_chars:
+        title = title.strip(char)
+        title = title.replace(char, "_")
+
+    return camelize(title)

@@ -20,13 +20,20 @@ from dataclasses import dataclass
 class TypescriptAction:
     name: str
     parameters: str
-    default_parameters: str
+    typehints: str
+    default_parameters: str | None
     response_type: str
     body: str
     required_models: list[str]
 
     def to_js(self):
-        return f"export const {self.name} = ({self.parameters} = {self.default_parameters}): {self.response_type} => {{ {self.body} }}"
+        script = f"export const {self.name} = ({self.parameters} : {self.typehints}"
+
+        if self.default_parameters:
+            script += f" = {self.default_parameters}"
+
+        script += f"): {self.response_type} => {{ {self.body} }}"
+        return script
 
 @dataclass
 class TypescriptError:
@@ -94,7 +101,7 @@ class OpenAPIToTypescriptActionConverter:
         """
         print("URL ACTIONS", url, action)
         arguments, response_types = self.build_action_payload(url, action)
-        parameters, default_parameters, request_types = self.build_action_parameters(action)
+        parameters, typehints, default_parameters, request_types = self.build_action_parameters(action)
 
         response_type_template: str
         if action.media_type == STREAM_EVENT_TYPE:
@@ -114,6 +121,7 @@ class OpenAPIToTypescriptActionConverter:
         return TypescriptAction(
             name=method_name,
             parameters=parameters,
+            typehints=typehints,
             default_parameters=default_parameters,
             response_type=response_type,
             body=f"return __request({arguments});",
@@ -183,6 +191,7 @@ class OpenAPIToTypescriptActionConverter:
             request_types.append(model_name)
 
         # Merge in the system parameters
+        has_nonsystem_parameters = bool(parameters_dict)
         parameters_dict = {**parameters_dict, **system_parameters}
         typehint_dict = {**typehint_dict, **system_typehints}
 
@@ -191,7 +200,7 @@ class OpenAPIToTypescriptActionConverter:
 
         # Default any unprovided value set to an empty object, in order
         # to enable a no-requestbody function to be called with no arguments
-        return f"{parameters_str}: {typehint_str}", "{}", request_types
+        return parameters_str, typehint_str, None if has_nonsystem_parameters else "{}", request_types
 
     def build_action_payload(self, url: str, action: ActionDefinition):
         # Since our typescript common functions have variable inputs here, it's cleaner

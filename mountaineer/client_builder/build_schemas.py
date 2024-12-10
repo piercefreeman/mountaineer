@@ -20,6 +20,7 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     map_openapi_type_to_ts,
     python_payload_to_typescript,
+    normalize_interface,
 )
 from mountaineer.logging import LOGGER
 from dataclasses import dataclass, field
@@ -263,14 +264,7 @@ class OpenAPIToTypescriptSchemaConverter:
                 f"Model must have a title to retrieve its typescript name: {model}"
             )
 
-        replace_chars = {" ", "[", "]"}
-        values = model.title
-
-        for char in replace_chars:
-            values = values.strip(char)
-            values = values.replace(char, "_")
-
-        return camelize(values)
+        return normalize_interface(model.title)
 
     def validate_typescript_candidate(self, model: Type[BaseModel]):
         """

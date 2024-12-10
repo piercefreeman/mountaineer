@@ -1,6 +1,7 @@
 from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from inspect import isfunction
 from json import dumps as json_dumps
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
@@ -16,7 +17,9 @@ from mountaineer.actions.fields import FunctionActionType
 from mountaineer.app import AppController, ControllerDefinition
 from mountaineer.client_builder.build_actions import (
     OpenAPIToTypescriptActionConverter,
+    TypescriptAction,
 )
+from mountaineer.controller import get_client_functions_cls
 from mountaineer.client_builder.build_links import OpenAPIToTypescriptLinkConverter
 from mountaineer.client_builder.build_schemas import OpenAPIToTypescriptSchemaConverter
 from mountaineer.client_builder.openapi import (
@@ -28,11 +31,12 @@ from mountaineer.client_builder.openapi import (
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
+    normalize_interface
 )
 from graphlib import TopologicalSorter
 from mountaineer.client_compiler.exceptions import BuildProcessException
 from mountaineer.console import CONSOLE
-from mountaineer.controller import ControllerBase
+from mountaineer.controller import ControllerBase, function_is_action
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, generate_relative_import
@@ -115,12 +119,13 @@ class APIBuilder:
                 # Static files that don't depend on client code
                 self.generate_static_files()
 
-                self.generate_controller_definitions()
+                # Centralized interface definitions that controllers have to conform to
+                controller_definitions = self.generate_controller_definitions()
 
                 # The order of these generators don't particularly matter since most TSX linters
                 # won't refresh until they're all complete. However, this ordering better aligns
                 # with semantic dependencies so we keep the linearity where possible.
-                self.generate_model_definitions()
+                self.generate_model_definitions(controller_definitions)
                 self.generate_action_definitions()
                 self.generate_link_shortcuts()
                 self.generate_link_aggregator()
@@ -134,13 +139,183 @@ class APIBuilder:
                 f"[bold green]Validated useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
             )
 
-    @contextmanager
-    def catch_build_exception(self):
-        try:
-            yield
-        except BuildProcessException as e:
-            self.app._build_exception = e
-            raise
+    def generate_controller_definitions(self):
+        """
+        We generate centralized controller definitions (render + actions interfaces) so we can
+        model the semantic dependencies between base controllers used in different places.
+
+        For superclasses to show up here we still need them to subclass ControllerBase.
+
+        """
+        all_controllers_raw : set[Type[ControllerBase]] = set()
+        all_renders_raw: set[Type[RenderBase]] = set()
+        render_to_controller: dict[Type[ControllerBase], Type[RenderBase]] = {}
+        controller_to_subclasses: dict[Type[ControllerBase], list[ControllerBase]] = defaultdict(list)
+
+        # Get all the controller definitions and their superclasses
+        for controller_definition in self.app.controllers:
+            controller = controller_definition.controller
+            superclass_controllers = self._get_superclass_controllers(controller)
+
+            all_controllers_raw.add(controller.__class__)
+            all_controllers_raw.update(superclass_controllers)
+
+            # Use the render functions from the actually concrete subclasses
+            # We then break these apart
+            render_model = get_function_metadata(controller.render).get_render_model()
+            if render_model:
+                all_renders_raw.add(render_model)
+                all_renders_raw.update(
+                    [
+                        superclass
+                        for superclass in render_model.__mro__
+                        if issubclass(superclass, RenderBase)
+                    ]
+                )
+                render_to_controller[render_model] = controller.__class__
+
+            for superclass in superclass_controllers:
+                controller_to_subclasses[superclass].append(controller.__class__)
+
+        # Exclude the actual base classes (standard + layout) themselves
+        all_controllers_raw.discard(ControllerBase)
+        all_controllers_raw.discard(LayoutControllerBase)
+        all_renders_raw.discard(RenderBase)
+        all_renders_raw.discard(RenderNull)
+
+        # Sort these all in MRO ordering so we can generate the definitions in the correct order
+        # to have dependencies resolved later in the file
+        all_controllers = self.sort_classes_by_dependency(all_controllers_raw)
+        all_renders = self.sort_classes_by_dependency(all_renders_raw)
+
+        schemas: dict[str, str] = {}
+
+        dependencies_by_controller = defaultdict(list)
+
+        for controller in all_controllers:
+            # Create a synthetic APIRouter to hold all the controller actions that just
+            # belong to this class. Actual action implementations should be scoped to just
+            # the subclasses that have been registered.
+            controller_api = APIRouter()
+            found_actions = list(get_client_functions_cls(controller))
+
+            for name, func, metadata in found_actions:
+                controller_api.post(f"/{metadata.function_name}", openapi_extra=metadata.get_openapi_extras())(func)
+
+            openapi_raw = self.app.generate_openapi(routes=controller_api.routes)
+            openapi_spec = OpenAPIDefinition(**openapi_raw)
+
+            # Generate the models that are required
+            # Convert all the other models defined in sideeffect routes
+            # Iterate through all paths and their actions
+            convert_models = defaultdict(set)
+            for path, endpoint in openapi_spec.paths.items():
+                for action in endpoint.actions:
+                    model_schemas : list[tuple[ContentDefinition, string]] = []
+
+                    # Request bodies support optional types
+                    if action.requestBody:
+                        content_definition = action.requestBody.content_schema
+                        model_schemas.append((content_definition, "request"))
+
+                    # Response bodies will be fully hydrated from the server and therefore
+                    # will contain every value
+                    for status_code, response in action.responses.items():
+                        content_definition = response.content_schema
+                        model_schemas.append((content_definition, "response"))
+
+                    for content_definition, tag in model_schemas:
+                        if not content_definition.schema_ref.ref:
+                            continue
+                        all_models = gather_all_models(
+                            openapi_spec,
+                            resolve_ref(content_definition.schema_ref.ref, openapi_spec),
+                        )
+                        for model in all_models:
+                            convert_models[model].add("request")
+
+            for model, schema_types in convert_models.items():
+                # If there are any request models, we should make them all optional
+                # We'll have to do this until we have different models for request/response
+                all_fields_required = all(
+                    schema_type == "response" for schema_type in schema_types
+                )
+
+                interface = self.openapi_schema_converter.convert_schema_to_interface(
+                    model,
+                    base=openapi_spec,
+                    # Don't require client data uploads to have all the fields
+                    # if there's a value specified server side. Note that this will apply
+                    # to both requests/response models right now, so clients might need
+                    # to do additional validation on the response side to confirm that
+                    # the server did send down the default values.
+                    # This is in contrast to the render() where we always know the response
+                    # payloads should be force required.
+                    all_fields_required=all_fields_required,
+                )
+
+                schemas[model.title] = interface.to_js()
+
+                # We want the concrete controller to have the dependencies of all the models
+                for subclass in controller_to_subclasses[controller]:
+                    dependencies_by_controller[subclass.__name__].append(interface)
+
+            # Generate the interface for all the actions
+            action_definitions, error_definitions = self.openapi_action_converter.convert(
+                openapi_raw
+            )
+            controller_definition = {}
+            for action_definition in action_definitions:
+                controller_definition[TSLiteral(action_definition.name)] = TSLiteral(
+                    f"(params{'?' if action_definition.default_parameters else ''}: {action_definition.typehints}) => {action_definition.response_type}"
+                )
+
+            superclass_names = ", ".join(
+                superclass.__name__ for superclass in controller.__mro__
+                if superclass in all_controllers and superclass != controller
+            )
+
+            schemas[controller.__name__] = (
+                f"export interface {controller.__name__} "
+                + (f"extends {superclass_names}" if superclass_names else "")
+                + f"{python_payload_to_typescript(controller_definition)}\n"
+            )
+
+        for render in all_renders:
+            spec = self.openapi_schema_converter.get_unique_subclass_json_schema(render)
+            render_base = OpenAPISchema(**spec)
+            owned_by_controller = render_to_controller.get(render)
+            print("OWNED BY CONTROLLER", owned_by_controller)
+
+            # Convert the render model. This results in a one-to-many creation of schemas since
+            # we also have to bring in all the sub-models that are referenced in the render model
+            for (
+                schema_name,
+                component,
+            ) in self.openapi_schema_converter.convert_schema_to_typescript(
+                render_base,
+                # Render models are sent server -> client, so we know they'll provide all their
+                # values in the initial payload
+                all_fields_required=True,
+            ).items():
+                if schema_name == render.__name__:
+                    component.include_superclasses = [
+                        superclass.__name__
+                        for superclass in render.__mro__
+                        if superclass in all_renders and superclass != render
+                    ]
+                schemas[schema_name] = component.to_js()
+
+                if owned_by_controller:
+                    dependencies_by_controller[owned_by_controller.__name__].append(component)
+                    print("linking", owned_by_controller.__name__, schema_name)
+
+        global_code_dir = self.view_root.get_managed_code_dir()
+        (global_code_dir / "controllers.ts").write_text(
+            "\n\n".join(schemas.values())
+        )
+
+        return dependencies_by_controller
 
     def generate_static_files(self):
         """
@@ -152,115 +327,42 @@ class APIBuilder:
             api_content = get_static_path(static_filename).read_text()
             (managed_code_dir / static_filename).write_text(api_content)
 
-    def generate_model_definitions(self):
+    def generate_model_definitions(self, controller_dependencies):
         """
         Generate the interface type definitions for the models. These most closely
         apply to the controller that they're defined within, so we create the files
         directly within the controller's view directory.
 
         """
+        # Get the root path
+
         for controller_definition in self.app.controllers:
             controller = controller_definition.controller
 
-            schemas = self._generate_controller_schema(controller)
-
-            # We put in one big models.ts file to enable potentially cyclical dependencies
-            managed_code_dir = self.view_root.get_controller_view_path(
+            controller_code_dir = self.view_root.get_controller_view_path(
                 controller
             ).get_managed_code_dir()
-            (managed_code_dir / "models.ts").write_text(
-                "\n\n".join(
-                    [
-                        schema
-                        for _, schema in sorted(schemas.items(), key=lambda x: x[0])
-                    ]
-                )
+            root_code_dir = self.view_root.get_managed_code_dir()
+
+            controller_action_path = controller_code_dir / "models.ts"
+            root_common_handler = root_code_dir / "controllers.ts"
+            root_api_import_path = generate_relative_import(
+                controller_action_path, root_common_handler
             )
 
-    def _generate_controller_schema(self, controller: ControllerBase):
-        action_spec_openapi = self.openapi_action_specs[controller.__class__.__name__]
+            # Determine all the models that are tied to this controller
+            contents = ""
+            contents += f"export type {{ {normalize_interface(controller.__class__.__name__)} }} from '{root_api_import_path}';\n"
 
-        try:
-            action_base = OpenAPIDefinition(**action_spec_openapi)
-        except ValidationError as e:
-            LOGGER.error(
-                f"Error parsing {controller} action spec: {action_spec_openapi} {e}"
-            )
-            raise e
+            already_exported: set[str] = set()
+            for value in controller_dependencies[controller.__class__.__name__]:
+                if value.name in already_exported:
+                    continue
+                export_type = "export type" if value.interface_type == "interface" else "export"
+                contents += f"{export_type} {{ {normalize_interface(value.name)} }} from '{root_api_import_path}';\n"
+                already_exported.add(value.name)
 
-        render_spec_openapi = self.openapi_render_specs[controller.__class__.__name__]
-        render_base = (
-            OpenAPISchema(**render_spec_openapi.spec)
-            if render_spec_openapi.spec
-            else None
-        )
-
-        schemas: dict[str, str] = {}
-
-        # Convert the render model
-        if render_base:
-            for (
-                schema_name,
-                component,
-            ) in self.openapi_schema_converter.convert_schema_to_typescript(
-                render_base,
-                # Render models are sent server -> client, so we know they'll provide all their
-                # values in the initial payload
-                all_fields_required=True,
-            ).items():
-                schemas[schema_name] = component
-
-        # Convert all the other models defined in sideeffect routes
-        # Iterate through all paths and their actions
-        convert_models = defaultdict(set)
-        for path, endpoint in action_base.paths.items():
-            for action in endpoint.actions:
-                # Request bodies support optional types
-                if action.requestBody:
-                    content_definition = action.requestBody.content_schema
-                    if content_definition.schema_ref.ref:
-                        all_models = gather_all_models(
-                            action_base,
-                            resolve_ref(content_definition.schema_ref.ref, action_base),
-                        )
-                        for model in all_models:
-                            convert_models[model].add("request")
-
-                # Response bodies will be fully hydrated from the server and therefore
-                # will contain every value
-                for status_code, response in action.responses.items():
-                    content_definition = response.content_schema
-                    if content_definition.schema_ref.ref:
-                        all_models = gather_all_models(
-                            action_base,
-                            resolve_ref(content_definition.schema_ref.ref, action_base),
-                        )
-                        for model in all_models:
-                            convert_models[model].add("response")
-
-        for model, schema_types in convert_models.items():
-            # If there are any request models, we should make them all optional
-            # We'll have to do this until we have different models for request/response
-            all_fields_required = all(
-                schema_type == "response" for schema_type in schema_types
-            )
-
-            schemas[
-                model.title
-            ] = self.openapi_schema_converter.convert_schema_to_interface(
-                model,
-                base=action_base,
-                # Don't require client data uploads to have all the fields
-                # if there's a value specified server side. Note that this will apply
-                # to both requests/response models right now, so clients might need
-                # to do additional validation on the response side to confirm that
-                # the server did send down the default values.
-                # This is in contrast to the render() where we always know the response
-                # payloads should be force required.
-                all_fields_required=all_fields_required,
-            )
-
-        return schemas
+            controller_action_path.write_text(contents)
 
     def generate_action_definitions(self):
         """
@@ -281,19 +383,32 @@ class APIBuilder:
                 controller_action_path, root_common_handler
             )
 
+            # We can't use the given definitions for now because we need to take the fully qualified
+            # path from the actual controller instantiation versus our synthetic controller
+            # from the class definition
             openapi_raw = self.openapi_from_controller(controller_definition)
-            output_schemas, required_types = self.openapi_action_converter.convert(
+            actions, errors = self.openapi_action_converter.convert(
                 openapi_raw
             )
+            required_types = {normalize_interface(model) for action in actions for model in action.required_models}
+            required_types |= {normalize_interface(model) for error in errors for model in error.required_models}
 
             chunks: list[str] = []
 
             chunks.append(
                 f"import {{ __request, FetchErrorBase }} from '{root_api_import_path}';\n"
-                + f"import type {{ {', '.join(required_types)} }} from './models';"
+                + (f"import type {{ {', '.join(required_types)} }} from './models';\n" if required_types else "")
             )
 
-            chunks += output_schemas.values()
+            for action in actions:
+                chunks.append(action.to_js() + "\n")
+
+            seen_errors : set[str] = set()
+            for error in errors:
+                if error.name in seen_errors:
+                    continue
+                chunks.append(error.to_js() + "\n")
+                seen_errors.add(error.name)
 
             controller_action_path.write_text("\n\n".join(chunks))
 
@@ -384,180 +499,6 @@ class APIBuilder:
 
         (global_code_dir / "links.ts").write_text("\n".join(lines))
 
-    def generate_controller_definitions(self):
-        """
-        We generate centralized controller definitions (render + actions interfaces) so we can
-        model the semantic dependencies between base controllers used in different places.
-
-        For superclasses to show up here we still need them to subclass ControllerBase.
-
-        """
-        all_controllers : set[Type[ControllerBase]] = set()
-        all_renders: set[Type[RenderBase]] = set()
-
-        # Get all the controller definitions and their superclasses
-        for controller_definition in self.app.controllers:
-            controller = controller_definition.controller
-            all_controllers.add(controller.__class__)
-            all_controllers.update(
-                [
-                    superclass
-                    for superclass in controller.__class__.__mro__
-                    if issubclass(superclass, ControllerBase)
-                ]
-            )
-
-            # Use the render functions from the actually concrete subclasses
-            # We then break these apart
-            render_model = get_function_metadata(controller.render).get_render_model()
-            if render_model:
-                all_renders.add(render_model)
-                all_renders.update(
-                    [
-                        superclass
-                        for superclass in render_model.__mro__
-                        if issubclass(superclass, RenderBase)
-                    ]
-                )
-
-        # Exclude the actual base classes (standard + layout) themselves
-        all_controllers.discard(ControllerBase)
-        all_controllers.discard(LayoutControllerBase)
-        all_renders.discard(RenderBase)
-        all_renders.discard(RenderNull)
-
-        # Sort these all in MRO ordering so we can generate the definitions in the correct order
-        # to have dependencies resolved later in the file
-        all_controllers = self.sort_classes_by_dependency(all_controllers)
-        all_renders = self.sort_classes_by_dependency(all_renders)
-
-        schemas: dict[str, str] = {}
-
-        for controller in all_controllers:
-            print(controller)
-
-            # Create a synthetic APIRouter to hold all the controller actions that just
-            # belong to this class. Actual action implementations should be scoped to just
-            # the subclasses that have been registered.
-            controller_api = APIRouter()
-            found_actions = list(controller._get_client_functions_cls())
-
-            if not found_actions:
-                # We should generate a stub interface so something is valid
-                continue
-
-            print("------")
-            for name, func, metadata in found_actions:
-                print(name, func, metadata)
-
-                print("METADATA", metadata.get_openapi_extras())
-                controller_api.post(f"/{metadata.function_name}", openapi_extra=metadata.get_openapi_extras())(func)
-
-            openapi_raw = self.app.generate_openapi(routes=controller_api.routes)
-            openapi_spec = OpenAPIDefinition(**openapi_raw)
-
-            # Generate the models that are required
-            # Convert all the other models defined in sideeffect routes
-            # Iterate through all paths and their actions
-            convert_models = defaultdict(set)
-            for path, endpoint in openapi_spec.paths.items():
-                for action in endpoint.actions:
-                    model_schemas : list[tuple[ContentDefinition, string]] = []
-
-                    # Request bodies support optional types
-                    if action.requestBody:
-                        content_definition = action.requestBody.content_schema
-                        model_schemas.append((content_definition, "request"))
-
-                    # Response bodies will be fully hydrated from the server and therefore
-                    # will contain every value
-                    for status_code, response in action.responses.items():
-                        content_definition = response.content_schema
-                        model_schemas.append((content_definition, "response"))
-
-                    for content_definition, tag in model_schemas:
-                        if not content_definition.schema_ref.ref:
-                            continue
-                        all_models = gather_all_models(
-                            openapi_spec,
-                            resolve_ref(content_definition.schema_ref.ref, openapi_spec),
-                        )
-                        for model in all_models:
-                            convert_models[model].add("request")
-
-            for model, schema_types in convert_models.items():
-                # If there are any request models, we should make them all optional
-                # We'll have to do this until we have different models for request/response
-                all_fields_required = all(
-                    schema_type == "response" for schema_type in schema_types
-                )
-
-                schemas[
-                    model.title
-                ] = self.openapi_schema_converter.convert_schema_to_interface(
-                    model,
-                    base=openapi_spec,
-                    # Don't require client data uploads to have all the fields
-                    # if there's a value specified server side. Note that this will apply
-                    # to both requests/response models right now, so clients might need
-                    # to do additional validation on the response side to confirm that
-                    # the server did send down the default values.
-                    # This is in contrast to the render() where we always know the response
-                    # payloads should be force required.
-                    all_fields_required=all_fields_required,
-                ).to_js()
-
-            # Generate the interface for all the actions
-            action_definitions, error_definitions = self.openapi_action_converter.convert(
-                openapi_raw
-            )
-            controller_definition = {}
-            for action_definition in action_definitions:
-                controller_definition[TSLiteral(action_definition.name)] = TSLiteral(
-                    f"({action_definition.parameters}) => {action_definition.response_type}"
-                )
-
-            superclass_names = ", ".join(
-                superclass.__name__ for superclass in controller.__mro__
-                if superclass in all_controllers and superclass != controller
-            )
-
-            schemas[controller.__name__] = (
-                f"export interface {controller.__name__} "
-                + (f"extends {superclass_names}" if superclass_names else "")
-                + f"{python_payload_to_typescript(controller_definition)}\n"
-            )
-
-        for render in all_renders:
-            spec = self.openapi_schema_converter.get_unique_subclass_json_schema(render)
-            render_base = OpenAPISchema(**spec)
-
-            # Convert the render model. This results in a one-to-many creation of schemas since
-            # we also have to bring in all the sub-models that are referenced in the render model
-            for (
-                schema_name,
-                component,
-            ) in self.openapi_schema_converter.convert_schema_to_typescript(
-                render_base,
-                # Render models are sent server -> client, so we know they'll provide all their
-                # values in the initial payload
-                all_fields_required=True,
-            ).items():
-                if schema_name == render.__name__:
-                    component.include_superclasses = [
-                        superclass.__name__
-                        for superclass in render.__mro__
-                        if superclass in all_renders and superclass != render
-                    ]
-                schemas[schema_name] = component.to_js()
-
-        global_code_dir = self.view_root.get_managed_code_dir()
-        (global_code_dir / "controllers.ts").write_text(
-            "\n\n".join(schemas.values())
-        )
-
-        print("\n\n".join(schemas.values()))
-
     def generate_view_servers(self):
         """
         Generate the useServer() hooks within each local view. These will reference the main
@@ -595,7 +536,7 @@ class APIBuilder:
                 "import React, { useState } from 'react';\n"
                 + f"import {{ applySideEffect }} from '{relative_server_path}/api';\n"
                 + f"import LinkGenerator from '{relative_server_path}/links';\n"
-                + f"import {{ {render_model_name} }} from './models';\n"
+                + f"import {{ {render_model_name}, {controller_key} }} from './models';\n"
                 + (
                     f"import {{ {', '.join([metadata.function_name for metadata in controller_action_metadata])} }} from './actions';"
                     if controller_action_metadata
@@ -617,18 +558,8 @@ class APIBuilder:
             # Step 5: Typehint the return type of the server state in case client callers
             # want to pass this to sub-functions
             chunks.append(
-                f"export interface ServerState extends {render_model_name} {{\n"
+                f"export interface ServerState extends {render_model_name}, {controller_key} {{\n"
                 + "linkGenerator: typeof LinkGenerator;\n"
-                + (
-                    "\n".join(
-                        [
-                            f"{metadata.function_name}: typeof {metadata.function_name};"
-                            for metadata in controller_action_metadata
-                        ]
-                    )
-                    if controller_action_metadata
-                    else ""
-                )
                 + "}\n"
             )
 
@@ -867,3 +798,29 @@ class APIBuilder:
 
         # Use TopologicalSorter to get dependency-aware ordering
         return list(TopologicalSorter(graph).static_order())
+
+    def _get_superclass_controllers(self, controller: ControllerBase):
+        # Validate that only ControllerBase subclasses have actions, otherwise we won't
+        # detect them in subsequent stages
+        superclasses : list[Type[ControllerBase]] = []
+
+        for superclass in controller.__class__.__mro__:
+            if issubclass(superclass, ControllerBase):
+                superclasses.append(superclass)
+                continue
+
+            # Any found actions in a non-controller class should be raised as an error
+            for name, func, _ in get_client_functions_cls(superclass):
+                raise ValueError(
+                    f"Found action {name} in non-controller class {superclass}"
+                )
+
+        return superclasses
+
+    @contextmanager
+    def catch_build_exception(self):
+        try:
+            yield
+        except BuildProcessException as e:
+            self.app._build_exception = e
+            raise
