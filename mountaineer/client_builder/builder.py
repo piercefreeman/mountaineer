@@ -1,8 +1,12 @@
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 from time import monotonic_ns
-from typing import Dict
+from typing import Dict, Type
+
+from inflection import camelize
+from pydantic import BaseModel
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.converters import (
@@ -81,6 +85,7 @@ class APIBuilder:
         with CONSOLE.status("Building useServer", spinner="dots"):
             # Parse all controllers first
             self._parse_all_controllers()
+            self._assign_unique_names()
 
             # Generate all the required files
             self._generate_static_files()
@@ -117,6 +122,45 @@ class APIBuilder:
                 url_prefix=controller_def.url_prefix,
                 is_layout=isinstance(controller, LayoutControllerBase),
             )
+
+    def _assign_unique_names(self):
+        """Assign unique names to potentially duplicate models, enums, controllers, etc"""
+        reference_counts = Counter()
+
+        # Each of these dictionaries are keyed with the actual classes in memory themselves, so
+        # any values should be unique representations of different logical classes
+        for model in self.parser.parsed_models.values():
+            reference_counts.update([model.name])
+        for enum in self.parser.parsed_enums.values():
+            reference_counts.update([enum.name])
+        for controller in self.parser.parsed_controllers.values():
+            reference_counts.update([controller.name])
+
+        # Any reference counts that have more than one reference need to be uniquified
+        duplicate_names = {
+            name for name, count in reference_counts.items() if count > 1
+        }
+
+        converted_models: dict[Type[BaseModel], str] = {}
+
+        for model in self.parser.parsed_models.values():
+            if model.name in duplicate_names:
+                prefix = self._typescript_prefix_from_module(model.model.__module__)
+                model.name = f"{prefix}_{model.name}"
+                converted_models[model.model] = model.name
+        for self_reference in self.parser.parsed_self_references:
+            if self_reference.model in converted_models:
+                self_reference.name = converted_models[self_reference.model]
+        for enum in self.parser.parsed_enums.values():
+            if enum.name in duplicate_names:
+                prefix = self._typescript_prefix_from_module(enum.enum.__module__)
+                enum.name = f"{prefix}_{enum.name}"
+        for controller in self.parser.parsed_controllers.values():
+            if controller.name in duplicate_names:
+                prefix = self._typescript_prefix_from_module(
+                    controller.controller.__module__
+                )
+                controller.name = f"{prefix}_{controller.name}"
 
     def _generate_static_files(self):
         """Copy over static files required for the client"""
@@ -288,3 +332,7 @@ class APIBuilder:
                     exports.append(f"export * from './{module}';")
 
             (controller_dir / "index.ts").write_text("\n".join(exports))
+
+    def _typescript_prefix_from_module(self, module: str):
+        module_parts = module.split(".")
+        return "".join([camelize(component) for component in module_parts])

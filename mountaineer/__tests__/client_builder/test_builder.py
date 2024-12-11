@@ -1,4 +1,5 @@
 import enum
+from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List, Optional
@@ -9,6 +10,12 @@ from pydantic import BaseModel
 from mountaineer.actions import passthrough, sideeffect
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import APIBuilder
+from mountaineer.client_builder.parser import (
+    ControllerWrapper,
+    EnumWrapper,
+    ModelWrapper,
+    SelfReference,
+)
 from mountaineer.controller import ControllerBase
 from mountaineer.render import RenderBase
 
@@ -294,3 +301,118 @@ def test_file_generation(setup_controllers):
     assert (user_dir / "actions.ts").exists()
     assert (user_dir / "useServer.ts").exists()
     assert (user_dir / "links.ts").exists()
+
+
+# Test classes to simulate different modules
+class SampleModel1(BaseModel):
+    field: str
+
+
+class SampleModel2(BaseModel):
+    field: str
+
+
+class SampleEnum1(Enum):
+    A = "a"
+
+
+class SampleEnum2(Enum):
+    A = "a"
+
+
+class SampleController1(ControllerBase):
+    pass
+
+
+class SampleController2(ControllerBase):
+    pass
+
+
+def test_assign_unique_names(setup_controllers):
+    builder = setup_controllers
+
+    # Set up conflicting names across different modules
+    # Simulate models from different modules with the same name
+    sample_model1 = SampleModel1
+    sample_model1.__module__ = "app.models.user"
+    sample_model2 = SampleModel2
+    sample_model2.__module__ = "app.models.admin"
+
+    # Simulate enums from different modules with the same name
+    sample_enum1 = SampleEnum1
+    sample_enum1.__module__ = "app.enums.status"
+    sample_enum2 = SampleEnum2
+    sample_enum2.__module__ = "app.enums.type"
+
+    # Simulate controllers from different modules with the same name
+    sample_controller1 = SampleController1
+    sample_controller1.__module__ = "app.controllers.user"
+    sample_controller2 = SampleController2
+    sample_controller2.__module__ = "app.controllers.admin"
+
+    # Setup parser state with duplicate names
+    builder.parser.parsed_models = {
+        sample_model1: ModelWrapper(
+            name="Sample",
+            model=sample_model1,
+            isolated_model=sample_model1,
+            superclasses=[],
+            value_models=[],
+        ),
+        sample_model2: ModelWrapper(
+            name="Sample",
+            model=sample_model2,
+            isolated_model=sample_model2,
+            superclasses=[],
+            value_models=[],
+        ),
+    }
+
+    builder.parser.parsed_enums = {
+        sample_enum1: EnumWrapper(name="Status", enum=sample_enum1),
+        sample_enum2: EnumWrapper(name="Status", enum=sample_enum2),
+    }
+
+    builder.parser.parsed_controllers = {
+        sample_controller1: ControllerWrapper(
+            name="MainController",
+            controller=sample_controller1,
+            superclasses=[],
+            actions={},
+            render=None,
+        ),
+        sample_controller2: ControllerWrapper(
+            name="MainController",
+            controller=sample_controller2,
+            superclasses=[],
+            actions={},
+            render=None,
+        ),
+    }
+
+    # Add a self-reference that refers to one of the models
+    builder.parser.parsed_self_references = [
+        SelfReference(name="Sample", model=sample_model1)
+    ]
+
+    # Run the name assignment
+    builder._assign_unique_names()
+
+    # Verify names were uniquified correctly
+    assert builder.parser.parsed_models[sample_model1].name == "AppModelsUser_Sample"
+    assert builder.parser.parsed_models[sample_model2].name == "AppModelsAdmin_Sample"
+
+    assert builder.parser.parsed_enums[sample_enum1].name == "AppEnumsStatus_Status"
+    assert builder.parser.parsed_enums[sample_enum2].name == "AppEnumsType_Status"
+
+    assert (
+        builder.parser.parsed_controllers[sample_controller1].name
+        == "AppControllersUser_MainController"
+    )
+    assert (
+        builder.parser.parsed_controllers[sample_controller2].name
+        == "AppControllersAdmin_MainController"
+    )
+
+    # Verify self reference was updated to match its model's new name
+    assert builder.parser.parsed_self_references[0].name == "AppModelsUser_Sample"

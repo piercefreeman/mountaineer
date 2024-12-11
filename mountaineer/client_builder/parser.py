@@ -42,6 +42,7 @@ class FieldWrapper:
 
 @dataclass
 class ModelWrapper:
+    name: str
     model: type[BaseModel]
     isolated_model: type[BaseModel]  # Model with only direct fields
     superclasses: list["ModelWrapper"]
@@ -50,6 +51,7 @@ class ModelWrapper:
 
 @dataclass
 class EnumWrapper:
+    name: str
     enum: type[Enum]
 
 
@@ -66,6 +68,7 @@ class ActionWrapper:
 @dataclass
 class ControllerWrapper:
     name: str
+    controller: type[ControllerBase]
     superclasses: list["ControllerWrapper"]
     actions: dict[
         str, ActionWrapper
@@ -90,6 +93,7 @@ class ControllerWrapper:
 
 @dataclass
 class SelfReference:
+    name: str
     model: Type[BaseModel]
 
 
@@ -110,6 +114,7 @@ class ControllerParser:
         self.parsed_models: dict[type[BaseModel], ModelWrapper] = {}
         self.parsed_enums: dict[type[Enum], EnumWrapper] = {}
         self.parsed_controllers: dict[type[ControllerBase], ControllerWrapper] = {}
+        self.parsed_self_references: list[SelfReference] = []
 
         self.type_parser = TypeParser()
 
@@ -133,6 +138,7 @@ class ControllerParser:
 
         return ControllerWrapper(
             name=controller.__name__,
+            controller=controller,
             actions=actions,
             render=render,
             superclasses=superclass_controllers,
@@ -166,6 +172,7 @@ class ControllerParser:
             fields.append(self._parse_field(name, field, self_model=model))
 
         wrapper = ModelWrapper(
+            name=model.__name__,
             model=model,
             isolated_model=isolated_model,
             superclasses=superclasses,
@@ -194,7 +201,11 @@ class ControllerParser:
             else:
                 # Special case to avoid infinite recursion
                 if self_model and type_definition == self_model:
-                    return SelfReference(model=self_model)
+                    reference = SelfReference(
+                        name=self_model.__name__, model=self_model
+                    )
+                    self.parsed_self_references.append(reference)
+                    return reference
 
                 # Determine if they qualify for conversion. The vast majority of values
                 # passed in here will be classes, since they represent the typehinted annotations
@@ -221,7 +232,7 @@ class ControllerParser:
         if enum_type in self.parsed_enums:
             return self.parsed_enums[enum_type]
 
-        wrapper = EnumWrapper(enum=enum_type)
+        wrapper = EnumWrapper(name=enum_type.__name__, enum=enum_type)
         self.parsed_enums[enum_type] = wrapper
         return wrapper
 
