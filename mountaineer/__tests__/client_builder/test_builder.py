@@ -1,7 +1,7 @@
-from dataclasses import asdict, replace
-from json import dumps as json_dumps, loads as json_loads
+import enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import List, Optional
 
 import pytest
 from pydantic import BaseModel
@@ -10,51 +10,17 @@ from mountaineer.actions import sideeffect
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.controller import ControllerBase
-from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.render import RenderBase
 
 
-class ExampleHomeController(ControllerBase):
-    url = "/"
-    view_path = "/page.tsx"
-
-    def render(self) -> None:
-        return None
-
-
-class ExampleDetailController(ControllerBase):
-    url = "/detail/{detail_id}/"
-    view_path = "/detail/page.tsx"
-
-    def render(self) -> None:
-        return None
-
-
-@pytest.fixture
-def home_controller():
-    return ExampleHomeController()
-
-
-@pytest.fixture
-def detail_controller():
-    return ExampleDetailController()
-
-
 @pytest.fixture(scope="function")
-def simple_app_controller(
-    home_controller: ExampleHomeController, detail_controller: ExampleDetailController
-):
+def simple_app_controller():
     with TemporaryDirectory() as temp_dir_name:
         temp_view_path = Path(temp_dir_name)
-        (temp_view_path / "detail").mkdir()
-
         # Simple view files
         (temp_view_path / "page.tsx").write_text("")
-        (temp_view_path / "detail" / "page.tsx").write_text("")
-
+        (temp_view_path / "other.tsx").write_text("")
         app_controller = AppController(view_root=temp_view_path)
-        app_controller.register(home_controller)
-        app_controller.register(detail_controller)
         yield app_controller
 
 
@@ -63,316 +29,259 @@ def builder(simple_app_controller: AppController):
     return APIBuilder(simple_app_controller)
 
 
-def test_generate_static_files(builder: APIBuilder):
-    builder.generate_static_files()
+def test_generate_controller_definitions_complex(builder: APIBuilder):
+    """
+    Test complex controller inheritance scenarios including:
+    - Multiple inheritance levels
+    - Method overrides
+    - Nested models
+    - Enums
+    - Optional fields
+    - Lists
+    - Action responses
+    - Shared models between controllers
+    """
 
+    # Define some shared models and enums
+    class Status(enum.Enum):
+        ACTIVE = "active"
+        INACTIVE = "inactive"
+        PENDING = "pending"
 
-def test_generate_model_definitions(builder: APIBuilder):
-    builder.generate_model_definitions()
+    class Address(BaseModel):
+        street: str
+        city: str
+        country: str
 
+    class User(BaseModel):
+        id: int
+        name: str
+        status: Status
+        addresses: List[Address]
+        primary_address: Optional[Address] = None
 
-def test_generate_action_definitions(builder: APIBuilder):
-    builder.generate_action_definitions()
+    # Base render models
+    class BaseRender(RenderBase):
+        version: str
+        env: str
 
+    class UserRender(BaseRender):
+        current_user: User
 
-def test_generate_view_definitions(builder: APIBuilder):
-    builder.generate_link_shortcuts()
+    class AdminRender(UserRender):
+        all_users: List[User]
+        pending_count: int
 
+    # Action response models
+    class ActionResponse(BaseModel):
+        success: bool
+        message: str
 
-def test_generate_link_aggregator(builder: APIBuilder):
-    builder.generate_link_aggregator()
+    class UserActionResponse(ActionResponse):
+        user: User
 
+    # Base controller with shared functionality
+    class BaseController(ControllerBase):
+        @sideeffect
+        async def get_version(self) -> ActionResponse:
+            return ActionResponse(success=True, message="1.0.0")
 
-def test_generate_link_aggregator_ignores_layout(builder: APIBuilder):
-    class ExampleLayout(LayoutControllerBase):
-        view_path = "/test.tsx"
+    # Mixin for user management
+    class UserManagementMixin:
+        @sideeffect
+        async def update_user(self, user_id: int, status: Status) -> UserActionResponse:
+            return UserActionResponse(
+                success=True,
+                message="Updated",
+                user=User(
+                    id=user_id,
+                    name="Test",
+                    status=status,
+                    addresses=[],
+                ),
+            )
 
-        async def render(self) -> None:
-            pass
+    # Admin controller with all features
+    class AdminController(BaseController, UserManagementMixin):
+        url = "/admin/"
+        view_path = "/page.tsx"
 
-    builder.app.register(ExampleLayout())
-    builder.generate_link_aggregator()
+        def render(self) -> AdminRender:
+            return AdminRender(
+                version="1.0.0",
+                env="test",
+                current_user=User(
+                    id=1,
+                    name="Admin",
+                    status=Status.ACTIVE,
+                    addresses=[
+                        Address(street="123 Main St", city="City", country="Country")
+                    ],
+                ),
+                all_users=[],
+                pending_count=0,
+            )
 
-    global_code_dir = builder.view_root.get_managed_code_dir()
-    global_links = (global_code_dir / "links.ts").read_text()
-    assert "ExampleLayout" not in global_links
-    assert "ExampleHomeControllerGetLinks" in global_links
-    assert "ExampleDetailControllerGetLinks" in global_links
+        @sideeffect
+        async def get_pending_users(self) -> User:
+            return User(
+                id=2,
+                name="User",
+                status=Status.PENDING,
+                addresses=[],
+            )
 
+        @sideeffect
+        async def approve_user(self, user_id: int) -> UserActionResponse:
+            return UserActionResponse(
+                success=True,
+                message="Approved",
+                user=User(
+                    id=user_id,
+                    name="Test",
+                    status=Status.ACTIVE,
+                    addresses=[],
+                ),
+            )
 
-def test_generate_view_servers(builder: APIBuilder):
-    builder.generate_view_servers()
+    # Regular user controller with limited functionality
+    class UserController(BaseController):
+        url = "/user/"
+        view_path = "/other.tsx"
 
+        def render(self) -> UserRender:
+            return UserRender(
+                version="1.0.0",
+                env="test",
+                current_user=User(
+                    id=2,
+                    name="User",
+                    status=Status.ACTIVE,
+                    addresses=[],
+                ),
+            )
 
-@pytest.mark.parametrize("empty_links", [True, False])
-def test_generate_index_file_ignores_empty(builder: APIBuilder, empty_links: bool):
-    # Create some stub files. We simulate a case where the links file
-    # is created but empty
-    file_contents = "import React from 'react';\n"
-    for controller_definition in builder.app.controllers:
-        controller_code_dir = builder.view_root.get_controller_view_path(
-            controller_definition.controller
-        ).get_managed_code_dir()
+        @sideeffect
+        async def update_profile(
+            self, name: str, address: Address
+        ) -> UserActionResponse:
+            return UserActionResponse(
+                success=True,
+                message="Updated",
+                user=User(
+                    id=2,
+                    name=name,
+                    status=Status.ACTIVE,
+                    addresses=[address],
+                ),
+            )
 
-        (controller_code_dir / "actions.ts").write_text(file_contents)
-        (controller_code_dir / "models.ts").write_text(file_contents)
-        (controller_code_dir / "useServer.ts").write_text(file_contents)
-        if empty_links:
-            (controller_code_dir / "links.ts").write_text("")
+    # Register both controllers
+    admin_controller = AdminController()
+    user_controller = UserController()
+    builder.app.register(admin_controller)
+    builder.app.register(user_controller)
 
-    builder.generate_index_file()
+    # Parse and generate
+    builder._parse_all_controllers()
 
-    # Read the index file for each controller
-    for controller_definition in builder.app.controllers:
-        controller_code_dir = builder.view_root.get_controller_view_path(
-            controller_definition.controller
-        ).get_managed_code_dir()
+    # Assert correct parsing of inheritance
+    assert len(builder.parsed_controllers) == 2
+    admin_parsed = builder.parsed_controllers["AdminController"]
+    user_parsed = builder.parsed_controllers["UserController"]
 
-        index_file = controller_code_dir / "index.ts"
-        assert index_file.exists()
-        imported_dependencies = index_file.read_text().split("\n")
-        assert imported_dependencies == [
-            "export * from './actions';",
-            "export * from './models';",
-            "export * from './useServer';",
+    # Verify admin controller parsing
+    assert not admin_parsed.is_layout
+    assert admin_parsed.url_prefix == "/internal/api/admin_controller"
+    assert (
+        [action.name for action in admin_parsed.wrapper.actions.values()] == [
+            "get_pending_users", "approve_user"
         ]
+    )
+    assert admin_parsed.wrapper.render is not None
 
+    # Verify user controller parsing
+    assert not user_parsed.is_layout
+    assert user_parsed.url_prefix == "/internal/api/user_controller"
+    assert (
+        [action.name for action in user_parsed.wrapper.actions.values()] == [
+            "update_profile",
+        ]
+    )
+    assert user_parsed.wrapper.render is not None
 
-def test_cache_is_outdated_no_cache(builder: APIBuilder):
-    # No cache
-    builder.build_cache = None
-    assert builder.cache_is_outdated() is True
+    # Generate all files
+    builder._generate_model_definitions()
+    builder._generate_action_definitions()
+    builder._generate_link_shortcuts()
+    builder._generate_view_servers()
+    builder._generate_index_files()
 
+    # Check generated files
+    code_dir = builder.view_root.get_managed_code_dir()
+    assert (code_dir / "controllers.ts").exists()
 
-def test_cache_is_outdated_no_existing_data(builder: APIBuilder, tmp_path: Path):
-    builder.build_cache = tmp_path
+    # Verify content of controllers.ts
+    controllers_content = (code_dir / "controllers.ts").read_text()
 
-    assert builder.cache_is_outdated() is True
-
-    # Ensure that we've written to the cache
-    cache_path = tmp_path / "client_builder_openapi.json"
-    assert cache_path.exists()
-    assert set(json_loads(cache_path.read_text()).keys()) == {
-        "ExampleHomeController",
-        "ExampleDetailController",
-    }
-
-
-def test_cache_is_outdated_existing_data(
-    builder: APIBuilder,
-    tmp_path: Path,
-    home_controller: ExampleHomeController,
-    detail_controller: ExampleDetailController,
-):
-    builder.build_cache = tmp_path
-
-    # Ensure that we've written to the cache
-    cache_path = tmp_path / "client_builder_openapi.json"
-    cache_path.write_text(
-        json_dumps(
-            {
-                "ExampleHomeController": {
-                    "action": builder.openapi_action_specs[
-                        home_controller.__class__.__name__
-                    ],
-                    "render": asdict(
-                        builder.openapi_render_specs[home_controller.__class__.__name__]
-                    ),
-                },
-                "ExampleDetailController": {
-                    "action": builder.openapi_action_specs[
-                        detail_controller.__class__.__name__
-                    ],
-                    "render": asdict(
-                        builder.openapi_render_specs[
-                            detail_controller.__class__.__name__
-                        ]
-                    ),
-                },
-            },
-            sort_keys=True,
-        )
+    # Check for all expected interfaces
+    assert "export interface Status " in controllers_content
+    assert "export interface Address " in controllers_content
+    assert "export interface User " in controllers_content
+    assert "export interface BaseRender " in controllers_content
+    assert "export interface UserRender extends BaseRender" in controllers_content
+    assert "export interface AdminRender extends UserRender" in controllers_content
+    assert "export interface ActionResponse " in controllers_content
+    assert (
+        "export interface UserActionResponse extends ActionResponse"
+        in controllers_content
     )
 
-    assert builder.cache_is_outdated() is False
+    # Check for correct type definitions
+    assert "status: Status;" in controllers_content
+    assert "addresses: Array<Address>;" in controllers_content
+    assert "primary_address?: Address;" in controllers_content
+    assert "all_users: Array<User>;" in controllers_content
 
+    # Verify admin controller files
+    admin_dir = admin_parsed.view_path.get_managed_code_dir()
+    assert (admin_dir / "actions.ts").exists()
+    assert (admin_dir / "useServer.ts").exists()
+    assert (admin_dir / "links.ts").exists()
 
-def test_cache_is_outdated_url_change(
-    builder: APIBuilder,
-    tmp_path: Path,
-    home_controller: ExampleHomeController,
-    detail_controller: ExampleDetailController,
-):
-    builder.build_cache = tmp_path
+    # Check admin actions
+    admin_actions = (admin_dir / "actions.ts").read_text()
+    assert "export const get_version" in admin_actions
+    assert "export const update_user" in admin_actions
+    assert "export const get_pending_users" in admin_actions
+    assert "export const approve_user" in admin_actions
+    assert "Promise<ActionResponse>" in admin_actions
+    assert "Promise<UserActionResponse>" in admin_actions
+    assert "Promise<Array<User>>" in admin_actions
 
-    cache_path = tmp_path / "client_builder_openapi.json"
-    cache_path.write_text(
-        json_dumps(
-            {
-                "ExampleHomeController": {
-                    "action": builder.openapi_action_specs[
-                        home_controller.__class__.__name__
-                    ],
-                    "render": asdict(
-                        # Only modify the render attribute. Simulate a user changing the URL
-                        # of a component, which does require a FE rebuild.
-                        replace(
-                            builder.openapi_render_specs[
-                                home_controller.__class__.__name__
-                            ],
-                            url="/new_url",
-                        )
-                    ),
-                },
-                "ExampleDetailController": {
-                    "action": builder.openapi_action_specs[
-                        detail_controller.__class__.__name__
-                    ],
-                    "render": asdict(
-                        builder.openapi_render_specs[
-                            detail_controller.__class__.__name__
-                        ]
-                    ),
-                },
-            },
-            sort_keys=True,
-        )
-    )
+    # Verify user controller files
+    user_dir = user_parsed.view_path.get_managed_code_dir()
+    assert (user_dir / "actions.ts").exists()
+    assert (user_dir / "useServer.ts").exists()
+    assert (user_dir / "links.ts").exists()
 
-    assert builder.cache_is_outdated() is True
+    # Check user actions
+    user_actions = (user_dir / "actions.ts").read_text()
+    assert "export const get_version" in user_actions
+    assert "export const update_profile" in user_actions
+    assert "Promise<UserActionResponse>" in user_actions
 
+    # Check useServer implementations
+    admin_server = (admin_dir / "useServer.ts").read_text()
+    assert "extends AdminRender, AdminController" in admin_server
+    assert "linkGenerator: typeof LinkGenerator" in admin_server
+    assert "get_version: get_version" in admin_server
+    assert "update_user: update_user" in admin_server
+    assert "get_pending_users: get_pending_users" in admin_server
+    assert "approve_user: approve_user" in admin_server
 
-def test_validate_unique_paths_exact_definition(
-    builder: APIBuilder,
-):
-    """
-    Two controllers can't manage the same view path.
-
-    """
-
-    class ConflictingDetailController(ControllerBase):
-        url = "/detail/other_url/"
-        view_path = "/detail/page.tsx"
-
-        def render(self) -> None:
-            return None
-
-    builder.app.register(ConflictingDetailController())
-
-    # Raises for the same exact view path
-    with pytest.raises(
-        ValueError, match="duplicate view paths under controller management"
-    ):
-        builder.validate_unique_paths()
-
-
-def test_validate_unique_paths_conflicting_layout(
-    builder: APIBuilder,
-):
-    """
-    Layouts need to be placed in their own directory. Even if the literal paths
-    under management are different we still need to throw a validation error.
-
-    """
-
-    class ConflictingLayoutController(LayoutControllerBase):
-        view_path = "/detail/layout.tsx"
-
-        def render(self) -> None:
-            return None
-
-    builder.app.register(ConflictingLayoutController())
-
-    # Raises for the same exact view path
-    with pytest.raises(
-        ValueError, match="duplicate view paths under controller management"
-    ):
-        builder.validate_unique_paths()
-
-
-def test_generate_controller_schema_sideeffect_required_attributes(
-    builder: APIBuilder,
-):
-    """
-    Ensure that we treat @sideeffect and @passthrough return models like
-    the render model, where we make all their attributes required since
-    we are guaranteed that the push payload from the server will fully
-    hydrate the default values.
-
-    """
-
-    class DataBundle(BaseModel):
-        a: int
-        b: str
-
-    class SimpleRender(RenderBase):
-        a: list[DataBundle] = []
-
-    class SimpleReturn(BaseModel):
-        b: list[DataBundle] = []
-
-    class SideEffectController(ControllerBase):
-        url = "/sideeffect/"
-        view_path = "/sideeffect/page.tsx"
-
-        def render(self) -> SimpleRender:
-            return SimpleRender(a=[DataBundle(a=1, b="1")])
-
-        @sideeffect
-        def my_sideeffect(self) -> SimpleReturn:
-            return SimpleReturn(b=[DataBundle(a=2, b="2")])
-
-    controller = SideEffectController()
-    builder.app.register(controller)
-
-    schemas = builder._generate_controller_schema(controller)
-
-    assert set(schemas.keys()) == {
-        "SimpleRender",
-        "DataBundle",
-        "MySideeffectResponse",
-        "MySideeffectResponseSideEffect",
-        "MySideeffectResponsePassthrough",
-    }
-
-    assert "a: Array<DataBundle>" in schemas["SimpleRender"]
-    assert "a: Array<DataBundle>" in schemas["MySideeffectResponseSideEffect"]
-    assert "b: Array<DataBundle>" in schemas["MySideeffectResponsePassthrough"]
-
-def test_generate_controller_definitions_superclasses(
-    builder: APIBuilder,
-):
-    """
-    Test that controller definitions are generated for superclasses
-    and create mixins for the subclasses.
-
-    """
-
-    class CommonRender(RenderBase):
-        super_value: str
-
-    class ChildRender(CommonRender):
-        sub_value: str
-
-    class CommonController(ControllerBase):
-        @sideeffect
-        async def super_action(self) -> None:
-            pass
-
-    class ChildController(CommonController):
-        url = "/sideeffect/"
-        view_path = "/sideeffect/page.tsx"
-
-        def render(self) -> ChildRender:
-            return ChildRender(super_value="super", sub_value="sub")
-
-        @sideeffect
-        async def sub_action(self) -> None:
-            pass
-
-    controller = ChildController()
-    builder.app.register(controller)
-
-    schemas = builder.generate_controller_definitions()
-
-    assert print(schemas)
+    user_server = (user_dir / "useServer.ts").read_text()
+    assert "extends UserRender, UserController" in user_server
+    assert "linkGenerator: typeof LinkGenerator" in user_server
+    assert "get_version: get_version" in user_server
+    assert "update_profile: update_profile" in user_server

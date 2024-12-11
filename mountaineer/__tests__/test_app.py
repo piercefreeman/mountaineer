@@ -12,7 +12,6 @@ from pydantic import BaseModel
 
 from mountaineer.actions import passthrough
 from mountaineer.app import AppController, ControllerDefinition
-from mountaineer.client_builder.openapi import OpenAPIDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase

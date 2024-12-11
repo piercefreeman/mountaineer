@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from importlib.metadata import PackageNotFoundError
-from inspect import getmembers, ismethod, isfunction
+from inspect import getmembers, isfunction, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from typing import (
@@ -288,6 +288,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         return underscore(self.__class__.__name__)
 
+
 def class_fn_as_method(fn):
     """
     Converts a class-bound action where `self` is not passed as the first argument
@@ -295,11 +296,14 @@ def class_fn_as_method(fn):
     injection resolution work as normal without misinterpreting `self` as a query parameter.
 
     """
+
     class FunctionWrapper:
         pass
+
     setattr(FunctionWrapper, fn.__name__, fn)
     cls = FunctionWrapper()
     return getattr(cls, fn.__name__)
+
 
 def function_is_action(name, func):
     try:

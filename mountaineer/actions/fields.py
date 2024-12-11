@@ -171,9 +171,7 @@ class FunctionMetadata(BaseModel):
         return self.return_model
 
     def get_openapi_extras(self):
-        openapi_extra: dict[str, Any] = {
-            "is_raw_response": self.get_is_raw_response()
-        }
+        openapi_extra: dict[str, Any] = {"is_raw_response": self.get_is_raw_response()}
 
         if not self.get_is_raw_response():
             # Pass along relevant tags in the OpenAPI meta struct
@@ -182,6 +180,7 @@ class FunctionMetadata(BaseModel):
                 openapi_extra["media_type"] = self.get_media_type()
 
         return openapi_extra
+
 
 METADATA_ATTRIBUTE = "_mountaineer_metadata"
 

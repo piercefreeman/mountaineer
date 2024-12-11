@@ -474,7 +474,8 @@ class AppController:
                 )
 
             controller_api.post(
-                f"/{metadata.function_name}", openapi_extra=metadata.get_openapi_extras()
+                f"/{metadata.function_name}",
+                openapi_extra=metadata.get_openapi_extras(),
             )(fn)
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__
