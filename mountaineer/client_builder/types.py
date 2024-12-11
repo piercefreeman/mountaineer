@@ -1,4 +1,4 @@
-from abc import ABC, abstractproperty
+from abc import ABC, abstractmethod, abstractproperty
 from dataclasses import dataclass
 from types import UnionType
 from typing import (
@@ -7,25 +7,15 @@ from typing import (
     List,
     Set,
     Tuple,
-    Type,
-    TypeVar,
     Union,
     get_args,
     get_origin,
 )
 
-T = TypeVar("T")
-K = TypeVar("K")
-V = TypeVar("V")
-
 
 def is_union_type(type_: type) -> bool:
     """Check if a type is a Union type"""
-    return (
-        get_origin(type_) is Union
-        or isinstance(type_, UnionType)
-        or (isinstance(type_, type) and getattr(type_, "__origin__", None) is Union)
-    )
+    return get_origin(type_) is Union or isinstance(type_, UnionType)
 
 
 def get_union_types(type_: type) -> list[type]:
@@ -39,20 +29,21 @@ class TypeDefinition(ABC):
     """Base class for all type definitions"""
 
     @abstractproperty
-    def children(self) -> list[Type]:
+    def children(self) -> list[Any]:
         """Return a list of all types this definition wraps"""
-        pass
+        raise NotImplementedError
 
-    def update_children(self, children: list[Type]):
+    @abstractmethod
+    def update_children(self, children: list[Any]):
         """Return a new instance with updated children"""
-        pass
+        raise NotImplementedError
 
 
 @dataclass
 class Or(TypeDefinition):
     """Represents a Union type"""
 
-    types: tuple[Type, ...]
+    types: tuple[Any, ...]
 
     def __class_getitem__(cls, types):
         if not isinstance(types, tuple):
@@ -60,10 +51,10 @@ class Or(TypeDefinition):
         return cls(types=types)
 
     @property
-    def children(self) -> list[Type]:
+    def children(self):
         return list(self.types)
 
-    def update_children(self, children: list[Type]):
+    def update_children(self, children):
         self.types = tuple(children)
 
 
@@ -71,16 +62,16 @@ class Or(TypeDefinition):
 class ListOf(TypeDefinition):
     """Represents a List type"""
 
-    type: Type
+    type: Any
 
     def __class_getitem__(cls, type):
         return cls(type=type)
 
     @property
-    def children(self) -> list[Type]:
+    def children(self):
         return [self.type]
 
-    def update_children(self, children: list[Type]):
+    def update_children(self, children):
         assert len(children) == 1
         self.type = children[0]
 
@@ -89,8 +80,8 @@ class ListOf(TypeDefinition):
 class DictOf(TypeDefinition):
     """Represents a Dict type"""
 
-    key_type: Type
-    value_type: Type
+    key_type: Any
+    value_type: Any
 
     def __class_getitem__(cls, types):
         if not isinstance(types, tuple) or len(types) != 2:
@@ -99,10 +90,10 @@ class DictOf(TypeDefinition):
         return cls(key_type=key_type, value_type=value_type)
 
     @property
-    def children(self) -> list[Type]:
+    def children(self):
         return [self.key_type, self.value_type]
 
-    def update_children(self, children: list[Type]):
+    def update_children(self, children):
         assert len(children) == 2
         self.key_type = children[0]
         self.value_type = children[1]
@@ -112,7 +103,7 @@ class DictOf(TypeDefinition):
 class TupleOf(TypeDefinition):
     """Represents a Tuple type"""
 
-    types: tuple[Type, ...]
+    types: tuple[Any, ...]
 
     def __class_getitem__(cls, types):
         if not isinstance(types, tuple):
@@ -120,10 +111,10 @@ class TupleOf(TypeDefinition):
         return cls(types=types)
 
     @property
-    def children(self) -> list[Type]:
+    def children(self):
         return list(self.types)
 
-    def update_children(self, children: list[Type]):
+    def update_children(self, children):
         self.types = tuple(children)
 
 
@@ -131,16 +122,16 @@ class TupleOf(TypeDefinition):
 class SetOf(TypeDefinition):
     """Represents a Set type"""
 
-    type: Type
+    type: Any
 
     def __class_getitem__(cls, type_):
         return cls(type=type_)
 
     @property
-    def children(self) -> list[Type]:
+    def children(self):
         return [self.type]
 
-    def update_children(self, children: list[Type]):
+    def update_children(self, children):
         self.types = tuple(children)
 
 
@@ -149,7 +140,7 @@ class TypeParser:
     Type parser that converts Python types into TypeDefinition instances
     """
 
-    def parse_type(self, field_type: Any) -> TypeDefinition:
+    def parse_type(self, field_type: Any) -> TypeDefinition | type:
         """
         Convert any Python type into a TypeDefinition instance
 
@@ -161,12 +152,12 @@ class TypeParser:
         """
         # Handle None type
         if field_type is None or field_type is type(None):
-            return Or(types=(type(None),))
+            return type(None)
 
         # Handle unions
         if is_union_type(field_type):
             union_types = get_union_types(field_type)
-            return Or(types=tuple(union_types))
+            return Or(types=tuple(self.parse_type(arg) for arg in union_types))
 
         # Handle built-in collections
         origin_type = get_origin(field_type)
@@ -196,7 +187,7 @@ class TypeParser:
         # For unknown origin types, wrap in Or
         raise ValueError(f"Unsupported origin type: {origin_type}")
 
-    def _parse_basic_type(self, field_type: Any) -> TypeDefinition:
+    def _parse_basic_type(self, field_type: Any) -> TypeDefinition | type:
         """Parse basic types without args"""
         if isinstance(field_type, type):
             if issubclass(field_type, (list, List)):
