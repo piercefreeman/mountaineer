@@ -229,8 +229,8 @@ def fuse_metadata_to_response_typehint(
     """
     # Prefer to use existing BaseModels where possible, we only create synthetic values
     # if we need to mask the response model
-    passthrough_model : Type[BaseModel] | None = None
-    sideeffect_model : Type[BaseModel] | None = None
+    passthrough_model: Type[BaseModel] | None = None
+    sideeffect_model: Type[BaseModel] | None = None
 
     base_response_name = camelize(metadata.function_name) + "Response"
     base_response_params = {}
@@ -262,14 +262,16 @@ def fuse_metadata_to_response_typehint(
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )
-            sideeffect_model = create_model(
-                base_response_name + "SideEffect",
-                **{
-                    field_name: (field_definition.annotation, field_definition)  # type: ignore
-                    for field_name, field_definition in render_model.model_fields.items()
-                    if field_name in reload_keys
-                }
-            ),
+            sideeffect_model = (
+                create_model(
+                    base_response_name + "SideEffect",
+                    **{
+                        field_name: (field_definition.annotation, field_definition)  # type: ignore
+                        for field_name, field_definition in render_model.model_fields.items()
+                        if field_name in reload_keys
+                    },
+                ),
+            )
 
     if passthrough_model:
         base_response_params["passthrough"] = (

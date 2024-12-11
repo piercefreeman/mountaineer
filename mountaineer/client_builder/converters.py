@@ -1,34 +1,29 @@
 from dataclasses import dataclass
+from typing import Any, Dict, List, Union
+
 from graphlib import TopologicalSorter
-from typing import Any, List, Dict, Literal
 
-from inflection import camelize
-
+from mountaineer.actions.fields import FunctionActionType
 from mountaineer.client_builder.parser import (
     ActionWrapper,
     ControllerWrapper,
     EnumWrapper,
     FieldWrapper,
     ModelWrapper,
+)
+from mountaineer.client_builder.types import (
+    DictOf,
+    ListOf,
+    Or,
+    SetOf,
+    TupleOf,
+    TypeDefinition,
 )
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
-
-
-
-from dataclasses import dataclass
-from typing import Any, Optional, Type, Union, get_args, get_origin
-
-from mountaineer.client_builder.parser import (
-    ActionWrapper,
-    ControllerWrapper,
-    EnumWrapper,
-    FieldWrapper,
-    ModelWrapper,
-)
-from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
+from mountaineer.logging import LOGGER
 
 
 @dataclass
@@ -86,23 +81,26 @@ class TypescriptSchema:
 
         return schema_def
 
+
 class BaseTypeScriptConverter:
     """Base class for TypeScript conversion with shared type conversion logic"""
 
     def _get_field_type(self, field: FieldWrapper) -> str:
+        return self._get_annotated_value(field.value)
+
+    def _get_annotated_value(self, value):
         """Convert a field type to TypeScript type."""
-        print("GET FIELD TYPE", field)
-        if isinstance(field.value, ModelWrapper):
-            return field.value.model.__name__
-        elif isinstance(field.value, EnumWrapper):
-            return field.value.enum.__name__
+        if isinstance(value, ModelWrapper):
+            return value.model.__name__
+        elif isinstance(value, EnumWrapper):
+            return value.enum.__name__
         else:
-            primitive_value = self._map_primitive_type_to_typescript(field.value)
-            if primitive_value:
-                return primitive_value
-            complex_value = self._handle_complex_type(field.value)
+            complex_value = self._handle_complex_type(value, requires_complex=True)
             if complex_value:
                 return complex_value
+            primitive_value = self._map_primitive_type_to_typescript(value)
+            if primitive_value:
+                return primitive_value
             return "any"
 
     def _map_primitive_type_to_typescript(self, py_type: type) -> str | None:
@@ -116,34 +114,30 @@ class BaseTypeScriptConverter:
         }
         return type_map.get(py_type)
 
-    def _handle_complex_type(self, type_hint: Any) -> str | None:
+    def _handle_complex_type(
+        self, type_hint: Any, requires_complex: bool = False
+    ) -> str | None:
         """Handle complex type hints like List[str], Dict[str, int], etc."""
-        origin = get_origin(type_hint)
-        args = get_args(type_hint)
+        if not isinstance(type_hint, TypeDefinition):
+            return None
 
-        if origin in (list, List):
-            if not args:
-                return "Array<any>"
-            return f"Array<{self._get_field_type(FieldWrapper('', args[0], True))}>"
+        if isinstance(type_hint, ListOf):
+            return f"Array<{self._get_annotated_value(type_hint.type)}>"
 
-        elif origin in (dict, Dict):
-            if not args:
-                return "Record<string, any>"
-            key_type = self._get_field_type(FieldWrapper('', args[0], True))
-            value_type = self._get_field_type(FieldWrapper('', args[1], True))
-            return f"Record<{key_type}, {value_type}>"
+        if isinstance(type_hint, TupleOf):
+            return f"Array<{self._get_annotated_value(Or(type_hint.types))}>"
 
-        elif origin is Union:
-            types = [t for t in args if t != type(None)]  # noqa: E721
-            if len(types) == 1:
-                return self._get_field_type(FieldWrapper('', types[0], True))
-            return " | ".join(self._get_field_type(FieldWrapper('', t, True)) for t in types)
+        if isinstance(type_hint, SetOf):
+            return f"Set<{self._get_annotated_value(type_hint.type)}>"
 
-        elif origin is Literal:
-            literal_values = args
-            if all(isinstance(val, str) for val in literal_values):
-                return " | ".join(f"'{val}'" for val in literal_values)
-            return " | ".join(str(val) for val in literal_values)
+        if isinstance(type_hint, DictOf):
+            return f"Record<{self._get_annotated_value(type_hint.key_type)}, {self._get_field_type(type_hint.value_type)}>"
+
+        if isinstance(type_hint, Or):
+            non_null_types = [t for t in type_hint.children if t != type(None)]  # noqa: E721
+            if len(non_null_types) == 1:
+                return self._get_annotated_value(non_null_types[0])
+            return " | ".join(self._get_annotated_value(t) for t in non_null_types)
 
         return "any"
 
@@ -344,6 +338,80 @@ class TypeScriptLinkConverter(BaseTypeScriptConverter):
 }};"""
 
 
+class TypeScriptServerHookConverter(BaseTypeScriptConverter):
+    """Converts controllers to TypeScript server hooks"""
+
+    def convert_controller_hooks(
+        self,
+        controller: ControllerWrapper,
+        controller_id: str,
+    ) -> str:
+        """Generate useServer hook for a controller"""
+        if not controller.render:
+            return ""
+
+        render_model = controller.render.model.__name__
+
+        imports = self._generate_imports(controller, controller_id, render_model)
+        interface = self._generate_interface(render_model, controller_id)
+        hook = self._generate_hook(controller, controller_id, render_model)
+
+        return "\n\n".join(["\n".join(imports), "\n".join(interface), "\n".join(hook)])
+
+    def _generate_imports(
+        self, controller: ControllerWrapper, controller_id: str, render_model: str
+    ) -> list[str]:
+        """Generate import statements"""
+        imports = [
+            "import React, { useState } from 'react';",
+            "import { applySideEffect } from '../api';",
+            "import LinkGenerator from '../links';",
+            f"import {{ {render_model}, {controller_id} }} from './models';",
+        ]
+
+        if controller.all_actions:
+            action_imports = [
+                f"import {{ {', '.join(action.name for action in controller.all_actions)} }} from './actions';"
+            ]
+            imports.extend(action_imports)
+
+        return imports
+
+    def _generate_interface(self, render_model: str, controller_id: str) -> list[str]:
+        """Generate ServerState interface"""
+        return [
+            f"export interface ServerState extends {render_model}, {controller_id} {{",
+            "  linkGenerator: typeof LinkGenerator;",
+            "}",
+        ]
+
+    def _generate_hook(
+        self, controller: ControllerWrapper, controller_id: str, render_model: str
+    ) -> list[str]:
+        """Generate useServer hook implementation"""
+        server_response = {
+            TSLiteral("...serverState"): TSLiteral("...serverState"),
+            "linkGenerator": TSLiteral("LinkGenerator"),
+        }
+
+        for action in controller.all_actions:
+            server_response[TSLiteral(action.name)] = (
+                TSLiteral(f"applySideEffect({action.name}, setControllerState)")
+                if action.action_type == FunctionActionType.SIDEEFFECT
+                else TSLiteral(action.name)
+            )
+
+        response_body = python_payload_to_typescript(server_response)
+
+        return [
+            "export const useServer = () : ServerState => {",
+            f"  const [serverState, setServerState] = useState(SERVER_DATA['{controller_id}'] as {render_model});",
+            "",
+            f"  return {response_body}",
+            "};",
+        ]
+
+
 class TypeScriptControllerConverter(BaseTypeScriptConverter):
     """Converts controllers to TypeScript interfaces"""
 
@@ -381,7 +449,9 @@ class TypeScriptGenerator:
         self.action_converter = TypeScriptActionConverter()
         self.controller_converter = TypeScriptControllerConverter(self.action_converter)
 
-    def generate_definitions(self, parsed_controllers: Dict[str, "ParsedController"]) -> str:
+    def generate_definitions(
+        self, parsed_controllers: Dict[str, "ParsedController"]
+    ) -> str:
         """Generate all TypeScript definitions in dependency order"""
         # Get all controllers
         controllers = self._gather_all_controllers(
@@ -394,10 +464,6 @@ class TypeScriptGenerator:
         # Build both graphs
         model_enum_sorter = self._build_model_enum_graph(models, enums)
         controller_sorter = self._build_controller_graph(controllers)
-
-        print("MODELS", models)
-        print("ENUMS", enums)
-        print("CONTROLLERS", controllers)
 
         # Generate schemas in order
         schemas: List[str] = []
@@ -414,14 +480,15 @@ class TypeScriptGenerator:
         # Then process controllers in dependency order
         for controller in controller_sorter:
             controller_schema = self.controller_converter.convert_controller(
-                controller.name,
-                controller
+                controller.name, controller
             )
             schemas.append(controller_schema.to_js())
 
         return "\n\n".join(schemas)
 
-    def _build_model_enum_graph(self, models: List[ModelWrapper], enums: List[EnumWrapper]):
+    def _build_model_enum_graph(
+        self, models: List[ModelWrapper], enums: List[EnumWrapper]
+    ):
         """Build dependency graph for models and enums"""
         # Build id-based graph
         graph: Dict[int, Set[int]] = {}
@@ -449,7 +516,9 @@ class TypeScriptGenerator:
         sorted_ids = TopologicalSorter(graph).static_order()
         return [id_to_obj[node_id] for node_id in sorted_ids]
 
-    def _build_controller_graph(self, controllers: List[ControllerWrapper]) -> TopologicalSorter:
+    def _build_controller_graph(
+        self, controllers: List[ControllerWrapper]
+    ) -> TopologicalSorter:
         """Build dependency graph for controllers"""
         # Build id-based graph
         graph: Dict[int, Set[int]] = {}
@@ -462,13 +531,17 @@ class TypeScriptGenerator:
 
         # Add controller superclass dependencies
         for controller in controllers:
-            graph[id(controller)].update(id(superclass) for superclass in controller.superclasses)
+            graph[id(controller)].update(
+                id(superclass) for superclass in controller.superclasses
+            )
 
         # Convert graph to use actual objects for TopologicalSorter
         sorted_ids = TopologicalSorter(graph).static_order()
         return [id_to_obj[node_id] for node_id in sorted_ids]
 
-    def _gather_all_controllers(self, controllers: List[ControllerWrapper]) -> List[ControllerWrapper]:
+    def _gather_all_controllers(
+        self, controllers: List[ControllerWrapper]
+    ) -> List[ControllerWrapper]:
         """Gather all controllers including superclasses"""
         seen_ids = set()
         result = []
@@ -485,11 +558,23 @@ class TypeScriptGenerator:
 
         return result
 
-
-    def _gather_models_and_enums(self, controllers: List[ControllerWrapper]) -> tuple[List[ModelWrapper], List[EnumWrapper]]:
+    def _gather_models_and_enums(
+        self, controllers: List[ControllerWrapper]
+    ) -> tuple[List[ModelWrapper], List[EnumWrapper]]:
         """Collect all unique models and enums from controllers"""
         models_dict: Dict[int, ModelWrapper] = {}
         enums_dict: Dict[int, EnumWrapper] = {}
+
+        def process_value(value):
+            if isinstance(value, ModelWrapper):
+                process_model(value)
+            elif isinstance(value, EnumWrapper):
+                enums_dict[id(value)] = value
+            elif isinstance(value, TypeDefinition):
+                for child in value.children:
+                    process_value(child)
+            else:
+                LOGGER.info(f"Non-complex value: {value}")
 
         def process_model(model: ModelWrapper) -> None:
             """Process a model and all its dependencies"""
@@ -497,10 +582,7 @@ class TypeScriptGenerator:
                 models_dict[id(model)] = model
                 # Process all fields
                 for field in model.value_models:
-                    if isinstance(field.value, ModelWrapper):
-                        process_model(field.value)
-                    elif isinstance(field.value, EnumWrapper):
-                        enums_dict[id(field.value)] = field.value
+                    process_value(field.value)
                 # Process superclasses
                 for superclass in model.superclasses:
                     process_model(superclass)

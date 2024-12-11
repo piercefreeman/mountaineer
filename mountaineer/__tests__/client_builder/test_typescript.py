@@ -3,7 +3,6 @@ from typing import Any
 
 import pytest
 
-
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,

@@ -1,22 +1,22 @@
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from typing import Dict, Optional
+from typing import Dict
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.converters import (
     TypeScriptActionConverter,
     TypeScriptGenerator,
     TypeScriptLinkConverter,
-    TypeScriptSchemaConverter,
+    TypeScriptServerHookConverter,
 )
 from mountaineer.client_builder.parser import (
     ControllerParser,
     ControllerWrapper,
     ModelWrapper,
 )
-from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.client_builder.typescript import normalize_interface
+from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
 
@@ -55,6 +55,7 @@ class APIBuilder:
         self.root_controller_converter = TypeScriptGenerator(export_interface=True)
         self.action_converter = TypeScriptActionConverter()
         self.link_converter = TypeScriptLinkConverter()
+        self.hook_converter = TypeScriptServerHookConverter()
 
         # Store parsed results
         self.parsed_controllers: Dict[str, ParsedController] = {}
@@ -93,6 +94,7 @@ class APIBuilder:
             parsed_wrapper = self.parser.parse_controller(controller.__class__)
 
             # Get view path
+            # view_path = self.view_root.get_controller_view_path(controller)
             view_path = self.view_root.get_controller_view_path(controller)
 
             # Create ParsedController instance
@@ -115,7 +117,9 @@ class APIBuilder:
         global_code_dir = self.view_root.get_managed_code_dir()
 
         # Generate all controller base definitions
-        schemas_content = self.root_controller_converter.generate_definitions(self.parsed_controllers)
+        schemas_content = self.root_controller_converter.generate_definitions(
+            self.parsed_controllers
+        )
 
         # Write global schemas
         (global_code_dir / "controllers.ts").write_text(schemas_content)
@@ -131,7 +135,9 @@ class APIBuilder:
 
             # Add model exports
             if parsed_controller.wrapper.render:
-                self._add_model_exports(parsed_controller.wrapper.render, exports, imports)
+                self._add_model_exports(
+                    parsed_controller.wrapper.render, exports, imports
+                )
 
             for action in parsed_controller.wrapper.actions.values():
                 if action.request_body:
@@ -162,33 +168,35 @@ class APIBuilder:
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
 
-            # Convert each action
-            actions_ts = []
-            for name, action in parsed_controller.wrapper.actions.items():
-                typescript_action = self.action_converter.convert_action(
-                    name, action, parsed_controller.url_prefix or ""
+            # Convert each action. We also include the superclass methods, since they're
+            # actually bound to the controller instance with separate urls.
+            all_actions = [
+                self.action_converter.convert_action(
+                    action.name, action, parsed_controller.url_prefix or ""
                 )
-                actions_ts.append(typescript_action.to_js())
+                for action in parsed_controller.wrapper.all_actions
+            ]
+
+            actions_ts = [
+                typescript_action.to_js() for typescript_action in all_actions
+            ]
+
+            deps = set()
+            for action in parsed_controller.wrapper.all_actions:
+                if action.request_body:
+                    deps.add(normalize_interface(action.request_body.model.__name__))
+                if action.response_body:
+                    deps.add(normalize_interface(action.response_body.model.__name__))
 
             # Generate imports
             imports = [
                 "import { __request, FetchErrorBase } from '../api';",
-                f"import type {{ {', '.join(self._get_action_model_deps(parsed_controller))} }} from './models';",
+                f"import type {{ {', '.join(deps)} }} from './models';",
             ]
 
             (controller_dir / "actions.ts").write_text(
                 "\n\n".join(imports + actions_ts)
             )
-
-    def _get_action_model_deps(self, parsed_controller: ParsedController) -> set[str]:
-        """Get all required model names for actions"""
-        deps = set()
-        for action in parsed_controller.wrapper.actions.values():
-            if action.request_body:
-                deps.add(normalize_interface(action.request_body.model.__name__))
-            if action.response_body:
-                deps.add(normalize_interface(action.response_body.model.__name__))
-        return deps
 
     def _generate_link_shortcuts(self):
         """Generate TypeScript link formatters for each controller"""
@@ -246,56 +254,14 @@ class APIBuilder:
                 continue
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
-            render_model = parsed_controller.wrapper.render.model.__name__
+            # render_model = parsed_controller.wrapper.render.model.__name__
 
-            # Generate imports
-            imports = [
-                "import React, { useState } from 'react';",
-                "import { applySideEffect } from '../api';",
-                "import LinkGenerator from '../links';",
-                f"import {{ {render_model}, {controller_id} }} from './models';",
-            ]
-
-            if parsed_controller.wrapper.actions:
-                action_imports = [
-                    f"import {{ {', '.join(action.name for action in parsed_controller.wrapper.actions.values())} }} from './actions';"
-                ]
-                imports.extend(action_imports)
-
-            # Generate interface
-            interface = [
-                f"export interface ServerState extends {render_model}, {controller_id} {{",
-                "  linkGenerator: typeof LinkGenerator;",
-                "}",
-            ]
-
-            # Generate hook
-            hook = [
-                "export const useServer = () : ServerState => {",
-                f"  const [serverState, setServerState] = useState(SERVER_DATA['{controller_id}'] as {render_model});",
-                "",
-                "  return {",
-                "    ...serverState,",
-                "    linkGenerator: LinkGenerator,",
-            ]
-
-            # Add action returns
-            if parsed_controller.wrapper.actions:
-                hook.extend(
-                    [
-                        "    "
-                        + ",\n    ".join(
-                            f"{action.name}: action.name"
-                            for action in parsed_controller.wrapper.actions.values()
-                        )
-                    ]
-                )
-
-            hook.extend(["  };", "};"])
-
-            (controller_dir / "useServer.ts").write_text(
-                "\n\n".join(["\n".join(imports), "\n".join(interface), "\n".join(hook)])
+            script = self.hook_converter.convert_controller_hooks(
+                parsed_controller.wrapper, controller_id
             )
+
+            # Write the complete file
+            (controller_dir / "useServer.ts").write_text(script)
 
     def _generate_index_files(self):
         """Generate index files for each controller"""

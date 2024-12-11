@@ -1,21 +1,32 @@
-from abc import abstractproperty, ABC
-from typing import get_args, get_origin, List, Dict, Set, Tuple, Union, Any, TypeVar, Type
-from types import UnionType
-from enum import Enum
-from pydantic import BaseModel
+from abc import ABC, abstractproperty
 from dataclasses import dataclass
+from types import UnionType
+from typing import (
+    Any,
+    Dict,
+    List,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
-T = TypeVar('T')
-K = TypeVar('K')
-V = TypeVar('V')
+T = TypeVar("T")
+K = TypeVar("K")
+V = TypeVar("V")
+
 
 def is_union_type(type_: type) -> bool:
     """Check if a type is a Union type"""
     return (
-        get_origin(type_) is Union or
-        isinstance(type_, UnionType) or
-        (isinstance(type_, type) and getattr(type_, "__origin__", None) is Union)
+        get_origin(type_) is Union
+        or isinstance(type_, UnionType)
+        or (isinstance(type_, type) and getattr(type_, "__origin__", None) is Union)
     )
+
 
 def get_union_types(type_: type) -> list[type]:
     """Get the types from a Union type"""
@@ -26,14 +37,21 @@ def get_union_types(type_: type) -> list[type]:
 
 class TypeDefinition(ABC):
     """Base class for all type definitions"""
+
     @abstractproperty
     def children(self) -> list[Type]:
         """Return a list of all types this definition wraps"""
         pass
 
+    def update_children(self, children: list[Type]):
+        """Return a new instance with updated children"""
+        pass
+
+
 @dataclass
 class Or(TypeDefinition):
     """Represents a Union type"""
+
     types: tuple[Type, ...]
 
     def __class_getitem__(cls, types):
@@ -45,21 +63,32 @@ class Or(TypeDefinition):
     def children(self) -> list[Type]:
         return list(self.types)
 
+    def update_children(self, children: list[Type]):
+        self.types = tuple(children)
+
+
 @dataclass
 class ListOf(TypeDefinition):
     """Represents a List type"""
+
     type: Type
 
-    def __class_getitem__(cls, type_):
-        return cls(type=type_)
+    def __class_getitem__(cls, type):
+        return cls(type=type)
 
     @property
     def children(self) -> list[Type]:
         return [self.type]
 
+    def update_children(self, children: list[Type]):
+        assert len(children) == 1
+        self.type = children[0]
+
+
 @dataclass
 class DictOf(TypeDefinition):
     """Represents a Dict type"""
+
     key_type: Type
     value_type: Type
 
@@ -73,9 +102,16 @@ class DictOf(TypeDefinition):
     def children(self) -> list[Type]:
         return [self.key_type, self.value_type]
 
+    def update_children(self, children: list[Type]):
+        assert len(children) == 2
+        self.key_type = children[0]
+        self.value_type = children[1]
+
+
 @dataclass
 class TupleOf(TypeDefinition):
     """Represents a Tuple type"""
+
     types: tuple[Type, ...]
 
     def __class_getitem__(cls, types):
@@ -87,9 +123,14 @@ class TupleOf(TypeDefinition):
     def children(self) -> list[Type]:
         return list(self.types)
 
+    def update_children(self, children: list[Type]):
+        self.types = tuple(children)
+
+
 @dataclass
 class SetOf(TypeDefinition):
     """Represents a Set type"""
+
     type: Type
 
     def __class_getitem__(cls, type_):
@@ -99,10 +140,15 @@ class SetOf(TypeDefinition):
     def children(self) -> list[Type]:
         return [self.type]
 
+    def update_children(self, children: list[Type]):
+        self.types = tuple(children)
+
+
 class TypeParser:
     """
     Type parser that converts Python types into TypeDefinition instances
     """
+
     def parse_type(self, field_type: Any) -> TypeDefinition:
         """
         Convert any Python type into a TypeDefinition instance
@@ -133,6 +179,7 @@ class TypeParser:
     def _parse_origin_type(self, field_type: Any, origin_type: Any) -> TypeDefinition:
         """Parse types with origin (e.g., List[int], Dict[str, int])"""
         args = get_args(field_type)
+        args = tuple(self.parse_type(arg) for arg in args)
 
         if origin_type in (list, List):
             return ListOf(type=args[0])

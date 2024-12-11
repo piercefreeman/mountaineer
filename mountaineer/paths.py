@@ -138,7 +138,10 @@ class ManagedViewPath(type(Path())):  # type: ignore
         # We also create the managed code directory if it doesn't exist so all subsequent
         # calls can immediately start writing to it
         path = self
-        if path.is_file():
+        # Assume that any file with a .suffix extension is a file; this avoids a disk
+        # based is_file lookup and lets the paths resolve correctly in tests where
+        # we haven't actually created this file ons disk'
+        if path.suffix:
             path = path.parent
         managed_code_dir = path / managed_dir
         if create_dir:

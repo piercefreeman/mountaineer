@@ -8,7 +8,6 @@ from typing import Any
 from inflection import camelize
 
 
-
 class TSLiteral(str):
     """
     This string should not be quoted when used in a Typescript insert.

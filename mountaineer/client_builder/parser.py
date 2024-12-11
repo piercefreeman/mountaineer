@@ -1,7 +1,12 @@
 from dataclasses import dataclass
 from enum import Enum
-from types import UnionType
-from typing import Callable, Optional, Union, List, Dict, Set, Tuple, Any, Type, get_args, get_origin
+from typing import (
+    Callable,
+    Optional,
+    TypeVar,
+    Union,
+    get_origin,
+)
 
 from fastapi import APIRouter
 from fastapi.params import Body, Depends, Header, Param
@@ -9,15 +14,15 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
-from mountaineer.actions.fields import get_function_metadata
+from mountaineer.actions.fields import FunctionActionType, get_function_metadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
+from mountaineer.client_builder.types import TypeDefinition, TypeParser
 from mountaineer.controller import ControllerBase, get_client_functions_cls
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.render import RenderBase
-from typing import TypeVar
-from mountaineer.client_builder.types import TypeParser, TypeDefinition
 
 T = TypeVar("T")
+
 
 # Base data structures
 @dataclass
@@ -47,28 +52,43 @@ class ActionWrapper:
     headers: list[FieldWrapper]
     request_body: Optional[ModelWrapper]
     response_body: Optional[ModelWrapper]
+    action_type: FunctionActionType
 
 
 @dataclass
 class ControllerWrapper:
     name: str
     superclasses: list["ControllerWrapper"]
-    actions: dict[str, ActionWrapper]  # {url: action} directly implemented for this controller
+    actions: dict[
+        str, ActionWrapper
+    ]  # {url: action} directly implemented for this controller
     render: Optional[ModelWrapper]
+
+    @property
+    def all_actions(self) -> list[ActionWrapper]:
+        # Convert each action. We also include the superclass methods, since they're
+        # actually bound to the controller instance with separate urls.
+        all_actions: list[ActionWrapper] = []
+
+        def parse_controller(controller):
+            for superclass in controller.superclasses:
+                parse_controller(superclass)
+            for action in controller.actions.values():
+                all_actions.append(action)
+
+        parse_controller(self)
+        return all_actions
 
 
 # Helper functions
 def is_pydantic_field_type(type_: type) -> bool:
     """Check if a type can be used as a Pydantic field"""
-    from typing import get_origin
-
     return type_ in (str, int, float, bool, bytes) or get_origin(type_) in (
         list,
         dict,
         tuple,
         set,
     )
-
 
 
 # Main parser class
@@ -94,13 +114,16 @@ class ControllerParser:
         actions = self._parse_actions(controller)
 
         # Parse superclasses
-        superclass_controllers : list[ControllerWrapper] = []
+        superclass_controllers: list[ControllerWrapper] = []
         for superclass in controller_classes[1:]:
-            superclass_controllers.append(
-                self.parse_controller(superclass)
-            )
+            superclass_controllers.append(self.parse_controller(superclass))
 
-        return ControllerWrapper(name=controller.__name__, actions=actions, render=render, superclasses=superclass_controllers)
+        return ControllerWrapper(
+            name=controller.__name__,
+            actions=actions,
+            render=render,
+            superclasses=superclass_controllers,
+        )
 
     def _parse_model(self, model: type[BaseModel]) -> ModelWrapper:
         """Parse a Pydantic model into ModelWrapper, handling inheritance"""
@@ -142,19 +165,21 @@ class ControllerParser:
         # Now we can recursively parse the children
         def update_children(type_definition: TypeDefinition | type):
             if isinstance(type_definition, TypeDefinition):
-                for child in type_definition.children:
-                    update_children(child)
+                type_definition.update_children(
+                    [update_children(child) for child in type_definition.children]
+                )
+                return type_definition
             else:
                 # Determine if they qualify for conversion
                 if issubclass(type_definition, BaseModel):
-                    value = self._parse_model(type_definition)
+                    return self._parse_model(type_definition)
                 elif issubclass(type_definition, Enum):
-                    value = self._parse_enum(type_definition)
+                    return self._parse_enum(type_definition)
                 else:
                     # No need to parse further
-                    pass
+                    return type_definition
 
-        update_children(type_definition)
+        type_definition = update_children(type_definition)
 
         return FieldWrapper(
             name=name,
@@ -171,9 +196,7 @@ class ControllerParser:
         self.parsed_enums[enum_type] = wrapper
         return wrapper
 
-    def _parse_render(
-        self, controller: type[ControllerBase]
-    ) -> Optional[ModelWrapper]:
+    def _parse_render(self, controller: type[ControllerBase]) -> Optional[ModelWrapper]:
         """Parse the render method's return type"""
         render = getattr(controller, "render", None)
         if not render:
@@ -302,13 +325,13 @@ class ControllerParser:
         actions: dict[str, ActionWrapper] = {}
 
         for name, func, metadata in get_client_functions_cls(controller):
-            print("parse actions", controller.__name__, name)
             action = ActionWrapper(
                 name=name,
                 params=self._parse_params(func, name),
                 headers=self._parse_headers(func, name),
                 request_body=self._parse_request_body(func, name),
                 response_body=self._parse_response_body(metadata),
+                action_type=metadata.action_type,
             )
             actions[name] = action
 

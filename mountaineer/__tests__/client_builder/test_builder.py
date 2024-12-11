@@ -17,9 +17,9 @@ from mountaineer.render import RenderBase
 def simple_app_controller():
     with TemporaryDirectory() as temp_dir_name:
         temp_view_path = Path(temp_dir_name)
-        # Simple view files
-        (temp_view_path / "page.tsx").write_text("")
-        (temp_view_path / "other.tsx").write_text("")
+        # Simple view directories
+        (temp_view_path / "admin").mkdir()
+        (temp_view_path / "user").mkdir()
         app_controller = AppController(view_root=temp_view_path)
         yield app_controller
 
@@ -87,7 +87,7 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
             return ActionResponse(success=True, message="1.0.0")
 
     # Mixin for user management
-    class UserManagementMixin:
+    class UserManagementMixin(ControllerBase):
         @sideeffect
         async def update_user(self, user_id: int, status: Status) -> UserActionResponse:
             return UserActionResponse(
@@ -104,7 +104,7 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
     # Admin controller with all features
     class AdminController(BaseController, UserManagementMixin):
         url = "/admin/"
-        view_path = "/page.tsx"
+        view_path = "/admin/page.tsx"
 
         def render(self) -> AdminRender:
             return AdminRender(
@@ -147,7 +147,7 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
     # Regular user controller with limited functionality
     class UserController(BaseController):
         url = "/user/"
-        view_path = "/other.tsx"
+        view_path = "/user/other.tsx"
 
         def render(self) -> UserRender:
             return UserRender(
@@ -193,21 +193,18 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
     # Verify admin controller parsing
     assert not admin_parsed.is_layout
     assert admin_parsed.url_prefix == "/internal/api/admin_controller"
-    assert (
-        [action.name for action in admin_parsed.wrapper.actions.values()] == [
-            "get_pending_users", "approve_user"
-        ]
-    )
+    assert [action.name for action in admin_parsed.wrapper.actions.values()] == [
+        "get_pending_users",
+        "approve_user",
+    ]
     assert admin_parsed.wrapper.render is not None
 
     # Verify user controller parsing
     assert not user_parsed.is_layout
     assert user_parsed.url_prefix == "/internal/api/user_controller"
-    assert (
-        [action.name for action in user_parsed.wrapper.actions.values()] == [
-            "update_profile",
-        ]
-    )
+    assert [action.name for action in user_parsed.wrapper.actions.values()] == [
+        "update_profile",
+    ]
     assert user_parsed.wrapper.render is not None
 
     # Generate all files
@@ -255,9 +252,11 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
     assert "export const update_user" in admin_actions
     assert "export const get_pending_users" in admin_actions
     assert "export const approve_user" in admin_actions
-    assert "Promise<ActionResponse>" in admin_actions
-    assert "Promise<UserActionResponse>" in admin_actions
-    assert "Promise<Array<User>>" in admin_actions
+
+    # Any sideeffects will be a synthetic model with {Name}Response
+    assert "Promise<GetVersionResponse>" in admin_actions
+    assert "Promise<UpdateUserResponse>" in admin_actions
+    assert "Promise<GetPendingUsersResponse>" in admin_actions
 
     # Verify user controller files
     user_dir = user_parsed.view_path.get_managed_code_dir()
@@ -269,19 +268,19 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
     user_actions = (user_dir / "actions.ts").read_text()
     assert "export const get_version" in user_actions
     assert "export const update_profile" in user_actions
-    assert "Promise<UserActionResponse>" in user_actions
+    assert "Promise<UpdateProfileResponse>" in user_actions
 
     # Check useServer implementations
     admin_server = (admin_dir / "useServer.ts").read_text()
     assert "extends AdminRender, AdminController" in admin_server
     assert "linkGenerator: typeof LinkGenerator" in admin_server
-    assert "get_version: get_version" in admin_server
-    assert "update_user: update_user" in admin_server
-    assert "get_pending_users: get_pending_users" in admin_server
-    assert "approve_user: approve_user" in admin_server
+    assert "get_version: applySideEffect(get_version" in admin_server
+    assert "update_user: applySideEffect(update_user" in admin_server
+    assert "get_pending_users: applySideEffect(get_pending_users" in admin_server
+    assert "approve_user: applySideEffect(approve_user" in admin_server
 
     user_server = (user_dir / "useServer.ts").read_text()
     assert "extends UserRender, UserController" in user_server
     assert "linkGenerator: typeof LinkGenerator" in user_server
-    assert "get_version: get_version" in user_server
-    assert "update_profile: update_profile" in user_server
+    assert "get_version: applySideEffect(get_version" in user_server
+    assert "update_profile: applySideEffect(update_profile" in user_server

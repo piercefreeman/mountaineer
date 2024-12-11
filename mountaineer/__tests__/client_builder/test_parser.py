@@ -154,7 +154,9 @@ def test_complex_controller_parsing(
     result = controller_parser.parse_controller(controller.__class__)
 
     # Test controller inheritance structure
-    assert len(result.superclasses) == 2  # Should have SharedController and BaseController
+    assert (
+        len(result.superclasses) == 2
+    )  # Should have SharedController and BaseController
     shared_controller = result.superclasses[0]
     base_controller = result.superclasses[1]
 
@@ -189,7 +191,9 @@ def test_complex_controller_parsing(
     assert not shared_friends_action.params[0].required  # Has default value
 
     # Verify shared_friends response structure (passthrough wrapped)
-    friends_fields = {f.name: f for f in shared_friends_action.response_body.value_models}
+    friends_fields = {
+        f.name: f for f in shared_friends_action.response_body.value_models
+    }
     assert set(friends_fields.keys()) == {"passthrough"}
     friends_wrapper = friends_fields["passthrough"]
     assert isinstance(friends_wrapper.value, ModelWrapper)
@@ -236,13 +240,17 @@ def test_complex_controller_parsing(
     assert superclass_names == {"BaseStats", "BaseMetadata"}
 
     # Verify BaseStats fields
-    base_stats = next(sc for sc in profile_wrapper.superclasses if sc.model.__name__ == "BaseStats")
+    base_stats = next(
+        sc for sc in profile_wrapper.superclasses if sc.model.__name__ == "BaseStats"
+    )
     base_stats_fields = {f.name: f for f in base_stats.value_models}
     assert set(base_stats_fields.keys()) == {"created_at", "updated_at"}
     assert all(f.required for f in base_stats_fields.values())
 
     # Verify BaseMetadata fields
-    base_metadata = next(sc for sc in profile_wrapper.superclasses if sc.model.__name__ == "BaseMetadata")
+    base_metadata = next(
+        sc for sc in profile_wrapper.superclasses if sc.model.__name__ == "BaseMetadata"
+    )
     metadata_fields = {f.name: f for f in base_metadata.value_models}
     assert set(metadata_fields.keys()) == {"version", "is_active"}
     assert metadata_fields["version"].required
@@ -251,8 +259,13 @@ def test_complex_controller_parsing(
     # Verify UserProfile direct fields
     profile_fields = {f.name: f for f in profile_wrapper.value_models}
     assert set(profile_fields.keys()) == {
-        "id", "username", "role", "location", "settings",
-        "friends", "last_login"
+        "id",
+        "username",
+        "role",
+        "location",
+        "settings",
+        "friends",
+        "last_login",
     }
 
     # Check specific UserProfile field properties
@@ -261,7 +274,7 @@ def test_complex_controller_parsing(
     assert isinstance(profile_fields["role"].value, EnumWrapper)
     assert profile_fields["role"].value.enum == UserRole
     assert not profile_fields["last_login"].required  # Optional field
-    #assert profile_fields["friends"].required  # Has default value but still required
+    # assert profile_fields["friends"].required  # Has default value but still required
 
     # Verify nested Location model
     location_field = profile_fields["location"]
@@ -276,7 +289,11 @@ def test_complex_controller_parsing(
     settings_field = profile_fields["settings"]
     assert isinstance(settings_field.value, ModelWrapper)
     settings_fields = {f.name: f for f in settings_field.value.value_models}
-    assert set(settings_fields.keys()) == {"theme", "notifications_enabled", "preferred_language"}
+    assert set(settings_fields.keys()) == {
+        "theme",
+        "notifications_enabled",
+        "preferred_language",
+    }
     assert not settings_fields["theme"].required  # Has default value
     assert not settings_fields["notifications_enabled"].required  # Has default value
     assert not settings_fields["preferred_language"].required  # Has default value
