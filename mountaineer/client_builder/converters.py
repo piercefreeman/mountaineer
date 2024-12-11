@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Any
+from graphlib import TopologicalSorter
+from typing import Any, List, Dict, Literal
 
 from inflection import camelize
 
@@ -14,6 +15,20 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
+
+
+
+from dataclasses import dataclass
+from typing import Any, Optional, Type, Union, get_args, get_origin
+
+from mountaineer.client_builder.parser import (
+    ActionWrapper,
+    ControllerWrapper,
+    EnumWrapper,
+    FieldWrapper,
+    ModelWrapper,
+)
+from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
 
 
 @dataclass
@@ -71,15 +86,75 @@ class TypescriptSchema:
 
         return schema_def
 
+class BaseTypeScriptConverter:
+    """Base class for TypeScript conversion with shared type conversion logic"""
 
-class TypeScriptActionConverter:
+    def _get_field_type(self, field: FieldWrapper) -> str:
+        """Convert a field type to TypeScript type."""
+        print("GET FIELD TYPE", field)
+        if isinstance(field.value, ModelWrapper):
+            return field.value.model.__name__
+        elif isinstance(field.value, EnumWrapper):
+            return field.value.enum.__name__
+        else:
+            primitive_value = self._map_primitive_type_to_typescript(field.value)
+            if primitive_value:
+                return primitive_value
+            complex_value = self._handle_complex_type(field.value)
+            if complex_value:
+                return complex_value
+            return "any"
+
+    def _map_primitive_type_to_typescript(self, py_type: type) -> str | None:
+        """Map Python types to TypeScript types"""
+        type_map = {
+            str: "string",
+            int: "number",
+            float: "number",
+            bool: "boolean",
+            None: "null",
+        }
+        return type_map.get(py_type)
+
+    def _handle_complex_type(self, type_hint: Any) -> str | None:
+        """Handle complex type hints like List[str], Dict[str, int], etc."""
+        origin = get_origin(type_hint)
+        args = get_args(type_hint)
+
+        if origin in (list, List):
+            if not args:
+                return "Array<any>"
+            return f"Array<{self._get_field_type(FieldWrapper('', args[0], True))}>"
+
+        elif origin in (dict, Dict):
+            if not args:
+                return "Record<string, any>"
+            key_type = self._get_field_type(FieldWrapper('', args[0], True))
+            value_type = self._get_field_type(FieldWrapper('', args[1], True))
+            return f"Record<{key_type}, {value_type}>"
+
+        elif origin is Union:
+            types = [t for t in args if t != type(None)]  # noqa: E721
+            if len(types) == 1:
+                return self._get_field_type(FieldWrapper('', types[0], True))
+            return " | ".join(self._get_field_type(FieldWrapper('', t, True)) for t in types)
+
+        elif origin is Literal:
+            literal_values = args
+            if all(isinstance(val, str) for val in literal_values):
+                return " | ".join(f"'{val}'" for val in literal_values)
+            return " | ".join(str(val) for val in literal_values)
+
+        return "any"
+
+
+class TypeScriptActionConverter(BaseTypeScriptConverter):
     """Converts controller actions to TypeScript"""
 
     def convert_action(
         self, name: str, action: ActionWrapper, url_prefix: str = ""
     ) -> TypescriptAction:
         """Convert an action to TypeScript"""
-        # Build parameters
         parameters_dict: dict[str, Any] = {}
         typehint_dict: dict[str, Any] = {}
         required_models: list[str] = []
@@ -107,12 +182,10 @@ class TypeScriptActionConverter:
         parameters_dict.update(system_parameters)
         typehint_dict.update(system_typehints)
 
-        # Build request payload
         request_payload = self._build_request_payload(
             url_prefix + f"/{name}", action, parameters_dict
         )
 
-        # Determine response type
         response_type = self._get_response_type(action)
         if action.response_body:
             required_models.append(action.response_body.model.__name__)
@@ -131,19 +204,17 @@ class TypeScriptActionConverter:
         self, url: str, action: ActionWrapper, parameters: dict[str, Any]
     ) -> str:
         payload: dict[str, Any] = {
-            "method": "POST",  # Default to POST for actions
+            "method": "POST",
             "url": url,
             "path": {},
             "query": {},
             "signal": TSLiteral("signal"),
         }
 
-        # Add parameters
         for param in action.params:
             if param.name in parameters:
                 payload["query"][param.name] = TSLiteral(param.name)
 
-        # Add request body
         if action.request_body:
             payload["body"] = TSLiteral("requestBody")
             payload["mediaType"] = "application/json"
@@ -161,91 +232,37 @@ class TypeScriptActionConverter:
 
         response_type = action.response_body.model.__name__
 
-        # Handle streaming responses
         if getattr(action.response_body.model, "is_stream", False):
             return f"Promise<AsyncGenerator<{response_type}, void, unknown>>"
 
         return f"Promise<{response_type}>"
 
-    def _get_field_type(self, field: FieldWrapper) -> str:
-        """Convert a field type to TypeScript type.
 
-        Args:
-            field: The FieldWrapper instance containing type information
-
-        Returns:
-            str: The corresponding TypeScript type
-        """
-        if isinstance(field.value, ModelWrapper):
-            return field.value.model.__name__
-        elif isinstance(field.value, EnumWrapper):
-            return field.value.enum.__name__
-        elif isinstance(field.value, type):
-            # Handle basic Python types
-            type_map = {
-                str: "string",
-                int: "number",
-                float: "number",
-                bool: "boolean",
-                dict: "Record<string, any>",
-                list: "Array<any>",
-                None: "null",
-            }
-            return type_map.get(field.value, "any")
-        else:
-            # Handle complex types (List, Dict, etc.)
-            import typing
-
-            origin = typing.get_origin(field.value)
-            args = typing.get_args(field.value)
-
-            if origin == list or origin == typing.List:
-                if not args:
-                    return "Array<any>"
-                return f"Array<{self._get_field_type(FieldWrapper('', args[0], True))}>"
-
-            elif origin == dict or origin == typing.Dict:
-                if not args:
-                    return "Record<string, any>"
-                key_type = self._get_field_type(FieldWrapper('', args[0], True))
-                value_type = self._get_field_type(FieldWrapper('', args[1], True))
-                return f"Record<{key_type}, {value_type}>"
-
-            elif origin == typing.Union:
-                # Handle Optional types (Union[Type, None])
-                types = [t for t in args if t != type(None)]  # noqa: E721
-                if len(types) == 1:
-                    return self._get_field_type(FieldWrapper('', types[0], True))
-                return " | ".join(self._get_field_type(FieldWrapper('', t, True)) for t in types)
-
-            elif origin == typing.Literal:
-                # Handle Literal types
-                literal_values = args
-                if all(isinstance(val, str) for val in literal_values):
-                    return " | ".join(f"'{val}'" for val in literal_values)
-                return " | ".join(str(val) for val in literal_values)
-
-            # For any other complex types, return 'any'
-            return "any"
-
-class TypeScriptSchemaConverter:
-    """Converts models to TypeScript interfaces/enums"""
+class TypeScriptSchemaConverter(BaseTypeScriptConverter):
+    """Converts models and enums to TypeScript types"""
 
     def __init__(self, export_interface: bool = False):
+        super().__init__()
         self.export_interface = export_interface
+        self.generated_schemas = {}
 
     def convert_model(self, model: ModelWrapper) -> TypescriptSchema:
         """Convert a model to a TypeScript interface"""
-        fields: list[str] = []
+        if model.model.__name__ in self.generated_schemas:
+            return None
 
+        # Process superclasses first
+        for superclass in model.superclasses:
+            self.convert_model(superclass)
+
+        fields: list[str] = []
         for field in model.value_models:
             field_type = self._get_field_type(field)
-
             fields.append(
                 f"  {field.name}{'?' if not field.required else ''}: {field_type};"
             )
 
-        return TypescriptSchema(
+        schema = TypescriptSchema(
             interface_type="interface",
             name=model.model.__name__,
             body="\n".join(fields),
@@ -253,62 +270,42 @@ class TypeScriptSchemaConverter:
             include_superclasses=[s.model.__name__ for s in model.superclasses],
         )
 
+        self.generated_schemas[model.model.__name__] = schema
+        return schema
+
     def convert_enum(self, enum: EnumWrapper) -> TypescriptSchema:
         """Convert an enum to a TypeScript enum"""
-        fields: dict[str, Any] = {}
+        if enum.enum.__name__ in self.generated_schemas:
+            return None
 
+        fields = []
         for name, value in enum.enum.__members__.items():
             if isinstance(value.value, (int, float)):
-                key = f"Value__{value.value}"
+                fields.append(f"  {name} = {value.value},")
             else:
-                key = camelize(str(value.value), uppercase_first_letter=True)
+                fields.append(f'  {name} = "{value.value}",')
 
-            fields[TSLiteral(key)] = value.value
-
-        # Convert to enum format
-        enum_body = python_payload_to_typescript(fields).replace(":", " =")
-
-        return TypescriptSchema(
+        schema = TypescriptSchema(
             interface_type="enum",
             name=enum.enum.__name__,
-            body=enum_body.strip().lstrip("{").rstrip("}"),
+            body="\n".join(fields),
             include_export=self.export_interface,
         )
 
-    def _get_field_type(self, field: FieldWrapper) -> str:
-        """Convert a field type to TypeScript type"""
-        if isinstance(field.value, ModelWrapper):
-            return field.value.model.__name__
-        elif isinstance(field.value, EnumWrapper):
-            return field.value.enum.__name__
-        elif isinstance(field.value, type):
-            # Handle basic Python types
-            return self._map_python_type_to_typescript(field.value)
-        else:
-            # Handle complex types (List, Dict, etc)
-            return self._handle_complex_type(field.value)
+        self.generated_schemas[enum.enum.__name__] = schema
+        return schema
 
-    def _map_python_type_to_typescript(self, py_type: type) -> str:
-        """Map Python types to TypeScript types"""
-        type_map = {
-            str: "string",
-            int: "number",
-            float: "number",
-            bool: "boolean",
-            dict: "Record<string, any>",
-            list: "Array<any>",
-            None: "null",
-        }
-        return type_map.get(py_type, "any")
-
-    def _handle_complex_type(self, type_hint: Any) -> str:
-        """Handle complex type hints like List[str], Dict[str, int], etc"""
-        # This would need to be implemented based on your typing needs
-        # For now, return a basic type
-        return "any"
+    def _process_model_dependencies(self, model: ModelWrapper) -> None:
+        """Process all enum fields and nested models within a model"""
+        for field in model.value_models:
+            if isinstance(field.value, EnumWrapper):
+                self.convert_enum(field.value)
+            elif isinstance(field.value, ModelWrapper):
+                self.convert_model(field.value)
+                self._process_model_dependencies(field.value)
 
 
-class TypeScriptLinkConverter:
+class TypeScriptLinkConverter(BaseTypeScriptConverter):
     """Converts controller routes to TypeScript link generators"""
 
     def convert_controller_links(
@@ -346,23 +343,176 @@ class TypeScriptLinkConverter:
   }});
 }};"""
 
-    def _get_field_type(self, field: FieldWrapper) -> str:
-        """Get TypeScript type for a field"""
-        if isinstance(field.value, ModelWrapper):
-            return field.value.model.__name__
-        elif isinstance(field.value, EnumWrapper):
-            return field.value.enum.__name__
-        elif isinstance(field.value, type):
-            return self._map_python_type_to_typescript(field.value)
-        else:
-            return "any"
 
-    def _map_python_type_to_typescript(self, py_type: type) -> str:
-        """Map Python types to TypeScript types"""
-        type_map = {
-            str: "string",
-            int: "number",
-            float: "number",
-            bool: "boolean",
-        }
-        return type_map.get(py_type, "any")
+class TypeScriptControllerConverter(BaseTypeScriptConverter):
+    """Converts controllers to TypeScript interfaces"""
+
+    def __init__(self, action_converter: TypeScriptActionConverter):
+        super().__init__()
+        self.action_converter = action_converter
+
+    def convert_controller(
+        self, controller_id: str, wrapper: ControllerWrapper, url_prefix: str = ""
+    ) -> TypescriptSchema:
+        """Convert a controller to a TypeScript interface"""
+        fields: list[str] = []
+
+        # Convert each action
+        for name, action in wrapper.actions.items():
+            action_def = self.action_converter.convert_action(name, action, url_prefix)
+            fields.append(
+                f"  {action_def.name}: ({action_def.parameters}) => {action_def.response_type};"
+            )
+
+        return TypescriptSchema(
+            interface_type="interface",
+            name=controller_id,
+            body="\n".join(fields),
+            include_export=True,
+            include_superclasses=[s.__class__.__name__ for s in wrapper.superclasses],
+        )
+
+
+class TypeScriptGenerator:
+    """Main class for generating TypeScript definitions with separated dependency handling"""
+
+    def __init__(self, export_interface: bool = True):
+        self.schema_converter = TypeScriptSchemaConverter(export_interface)
+        self.action_converter = TypeScriptActionConverter()
+        self.controller_converter = TypeScriptControllerConverter(self.action_converter)
+
+    def generate_definitions(self, parsed_controllers: Dict[str, "ParsedController"]) -> str:
+        """Generate all TypeScript definitions in dependency order"""
+        # Get all controllers
+        controllers = self._gather_all_controllers(
+            [controller.wrapper for controller in parsed_controllers.values()]
+        )
+
+        # Collect all models and enums
+        models, enums = self._gather_models_and_enums(controllers)
+
+        # Build both graphs
+        model_enum_sorter = self._build_model_enum_graph(models, enums)
+        controller_sorter = self._build_controller_graph(controllers)
+
+        print("MODELS", models)
+        print("ENUMS", enums)
+        print("CONTROLLERS", controllers)
+
+        # Generate schemas in order
+        schemas: List[str] = []
+
+        # First process models and enums in dependency order
+        for item in model_enum_sorter:
+            if isinstance(item, ModelWrapper):
+                schema = self.schema_converter.convert_model(item)
+            else:  # EnumWrapper
+                schema = self.schema_converter.convert_enum(item)
+            if schema:
+                schemas.append(schema.to_js())
+
+        # Then process controllers in dependency order
+        for controller in controller_sorter:
+            controller_schema = self.controller_converter.convert_controller(
+                controller.name,
+                controller
+            )
+            schemas.append(controller_schema.to_js())
+
+        return "\n\n".join(schemas)
+
+    def _build_model_enum_graph(self, models: List[ModelWrapper], enums: List[EnumWrapper]):
+        """Build dependency graph for models and enums"""
+        # Build id-based graph
+        graph: Dict[int, Set[int]] = {}
+        id_to_obj: Dict[int, Union[ModelWrapper, EnumWrapper]] = {}
+
+        # Initialize graph entries for all models and enums
+        for model in models:
+            graph[id(model)] = set()
+            id_to_obj[id(model)] = model
+
+        for enum in enums:
+            graph[id(enum)] = set()
+            id_to_obj[id(enum)] = enum
+
+        # Add model superclass dependencies
+        for model in models:
+            graph[id(model)].update(id(superclass) for superclass in model.superclasses)
+
+            # Add field dependencies
+            for field in model.value_models:
+                if isinstance(field.value, (ModelWrapper, EnumWrapper)):
+                    graph[id(model)].add(id(field.value))
+
+        # Convert graph to use actual objects for TopologicalSorter
+        sorted_ids = TopologicalSorter(graph).static_order()
+        return [id_to_obj[node_id] for node_id in sorted_ids]
+
+    def _build_controller_graph(self, controllers: List[ControllerWrapper]) -> TopologicalSorter:
+        """Build dependency graph for controllers"""
+        # Build id-based graph
+        graph: Dict[int, Set[int]] = {}
+        id_to_obj: Dict[int, ControllerWrapper] = {}
+
+        # Initialize graph entries for all controllers
+        for controller in controllers:
+            graph[id(controller)] = set()
+            id_to_obj[id(controller)] = controller
+
+        # Add controller superclass dependencies
+        for controller in controllers:
+            graph[id(controller)].update(id(superclass) for superclass in controller.superclasses)
+
+        # Convert graph to use actual objects for TopologicalSorter
+        sorted_ids = TopologicalSorter(graph).static_order()
+        return [id_to_obj[node_id] for node_id in sorted_ids]
+
+    def _gather_all_controllers(self, controllers: List[ControllerWrapper]) -> List[ControllerWrapper]:
+        """Gather all controllers including superclasses"""
+        seen_ids = set()
+        result = []
+
+        def gather(controller: ControllerWrapper) -> None:
+            if id(controller) not in seen_ids:
+                seen_ids.add(id(controller))
+                for superclass in controller.superclasses:
+                    gather(superclass)
+                result.append(controller)
+
+        for controller in controllers:
+            gather(controller)
+
+        return result
+
+
+    def _gather_models_and_enums(self, controllers: List[ControllerWrapper]) -> tuple[List[ModelWrapper], List[EnumWrapper]]:
+        """Collect all unique models and enums from controllers"""
+        models_dict: Dict[int, ModelWrapper] = {}
+        enums_dict: Dict[int, EnumWrapper] = {}
+
+        def process_model(model: ModelWrapper) -> None:
+            """Process a model and all its dependencies"""
+            if id(model) not in models_dict:
+                models_dict[id(model)] = model
+                # Process all fields
+                for field in model.value_models:
+                    if isinstance(field.value, ModelWrapper):
+                        process_model(field.value)
+                    elif isinstance(field.value, EnumWrapper):
+                        enums_dict[id(field.value)] = field.value
+                # Process superclasses
+                for superclass in model.superclasses:
+                    process_model(superclass)
+
+        # Process all models from controllers
+        for controller in controllers:
+            if controller.render:
+                process_model(controller.render)
+            for action in controller.actions.values():
+                if action.request_body:
+                    process_model(action.request_body)
+                if action.response_body:
+                    process_model(action.response_body)
+
+        return list(models_dict.values()), list(enums_dict.values())

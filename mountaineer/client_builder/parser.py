@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from types import UnionType
-from typing import Callable, Optional, Union
+from typing import Callable, Optional, Union, List, Dict, Set, Tuple, Any, Type, get_args, get_origin
 
 from fastapi import APIRouter
 from fastapi.params import Body, Depends, Header, Param
@@ -14,7 +14,10 @@ from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.controller import ControllerBase, get_client_functions_cls
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.render import RenderBase
+from typing import TypeVar
+from mountaineer.client_builder.types import TypeParser, TypeDefinition
 
+T = TypeVar("T")
 
 # Base data structures
 @dataclass
@@ -48,6 +51,7 @@ class ActionWrapper:
 
 @dataclass
 class ControllerWrapper:
+    name: str
     superclasses: list["ControllerWrapper"]
     actions: dict[str, ActionWrapper]  # {url: action} directly implemented for this controller
     render: Optional[ModelWrapper]
@@ -66,17 +70,6 @@ def is_pydantic_field_type(type_: type) -> bool:
     )
 
 
-def is_Union_type(type_: type) -> bool:
-    """Check if a type is a Union type"""
-    return getattr(type_, "__origin__", None) is Union or isinstance(type_, UnionType)
-
-
-def get_Union_types(type_: type) -> list[type]:
-    """Get the types from a Union type"""
-    from typing import get_args
-
-    return list(get_args(type_))
-
 
 # Main parser class
 class ControllerParser:
@@ -84,6 +77,8 @@ class ControllerParser:
         self.parsed_models: dict[type[BaseModel], ModelWrapper] = {}
         self.parsed_enums: dict[type[Enum], EnumWrapper] = {}
         self.parsed_controllers: dict[type[ControllerBase], ControllerWrapper] = {}
+
+        self.type_parser = TypeParser()
 
     def parse_controller(self, controller: type[ControllerBase]) -> ControllerWrapper:
         """Main entry point to parse a controller into intermediary representation"""
@@ -105,7 +100,7 @@ class ControllerParser:
                 self.parse_controller(superclass)
             )
 
-        return ControllerWrapper(actions=actions, render=render, superclasses=superclass_controllers)
+        return ControllerWrapper(name=controller.__name__, actions=actions, render=render, superclasses=superclass_controllers)
 
     def _parse_model(self, model: type[BaseModel]) -> ModelWrapper:
         """Parse a Pydantic model into ModelWrapper, handling inheritance"""
@@ -139,31 +134,33 @@ class ControllerParser:
         self.parsed_models[model] = wrapper
         return wrapper
 
-    def _parse_field(self, name: str, field: FieldInfo) -> FieldWrapper:
-        """Parse a field into FieldWrapper, handling nested types"""
-        field_type = field.annotation
+    def _parse_field(self, name: str, field_info: FieldInfo) -> FieldWrapper:
+        # Create a basic conversion of the types, in case they're wrapped
+        # by complex types like List, Dict, etc.
+        type_definition = self.type_parser.parse_type(field_info.annotation)
 
-        if is_Union_type(field_type):
-            # For Unions, we need to handle each possible type
-            Union_types = get_Union_types(field_type)
-            # Use first non-None type as the base type
-            base_type = next(
-                (t for t in Union_types if t is not type(None)), Union_types[0]
-            )
-            field_type = base_type
-
-        if isinstance(field_type, type):
-            if issubclass(field_type, BaseModel):
-                value = self._parse_model(field_type)
-            elif issubclass(field_type, Enum):
-                value = self._parse_enum(field_type)
+        # Now we can recursively parse the children
+        def update_children(type_definition: TypeDefinition | type):
+            if isinstance(type_definition, TypeDefinition):
+                for child in type_definition.children:
+                    update_children(child)
             else:
-                value = field_type
-        else:
-            # Handle other types like generics
-            value = field_type
+                # Determine if they qualify for conversion
+                if issubclass(type_definition, BaseModel):
+                    value = self._parse_model(type_definition)
+                elif issubclass(type_definition, Enum):
+                    value = self._parse_enum(type_definition)
+                else:
+                    # No need to parse further
+                    pass
 
-        return FieldWrapper(name=name, value=value, required=field.is_required())
+        update_children(type_definition)
+
+        return FieldWrapper(
+            name=name,
+            value=type_definition,
+            required=field_info.is_required(),
+        )
 
     def _parse_enum(self, enum_type: type[Enum]) -> EnumWrapper:
         """Parse an Enum into EnumWrapper"""

@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from mountaineer.app import AppController
 from mountaineer.client_builder.converters import (
     TypeScriptActionConverter,
+    TypeScriptGenerator,
     TypeScriptLinkConverter,
     TypeScriptSchemaConverter,
 )
@@ -51,7 +52,7 @@ class APIBuilder:
         self.parser = ControllerParser()
 
         # Initialize converters
-        self.schema_converter = TypeScriptSchemaConverter(export_interface=True)
+        self.root_controller_converter = TypeScriptGenerator(export_interface=True)
         self.action_converter = TypeScriptActionConverter()
         self.link_converter = TypeScriptLinkConverter()
 
@@ -111,34 +112,13 @@ class APIBuilder:
 
     def _generate_model_definitions(self):
         """Generate TypeScript interfaces for all models"""
-        global_schemas: Dict[str, str] = {}
         global_code_dir = self.view_root.get_managed_code_dir()
 
-        # Generate global model definitions
-        for controller_id, parsed_controller in self.parsed_controllers.items():
-            # Process render model
-            if parsed_controller.wrapper.render:
-                self._process_model_and_dependencies(
-                    parsed_controller.wrapper.render,
-                    global_schemas,
-                    controller_id=controller_id,
-                )
-
-            # Process action models
-            for action in parsed_controller.wrapper.actions.values():
-                if action.request_body:
-                    self._process_model_and_dependencies(
-                        action.request_body, global_schemas
-                    )
-                if action.response_body:
-                    self._process_model_and_dependencies(
-                        action.response_body, global_schemas
-                    )
+        # Generate all controller base definitions
+        schemas_content = self.root_controller_converter.generate_definitions(self.parsed_controllers)
 
         # Write global schemas
-        (global_code_dir / "controllers.ts").write_text(
-            "\n\n".join(global_schemas.values())
-        )
+        (global_code_dir / "controllers.ts").write_text(schemas_content)
 
         # Generate per-controller model files
         for controller_id, parsed_controller in self.parsed_controllers.items():
@@ -151,9 +131,7 @@ class APIBuilder:
 
             # Add model exports
             if parsed_controller.wrapper.render:
-                self._add_model_exports(
-                    parsed_controller.wrapper.render, exports, imports
-                )
+                self._add_model_exports(parsed_controller.wrapper.render, exports, imports)
 
             for action in parsed_controller.wrapper.actions.values():
                 if action.request_body:
@@ -162,29 +140,6 @@ class APIBuilder:
                     self._add_model_exports(action.response_body, exports, imports)
 
             (controller_dir / "models.ts").write_text("\n".join(exports))
-
-    def _process_model_and_dependencies(
-        self,
-        model: ModelWrapper,
-        schemas: Dict[str, str],
-        controller_id: Optional[str] = None,
-    ):
-        """Process a model and all its dependencies"""
-        # Process superclasses first
-        for superclass in model.superclasses:
-            self._process_model_and_dependencies(superclass, schemas)
-
-        # Convert model
-        typescript_schema = self.schema_converter.convert_model(model)
-
-        # Add controller interface for render models
-        if controller_id and model.model.__name__.endswith("Render"):
-            typescript_schema.include_superclasses = (
-                typescript_schema.include_superclasses or []
-            )
-            typescript_schema.include_superclasses.append(controller_id)
-
-        schemas[model.model.__name__] = typescript_schema.to_js()
 
     def _add_model_exports(
         self, model: ModelWrapper, exports: list[str], import_path: str

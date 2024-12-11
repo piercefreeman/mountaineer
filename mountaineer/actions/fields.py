@@ -225,25 +225,24 @@ def fuse_metadata_to_response_typehint(
     """
     Functions can either be marked up with side effects, explicit responses, or both.
     This function merges them into the expected output payload so we can typehint the responses.
+
     """
-    passthrough_fields = {}
-    sideeffect_fields = {}
+    # Prefer to use existing BaseModels where possible, we only create synthetic values
+    # if we need to mask the response model
+    passthrough_model : Type[BaseModel] | None = None
+    sideeffect_model : Type[BaseModel] | None = None
+
+    base_response_name = camelize(metadata.function_name) + "Response"
+    base_response_params = {}
 
     if metadata.passthrough_model is not None and not isinstance(
         metadata.passthrough_model, MountaineerUnsetValue
     ):
-        passthrough_fields = {**metadata.passthrough_model.model_fields}
+        passthrough_model = metadata.passthrough_model
 
     if metadata.action_type == FunctionActionType.SIDEEFFECT and render_model:
         # By default, reload all fields
-        sideeffect_fields = {**render_model.model_fields}
-
-        # Ignore the metadata since this shouldn't be passed during sideeffects
-        sideeffect_fields = {
-            field_name: field_definition
-            for field_name, field_definition in sideeffect_fields.items()
-            if not annotation_is_metadata(field_definition.annotation)
-        }
+        sideeffect_model = render_model
 
         if metadata.reload_states is not None and not isinstance(
             metadata.reload_states, MountaineerUnsetValue
@@ -263,36 +262,24 @@ def fuse_metadata_to_response_typehint(
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )
-            sideeffect_fields = {
-                field_name: field_definition
-                for field_name, field_definition in render_model.model_fields.items()
-                if field_name in reload_keys
-            }
-
-    base_response_name = camelize(metadata.function_name) + "Response"
-    base_response_params = {}
-
-    if passthrough_fields:
-        base_response_params["passthrough"] = (
-            create_model(
-                base_response_name + "Passthrough",
-                **{
-                    field_name: (field_definition.annotation, field_definition)  # type: ignore
-                    for field_name, field_definition in passthrough_fields.items()
-                },
-            ),
-            FieldInfo(alias="passthrough"),
-        )
-
-    if sideeffect_fields:
-        base_response_params["sideeffect"] = (
-            create_model(
+            sideeffect_model = create_model(
                 base_response_name + "SideEffect",
                 **{
                     field_name: (field_definition.annotation, field_definition)  # type: ignore
-                    for field_name, field_definition in sideeffect_fields.items()
-                },
+                    for field_name, field_definition in render_model.model_fields.items()
+                    if field_name in reload_keys
+                }
             ),
+
+    if passthrough_model:
+        base_response_params["passthrough"] = (
+            passthrough_model,
+            FieldInfo(alias="passthrough"),
+        )
+
+    if sideeffect_model:
+        base_response_params["sideeffect"] = (
+            sideeffect_model,
             FieldInfo(alias="sideeffect"),
         )
 

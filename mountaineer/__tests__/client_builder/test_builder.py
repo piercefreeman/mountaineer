@@ -225,7 +225,7 @@ def test_generate_controller_definitions_complex(builder: APIBuilder):
     controllers_content = (code_dir / "controllers.ts").read_text()
 
     # Check for all expected interfaces
-    assert "export interface Status " in controllers_content
+    assert "export enum Status " in controllers_content
     assert "export interface Address " in controllers_content
     assert "export interface User " in controllers_content
     assert "export interface BaseRender " in controllers_content
