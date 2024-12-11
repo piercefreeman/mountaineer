@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import Any, Dict, List, Union
+from json import dumps as json_dumps
+from typing import Any
 
 from graphlib import TopologicalSorter
 
@@ -14,6 +15,7 @@ from mountaineer.client_builder.parser import (
 from mountaineer.client_builder.types import (
     DictOf,
     ListOf,
+    LiteralOf,
     Or,
     SetOf,
     TupleOf,
@@ -117,7 +119,7 @@ class BaseTypeScriptConverter:
     def _handle_complex_type(
         self, type_hint: Any, requires_complex: bool = False
     ) -> str | None:
-        """Handle complex type hints like List[str], Dict[str, int], etc."""
+        """Handle complex type hints like list[str], dict[str, int], etc."""
         if not isinstance(type_hint, TypeDefinition):
             return None
 
@@ -138,6 +140,9 @@ class BaseTypeScriptConverter:
             if len(non_null_types) == 1:
                 return self._get_annotated_value(non_null_types[0])
             return " | ".join(self._get_annotated_value(t) for t in non_null_types)
+
+        if isinstance(type_hint, LiteralOf):
+            return " | ".join(json_dumps(value) for value in type_hint.values)
 
         return "any"
 
@@ -450,13 +455,11 @@ class TypeScriptGenerator:
         self.controller_converter = TypeScriptControllerConverter(self.action_converter)
 
     def generate_definitions(
-        self, parsed_controllers: Dict[str, "ParsedController"]
+        self, controllers_wrappers: list[ControllerWrapper]
     ) -> str:
         """Generate all TypeScript definitions in dependency order"""
         # Get all controllers
-        controllers = self._gather_all_controllers(
-            [controller.wrapper for controller in parsed_controllers.values()]
-        )
+        controllers = self._gather_all_controllers(controllers_wrappers)
 
         # Collect all models and enums
         models, enums = self._gather_models_and_enums(controllers)
@@ -466,7 +469,7 @@ class TypeScriptGenerator:
         controller_sorter = self._build_controller_graph(controllers)
 
         # Generate schemas in order
-        schemas: List[str] = []
+        schemas: list[str] = []
 
         # First process models and enums in dependency order
         for item in model_enum_sorter:
@@ -487,12 +490,12 @@ class TypeScriptGenerator:
         return "\n\n".join(schemas)
 
     def _build_model_enum_graph(
-        self, models: List[ModelWrapper], enums: List[EnumWrapper]
+        self, models: list[ModelWrapper], enums: list[EnumWrapper]
     ):
         """Build dependency graph for models and enums"""
         # Build id-based graph
-        graph: Dict[int, Set[int]] = {}
-        id_to_obj: Dict[int, Union[ModelWrapper, EnumWrapper]] = {}
+        graph: dict[int, set[int]] = {}
+        id_to_obj: dict[int, ModelWrapper | EnumWrapper] = {}
 
         # Initialize graph entries for all models and enums
         for model in models:
@@ -517,12 +520,12 @@ class TypeScriptGenerator:
         return [id_to_obj[node_id] for node_id in sorted_ids]
 
     def _build_controller_graph(
-        self, controllers: List[ControllerWrapper]
-    ) -> TopologicalSorter:
+        self, controllers: list[ControllerWrapper]
+    ) -> list[ControllerWrapper]:
         """Build dependency graph for controllers"""
         # Build id-based graph
-        graph: Dict[int, Set[int]] = {}
-        id_to_obj: Dict[int, ControllerWrapper] = {}
+        graph: dict[int, set[int]] = {}
+        id_to_obj: dict[int, ControllerWrapper] = {}
 
         # Initialize graph entries for all controllers
         for controller in controllers:
@@ -540,8 +543,8 @@ class TypeScriptGenerator:
         return [id_to_obj[node_id] for node_id in sorted_ids]
 
     def _gather_all_controllers(
-        self, controllers: List[ControllerWrapper]
-    ) -> List[ControllerWrapper]:
+        self, controllers: list[ControllerWrapper]
+    ) -> list[ControllerWrapper]:
         """Gather all controllers including superclasses"""
         seen_ids = set()
         result = []
@@ -559,11 +562,11 @@ class TypeScriptGenerator:
         return result
 
     def _gather_models_and_enums(
-        self, controllers: List[ControllerWrapper]
-    ) -> tuple[List[ModelWrapper], List[EnumWrapper]]:
+        self, controllers: list[ControllerWrapper]
+    ) -> tuple[list[ModelWrapper], list[EnumWrapper]]:
         """Collect all unique models and enums from controllers"""
-        models_dict: Dict[int, ModelWrapper] = {}
-        enums_dict: Dict[int, EnumWrapper] = {}
+        models_dict: dict[int, ModelWrapper] = {}
+        enums_dict: dict[int, EnumWrapper] = {}
 
         def process_value(value):
             if isinstance(value, ModelWrapper):

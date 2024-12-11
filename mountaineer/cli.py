@@ -79,7 +79,7 @@ def handle_watch(
         # Update the use-server definitions in case modifications to the
         # python file affected the API spec
         if updated_python:
-            asyncio.run(js_compiler.build_use_server())
+            asyncio.run(js_compiler.build_all())
 
         # For now, we don't do any js analysis besides building - which
         # we don't need to do if we're just watching for changes

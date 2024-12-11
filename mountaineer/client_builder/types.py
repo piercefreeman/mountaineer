@@ -5,6 +5,7 @@ from typing import (
     Any,
     Dict,
     List,
+    Literal,
     Set,
     Tuple,
     Union,
@@ -23,6 +24,10 @@ def get_union_types(type_: type) -> list[type]:
     if not is_union_type(type_):
         raise ValueError(f"Expected Union type, got {type_}")
     return list(get_args(type_))
+
+
+def is_none_type(field_type: Any):
+    return field_type is None or field_type is type(None)
 
 
 class TypeDefinition(ABC):
@@ -135,6 +140,44 @@ class SetOf(TypeDefinition):
         self.types = tuple(children)
 
 
+@dataclass
+class LiteralOf(TypeDefinition):
+    """Represents a Literal type"""
+
+    values: list[Any]
+
+    def __class_getitem__(cls, values):
+        return cls(values=values)
+
+    def __post_init__(self):
+        """Validate that all values are primitive types"""
+        # Convert None-like values to None
+        self.values = [
+            value if not is_none_type(value) else None for value in self.values
+        ]
+        self._validate_primitive_values(self.values)
+
+    @staticmethod
+    def _validate_primitive_values(values: List[Any]) -> None:
+        """
+        Ensures all values are primitive types (str, int, float, bool, None).
+        Raises TypeError for non-primitive values.
+        """
+        for value in values:
+            if not isinstance(value, (str, int, float, bool)) and value is not None:
+                raise TypeError(
+                    f"Literal values must be primitive types (str, int, float, bool, None). "
+                    f"Got {type(value)} for value: {value}"
+                )
+
+    @property
+    def children(self):
+        return []
+
+    def update_children(self, children):
+        pass
+
+
 class TypeParser:
     """
     Type parser that converts Python types into TypeDefinition instances
@@ -151,7 +194,7 @@ class TypeParser:
             TypeDefinition: Corresponding TypeDefinition instance
         """
         # Handle None type
-        if field_type is None or field_type is type(None):
+        if is_none_type(field_type):
             return type(None)
 
         # Handle unions
@@ -184,6 +227,9 @@ class TypeParser:
         if origin_type in (set, Set):
             return SetOf(type=args[0])
 
+        if origin_type is Literal:
+            return LiteralOf(values=list(args))
+
         # For unknown origin types, wrap in Or
         raise ValueError(f"Unsupported origin type: {origin_type}")
 
@@ -192,11 +238,11 @@ class TypeParser:
         if isinstance(field_type, type):
             if issubclass(field_type, (list, List)):
                 return ListOf(type=Any)
-            if issubclass(field_type, (dict, Dict)):
+            elif issubclass(field_type, (dict, Dict)):
                 return DictOf(key_type=Any, value_type=Any)
-            if issubclass(field_type, (tuple, Tuple)):
+            elif issubclass(field_type, (tuple, Tuple)):
                 return TupleOf(types=(Any,))
-            if issubclass(field_type, (set, Set)):
+            elif issubclass(field_type, (set, Set)):
                 return SetOf(type=Any)
 
         return field_type

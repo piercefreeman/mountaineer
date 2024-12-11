@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import APIRouter, FastAPI, status
+from fastapi.openapi.models import OpenAPI
 from fastapi.responses import RedirectResponse
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
@@ -91,7 +92,8 @@ def test_generate_openapi():
     app = AppController(view_root=Path(""))
     app.register(ExampleController())
     openapi_spec = app.generate_openapi()
-    openapi_definition = OpenAPIDefinition(**openapi_spec)
+    openapi_definition = OpenAPI(**openapi_spec)
+    assert openapi_definition.components
 
     assert openapi_definition.components.schemas
     assert openapi_definition.components.schemas.keys() == {
@@ -155,7 +157,8 @@ def test_handle_conflicting_exception_names():
     app.register(ExampleController())
 
     openapi_spec = app.generate_openapi()
-    openapi_definition = OpenAPIDefinition(**openapi_spec)
+    openapi_definition = OpenAPI(**openapi_spec)
+    assert openapi_definition.components
 
     assert openapi_definition.components.schemas
     assert openapi_definition.components.schemas.keys() == {
@@ -206,7 +209,8 @@ def test_inherit_parent_spec():
     app.register(child_controller)
 
     openapi_spec = app.generate_openapi()
-    openapi_definition = OpenAPIDefinition(**openapi_spec)
+    openapi_definition = OpenAPI(**openapi_spec)
+    assert openapi_definition.paths
 
     # Test that we inherited the parent function
     assert (

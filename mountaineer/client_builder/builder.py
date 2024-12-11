@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
+from time import monotonic_ns
 from typing import Dict
 
 from mountaineer.app import AppController
@@ -16,6 +17,7 @@ from mountaineer.client_builder.parser import (
     ModelWrapper,
 )
 from mountaineer.client_builder.typescript import normalize_interface
+from mountaineer.console import CONSOLE
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.paths import ManagedViewPath, generate_relative_import
 from mountaineer.static import get_static_path
@@ -61,8 +63,8 @@ class APIBuilder:
         self.parsed_controllers: Dict[str, ParsedController] = {}
 
     async def build_all(self):
-        """Main build entrypoint that orchestrates the entire build process"""
-        # Clear old build artifacts
+        # Totally clear away the old build cache, so we start fresh
+        # and don't have additional files hanging around
         for clear_dir in [
             self.view_root.get_managed_ssr_dir(),
             self.view_root.get_managed_static_dir(),
@@ -70,17 +72,28 @@ class APIBuilder:
             if clear_dir.exists():
                 shutil_rmtree(clear_dir)
 
-        # Parse all controllers first
-        self._parse_all_controllers()
+        await self.build_use_server()
+        # await self.build_fe_diff(None)
 
-        # Generate all the required files
-        self._generate_static_files()
-        self._generate_model_definitions()
-        self._generate_action_definitions()
-        self._generate_link_shortcuts()
-        self._generate_link_aggregator()
-        self._generate_view_servers()
-        self._generate_index_files()
+    async def build_use_server(self):
+        start = monotonic_ns()
+
+        with CONSOLE.status("Building useServer", spinner="dots"):
+            # Parse all controllers first
+            self._parse_all_controllers()
+
+            # Generate all the required files
+            self._generate_static_files()
+            self._generate_model_definitions()
+            self._generate_action_definitions()
+            self._generate_link_shortcuts()
+            self._generate_link_aggregator()
+            self._generate_view_servers()
+            self._generate_index_files()
+
+        CONSOLE.print(
+            f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
+        )
 
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""
@@ -118,7 +131,7 @@ class APIBuilder:
 
         # Generate all controller base definitions
         schemas_content = self.root_controller_converter.generate_definitions(
-            self.parsed_controllers
+            [controller.wrapper for controller in self.parsed_controllers.values()]
         )
 
         # Write global schemas

@@ -13,7 +13,9 @@ from mountaineer.app import AppController
 from mountaineer.client_builder.parser import (
     ControllerParser,
     EnumWrapper,
+    SelfReference,
 )
+from mountaineer.client_builder.types import Or
 from mountaineer.controller import ControllerBase
 from mountaineer.render import RenderBase
 
@@ -86,17 +88,26 @@ class ProfileUpdateResponse(BaseModel):
 class BaseController(ControllerBase):
     @passthrough
     def get_system_status(self) -> SystemStatus:
-        pass
+        return SystemStatus(status=True, last_check=datetime.now())
 
 
 class SharedController(BaseController):
     @passthrough
     def shared_friends(self, limit: int = 10) -> UserProfile:
-        pass
+        return UserProfile(
+            id=1,
+            username="test",
+            role=UserRole.USER,
+            location=Location(city="Test City", country="Test Country"),
+            settings=UserSettings(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            version=1,
+        )
 
     @passthrough
     def get_user_role(self) -> UserRoleResponse:
-        pass
+        return UserRoleResponse(role=UserRole.USER, permissions=[])
 
 
 class UserDashboardController(SharedController):
@@ -120,11 +131,32 @@ class UserDashboardController(SharedController):
 
     @sideeffect
     def update_profile(self, update: ProfileUpdateRequest) -> ProfileUpdateResponse:
-        pass
+        return ProfileUpdateResponse(
+            success=True,
+            updated_user=UserProfile(
+                id=1,
+                username="test",
+                role=UserRole.USER,
+                location=Location(city="Test City", country="Test Country"),
+                settings=UserSettings(),
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                version=1,
+            ),
+        )
 
     @passthrough
     def get_friends(self, limit: int = 10) -> UserProfile:
-        pass
+        return UserProfile(
+            id=1,
+            username="test",
+            role=UserRole.USER,
+            location=Location(city="Test City", country="Test Country"),
+            settings=UserSettings(),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+            version=1,
+        )
 
 
 # Fixtures
@@ -310,3 +342,62 @@ def test_action_response_wrappers(parsed_controller):
     friends_action = parsed_controller.actions["get_friends"]
     friends_fields = {f.name: f for f in friends_action.response_body.value_models}
     assert set(friends_fields.keys()) == {"passthrough"}
+
+
+# Define a self-referencing model
+class CategoryNode(BaseModel):
+    id: int
+    name: str
+    parent: Optional["CategoryNode"] = None
+    children: list["CategoryNode"] = []
+    created_at: datetime
+
+
+# Update forward refs
+CategoryNode.model_rebuild()
+
+
+def test_parse_self_referencing_model(controller_parser):
+    """Test parsing a Pydantic model with self-referencing fields"""
+    # Parse the model
+    parsed_model = controller_parser._parse_model(CategoryNode)
+
+    # Test basic model properties
+    assert parsed_model.model == CategoryNode
+    assert len(parsed_model.superclasses) == 0
+
+    # Get all field names
+    field_names = {field.name for field in parsed_model.value_models}
+    assert field_names == {"id", "name", "parent", "children", "created_at"}
+
+    # Get fields by name for detailed testing
+    fields = {f.name: f for f in parsed_model.value_models}
+
+    # Test primitive fields
+    assert fields["id"].value == int
+    assert fields["id"].required == True
+    assert fields["name"].value == str
+    assert fields["name"].required == True
+    assert fields["created_at"].value == datetime
+    assert fields["created_at"].required == True
+
+    # Test self-referencing fields
+    parent_field = fields["parent"]
+    assert not parent_field.required  # Optional field
+    assert isinstance(parent_field.value, Or)
+    self_reference = parent_field.value.children[0]
+    assert isinstance(self_reference, SelfReference)
+    assert self_reference.model == CategoryNode
+
+    children_field = fields["children"]
+    assert children_field.required == False  # Has default value
+    assert hasattr(children_field.value, "children")  # Should have type info preserved
+
+    # Verify isolated model contains all direct fields
+    assert set(parsed_model.isolated_model.model_fields.keys()) == {
+        "id",
+        "name",
+        "parent",
+        "children",
+        "created_at",
+    }

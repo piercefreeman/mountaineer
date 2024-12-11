@@ -3,6 +3,7 @@ from enum import Enum
 from typing import (
     Callable,
     Optional,
+    Type,
     TypeVar,
     Union,
     get_origin,
@@ -14,7 +15,11 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
-from mountaineer.actions.fields import FunctionActionType, get_function_metadata
+from mountaineer.actions.fields import (
+    FunctionActionType,
+    FunctionMetadata,
+    get_function_metadata,
+)
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_builder.types import TypeDefinition, TypeParser
 from mountaineer.controller import ControllerBase, get_client_functions_cls
@@ -80,6 +85,11 @@ class ControllerWrapper:
         return all_actions
 
 
+@dataclass
+class SelfReference:
+    model: Type[BaseModel]
+
+
 # Helper functions
 def is_pydantic_field_type(type_: type) -> bool:
     """Check if a type can be used as a Pydantic field"""
@@ -125,7 +135,9 @@ class ControllerParser:
             superclasses=superclass_controllers,
         )
 
-    def _parse_model(self, model: type[BaseModel]) -> ModelWrapper:
+    def _parse_model(
+        self, model: type[BaseModel], skip_object_ids: tuple | None = None
+    ) -> ModelWrapper:
         """Parse a Pydantic model into ModelWrapper, handling inheritance"""
         # Return cached if already parsed
         if model in self.parsed_models:
@@ -146,7 +158,9 @@ class ControllerParser:
         fields: list[FieldWrapper] = []
         isolated_model = self._create_isolated_model(model)
         for name, field in isolated_model.model_fields.items():
-            fields.append(self._parse_field(name, field))
+            # No user schema will self-reference the isolated model, it will only
+            # reference the original definition
+            fields.append(self._parse_field(name, field, self_model=model))
 
         wrapper = ModelWrapper(
             model=model,
@@ -157,10 +171,15 @@ class ControllerParser:
         self.parsed_models[model] = wrapper
         return wrapper
 
-    def _parse_field(self, name: str, field_info: FieldInfo) -> FieldWrapper:
+    def _parse_field(
+        self,
+        name: str,
+        field_info: FieldInfo,
+        self_model: Type[BaseModel] | None = None,
+    ) -> FieldWrapper:
         # Create a basic conversion of the types, in case they're wrapped
         # by complex types like List, Dict, etc.
-        type_definition = self.type_parser.parse_type(field_info.annotation)
+        root_definition = self.type_parser.parse_type(field_info.annotation)
 
         # Now we can recursively parse the children
         def update_children(type_definition: TypeDefinition | type):
@@ -170,6 +189,10 @@ class ControllerParser:
                 )
                 return type_definition
             else:
+                # Special case to avoid infinite recursion
+                if self_model and type_definition == self_model:
+                    return SelfReference(model=self_model)
+
                 # Determine if they qualify for conversion
                 if issubclass(type_definition, BaseModel):
                     return self._parse_model(type_definition)
@@ -179,11 +202,11 @@ class ControllerParser:
                     # No need to parse further
                     return type_definition
 
-        type_definition = update_children(type_definition)
+        root_definition = update_children(root_definition)
 
         return FieldWrapper(
             name=name,
-            value=type_definition,
+            value=root_definition,
             required=field_info.is_required(),
         )
 
@@ -218,9 +241,9 @@ class ControllerParser:
         self,
         model: type[BaseModel],
     ) -> type[BaseModel]:
-        """Create a new model with only the direct fields (no inherited fields)"""
-        model_to_annotations = {}
+        print("MODEL", model)
 
+        """Create a new model with only the direct fields (no inherited fields)"""
         include_fields = {
             field_name: (field_info.annotation, field_info)
             for field_name, field_info in model.model_fields.items()
@@ -309,7 +332,7 @@ class ControllerParser:
         return None
 
     def _parse_response_body(
-        self, metadata: "FunctionMetadata"
+        self, metadata: FunctionMetadata
     ) -> Optional[ModelWrapper]:
         """Parse response model from metadata"""
         if not isinstance(metadata.return_model, MountaineerUnsetValue):
