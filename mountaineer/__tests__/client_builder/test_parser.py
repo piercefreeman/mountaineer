@@ -139,14 +139,14 @@ def test_complex_controller_parsing(
     assert len(result.actions) == 2
 
     # Check update_profile action
-    update_action = result.actions["/dashboard/update_profile"]
+    update_action = result.actions["update_profile"]
     assert update_action.request_body is not None
     assert len(update_action.request_body.value_models) == 2  # location and settings
     assert update_action.response_body is not None
     assert len(update_action.response_body.value_models) == 2  # success and updated_user
 
     # Check get_friends action
-    friends_action = result.actions["/dashboard/get_friends"]
+    friends_action = result.actions["get_friends"]
     assert friends_action.params[0].name == "limit"
     assert friends_action.params[0].value == int
     assert friends_action.params[0].required is False

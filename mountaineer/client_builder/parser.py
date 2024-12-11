@@ -2,12 +2,15 @@ from dataclasses import dataclass
 from enum import Enum
 from inspect import Parameter, signature
 from types import UnionType
-from typing import Any, Optional, Type, Union, get_type_hints
+from typing import Any, Optional, Type, Union, get_type_hints, Callable
+from fastapi import APIRouter
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, create_model
 from fastapi.params import Body, Depends, Header, Param
 from pydantic.fields import FieldInfo
 
 from mountaineer.actions.fields import get_function_metadata
+from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.controller import ControllerBase, get_client_functions_cls
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.render import RenderBase
@@ -172,25 +175,6 @@ class ControllerParser:
         self.parsed_enums[enum_type] = wrapper
         return wrapper
 
-    def _parse_actions(self, controller: type['ControllerBase']) -> dict[str, ActionWrapper]:
-        """Parse all actions in a controller"""
-        actions: dict[str, ActionWrapper] = {}
-
-        for name, func, metadata in get_client_functions_cls(controller):
-            action = ActionWrapper(
-                params=self._parse_params(metadata),
-                headers=self._parse_headers(metadata),
-                request_body=self._parse_request_body(metadata),
-                response_body=self._parse_response_body(metadata)
-            )
-
-            # TODO: We need a better way to get the url from the metadata for this particular
-            # controller instance (if relevant)
-            actions[name] = action
-            #actions[metadata.url] = action
-
-        return actions
-
     def _parse_render(self, controller: type['ControllerBase']) -> Optional[ModelWrapper]:
         """Parse the render method's return type"""
         render = getattr(controller, 'render', None)
@@ -247,77 +231,98 @@ class ControllerParser:
             **include_fields,  # type: ignore
         )
 
-    def _parse_params(self, metadata) -> list[FieldWrapper]:
-        """Parse route parameters by examining function signature and decorators"""
+    def _create_temp_route(self, func: Callable, name: str) -> APIRoute:
+        """Create a temporary FastAPI route using the actual function"""
+        router = APIRouter()
+        router.add_api_route(
+            path=f"/{name}",
+            endpoint=func,
+        )
+
+        route = next(
+            route for route in router.routes
+            if isinstance(route, APIRoute) and route.path == f"/{name}"
+        )
+
+        return route
+
+    def _parse_params(self, func: Callable, name: str) -> list[FieldWrapper]:
+        """Parse route parameters using FastAPI's dependency system"""
+        route = self._create_temp_route(func, name)
         params: list[FieldWrapper] = []
-        sig = signature(metadata.function)
-        type_hints = get_type_hints(metadata.function)
 
-        for param_name, param in sig.parameters.items():
-            # Skip *args and **kwargs
-            if param.kind in (Parameter.VAR_POSITIONAL, Parameter.VAR_KEYWORD):
-                continue
+        for param in route.dependant.path_params:
+            field = self._create_field_from_param(
+                name=param.name,
+                type_=param.type_,
+                required=param.required,
+                field_info=param.field_info if hasattr(param, 'field_info') else None
+            )
+            params.append(field)
 
-            # Get param type and annotation metadata
-            param_type = type_hints.get(param_name, Any)
-            field_info = param.default if isinstance(param.default, Param) else Param()
-
-            # Skip dependency injected params
-            if isinstance(field_info, Depends):
-                continue
-
-            # Only include route params (not body, headers etc)
-            if not isinstance(field_info, (Body, Header)):
+        for param in route.dependant.query_params:
+            if not isinstance(param.field_info, (Body, Header, Depends)):
                 field = self._create_field_from_param(
-                    name=param_name,
-                    type_=param_type,
-                    required=param.default == Parameter.empty,
-                    field_info=field_info
+                    name=param.name,
+                    type_=param.type_,
+                    required=param.required,
+                    field_info=param.field_info if hasattr(param, 'field_info') else None
                 )
                 params.append(field)
 
         return params
 
-    def _parse_headers(self, metadata) -> list[FieldWrapper]:
-        """Parse header parameters from function signature"""
+    def _parse_headers(self, func: Callable, name: str) -> list[FieldWrapper]:
+        """Parse header parameters using FastAPI's dependency system"""
+        route = self._create_temp_route(func, name)
         headers: list[FieldWrapper] = []
-        sig = signature(metadata.function)
-        type_hints = get_type_hints(metadata.function)
 
-        for param_name, param in sig.parameters.items():
-            if isinstance(param.default, Header):
-                field = self._create_field_from_param(
-                    name=param_name,
-                    type_=type_hints.get(param_name, Any),
-                    required=param.default.default == Parameter.empty,
-                    field_info=param.default
-                )
-                headers.append(field)
+        for param in route.dependant.header_params:
+            field = self._create_field_from_param(
+                name=param.name,
+                type_=param.type_,
+                required=param.required,
+                field_info=param.field_info if hasattr(param, 'field_info') else None
+            )
+            headers.append(field)
 
         return headers
 
-    def _parse_request_body(self, metadata) -> Optional[ModelWrapper]:
-        """Parse request body model from function signature"""
-        sig = signature(metadata.function)
-        type_hints = get_type_hints(metadata.function)
+    def _parse_request_body(self, func: Callable, name: str) -> Optional[ModelWrapper]:
+        """Parse request body using FastAPI's dependency system"""
+        route = self._create_temp_route(func, name)
 
-        for param_name, param in sig.parameters.items():
-            if isinstance(param.default, Body):
-                param_type = type_hints.get(param_name, Any)
-                if isinstance(param_type, type) and issubclass(param_type, BaseModel):
-                    return self._parse_model(param_type)
-                elif is_pydantic_field_type(param_type):
-                    # Handle primitive types wrapped in Body()
-                    return self._create_wrapper_model(param_type, param_name)
+        if route.dependant.body_params:
+            body_param = route.dependant.body_params[0]  # Get first body param
+            if isinstance(body_param.type_, type) and issubclass(body_param.type_, BaseModel):
+                return self._parse_model(body_param.type_)
+            elif is_pydantic_field_type(body_param.type_):
+                return self._create_wrapper_model(body_param.type_, body_param.name)
 
         return None
 
-    def _parse_response_body(self, metadata) -> Optional[ModelWrapper]:
-        """Parse response model from return type annotation"""
-        return_type = get_type_hints(metadata.function).get('return', None)
-        if return_type and isinstance(return_type, type) and issubclass(return_type, BaseModel):
-            return self._parse_model(return_type)
+    def _parse_response_body(self, metadata: 'FunctionMetadata') -> Optional[ModelWrapper]:
+        """Parse response model from metadata"""
+        if not isinstance(metadata.return_model, MountaineerUnsetValue):
+            model = metadata.get_return_model()
+            if issubclass(model, BaseModel):
+                return self._parse_model(model)
         return None
+
+    def _parse_actions(self, controller: type['ControllerBase']) -> dict[str, ActionWrapper]:
+        """Parse all actions in a controller"""
+        actions: dict[str, ActionWrapper] = {}
+
+        for name, func, metadata in get_client_functions_cls(controller):
+            action = ActionWrapper(
+                params=self._parse_params(func, name),
+                headers=self._parse_headers(func, name),
+                request_body=self._parse_request_body(func, name),
+                response_body=self._parse_response_body(metadata)
+            )
+            actions[name] = action
+
+        return actions
 
     def _create_field_from_param(
         self,
