@@ -1,5 +1,7 @@
+from copy import copy
 from dataclasses import dataclass
 from enum import Enum
+from inspect import isclass
 from typing import (
     Callable,
     Optional,
@@ -24,6 +26,7 @@ from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_builder.types import TypeDefinition, TypeParser
 from mountaineer.controller import ControllerBase, get_client_functions_cls
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.generics import resolve_generic_type
 from mountaineer.render import RenderBase
 
 T = TypeVar("T")
@@ -193,10 +196,13 @@ class ControllerParser:
                 if self_model and type_definition == self_model:
                     return SelfReference(model=self_model)
 
-                # Determine if they qualify for conversion
-                if issubclass(type_definition, BaseModel):
+                # Determine if they qualify for conversion. The vast majority of values
+                # passed in here will be classes, since they represent the typehinted annotations
+                # of models. But there are some situations (like TypeVars used in generics) where
+                # they will fail a subclass check.
+                if isclass(type_definition) and issubclass(type_definition, BaseModel):
                     return self._parse_model(type_definition)
-                elif issubclass(type_definition, Enum):
+                elif isclass(type_definition) and issubclass(type_definition, Enum):
                     return self._parse_enum(type_definition)
                 else:
                     # No need to parse further
@@ -241,20 +247,49 @@ class ControllerParser:
         self,
         model: type[BaseModel],
     ) -> type[BaseModel]:
-        print("MODEL", model)
+        """
+        Create a new model with only the direct fields (no inherited fields).
+        Handles both regular Pydantic models and generic model instances.
 
-        """Create a new model with only the direct fields (no inherited fields)"""
-        include_fields = {
-            field_name: (field_info.annotation, field_info)
-            for field_name, field_info in model.model_fields.items()
-            if field_name in model.__dict__["__annotations__"]
-        }
+        """
+        # For generic models, we need to synthesize annotations from the generic metadata
+        if hasattr(model, "__pydantic_generic_metadata__"):
+            generic_metadata = model.__pydantic_generic_metadata__
+            origin = generic_metadata["origin"]
+            args = generic_metadata["args"]
 
-        return create_model(
-            model.__name__,
-            __config__=model.model_config,
-            **include_fields,  # type: ignore
-        )
+            # Create synthetic annotations by mapping generic parameters to concrete types
+            type_params = getattr(origin, "__parameters__", ())
+            type_mapping = dict(zip(type_params, args))
+
+            # Build annotations dict by resolving generic types
+            annotations = {}
+            for field_name, field_info in model.model_fields.items():
+                field_type = field_info.annotation
+                resolved_type = resolve_generic_type(field_type, type_mapping)
+
+                # Since we're modifying the annotation types, we need to copy the full
+                # field_info since .annotation will be set on the new model. Without a copy
+                # it will affect the original model's state.
+                annotations[field_name] = (resolved_type, copy(field_info))
+
+            return create_model(
+                model.__name__,
+                __config__=model.model_config,
+                **annotations,  # type: ignore
+            )
+        else:
+            # Regular model - use original logic
+            include_fields = {
+                field_name: (field_info.annotation, field_info)
+                for field_name, field_info in model.model_fields.items()
+                if field_name in model.__dict__.get("__annotations__", {})
+            }
+            return create_model(
+                model.__name__,
+                __config__=model.model_config,
+                **include_fields,  # type: ignore
+            )
 
     def _create_temp_route(self, func: Callable, name: str) -> APIRoute:
         """Create a temporary FastAPI route using the actual function"""

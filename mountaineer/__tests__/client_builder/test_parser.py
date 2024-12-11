@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Optional
+from typing import Generic, Optional, TypeVar, get_args, get_origin
 
 import pytest
 from pydantic import BaseModel
@@ -401,3 +401,121 @@ def test_parse_self_referencing_model(controller_parser):
         "children",
         "created_at",
     }
+
+
+# Define a generic model
+T = TypeVar("T")
+
+
+class GenericValueModel(BaseModel, Generic[T]):
+    value: T
+
+
+def test_parse_generic_model(controller_parser):
+    """Test parsing a Pydantic model with generic fields"""
+    # Test with different type parameters
+    StringValue = GenericValueModel[str]
+    IntValue = GenericValueModel[int]
+    DateValue = GenericValueModel[datetime]
+
+    # Parse models with different type parameters
+    string_model = controller_parser._parse_model(StringValue)
+    int_model = controller_parser._parse_model(IntValue)
+    date_model = controller_parser._parse_model(DateValue)
+
+    # Test basic model properties
+    assert string_model.model == StringValue
+    assert int_model.model == IntValue
+    assert date_model.model == DateValue
+    assert len(string_model.superclasses) == 1
+
+    # Test field structure for string variant
+    string_fields = {f.name: f for f in string_model.value_models}
+    assert len(string_fields) == 1
+    assert "value" in string_fields
+    assert string_fields["value"].value == str
+    assert string_fields["value"].required == True
+
+    # Test field structure for int variant
+    int_fields = {f.name: f for f in int_model.value_models}
+    assert len(int_fields) == 1
+    assert "value" in int_fields
+    assert int_fields["value"].value == int
+    assert int_fields["value"].required == True
+
+    # Test field structure for datetime variant
+    date_fields = {f.name: f for f in date_model.value_models}
+    assert len(date_fields) == 1
+    assert "value" in date_fields
+    assert date_fields["value"].value == datetime
+    assert date_fields["value"].required == True
+
+    # Test that the isolated model preserves the field structure
+    assert set(string_model.isolated_model.model_fields.keys()) == {"value"}
+    assert set(int_model.isolated_model.model_fields.keys()) == {"value"}
+    assert set(date_model.isolated_model.model_fields.keys()) == {"value"}
+
+
+def test_parse_generic_nested(controller_parser):
+    # Test with nested generic types
+    NestedValue = GenericValueModel[GenericValueModel[str]]
+    nested_model = controller_parser._parse_model(NestedValue)
+    nested_fields = {f.name: f for f in nested_model.value_models}
+
+    assert len(nested_fields) == 1
+    assert "value" in nested_fields
+    assert nested_fields["value"].required == True
+
+    # Test that the isolated model preserves the field structure
+    assert set(nested_model.isolated_model.model_fields.keys()) == {"value"}
+
+
+def test_parse_generic_optional_generic(controller_parser):
+    # Test with optional generic types
+    OptionalValue = GenericValueModel[Optional[str]]
+    optional_model = controller_parser._parse_model(OptionalValue)
+    optional_fields = {f.name: f for f in optional_model.value_models}
+
+    assert len(optional_fields) == 1
+    assert "value" in optional_fields
+    assert isinstance(
+        optional_fields["value"].value, Or
+    )  # Should be wrapped in Or type
+    assert str in [child for child in optional_fields["value"].value.children]
+
+
+def test_parse_generic_list_generic(controller_parser):
+    # Test with list of generic types
+    ListValue = GenericValueModel[list[str]]
+    list_model = controller_parser._parse_model(ListValue)
+    list_fields = {f.name: f for f in list_model.value_models}
+
+    assert len(list_fields) == 1
+    assert "value" in list_fields
+    assert hasattr(
+        list_fields["value"].value, "children"
+    )  # Should preserve list type info
+    assert list_fields["value"].required == True
+
+
+def test_parse_generic_model_complex(controller_parser):
+    # Test with multiple generic parameters
+    T = TypeVar("T")
+    S = TypeVar("S")
+
+    class MultiGenericParent(BaseModel, Generic[T]):
+        value: T
+
+    class MultiGenericModel(MultiGenericParent[T], Generic[T, S]):
+        first: T
+        second: S
+
+    ComplexValue = MultiGenericModel[str, list[int]]
+    complex_model = controller_parser._parse_model(ComplexValue)
+    isolated_complex = complex_model.isolated_model
+
+    assert set(isolated_complex.model_fields.keys()) == {"first", "second", "value"}
+    assert isolated_complex.model_fields["first"].annotation == str
+    assert isolated_complex.model_fields["value"].annotation == str
+    assert get_origin(isolated_complex.model_fields["second"].annotation) == list
+    assert get_args(isolated_complex.model_fields["second"].annotation) == (int,)
