@@ -114,16 +114,6 @@ class SelfReference:
     model: Type[BaseModel]
 
 
-# Helper functions
-def is_pydantic_field_type(type_: type) -> bool:
-    """Check if a type can be used as a Pydantic field"""
-    return type_ in (str, int, float, bool, bytes) or get_origin(type_) in (
-        list,
-        dict,
-        tuple,
-        set,
-    )
-
 
 # Main parser class
 class ControllerParser:
@@ -367,20 +357,15 @@ class ControllerParser:
         """Parse route parameters using FastAPI's dependency system"""
         route = self._create_temp_route(func, name, url)
         path_params: list[FieldWrapper] = [
-            self._create_field_from_param(
+            self._parse_field(
                 name=param.name,
-                type_=param.type_,
-                required=param.required,
                 field_info=param.field_info if hasattr(param, "field_info") else None,
             )
             for param in route.dependant.path_params
         ]
-        print("PATH PARAMS", path_params)
         query_params: list[FieldWrapper] = [
-            self._create_field_from_param(
+            self._parse_field(
                 name=param.name,
-                type_=param.type_,
-                required=param.required,
                 field_info=(param.field_info if hasattr(param, "field_info") else None),
             )
             for param in route.dependant.query_params
@@ -395,10 +380,8 @@ class ControllerParser:
         headers: list[FieldWrapper] = []
 
         for param in route.dependant.header_params:
-            field = self._create_field_from_param(
+            field = self._parse_field(
                 name=param.name,
-                type_=param.type_,
-                required=param.required,
                 field_info=param.field_info if hasattr(param, "field_info") else None,
             )
             headers.append(field)
@@ -417,8 +400,6 @@ class ControllerParser:
                 body_param.type_, BaseModel
             ):
                 return self._parse_model(body_param.type_)
-            elif is_pydantic_field_type(body_param.type_):
-                return self._create_wrapper_model(body_param.type_, body_param.name)
 
         return None
 
@@ -457,29 +438,6 @@ class ControllerParser:
             actions[name] = action
 
         return actions
-
-    def _create_field_from_param(
-        self, name: str, type_: type, required: bool, field_info: Param
-    ) -> FieldWrapper:
-        """Create a FieldWrapper from a parameter's information"""
-        if isinstance(type_, type):
-            if issubclass(type_, BaseModel):
-                value = self._parse_model(type_)
-            elif issubclass(type_, Enum):
-                value = self._parse_enum(type_)
-            else:
-                value = type_
-        else:
-            value = type_
-
-        return FieldWrapper(name=name, value=value, required=required)
-
-    def _create_wrapper_model(self, field_type: type, field_name: str) -> ModelWrapper:
-        """Create a single-field model wrapper for primitive body types"""
-        model = create_model(
-            f"{field_name.title()}Body", **{field_name: (field_type, ...)}
-        )
-        return self._parse_model(model)
 
     def _get_valid_mro_classes(
         self, cls: type, base_exclude_classes: tuple[type, ...]

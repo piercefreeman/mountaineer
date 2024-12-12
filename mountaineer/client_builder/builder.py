@@ -19,6 +19,7 @@ from mountaineer.client_builder.formatter import TypeScriptFormatter
 from mountaineer.client_builder.parser import (
     ControllerParser,
     ControllerWrapper,
+    EnumWrapper,
     ModelWrapper,
 )
 from mountaineer.client_builder.typescript import (
@@ -141,9 +142,6 @@ class APIBuilder:
         for model in self.parser.parsed_models.values():
             model.name = normalize_interface(model.name)
             reference_counts.update([model.name])
-
-            print("Model normalize", model.name, model.model)
-
         for self_reference in self.parser.parsed_self_references:
             self_reference.name = normalize_interface(self_reference.name)
             # No need to update the reference counts, since we expect these to just
@@ -239,6 +237,17 @@ class APIBuilder:
 
         # Export model
         exports.append(f"export type {{ {model.name} }} from '{import_path}';")
+
+        # Export dependencies (models + enums)
+        # TODO: Deduplicate this, potentially with a common method to get all unique types
+        # from the implicit graph that's constructed through superclasses
+        for field in model.value_models:
+            if isinstance(field.value, ModelWrapper):
+                self._add_model_exports(field.value, exports, import_path)
+            elif isinstance(field.value, EnumWrapper):
+                exports.append(
+                    f"export type {{ {field.value.name} }} from '{import_path}';"
+                )
 
     def _generate_action_definitions(self):
         """Generate TypeScript action definitions for all controllers"""

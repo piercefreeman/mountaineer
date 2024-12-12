@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from json import dumps as json_dumps
+from types import NoneType
 from typing import Any
 from uuid import UUID
 
@@ -108,6 +109,7 @@ class BaseTypeScriptConverter:
             primitive_value = self._map_primitive_type_to_typescript(value)
             if primitive_value:
                 return primitive_value
+            LOGGER.warning(f"Unable to map value, falling back to generic: {value}")
             return "any"
 
     def _map_primitive_type_to_typescript(self, py_type: type) -> str | None:
@@ -123,6 +125,8 @@ class BaseTypeScriptConverter:
             time: "string",
             UUID: "string",
             None: "null",
+            NoneType: "null",
+            Any: "any",
         }
         return type_map.get(py_type)
 
@@ -146,10 +150,7 @@ class BaseTypeScriptConverter:
             return f"Record<{self._get_annotated_value(type_hint.key_type)}, {self._get_annotated_value(type_hint.value_type)}>"
 
         if isinstance(type_hint, Or):
-            non_null_types = [t for t in type_hint.children if t != type(None)]  # noqa: E721
-            if len(non_null_types) == 1:
-                return self._get_annotated_value(non_null_types[0])
-            return " | ".join(self._get_annotated_value(t) for t in non_null_types)
+            return " | ".join(self._get_annotated_value(t) for t in type_hint.children)
 
         if isinstance(type_hint, LiteralOf):
             return " | ".join(json_dumps(value) for value in type_hint.values)
