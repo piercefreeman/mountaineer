@@ -48,7 +48,7 @@ def python_payload_to_typescript(
                 # If the literal is the same as the key, we don't need to include it since it's referencing
                 # the same variable.
                 if key == value:
-                    children_lines.append(key)
+                    children_lines.append(f"{inner_indent_str}{key}")
                     continue
 
             key = python_payload_to_typescript(key)
@@ -65,8 +65,12 @@ def python_payload_to_typescript(
         )
     elif isinstance(payload, list):
         children_lines = [python_payload_to_typescript(child) for child in payload]
-        children_str = ",\n".join(children_lines)
-        return f"[\n{children_str}\n]"
+        children_str = ",\n".join(
+            [
+                f"{inner_indent_str}{child}" for child in children_lines
+            ]
+        )
+        return f"[\n{children_str}\n{indent_str}]"
     elif isinstance(payload, TSLiteral):
         return payload
     elif isinstance(payload, str):

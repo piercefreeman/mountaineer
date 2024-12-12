@@ -47,9 +47,11 @@ class GlobalControllerGenerator(FileGeneratorBase):
         controllers = ControllerWrapper.get_all_embedded_controllers(
             self.controller_wrappers
         )
-        models, enums = ControllerWrapper.get_all_embedded_types(controllers)
+        models, enums = ControllerWrapper.get_all_embedded_types(controllers, include_superclasses=True)
 
-        print("GET CONTROLLERS", controllers)
+        print("ALL MODELS", [
+            model.name for model in models
+        ])
 
         # Resolve the MRO ordering for all the interfaces, since they'll be defined
         # in one file

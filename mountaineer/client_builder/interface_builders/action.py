@@ -17,15 +17,15 @@ class ActionInterface(InterfaceBase):
     name: str
     parameters: str
     typehints: str
-    default_parameters: str | None
+    default_initializer: bool
     response_type: str
     body: list[str]
     required_models: list[str]
 
     def to_js(self) -> str:
         script = f"export const {self.name} = ({self.parameters} : {self.typehints}"
-        if self.default_parameters:
-            script += f" = {self.default_parameters}"
+        if self.default_initializer:
+            script += " = {}"
         body_str = "\n".join(self.body)
         script += f"): {self.response_type} => {{ {body_str} }}"
         return script
@@ -71,7 +71,7 @@ class ActionInterface(InterfaceBase):
             name=action.name,
             parameters=python_payload_to_typescript(parameters_dict),
             typehints=python_payload_to_typescript(typehint_dict),
-            default_parameters=None if has_nonsystem_parameters else "{}",
+            default_initializer=not has_nonsystem_parameters,
             response_type=response_type,
             body=["return __request(", CodeBlock.indent(f"  {request_payload}"), ");"],
             required_models=required_models,

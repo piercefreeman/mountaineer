@@ -151,7 +151,8 @@ class ControllerWrapper:
                 for field in item.value_models:
                     yield field.value
 
-                yield from item.superclasses
+                if include_superclasses:
+                    yield from item.superclasses
 
             elif isinstance(item, EnumWrapper):
                 enums.append(item)
@@ -215,6 +216,7 @@ class ControllerWrapper:
             if id(item) in already_seen:
                 continue
             queue.extend(list(logic(item)))
+            already_seen.add(id(item))
 
 
 @dataclass

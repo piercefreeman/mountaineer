@@ -35,8 +35,13 @@ class ControllerInterface(InterfaceBase):
             # We don't need a URL here because we just want the type definition, not
             # the full definition
             action_def = ActionInterface.from_action(action, url="")
+
+            # If we only have optional params, we will default the inputs to an empty object
+            # which makes the whole params object optional
+            optional_params = "?" if action_def.default_initializer else ""
+
             action_signature = (
-                f"(params: {action_def.typehints}) => {action_def.response_type}"
+                f"(params{optional_params}: {action_def.typehints}) => {action_def.response_type}"
             )
 
             fields[TSLiteral(action_def.name)] = TSLiteral(action_signature)

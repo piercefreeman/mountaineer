@@ -154,6 +154,10 @@ class APIBuilder:
             local_action_generator.build()
             local_model_generator.build()
             local_use_server_generator.build()
+
+            # Since the local index generator reads created files on disk to
+            # determine what to re-export, it needs to always go after the
+            # other generators
             local_index_generator.build()
 
     def _generate_static_files(self):

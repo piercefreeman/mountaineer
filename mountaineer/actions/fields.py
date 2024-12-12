@@ -247,7 +247,7 @@ def fuse_metadata_to_response_typehint(
     passthrough_model: Type[BaseModel] | None = None
     sideeffect_model: Type[BaseModel] | None = None
 
-    base_response_name = camelize(metadata.function_name) + "Response"
+    base_response_name = camelize(metadata.function_name) + "ResponseWrapped"
     base_response_params = {}
     base_module = controller.__module__
 
@@ -282,8 +282,7 @@ def fuse_metadata_to_response_typehint(
             sideeffect_model = (
                 create_model(
                     base_response_name
-                    + camelize(metadata.function_name)
-                    + "SideEffect",
+                    + "SideEffectWrapped",
                     __module__=base_module,
                     **{
                         field_name: (field_definition.annotation, field_definition)  # type: ignore

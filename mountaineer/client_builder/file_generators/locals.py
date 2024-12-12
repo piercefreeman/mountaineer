@@ -6,6 +6,10 @@ from mountaineer.client_builder.interface_builders.action import ActionInterface
 from mountaineer.client_builder.interface_builders.controller import ControllerInterface
 from mountaineer.client_builder.parser import (
     ControllerWrapper,
+    EnumWrapper,
+    TypeDefinition,
+    FieldWrapper,
+    ModelWrapper,
 )
 from mountaineer.client_builder.typescript import (
     TSLiteral,
@@ -41,12 +45,31 @@ class LocalLinkGenerator(LocalGeneratorBase):
         self.controller = controller
 
     def script(self):
+        yield from self._get_imports(self.controller)
+        yield CodeBlock(self._get_link_implementation(self.controller))
+
+    def _get_imports(self, controller: ControllerWrapper):
         api_import_path = self.get_global_import_path("api.ts")
+        controller_import_path = self.get_global_import_path("controllers.ts")
+
         yield CodeBlock(f"import {{ __getLink }} from '{api_import_path}';")
 
-        yield CodeBlock(self._convert_controller_links(self.controller))
+        # Deeply traverse for any enums contained within these fields - this especially
+        # is useful for nested objects, like an optional URL parameter (Or(None, Enum))
+        imports = []
+        def _traverse_logic(item: FieldWrapper | EnumWrapper | TypeDefinition):
+            if isinstance(item, EnumWrapper):
+                imports.append(f"import {{ {item.name} }} from '{controller_import_path}';")
+            elif isinstance(item, TypeDefinition):
+                yield from item.children
+            elif isinstance(item, FieldWrapper):
+                yield item.value
 
-    def _convert_controller_links(self, controller: ControllerWrapper) -> str:
+        ControllerWrapper._traverse_iterator(_traverse_logic, controller.queries + controller.paths)
+
+        yield CodeBlock(*imports)
+
+    def _get_link_implementation(self, controller: ControllerWrapper) -> str:
         """Generate link formatter for a controller's routes"""
         if not controller.render:
             return ""
@@ -62,13 +85,15 @@ class LocalLinkGenerator(LocalGeneratorBase):
         # Split parameters into query and path
         for field in controller.queries:
             query_parameters[field.name] = TSLiteral(field.name)
-            query_typehints[TSLiteral(field.name)] = TSLiteral(
+            optional_param = "?" if not field.required else ""
+            query_typehints[TSLiteral(field.name+optional_param)] = TSLiteral(
                 ControllerInterface._get_annotated_value(field.value)
             )
 
         for field in controller.paths:
             path_parameters[field.name] = TSLiteral(field.name)
-            path_typehints[TSLiteral(field.name)] = TSLiteral(
+            optional_param = "?" if not field.required else ""
+            path_typehints[TSLiteral(field.name+optional_param)] = TSLiteral(
                 ControllerInterface._get_annotated_value(field.value)
             )
 
@@ -104,12 +129,13 @@ class LocalLinkGenerator(LocalGeneratorBase):
             TSLiteral("queryParameters"): TSLiteral("queryParameters"),
             TSLiteral("pathParameters"): TSLiteral("pathParameters"),
         }
+        link_args_str = python_payload_to_typescript(link_args)
 
         link_logic = [
             f"const url = `{url}`;\n",
             f"const queryParameters: Record<string, any> = {query_dict_str};",
             f"const pathParameters: Record<string, any> = {path_dict_str};\n",
-            CodeBlock.indent(f"return __getLink({link_args});"),
+            CodeBlock.indent(f"return __getLink({link_args_str});"),
         ]
         link_logic_str = "\n".join(link_logic)
 
@@ -222,7 +248,7 @@ class LocalModelGenerator(LocalGeneratorBase):
 
         yield CodeBlock(
             *[
-                f"export type {{ {enum.name} }} from '{controller_import_path}';"
+                f"export {{ {enum.name} }} from '{controller_import_path}';"
                 for enum in enums
             ]
         )
@@ -330,7 +356,7 @@ class LocalIndexGenerator(LocalGeneratorBase):
     def script(self):
         exports = []
         for module in ["actions", "links", "models", "useServer"]:
-            module_file = self.managed_path / f"{module}.ts"
+            module_file = self.managed_path.parent / f"{module}.ts"
             if module_file.exists() and module_file.read_text().strip():
                 exports.append(f"export * from './{module}';")
 
