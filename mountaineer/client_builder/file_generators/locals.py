@@ -41,9 +41,6 @@ class LocalLinkGenerator(LocalGeneratorBase):
         self.controller = controller
 
     def script(self):
-        if self.controller.is_layout:
-            return
-
         api_import_path = self.get_global_import_path("api.ts")
         yield CodeBlock(f"import {{ __getLink }} from '{api_import_path}';")
 
@@ -152,7 +149,7 @@ class LocalActionGenerator(LocalGeneratorBase):
         for action in action_js:
             yield CodeBlock(action)
 
-    def _generate_controller_actions(self, parsed_controller: ControllerWrapper):
+    def _generate_controller_actions(self, controller: ControllerWrapper):
         """
         Generate all actions that are either owned directly by this controller
         or one of the parents, since they'll be separately mounted to this endpoint.
@@ -161,15 +158,15 @@ class LocalActionGenerator(LocalGeneratorBase):
         # Convert each action. We also include the superclass methods, since they're
         # actually bound to the controller instance with separate urls.
         all_actions = [
-            ActionInterface.from_action(action, parsed_controller.url_prefix or "")
-            for action in parsed_controller.wrapper.all_actions
+            ActionInterface.from_action(action, action.controller_to_url[controller.controller])
+            for action in controller.all_actions
         ]
 
         return [typescript_action.to_js() for typescript_action in all_actions]
 
     def _get_dependent_imports(self, parsed_controller: ControllerWrapper):
         deps = set()
-        for action in parsed_controller.wrapper.all_actions:
+        for action in parsed_controller.all_actions:
             if action.request_body:
                 deps.add(action.request_body.name)
             if action.response_body:

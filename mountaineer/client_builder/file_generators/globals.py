@@ -1,7 +1,13 @@
+from typing import Any
 
 from graphlib import TopologicalSorter
+from inflection import camelize
 
-from mountaineer.client_builder.file_generators.base import CodeBlock, FileGeneratorBase
+from mountaineer.client_builder.file_generators.base import (
+    CodeBlock,
+    FileGeneratorBase,
+    ParsedController,
+)
 from mountaineer.client_builder.interface_builders.controller import ControllerInterface
 from mountaineer.client_builder.interface_builders.enum import EnumInterface
 from mountaineer.client_builder.interface_builders.model import ModelInterface
@@ -14,7 +20,7 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
-from mountaineer.paths import ManagedViewPath
+from mountaineer.paths import ManagedViewPath, generate_relative_import
 
 
 class GlobalControllerGenerator(FileGeneratorBase):
@@ -28,6 +34,7 @@ class GlobalControllerGenerator(FileGeneratorBase):
 
     def __init__(
         self,
+        *,
         controller_wrappers: list[ControllerWrapper],
         managed_path: ManagedViewPath,
     ):
@@ -41,6 +48,8 @@ class GlobalControllerGenerator(FileGeneratorBase):
             self.controller_wrappers
         )
         models, enums = ControllerWrapper.get_all_embedded_types(controllers)
+
+        print("GET CONTROLLERS", controllers)
 
         # Resolve the MRO ordering for all the interfaces, since they'll be defined
         # in one file
@@ -130,44 +139,42 @@ class GlobalControllerGenerator(FileGeneratorBase):
 class GlobalLinkGenerator(FileGeneratorBase):
     def __init__(
         self,
-        controller_wrappers: list[ControllerWrapper],
+        *,
+        parsed_controllers: list[ParsedController],
         managed_path: ManagedViewPath,
     ):
         super().__init__(managed_path=managed_path)
-        self.controller_wrappers = controller_wrappers
+        self.parsed_controllers = parsed_controllers
 
-    def _generate_link_aggregator(self):
+    def script(self):
         """Generate global link aggregator"""
-        imports = []
-        link_setters = {}
-        global_dir = self.view_root.get_managed_code_dir()
+        imports: list[str] = []
+        link_setters: dict[str, Any] = {}
 
-        for controller_id, parsed_controller in self.parsed_controllers.items():
+        for parsed_controller in self.parsed_controllers:
             if parsed_controller.is_layout:
                 continue
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
-            rel_import = generate_relative_import(
-                global_dir / "links.ts", controller_dir / "links.ts"
+            controller_implementation_path = generate_relative_import(
+                self.managed_path, controller_dir / "links.ts"
             )
 
             # Add import and setter for this controller
             local_name = f"{parsed_controller.wrapper.name}GetLinks"
-            imports.append(f"import {{ getLink as {local_name} }} from '{rel_import}';")
+            imports.append(
+                f"import {{ getLink as {local_name} }} from '{controller_implementation_path}';"
+            )
             link_setters[
-                # Mirror the lowercase camelcase convention of previous versions
+                # @pierce: 12-11-2024: Mirror the lowercase camelcase convention of previous versions
                 camelize(
                     parsed_controller.wrapper.controller.__name__,
                     uppercase_first_letter=False,
                 )
             ] = TSLiteral(local_name)
 
-        content = [
-            *imports,
-            "",
-            f"const linkGenerator = {python_payload_to_typescript(link_setters)};",
-            "",
-            "export default linkGenerator;",
-        ]
+        link_generator = python_payload_to_typescript(link_setters)
 
-        (global_dir / "links.ts").write_text(self.formatter.format("\n".join(content)))
+        yield CodeBlock(*imports)
+        yield CodeBlock(f"const linkGenerator = {link_generator};")
+        yield CodeBlock("export default linkGenerator;")

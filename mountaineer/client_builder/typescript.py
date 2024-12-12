@@ -27,12 +27,19 @@ class TSLiteral(str):
         return NotImplemented
 
 
-def python_payload_to_typescript(payload: Any) -> str:
+def python_payload_to_typescript(
+    payload: Any,
+    dict_equality: str = ":",
+    current_indent: int = 0
+) -> str:
     """
     Take an element with python tokens that should be outputted to
     Typescript and consolidate them into a valid payload.
 
     """
+    indent_str = " " * current_indent
+    inner_indent_str = " " * (current_indent + 2)
+
     if isinstance(payload, dict):
         # Convert the children
         children_lines: list[str] = []
@@ -45,11 +52,17 @@ def python_payload_to_typescript(payload: Any) -> str:
                     continue
 
             key = python_payload_to_typescript(key)
-            value = python_payload_to_typescript(value)
-            children_lines.append(f"{key}: {value}")
+            value = python_payload_to_typescript(value, current_indent=current_indent + 2)
+            children_lines.append(f"{inner_indent_str}{key}{dict_equality} {value}")
 
         children_str = ",\n".join(children_lines)
-        return f"{{\n{children_str}\n}}"
+        return "\n".join(
+            [
+                "{",
+                children_str,
+                f"{indent_str}}}",
+            ]
+        )
     elif isinstance(payload, list):
         children_lines = [python_payload_to_typescript(child) for child in payload]
         children_str = ",\n".join(children_lines)

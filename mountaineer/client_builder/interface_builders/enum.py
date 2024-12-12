@@ -34,7 +34,7 @@ class EnumInterface(InterfaceBase):
 
         return cls(
             name=enum.name,
-            body=python_payload_to_typescript(fields),
+            body=python_payload_to_typescript(fields, dict_equality="="),
         )
 
     def to_js(self) -> str:

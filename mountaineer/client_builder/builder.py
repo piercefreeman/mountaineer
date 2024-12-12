@@ -1,37 +1,26 @@
-from dataclasses import dataclass
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 from time import monotonic_ns
 from typing import Dict
 
-from inflection import camelize
-
 from mountaineer.app import AppController
-from mountaineer.client_builder.converters import (
-    TypeScriptActionConverter,
-    TypeScriptGenerator,
-    TypeScriptLinkConverter,
-    TypeScriptServerHookConverter,
+from mountaineer.client_builder.aliases import AliasManager
+from mountaineer.client_builder.file_generators.base import ParsedController
+from mountaineer.client_builder.file_generators.globals import GlobalLinkGenerator, GlobalControllerGenerator
+from mountaineer.client_builder.file_generators.locals import (
+    LocalLinkGenerator,
+    LocalActionGenerator,
+    LocalModelGenerator,
+    LocalUseServerGenerator,
+    LocalIndexGenerator,
 )
-from mountaineer.client_builder.formatter import TypeScriptFormatter
 from mountaineer.client_builder.parser import (
     ControllerParser,
-    ControllerWrapper,
 )
 from mountaineer.console import CONSOLE
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.paths import ManagedViewPath
 from mountaineer.static import get_static_path
-
-
-@dataclass
-class ParsedController:
-    """Represents a fully parsed controller with its associated paths and metadata"""
-
-    wrapper: ControllerWrapper
-    view_path: ManagedViewPath
-    url_prefix: str | None = None
-    is_layout: bool = False
 
 
 class APIBuilder:
@@ -51,18 +40,7 @@ class APIBuilder:
         self.build_cache = build_cache
         self.view_root = ManagedViewPath.from_view_root(app._view_root)
 
-        # Initialize parser
-        self.parser = ControllerParser()
-        self.formatter = TypeScriptFormatter()
-
-        # Initialize converters
-        self.root_controller_converter = TypeScriptGenerator(export_interface=True)
-        self.action_converter = TypeScriptActionConverter()
-        self.link_converter = TypeScriptLinkConverter()
-        self.hook_converter = TypeScriptServerHookConverter()
-
-        # Store parsed results
-        self.parsed_controllers: Dict[str, ParsedController] = {}
+        self.alias_manager = AliasManager()
 
     async def build_all(self):
         # Totally clear away the old build cache, so we start fresh
@@ -82,17 +60,13 @@ class APIBuilder:
 
         with CONSOLE.status("Building useServer", spinner="dots"):
             # Parse all controllers first
-            self._parse_all_controllers()
-            self._assign_unique_names()
+            parser, parsed_controller = self._parse_all_controllers()
+            self._assign_unique_names(parser)
 
             # Generate all the required files
             self._generate_static_files()
-            self._generate_model_definitions()
-            self._generate_action_definitions()
-            self._generate_link_shortcuts()
-            self._generate_link_aggregator()
-            self._generate_view_servers()
-            self._generate_index_files()
+            self._generate_global_files(parsed_controller)
+            self._generate_local_files(parsed_controller)
 
         CONSOLE.print(
             f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
@@ -100,29 +74,87 @@ class APIBuilder:
 
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""
-        self.parsed_controllers.clear()
+        parser = ControllerParser()
+        parsed_controllers : list[ParsedController] = []
 
         for controller_def in self.app.controllers:
             controller = controller_def.controller
-            # TODO: REMOVE
-            controller_id = (
-                f"{controller.__class__.__module__}.{controller.__class__.__name__}"
-            )
 
             # Parse the controller
-            parsed_wrapper = self.parser.parse_controller(controller.__class__)
+            parsed_wrapper = parser.parse_controller(controller.__class__)
 
             # Get view path
-            # view_path = self.view_root.get_controller_view_path(controller)
             view_path = self.view_root.get_controller_view_path(controller)
 
             # Create ParsedController instance
-            self.parsed_controllers[controller_id] = ParsedController(
+            parsed_controllers.append(ParsedController(
                 wrapper=parsed_wrapper,
                 view_path=view_path,
                 url_prefix=controller_def.url_prefix,
                 is_layout=isinstance(controller, LayoutControllerBase),
+            ))
+
+        return parser, parsed_controllers
+
+    def _assign_unique_names(self, parser: ControllerParser):
+        self.alias_manager.assign_unique_names(parser)
+
+    def _generate_global_files(self, parsed_controllers: list[ParsedController]):
+        global_root = self.view_root.get_managed_code_dir()
+
+        global_controller_generator = GlobalControllerGenerator(
+            controller_wrappers=[controller.wrapper for controller in parsed_controllers],
+            managed_path=global_root / "controllers.ts",
+        )
+        global_link_generator = GlobalLinkGenerator(
+            parsed_controllers=parsed_controllers,
+            managed_path=global_root / "links.ts",
+        )
+
+        global_controller_generator.build()
+        global_link_generator.build()
+
+    def _generate_local_files(self, parsed_controllers: list[ParsedController]):
+        global_root = self.view_root.get_managed_code_dir()
+
+        for parsed_controller in parsed_controllers:
+            managed_path = parsed_controller.view_path.get_managed_code_dir()
+
+            local_link_generator = LocalLinkGenerator(
+                controller=parsed_controller.wrapper,
+                managed_path=managed_path / "links.ts",
+                global_root=global_root,
             )
+            local_action_generator = LocalActionGenerator(
+                controller=parsed_controller.wrapper,
+                managed_path=managed_path / "actions.ts",
+                global_root=global_root,
+            )
+            local_model_generator = LocalModelGenerator(
+                controller=parsed_controller.wrapper,
+                managed_path=managed_path / "models.ts",
+                global_root=global_root,
+            )
+            local_use_server_generator = LocalUseServerGenerator(
+                controller=parsed_controller.wrapper,
+                managed_path=managed_path / "useServer.ts",
+                global_root=global_root,
+            )
+            local_index_generator = LocalIndexGenerator(
+                controller=parsed_controller.wrapper,
+                managed_path=managed_path / "index.ts",
+                global_root=global_root,
+            )
+
+            # Controller-only Files
+            if not parsed_controller.is_layout:
+                local_link_generator.build()
+
+            # Controllers + Layout files
+            local_action_generator.build()
+            local_model_generator.build()
+            local_use_server_generator.build()
+            local_index_generator.build()
 
     def _generate_static_files(self):
         """Copy over static files required for the client"""
@@ -130,7 +162,3 @@ class APIBuilder:
         for static_file in ["api.ts", "live_reload.ts"]:
             content = get_static_path(static_file).read_text()
             (managed_code_dir / static_file).write_text(content)
-
-    def _typescript_prefix_from_module(self, module: str):
-        module_parts = module.split(".")
-        return "".join([camelize(component) for component in module_parts])

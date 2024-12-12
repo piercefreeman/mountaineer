@@ -1,7 +1,21 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from importlib.metadata import version
 from pathlib import Path
 from typing import Generator
+
+from mountaineer.client_builder.parser import ControllerWrapper
+from mountaineer.paths import ManagedViewPath
+
+
+@dataclass
+class ParsedController:
+    """Represents a fully parsed controller with its associated paths and metadata"""
+
+    wrapper: ControllerWrapper
+    view_path: ManagedViewPath
+    url_prefix: str | None = None
+    is_layout: bool = False
 
 
 class FileGeneratorBase(ABC):
@@ -15,7 +29,7 @@ class FileGeneratorBase(ABC):
             " */",
         )
 
-    def write(self):
+    def build(self):
         blocks = list(self.script())
         blocks = [self.standard_header] + blocks
         self.managed_path.write_text(

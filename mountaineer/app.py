@@ -481,7 +481,7 @@ class AppController:
             controller_api.post(action_path)(fn)
             function_metadata = get_function_metadata(fn)
             function_metadata.register_controller_url(
-                controller.__class__, f"{controller_url_prefix}/{action_path}"
+                controller.__class__, f"{controller_url_prefix}{action_path}"
             )
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__

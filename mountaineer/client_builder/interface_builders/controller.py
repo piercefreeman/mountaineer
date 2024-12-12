@@ -47,7 +47,7 @@ class ControllerInterface(InterfaceBase):
             include_superclasses=[s.name for s in controller.superclasses],
         )
 
-    def to_json(self):
+    def to_js(self):
         schema_def = f"interface {self.name}"
 
         if self.include_superclasses:

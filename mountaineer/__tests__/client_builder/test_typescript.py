@@ -51,14 +51,20 @@ def test_python_payload_to_typescript_primitives(payload: Any, expected_str: str
     [
         (
             {"a": {"b": "b", "c": 1, "d": TSLiteral("someVariable")}},
-            "{'a': {'b': 'b', 'c': 1, 'd': someVariable}}",
+            (
+                "{\n"
+                "  'a': {\n"
+                "    'b': 'b',\n"
+                "    'c': 1,\n"
+                "    'd': someVariable\n"
+                "  }\n"
+                "}"
+            )
         )
     ],
 )
 def test_python_payload_to_typescript_nested(payload: Any, expected_str: str):
-    assert re_sub(r"\s+", "", python_payload_to_typescript(payload)) == re_sub(
-        r"\s+", "", expected_str
-    )
+    assert python_payload_to_typescript(payload) == expected_str
 
 
 @pytest.mark.parametrize(
@@ -92,68 +98,3 @@ def test_collapse_repeated_literals(
     assert re_sub(r"\s+", "", python_payload_to_typescript(original_payload)) == re_sub(
         r"\s+", "", expected_str
     )
-
-
-# @pytest.mark.parametrize(
-#     "url_parameter, expected_ts_key, expected_ts_type",
-#     [
-#         # Single typed URL parameter
-#         (
-#             URLParameterDefinition.from_meta(
-#                 name="test",
-#                 required=True,
-#                 schema_ref=OpenAPIProperty.from_meta(
-#                     format="uuid",
-#                     variable_type=OpenAPISchemaType.STRING,
-#                 ),
-#                 in_location=ParameterLocationType.PATH,
-#             ),
-#             "test",
-#             "string",
-#         ),
-#         # Multiple types for a single URL parameter
-#         (
-#             URLParameterDefinition.from_meta(
-#                 name="test",
-#                 required=True,
-#                 schema_ref=OpenAPIProperty(
-#                     anyOf=[
-#                         OpenAPIProperty.from_meta(
-#                             format="uuid",
-#                             variable_type=OpenAPISchemaType.STRING,
-#                         ),
-#                         OpenAPIProperty.from_meta(
-#                             variable_type=OpenAPISchemaType.INTEGER,
-#                         ),
-#                     ]
-#                 ),
-#                 in_location=ParameterLocationType.PATH,
-#             ),
-#             "test",
-#             "number | string",
-#         ),
-#         # Support for list-based values in the URL string
-#         (
-#             URLParameterDefinition.from_meta(
-#                 name="test",
-#                 required=True,
-#                 schema_ref=OpenAPIProperty.from_meta(
-#                     variable_type=OpenAPISchemaType.ARRAY,
-#                     items=OpenAPIProperty.from_meta(
-#                         variable_type=OpenAPISchemaType.STRING
-#                     ),
-#                 ),
-#                 in_location=ParameterLocationType.PATH,
-#             ),
-#             "test",
-#             "Array<string>",
-#         ),
-#     ],
-# )
-# def test_get_typehint_for_parameter(
-#     url_parameter: URLParameterDefinition, expected_ts_key: str, expected_ts_type: str
-# ):
-#     assert get_typehint_for_parameter(url_parameter) == (
-#         expected_ts_key,
-#         expected_ts_type,
-#     )

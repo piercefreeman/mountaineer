@@ -4,6 +4,7 @@ from enum import Enum
 from inspect import isclass
 from typing import (
     Callable,
+    Generator,
     Optional,
     Type,
     TypeVar,
@@ -67,6 +68,9 @@ class ActionWrapper:
     response_body: Optional[ModelWrapper]
     action_type: FunctionActionType
 
+    # Actions can be mounted to multiple controllers through inheritance
+    # This will store a mapping of each controller to the url that the action is mounted to
+    controller_to_url:  dict[Type[ControllerBase], str]
 
 @dataclass
 class ControllerWrapper:
@@ -161,7 +165,7 @@ class ControllerWrapper:
     @classmethod
     def get_all_embedded_controllers(
         cls, controllers: list["ControllerWrapper"]
-    ) -> list[ControllerWrapper]:
+    ) -> list["ControllerWrapper"]:
         """
         Gets all unique superclasses of the given set of controllers.
 
@@ -178,12 +182,33 @@ class ControllerWrapper:
         return all_controllers
 
     @classmethod
-    def _traverse_iterator(cls, logic: Generator[Callable[T]], initial_queue: list[T]):
+    def _traverse_iterator(
+        cls,
+        logic: Callable[[T], Generator[T, None, None]],
+        initial_queue: list[T]
+    ):
         """
         Memory-identity traversal, only will traverse each unique object once.
+        Clients write a logic function that returns the next items to traverse, and meanwhile
+        can make use of our single-traversal guarantee to store results in a flat list.
+
+        ex:
+
+        ```
+        models = []
+        def logic(item):
+            if isinstance(item, ControllerWrapper):
+                if item.render:
+                    yield item.render
+                for superclass in item.superclasses:
+                    yield superclass
+            elif isinstance(item, ModelWrapper):
+                models.append(item)
+
+        ```
 
         """
-        queue = initial_queue
+        queue = copy(initial_queue)
         already_seen: set[int] = set()
         while queue:
             item = queue.pop(0)
@@ -523,6 +548,7 @@ class ControllerParser:
                 request_body=self._parse_request_body(func, name, synthetic_action_url),
                 response_body=self._parse_response_body(metadata),
                 action_type=metadata.action_type,
+                controller_to_url=metadata.controller_mounts,
             )
             actions[name] = action
 
