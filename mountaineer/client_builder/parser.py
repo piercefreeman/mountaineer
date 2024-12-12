@@ -92,6 +92,9 @@ class ControllerWrapper:
         all_actions: list[ActionWrapper] = []
 
         # If an action is overridden in a subclass, we shouldn't include it twice
+        # Unlike other traversal functions, we'd rather identify these actions
+        # by their names and not memory values because we want to only show the lowest
+        # subclassed implementation
         seen_actions: set[str] = set()
 
         def parse_controller(controller):
@@ -106,6 +109,81 @@ class ControllerWrapper:
         parse_controller(self)
         return all_actions
 
+    @classmethod
+    def get_all_embedded_types(cls, controllers: list["ControllerWrapper"], include_superclasses: bool = False) -> tuple[list[ModelWrapper], list[EnumWrapper]]:
+        """
+        For all the models and enums that are embedded in this controller (actions+render), return them in a flat list.
+        Results will be deduplicated.
+
+        :param include_superclasses: If provided, we will also traverse up the hierarchy to include all models
+        referenced by superclasses.
+
+        """
+        models : list[ModelWrapper] = []
+        enums : list[EnumWrapper] = []
+
+        def _traverse_logic(item: ControllerWrapper | ModelWrapper | EnumWrapper | TypeDefinition):
+            nonlocal models, enums
+
+            if isinstance(item, ControllerWrapper):
+                if item.render:
+                    yield item.render
+                for action in item.all_actions:
+                    if action.request_body:
+                        yield action.request_body
+                    if action.response_body:
+                        yield action.response_body
+
+                if include_superclasses:
+                    yield from item.superclasses
+
+            elif isinstance(item, ModelWrapper):
+                models.append(item)
+
+                for field in item.value_models:
+                    yield field.value
+
+                yield from item.superclasses
+
+            elif isinstance(item, EnumWrapper):
+                enums.append(item)
+
+            elif isinstance(item, TypeDefinition):
+                yield from item.children
+
+        cls._traverse_iterator(_traverse_logic, controllers)
+        return models, enums
+
+    @classmethod
+    def get_all_embedded_controllers(cls, controllers: list["ControllerWrapper"]) -> list[ControllerWrapper]:
+        """
+        Gets all unique superclasses of the given set of controllers.
+
+        """
+        all_controllers : list[ControllerWrapper] = []
+
+        def _traverse_logic(item: ControllerWrapper):
+            nonlocal all_controllers
+
+            all_controllers.append(item)
+            yield from item.superclasses
+
+        cls._traverse_iterator(_traverse_logic, controllers)
+        return all_controllers
+
+    @classmethod
+    def _traverse_iterator(cls, logic: Generator[Callable[T]], initial_queue: list[T]):
+        """
+        Memory-identity traversal, only will traverse each unique object once.
+
+        """
+        queue = initial_queue
+        already_seen : set[int] = set()
+        while queue:
+            item = queue.pop(0)
+            if id(item) in already_seen:
+                continue
+            queue.extend(list(logic(item)))
 
 @dataclass
 class SelfReference:
@@ -113,8 +191,13 @@ class SelfReference:
     model: Type[BaseModel]
 
 
-# Main parser class
 class ControllerParser:
+    """
+    Our ControllerParser is responsible for taking the in-memory representations of
+    ControllerBase models and extracting the metadata required to convert them
+    through the TypeScript pipeline into full interface signatures and implementations.
+
+    """
     def __init__(self):
         self.parsed_models: dict[type[BaseModel], ModelWrapper] = {}
         self.parsed_enums: dict[type[Enum], EnumWrapper] = {}
