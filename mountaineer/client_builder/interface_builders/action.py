@@ -51,7 +51,7 @@ class ActionInterface(InterfaceBase):
 
         # Add request body if present
         if action.request_body:
-            model_name = action.request_body.name
+            model_name = action.request_body.name.global_name
             parameters_dict["requestBody"] = TSLiteral("requestBody")
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
             required_models.append(model_name)
@@ -65,7 +65,7 @@ class ActionInterface(InterfaceBase):
 
         response_type = cls._get_response_type(action)
         if action.response_body:
-            required_models.append(action.response_body.name)
+            required_models.append(action.response_body.name.global_name)
 
         return cls(
             name=action.name,
@@ -99,7 +99,14 @@ class ActionInterface(InterfaceBase):
             payload["mediaType"] = action.request_body.body_type
 
         for exception in action.exceptions:
-            payload["errors"][exception.status_code] = TSLiteral(exception.name)
+            payload["errors"][exception.status_code] = TSLiteral(exception.name.global_name)
+
+        if action.is_raw_response:
+            payload["outputFormat"] = "raw"
+
+        # Support for server-events
+        if action.is_streaming_response:
+            payload["eventStreamResponse"] = True
 
         # Clean up empty dicts. These are optional in the request API interface and
         # clean up the generated code
@@ -111,12 +118,15 @@ class ActionInterface(InterfaceBase):
 
     @classmethod
     def _get_response_type(cls, action: ActionWrapper) -> str:
+        if action.is_raw_response:
+            return "Promise<Response>"
+
         if not action.response_body:
             return "Promise<void>"
 
-        response_type = action.response_body.name
+        response_type = action.response_body.name.global_name
 
-        if getattr(action.response_body.model, "is_stream", False):
+        if action.is_streaming_response:
             return f"Promise<AsyncGenerator<{response_type}, void, unknown>>"
 
         return f"Promise<{response_type}>"

@@ -21,13 +21,12 @@ class ExceptionInterface(InterfaceBase):
     def from_exception(cls, value: ExceptionWrapper):
         fields: dict[str, Any] = {}
         for field in value.value_models:
-            print("PARSE EXCEPTION FIELD", value.name, field)
             field_name = f"{field.name}{'?' if not field.required else ''}"
             field_type = cls._get_annotated_value(field.value)
             fields[TSLiteral(field_name)] = TSLiteral(field_type)
 
         return cls(
-            name=value.name,
+            name=value.name.global_name,
             body=python_payload_to_typescript(fields),
         )
 

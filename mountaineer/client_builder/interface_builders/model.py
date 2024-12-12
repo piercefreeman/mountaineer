@@ -27,9 +27,9 @@ class ModelInterface(InterfaceBase):
             fields[TSLiteral(field_name)] = TSLiteral(field_type)
 
         return cls(
-            name=value.name,
+            name=value.name.global_name,
             body=python_payload_to_typescript(fields),
-            include_superclasses=[s.name for s in value.superclasses],
+            include_superclasses=[s.name.global_name for s in value.superclasses],
         )
 
     def to_js(self) -> str:

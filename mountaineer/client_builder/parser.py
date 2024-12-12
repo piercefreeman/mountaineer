@@ -25,6 +25,7 @@ from mountaineer.actions.fields import (
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_builder.types import TypeDefinition, TypeParser
+from mountaineer.constants import STREAM_EVENT_TYPE
 from mountaineer.controller import (
     ControllerBase,
     class_fn_as_method,
@@ -37,8 +38,22 @@ from mountaineer.render import RenderBase
 
 T = TypeVar("T")
 
+class WrapperName:
+    # The original name given to the object, just used for record-keeping.
+    raw_name: str
 
-# Base data structures
+    # Must be globally unique.
+    global_name: str
+
+    # The name used in the local context as a shortcut while working with a single controller
+    local_name: str
+
+    def __init__(self, name: str):
+        self.raw_name = name
+        self.local_name = name
+        self.global_name = name
+
+
 @dataclass
 class FieldWrapper:
     name: str
@@ -48,7 +63,8 @@ class FieldWrapper:
 
 @dataclass
 class ModelWrapper:
-    name: str
+    name: WrapperName
+    module_name: str
     model: type[BaseModel]
     isolated_model: type[BaseModel]  # Model with only direct fields
     superclasses: list["ModelWrapper"]
@@ -58,7 +74,8 @@ class ModelWrapper:
 
 @dataclass
 class ExceptionWrapper:
-    name: str
+    name: WrapperName
+    module_name: str
     status_code: int
     exception: Type[APIException]
     value_models: list[FieldWrapper]
@@ -66,13 +83,15 @@ class ExceptionWrapper:
 
 @dataclass
 class EnumWrapper:
-    name: str
+    name: WrapperName
+    module_name: str
     enum: type[Enum]
 
 
 @dataclass
 class ActionWrapper:
     name: str
+    module_name: str
     action_type: FunctionActionType
 
     params: list[FieldWrapper]
@@ -81,6 +100,9 @@ class ActionWrapper:
     response_body: Optional[ModelWrapper]
     exceptions: list[ExceptionWrapper]
 
+    is_raw_response: bool
+    is_streaming_response: bool
+
     # Actions can be mounted to multiple controllers through inheritance
     # This will store a mapping of each controller to the url that the action is mounted to
     controller_to_url: dict[Type[ControllerBase], str]
@@ -88,7 +110,8 @@ class ActionWrapper:
 
 @dataclass
 class ControllerWrapper:
-    name: str
+    name: WrapperName
+    module_name: str
     entrypoint_url: str | None
     controller: type[ControllerBase]
     superclasses: list["ControllerWrapper"]
@@ -167,7 +190,6 @@ class ControllerWrapper:
                     yield item.request_body
                 if item.response_body:
                     yield item.response_body
-                print("EXCEPTIONS", item.exceptions)
                 yield from item.exceptions
 
             elif isinstance(item, ModelWrapper):
@@ -183,7 +205,6 @@ class ControllerWrapper:
                 enums.append(item)
 
             elif isinstance(item, ExceptionWrapper):
-                print("GET EXCEPTION", item)
                 exceptions.append(item)
 
             elif isinstance(item, TypeDefinition):
@@ -297,7 +318,8 @@ class ControllerParser:
             superclass_controllers.append(self.parse_controller(superclass))
 
         wrapper = ControllerWrapper(
-            name=controller.__name__,
+            name=WrapperName(controller.__name__),
+            module_name=controller.__module__,
             entrypoint_url=entrypoint_url,
             controller=controller,
             actions=actions,
@@ -337,7 +359,8 @@ class ControllerParser:
             fields.append(self._parse_field(name, field, self_model=model))
 
         wrapper = ModelWrapper(
-            name=model.__name__,
+            name=WrapperName(model.__name__),
+            module_name=model.__module__,
             model=model,
             isolated_model=isolated_model,
             superclasses=superclasses,
@@ -397,7 +420,11 @@ class ControllerParser:
         if enum_type in self.parsed_enums:
             return self.parsed_enums[enum_type]
 
-        wrapper = EnumWrapper(name=enum_type.__name__, enum=enum_type)
+        wrapper = EnumWrapper(
+            name=WrapperName(enum_type.__name__),
+            module_name=enum_type.__module__,
+            enum=enum_type
+        )
         self.parsed_enums[enum_type] = wrapper
         return wrapper
 
@@ -621,10 +648,13 @@ class ControllerParser:
             )
             action = ActionWrapper(
                 name=name,
+                module_name=controller.__module__,
                 params=query_params,
                 headers=self._parse_headers(func, name, synthetic_action_url),
                 request_body=self._parse_request_body(func, name, synthetic_action_url),
                 response_body=self._parse_response_body(metadata),
+                is_raw_response=metadata.is_raw_response,
+                is_streaming_response=metadata.media_type == STREAM_EVENT_TYPE,
                 exceptions=[
                     self._parse_exception(exception)
                     for exception in (
@@ -646,14 +676,26 @@ class ControllerParser:
         if exception in self.parsed_exceptions:
             return self.parsed_exceptions[exception]
 
+        value_models = [
+            self._parse_field(name, field_info)
+            for name, field_info in exception.InternalModel.model_fields.items()
+        ]
+
+        # Unlike standard Models, which are used 1:1 to validate client bodies where some
+        # fields are required and others can safely be left missing to default to a
+        # server-side value, we know exceptions will be fully populated at runtime. The
+        # non-required fields within InternalModel only indicate at exception instance
+        # creation what clients have to supply for every constructor versus what
+        # is inherited from the superclass.
+        for field in value_models:
+            field.required = True
+
         wrapper = ExceptionWrapper(
-            name=exception.__name__,
+            name=WrapperName(exception.__name__),
+            module_name=exception.__module__,
             status_code=exception.status_code,
             exception=exception,
-            value_models=[
-                self._parse_field(name, field_info)
-                for name, field_info in exception.InternalModel.model_fields.items()
-            ],
+            value_models=value_models,
         )
         self.parsed_exceptions[exception] = wrapper
         return wrapper

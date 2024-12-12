@@ -101,7 +101,8 @@ class APIBuilder:
         return parser, parsed_controllers
 
     def _assign_unique_names(self, parser: ControllerParser):
-        self.alias_manager.assign_unique_names(parser)
+        self.alias_manager.assign_global_names(parser)
+        self.alias_manager.assign_local_names(parser)
 
     def _generate_global_files(self, parsed_controllers: list[ParsedController]):
         global_root = self.view_root.get_managed_code_dir()

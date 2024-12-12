@@ -45,9 +45,9 @@ class ControllerInterface(InterfaceBase):
             fields[TSLiteral(action_def.name)] = TSLiteral(action_signature)
 
         return cls(
-            name=controller.name,
+            name=controller.name.global_name,
             body=python_payload_to_typescript(fields),
-            include_superclasses=[s.name for s in controller.superclasses],
+            include_superclasses=[s.name.global_name for s in controller.superclasses],
         )
 
     def to_js(self):

@@ -36,9 +36,9 @@ class InterfaceBase:
     def _get_annotated_value(cls, value):
         """Convert a field type to TypeScript type."""
         if isinstance(value, ModelWrapper):
-            return value.name
+            return value.name.global_name
         elif isinstance(value, EnumWrapper):
-            return value.name
+            return value.name.global_name
         else:
             complex_value = cls._handle_complex_type(value, requires_complex=True)
             if complex_value:
@@ -84,7 +84,10 @@ class InterfaceBase:
             return f"Array<{cls._get_annotated_value(type_hint.type)}>"
 
         if isinstance(type_hint, TupleOf):
-            return f"Array<{cls._get_annotated_value(Or(type_hint.types))}>"
+            values = [
+                cls._get_annotated_value(t) for t in type_hint.types
+            ]
+            return f"[{','.join(values)}]"
 
         if isinstance(type_hint, SetOf):
             return f"Set<{cls._get_annotated_value(type_hint.type)}>"

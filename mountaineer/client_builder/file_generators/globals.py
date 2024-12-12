@@ -174,7 +174,7 @@ class GlobalLinkGenerator(FileGeneratorBase):
             )
 
             # Add import and setter for this controller
-            local_name = f"{parsed_controller.wrapper.name}GetLinks"
+            local_name = f"{parsed_controller.wrapper.name.global_name}GetLinks"
             imports.append(
                 f"import {{ getLink as {local_name} }} from '{controller_implementation_path}';"
             )

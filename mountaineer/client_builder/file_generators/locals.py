@@ -61,7 +61,7 @@ class LocalLinkGenerator(LocalGeneratorBase):
         def _traverse_logic(item: FieldWrapper | EnumWrapper | TypeDefinition):
             if isinstance(item, EnumWrapper):
                 imports.append(
-                    f"import {{ {item.name} }} from '{controller_import_path}';"
+                    f"import {{ {item.name.global_name} }} from '{controller_import_path}';"
                 )
             elif isinstance(item, TypeDefinition):
                 yield from item.children
@@ -174,9 +174,10 @@ class LocalActionGenerator(LocalGeneratorBase):
 
         # Generate imports
         api_import_path = self.get_global_import_path("api.ts")
+        controller_import_path = self.get_global_import_path("controllers.ts")
         yield CodeBlock(
             f"import {{ __request, FetchErrorBase }} from '{api_import_path}';",
-            f"import type {{ {', '.join(dependencies)} }} from './models';",
+            f"import type {{ {', '.join(dependencies)} }} from '{controller_import_path}';",
             *exception_imports,
         )
 
@@ -208,9 +209,9 @@ class LocalActionGenerator(LocalGeneratorBase):
         deps = set()
         for action in parsed_controller.all_actions:
             if action.request_body:
-                deps.add(action.request_body.name)
+                deps.add(action.request_body.name.global_name)
             if action.response_body:
-                deps.add(action.response_body.name)
+                deps.add(action.response_body.name.global_name)
         return deps
 
     def _generate_exceptions(self, parsed_controller: ControllerWrapper):
@@ -221,19 +222,19 @@ class LocalActionGenerator(LocalGeneratorBase):
         )
 
         imports = [
-            f"import {{ {exception.name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
+            f"import {{ {exception.name.global_name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
             for exception in embedded_types.exceptions
         ]
 
         definitions = [
-            f"export class {exception.name} extends FetchErrorBase<{self._get_exception_import_name(exception)}> {{}}"
+            f"export class {exception.name.local_name} extends FetchErrorBase<{self._get_exception_import_name(exception)}> {{}}"
             for exception in embedded_types.exceptions
         ]
 
         return imports, definitions
 
     def _get_exception_import_name(self, exception: ExceptionWrapper):
-        return f"{exception.name}Base"
+        return f"{exception.name.local_name}Base"
 
 
 class LocalModelGenerator(LocalGeneratorBase):
@@ -270,21 +271,21 @@ class LocalModelGenerator(LocalGeneratorBase):
 
         yield CodeBlock(
             *[
-                f"export type {{ {controller.name} }} from '{controller_import_path}';"
+                f"export type {{ {controller.name.global_name} as {controller.name.local_name} }} from '{controller_import_path}';"
                 for controller in controllers
             ]
         )
 
         yield CodeBlock(
             *[
-                f"export type {{ {model.name} }} from '{controller_import_path}';"
+                f"export type {{ {model.name.global_name} as {model.name.local_name} }} from '{controller_import_path}';"
                 for model in embedded_types.models
             ]
         )
 
         yield CodeBlock(
             *[
-                f"export {{ {enum.name} }} from '{controller_import_path}';"
+                f"export {{ {enum.name.global_name} as {enum.name.local_name} }} from '{controller_import_path}';"
                 for enum in embedded_types.enums
             ]
         )
@@ -314,7 +315,7 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         )
 
         # Verify in this parent function that render is a non-None value
-        render_model_name = self.controller.render.name
+        render_model_name = self.controller.render.name.global_name
 
         yield from self._generate_imports(self.controller, render_model_name)
         yield from self._generate_interface(self.controller, render_model_name)
@@ -322,8 +323,9 @@ class LocalUseServerGenerator(LocalGeneratorBase):
 
     def _generate_imports(self, controller: ControllerWrapper, render_model: str):
         """Generate import statements"""
+        controller_import_path = self.get_global_import_path("controllers.ts")
         imports = [
-            f"import {{ {render_model}, {controller.name} }} from './models';",
+            f"import {{ {render_model}, {controller.name.global_name} }} from '{controller_import_path}';",
         ]
 
         if controller.all_actions:
@@ -338,7 +340,7 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         yield CodeBlock("declare global {", "  var SERVER_DATA: any;", "}")
 
         yield CodeBlock(
-            f"export interface ServerState extends {render_model}, {controller.name} {{",
+            f"export interface ServerState extends {render_model}, {controller.name.global_name} {{",
             "  linkGenerator: typeof LinkGenerator;",
             "}",
         )

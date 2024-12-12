@@ -33,7 +33,7 @@ class EnumInterface(InterfaceBase):
             fields[TSLiteral(name)] = value.value
 
         return cls(
-            name=enum.name,
+            name=enum.name.global_name,
             body=python_payload_to_typescript(fields, dict_equality="="),
         )
 
