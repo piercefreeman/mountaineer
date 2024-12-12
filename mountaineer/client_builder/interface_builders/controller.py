@@ -1,13 +1,15 @@
 from dataclasses import dataclass
+from typing import Any
 
+from mountaineer.client_builder.interface_builders.action import ActionInterface
 from mountaineer.client_builder.interface_builders.base import InterfaceBase
 from mountaineer.client_builder.parser import (
     ControllerWrapper,
 )
-from mountaineer.client_builder.interface_builders.action import ActionInterface
-from typing import Any
-
-from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
+from mountaineer.client_builder.typescript import (
+    TSLiteral,
+    python_payload_to_typescript,
+)
 
 
 @dataclass
@@ -18,6 +20,7 @@ class ControllerInterface(InterfaceBase):
     separately in their respective ModelInterface.
 
     """
+
     name: str
     body: str
     include_superclasses: list[str]
@@ -32,7 +35,9 @@ class ControllerInterface(InterfaceBase):
             # We don't need a URL here because we just want the type definition, not
             # the full definition
             action_def = ActionInterface.from_action(action, url="")
-            action_signature = f"(params: {action_def.typehints}) => {action_def.response_type}"
+            action_signature = (
+                f"(params: {action_def.typehints}) => {action_def.response_type}"
+            )
 
             fields[TSLiteral(action_def.name)] = TSLiteral(action_signature)
 

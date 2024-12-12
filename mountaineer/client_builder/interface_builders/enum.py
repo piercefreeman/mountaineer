@@ -1,12 +1,14 @@
 from dataclasses import dataclass
+from typing import Any
 
 from mountaineer.client_builder.interface_builders.base import InterfaceBase
 from mountaineer.client_builder.parser import (
     EnumWrapper,
 )
-from typing import Any
-
-from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
+from mountaineer.client_builder.typescript import (
+    TSLiteral,
+    python_payload_to_typescript,
+)
 
 
 @dataclass
@@ -17,7 +19,7 @@ class EnumInterface(InterfaceBase):
 
     @classmethod
     def from_enum(cls, enum: EnumWrapper):
-        fields : dict[str, Any] = {}
+        fields: dict[str, Any] = {}
 
         # Mirror the format of JS enums
         # https://www.typescriptlang.org/docs/handbook/enums.html

@@ -1,40 +1,19 @@
 
-from mountaineer.client_builder.file_generators.base import CodeBlock, FileGeneratorBase
-from dataclasses import dataclass
-from datetime import date, datetime, time
-from json import dumps as json_dumps
-from types import NoneType
-from typing import Any
-from uuid import UUID
-
 from graphlib import TopologicalSorter
 
-from mountaineer.actions.fields import FunctionActionType
+from mountaineer.client_builder.file_generators.base import CodeBlock, FileGeneratorBase
 from mountaineer.client_builder.interface_builders.controller import ControllerInterface
 from mountaineer.client_builder.interface_builders.enum import EnumInterface
 from mountaineer.client_builder.interface_builders.model import ModelInterface
 from mountaineer.client_builder.parser import (
-    ActionWrapper,
     ControllerWrapper,
     EnumWrapper,
-    FieldWrapper,
     ModelWrapper,
-    SelfReference,
-)
-from mountaineer.client_builder.types import (
-    DictOf,
-    ListOf,
-    LiteralOf,
-    Or,
-    SetOf,
-    TupleOf,
-    TypeDefinition,
 )
 from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
-from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 
 
@@ -46,15 +25,22 @@ class GlobalControllerGenerator(FileGeneratorBase):
     - Controllers
 
     """
-    def __init__(self, controller_wrappers: list[ControllerWrapper], managed_path: ManagedViewPath):
-        super().__init__(managed_path)
+
+    def __init__(
+        self,
+        controller_wrappers: list[ControllerWrapper],
+        managed_path: ManagedViewPath,
+    ):
+        super().__init__(managed_path=managed_path)
         self.controller_wrappers = controller_wrappers
 
     def script(self):
         # Recursively traverse our controller definitions, which themselves point to other
         # in-memory objects that should be converted like models and enums
-        controllers = self._gather_all_controllers(self.controller_wrappers)
-        models, enums = self._gather_models_and_enums(controllers)
+        controllers = ControllerWrapper.get_all_embedded_controllers(
+            self.controller_wrappers
+        )
+        models, enums = ControllerWrapper.get_all_embedded_types(controllers)
 
         # Resolve the MRO ordering for all the interfaces, since they'll be defined
         # in one file
@@ -140,69 +126,14 @@ class GlobalControllerGenerator(FileGeneratorBase):
         sorted_ids = TopologicalSorter(graph).static_order()
         return [id_to_obj[node_id] for node_id in sorted_ids]
 
-    def _gather_all_controllers(
-        self, controllers: list[ControllerWrapper]
-    ) -> list[ControllerWrapper]:
-        """Gather all controllers including superclasses"""
-        seen_ids = set()
-        result = []
-
-        def gather(controller: ControllerWrapper) -> None:
-            if id(controller) not in seen_ids:
-                seen_ids.add(id(controller))
-                for superclass in controller.superclasses:
-                    gather(superclass)
-                result.append(controller)
-
-        for controller in controllers:
-            gather(controller)
-
-        return result
-
-    def _gather_models_and_enums(
-        self, controllers: list[ControllerWrapper]
-    ) -> tuple[list[ModelWrapper], list[EnumWrapper]]:
-        """Collect all unique models and enums from controllers"""
-        models_dict: dict[int, ModelWrapper] = {}
-        enums_dict: dict[int, EnumWrapper] = {}
-
-        def process_value(value):
-            if isinstance(value, ModelWrapper):
-                process_model(value)
-            elif isinstance(value, EnumWrapper):
-                enums_dict[id(value)] = value
-            elif isinstance(value, TypeDefinition):
-                for child in value.children:
-                    process_value(child)
-            else:
-                LOGGER.info(f"Non-complex value: {value}")
-
-        def process_model(model: ModelWrapper) -> None:
-            """Process a model and all its dependencies"""
-            if id(model) not in models_dict:
-                models_dict[id(model)] = model
-                # Process all fields
-                for field in model.value_models:
-                    process_value(field.value)
-                # Process superclasses
-                for superclass in model.superclasses:
-                    process_model(superclass)
-
-        # Process all models from controllers
-        for controller in controllers:
-            if controller.render:
-                process_model(controller.render)
-            for action in controller.actions.values():
-                if action.request_body:
-                    process_model(action.request_body)
-                if action.response_body:
-                    process_model(action.response_body)
-
-        return list(models_dict.values()), list(enums_dict.values())
 
 class GlobalLinkGenerator(FileGeneratorBase):
-    def __init__(self, controller_wrappers: list[ControllerWrapper], managed_path: ManagedViewPath):
-        super().__init__(managed_path)
+    def __init__(
+        self,
+        controller_wrappers: list[ControllerWrapper],
+        managed_path: ManagedViewPath,
+    ):
+        super().__init__(managed_path=managed_path)
         self.controller_wrappers = controller_wrappers
 
     def _generate_link_aggregator(self):

@@ -1,12 +1,14 @@
 from dataclasses import dataclass
+from typing import Any
 
 from mountaineer.client_builder.interface_builders.base import InterfaceBase
 from mountaineer.client_builder.parser import (
-    EnumWrapper,
     ModelWrapper,
 )
-from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
-from typing import Any
+from mountaineer.client_builder.typescript import (
+    TSLiteral,
+    python_payload_to_typescript,
+)
 
 
 @dataclass

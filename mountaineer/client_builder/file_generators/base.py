@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
+from importlib.metadata import version
 from pathlib import Path
 from typing import Generator
-from importlib.metadata import version
+
 
 class FileGeneratorBase(ABC):
-    def __init__(self, output_path: Path):
-        self.output_path = output_path
+    def __init__(self, *, managed_path: Path):
+        self.managed_path = managed_path
 
         mountaineer_version = version("mountaineer")
         self.standard_header = CodeBlock(
@@ -17,7 +18,7 @@ class FileGeneratorBase(ABC):
     def write(self):
         blocks = list(self.script())
         blocks = [self.standard_header] + blocks
-        self.output_path.write_text(
+        self.managed_path.write_text(
             "\n\n".join("\n".join(block.lines) for block in blocks)
         )
 

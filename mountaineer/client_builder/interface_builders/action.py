@@ -38,7 +38,9 @@ class ActionInterface(InterfaceBase):
 
         # System parameters (always optional)
         system_parameters = {"signal": TSLiteral("signal")}
-        system_typehints : dict[str, Any] = {TSLiteral("signal?"): TSLiteral("AbortSignal")}
+        system_typehints: dict[str, Any] = {
+            TSLiteral("signal?"): TSLiteral("AbortSignal")
+        }
 
         # Add path/query parameters
         for param in action.params:

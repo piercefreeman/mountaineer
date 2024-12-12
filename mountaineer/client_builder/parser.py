@@ -110,7 +110,9 @@ class ControllerWrapper:
         return all_actions
 
     @classmethod
-    def get_all_embedded_types(cls, controllers: list["ControllerWrapper"], include_superclasses: bool = False) -> tuple[list[ModelWrapper], list[EnumWrapper]]:
+    def get_all_embedded_types(
+        cls, controllers: list["ControllerWrapper"], include_superclasses: bool = False
+    ) -> tuple[list[ModelWrapper], list[EnumWrapper]]:
         """
         For all the models and enums that are embedded in this controller (actions+render), return them in a flat list.
         Results will be deduplicated.
@@ -119,10 +121,12 @@ class ControllerWrapper:
         referenced by superclasses.
 
         """
-        models : list[ModelWrapper] = []
-        enums : list[EnumWrapper] = []
+        models: list[ModelWrapper] = []
+        enums: list[EnumWrapper] = []
 
-        def _traverse_logic(item: ControllerWrapper | ModelWrapper | EnumWrapper | TypeDefinition):
+        def _traverse_logic(
+            item: ControllerWrapper | ModelWrapper | EnumWrapper | TypeDefinition,
+        ):
             nonlocal models, enums
 
             if isinstance(item, ControllerWrapper):
@@ -155,12 +159,14 @@ class ControllerWrapper:
         return models, enums
 
     @classmethod
-    def get_all_embedded_controllers(cls, controllers: list["ControllerWrapper"]) -> list[ControllerWrapper]:
+    def get_all_embedded_controllers(
+        cls, controllers: list["ControllerWrapper"]
+    ) -> list[ControllerWrapper]:
         """
         Gets all unique superclasses of the given set of controllers.
 
         """
-        all_controllers : list[ControllerWrapper] = []
+        all_controllers: list[ControllerWrapper] = []
 
         def _traverse_logic(item: ControllerWrapper):
             nonlocal all_controllers
@@ -178,12 +184,13 @@ class ControllerWrapper:
 
         """
         queue = initial_queue
-        already_seen : set[int] = set()
+        already_seen: set[int] = set()
         while queue:
             item = queue.pop(0)
             if id(item) in already_seen:
                 continue
             queue.extend(list(logic(item)))
+
 
 @dataclass
 class SelfReference:
@@ -198,6 +205,7 @@ class ControllerParser:
     through the TypeScript pipeline into full interface signatures and implementations.
 
     """
+
     def __init__(self):
         self.parsed_models: dict[type[BaseModel], ModelWrapper] = {}
         self.parsed_enums: dict[type[Enum], EnumWrapper] = {}
