@@ -40,9 +40,7 @@ class ControllerInterface(InterfaceBase):
             # which makes the whole params object optional
             optional_params = "?" if action_def.default_initializer else ""
 
-            action_signature = (
-                f"(params{optional_params}: {action_def.typehints}) => {action_def.response_type}"
-            )
+            action_signature = f"(params{optional_params}: {action_def.typehints}) => {action_def.response_type}"
 
             fields[TSLiteral(action_def.name)] = TSLiteral(action_signature)
 

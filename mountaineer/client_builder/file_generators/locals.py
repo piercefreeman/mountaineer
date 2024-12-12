@@ -7,9 +7,9 @@ from mountaineer.client_builder.interface_builders.controller import ControllerI
 from mountaineer.client_builder.parser import (
     ControllerWrapper,
     EnumWrapper,
-    TypeDefinition,
+    ExceptionWrapper,
     FieldWrapper,
-    ModelWrapper,
+    TypeDefinition,
 )
 from mountaineer.client_builder.typescript import (
     TSLiteral,
@@ -57,15 +57,20 @@ class LocalLinkGenerator(LocalGeneratorBase):
         # Deeply traverse for any enums contained within these fields - this especially
         # is useful for nested objects, like an optional URL parameter (Or(None, Enum))
         imports = []
+
         def _traverse_logic(item: FieldWrapper | EnumWrapper | TypeDefinition):
             if isinstance(item, EnumWrapper):
-                imports.append(f"import {{ {item.name} }} from '{controller_import_path}';")
+                imports.append(
+                    f"import {{ {item.name} }} from '{controller_import_path}';"
+                )
             elif isinstance(item, TypeDefinition):
                 yield from item.children
             elif isinstance(item, FieldWrapper):
                 yield item.value
 
-        ControllerWrapper._traverse_iterator(_traverse_logic, controller.queries + controller.paths)
+        ControllerWrapper._traverse_iterator(
+            _traverse_logic, controller.queries + controller.paths
+        )
 
         yield CodeBlock(*imports)
 
@@ -86,14 +91,14 @@ class LocalLinkGenerator(LocalGeneratorBase):
         for field in controller.queries:
             query_parameters[field.name] = TSLiteral(field.name)
             optional_param = "?" if not field.required else ""
-            query_typehints[TSLiteral(field.name+optional_param)] = TSLiteral(
+            query_typehints[TSLiteral(field.name + optional_param)] = TSLiteral(
                 ControllerInterface._get_annotated_value(field.value)
             )
 
         for field in controller.paths:
             path_parameters[field.name] = TSLiteral(field.name)
             optional_param = "?" if not field.required else ""
-            path_typehints[TSLiteral(field.name+optional_param)] = TSLiteral(
+            path_typehints[TSLiteral(field.name + optional_param)] = TSLiteral(
                 ControllerInterface._get_annotated_value(field.value)
             )
 
@@ -163,17 +168,24 @@ class LocalActionGenerator(LocalGeneratorBase):
     def script(self):
         action_js = self._generate_controller_actions(self.controller)
         dependencies = self._get_dependent_imports(self.controller)
+        exception_imports, exception_definitions = self._generate_exceptions(
+            self.controller
+        )
 
         # Generate imports
         api_import_path = self.get_global_import_path("api.ts")
         yield CodeBlock(
             f"import {{ __request, FetchErrorBase }} from '{api_import_path}';",
             f"import type {{ {', '.join(dependencies)} }} from './models';",
+            *exception_imports,
         )
 
         # Generate actions
         for action in action_js:
             yield CodeBlock(action)
+
+        for exception in exception_definitions:
+            yield CodeBlock(exception)
 
     def _generate_controller_actions(self, controller: ControllerWrapper):
         """
@@ -184,7 +196,9 @@ class LocalActionGenerator(LocalGeneratorBase):
         # Convert each action. We also include the superclass methods, since they're
         # actually bound to the controller instance with separate urls.
         all_actions = [
-            ActionInterface.from_action(action, action.controller_to_url[controller.controller])
+            ActionInterface.from_action(
+                action, action.controller_to_url[controller.controller]
+            )
             for action in controller.all_actions
         ]
 
@@ -198,6 +212,28 @@ class LocalActionGenerator(LocalGeneratorBase):
             if action.response_body:
                 deps.add(action.response_body.name)
         return deps
+
+    def _generate_exceptions(self, parsed_controller: ControllerWrapper):
+        """Wrapper around the model to create a concrete Exception class"""
+        controllers_import_path = self.get_global_import_path("controllers.ts")
+        embedded_types = ControllerWrapper.get_all_embedded_types(
+            [parsed_controller], include_superclasses=True
+        )
+
+        imports = [
+            f"import {{ {exception.name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
+            for exception in embedded_types.exceptions
+        ]
+
+        definitions = [
+            f"export class {exception.name} extends FetchErrorBase<{self._get_exception_import_name(exception)}> {{}}"
+            for exception in embedded_types.exceptions
+        ]
+
+        return imports, definitions
+
+    def _get_exception_import_name(self, exception: ExceptionWrapper):
+        return f"{exception.name}Base"
 
 
 class LocalModelGenerator(LocalGeneratorBase):
@@ -228,7 +264,7 @@ class LocalModelGenerator(LocalGeneratorBase):
         controller_import_path = self.get_global_import_path("controllers.ts")
 
         controllers = ControllerWrapper.get_all_embedded_controllers([self.controller])
-        models, enums = ControllerWrapper.get_all_embedded_types(
+        embedded_types = ControllerWrapper.get_all_embedded_types(
             [self.controller], include_superclasses=True
         )
 
@@ -242,14 +278,14 @@ class LocalModelGenerator(LocalGeneratorBase):
         yield CodeBlock(
             *[
                 f"export type {{ {model.name} }} from '{controller_import_path}';"
-                for model in models
+                for model in embedded_types.models
             ]
         )
 
         yield CodeBlock(
             *[
                 f"export {{ {enum.name} }} from '{controller_import_path}';"
-                for enum in enums
+                for enum in embedded_types.enums
             ]
         )
 

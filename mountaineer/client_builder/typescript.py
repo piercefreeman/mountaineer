@@ -28,9 +28,7 @@ class TSLiteral(str):
 
 
 def python_payload_to_typescript(
-    payload: Any,
-    dict_equality: str = ":",
-    current_indent: int = 0
+    payload: Any, dict_equality: str = ":", current_indent: int = 0
 ) -> str:
     """
     Take an element with python tokens that should be outputted to
@@ -52,7 +50,9 @@ def python_payload_to_typescript(
                     continue
 
             key = python_payload_to_typescript(key)
-            value = python_payload_to_typescript(value, current_indent=current_indent + 2)
+            value = python_payload_to_typescript(
+                value, current_indent=current_indent + 2
+            )
             children_lines.append(f"{inner_indent_str}{key}{dict_equality} {value}")
 
         children_str = ",\n".join(children_lines)
@@ -66,9 +66,7 @@ def python_payload_to_typescript(
     elif isinstance(payload, list):
         children_lines = [python_payload_to_typescript(child) for child in payload]
         children_str = ",\n".join(
-            [
-                f"{inner_indent_str}{child}" for child in children_lines
-            ]
+            [f"{inner_indent_str}{child}" for child in children_lines]
         )
         return f"[\n{children_str}\n{indent_str}]"
     elif isinstance(payload, TSLiteral):

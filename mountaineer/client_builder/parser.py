@@ -30,6 +30,7 @@ from mountaineer.controller import (
     get_client_functions_cls,
 )
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.exceptions import APIException as APIException
 from mountaineer.generics import resolve_generic_type
 from mountaineer.render import RenderBase
 
@@ -54,6 +55,14 @@ class ModelWrapper:
 
 
 @dataclass
+class ExceptionWrapper:
+    name: str
+    status_code: int
+    exception: Type[APIException]
+    value_models: list[FieldWrapper]
+
+
+@dataclass
 class EnumWrapper:
     name: str
     enum: type[Enum]
@@ -62,15 +71,18 @@ class EnumWrapper:
 @dataclass
 class ActionWrapper:
     name: str
+    action_type: FunctionActionType
+
     params: list[FieldWrapper]
     headers: list[FieldWrapper]
     request_body: Optional[ModelWrapper]
     response_body: Optional[ModelWrapper]
-    action_type: FunctionActionType
+    exceptions: list[ExceptionWrapper]
 
     # Actions can be mounted to multiple controllers through inheritance
     # This will store a mapping of each controller to the url that the action is mounted to
-    controller_to_url:  dict[Type[ControllerBase], str]
+    controller_to_url: dict[Type[ControllerBase], str]
+
 
 @dataclass
 class ControllerWrapper:
@@ -116,7 +128,7 @@ class ControllerWrapper:
     @classmethod
     def get_all_embedded_types(
         cls, controllers: list["ControllerWrapper"], include_superclasses: bool = False
-    ) -> tuple[list[ModelWrapper], list[EnumWrapper]]:
+    ) -> "EmbeddedTypeContainer":
         """
         For all the models and enums that are embedded in this controller (actions+render), return them in a flat list.
         Results will be deduplicated.
@@ -127,23 +139,34 @@ class ControllerWrapper:
         """
         models: list[ModelWrapper] = []
         enums: list[EnumWrapper] = []
+        exceptions: list[ExceptionWrapper] = []
 
         def _traverse_logic(
-            item: ControllerWrapper | ModelWrapper | EnumWrapper | TypeDefinition,
+            item: ControllerWrapper
+            | ModelWrapper
+            | ExceptionWrapper
+            | ActionWrapper
+            | EnumWrapper
+            | TypeDefinition,
         ):
             nonlocal models, enums
 
             if isinstance(item, ControllerWrapper):
                 if item.render:
                     yield item.render
-                for action in item.all_actions:
-                    if action.request_body:
-                        yield action.request_body
-                    if action.response_body:
-                        yield action.response_body
+
+                yield from item.actions.values()
 
                 if include_superclasses:
                     yield from item.superclasses
+
+            elif isinstance(item, ActionWrapper):
+                if item.request_body:
+                    yield item.request_body
+                if item.response_body:
+                    yield item.response_body
+                print("EXCEPTIONS", item.exceptions)
+                yield from item.exceptions
 
             elif isinstance(item, ModelWrapper):
                 models.append(item)
@@ -157,11 +180,15 @@ class ControllerWrapper:
             elif isinstance(item, EnumWrapper):
                 enums.append(item)
 
+            elif isinstance(item, ExceptionWrapper):
+                print("GET EXCEPTION", item)
+                exceptions.append(item)
+
             elif isinstance(item, TypeDefinition):
                 yield from item.children
 
         cls._traverse_iterator(_traverse_logic, controllers)
-        return models, enums
+        return EmbeddedTypeContainer(models=models, enums=enums, exceptions=exceptions)
 
     @classmethod
     def get_all_embedded_controllers(
@@ -184,9 +211,7 @@ class ControllerWrapper:
 
     @classmethod
     def _traverse_iterator(
-        cls,
-        logic: Callable[[T], Generator[T, None, None]],
-        initial_queue: list[T]
+        cls, logic: Callable[[T], Generator[T, None, None]], initial_queue: list[T]
     ):
         """
         Memory-identity traversal, only will traverse each unique object once.
@@ -225,6 +250,13 @@ class SelfReference:
     model: Type[BaseModel]
 
 
+@dataclass
+class EmbeddedTypeContainer:
+    models: list[ModelWrapper]
+    enums: list[EnumWrapper]
+    exceptions: list[ExceptionWrapper]
+
+
 class ControllerParser:
     """
     Our ControllerParser is responsible for taking the in-memory representations of
@@ -234,10 +266,11 @@ class ControllerParser:
     """
 
     def __init__(self):
-        self.parsed_models: dict[type[BaseModel], ModelWrapper] = {}
-        self.parsed_enums: dict[type[Enum], EnumWrapper] = {}
-        self.parsed_controllers: dict[type[ControllerBase], ControllerWrapper] = {}
+        self.parsed_models: dict[Type[BaseModel], ModelWrapper] = {}
+        self.parsed_enums: dict[Type[Enum], EnumWrapper] = {}
+        self.parsed_controllers: dict[Type[ControllerBase], ControllerWrapper] = {}
         self.parsed_self_references: list[SelfReference] = []
+        self.parsed_exceptions: dict[Type[APIException], ExceptionWrapper] = {}
 
         self.type_parser = TypeParser()
 
@@ -549,12 +582,44 @@ class ControllerParser:
                 headers=self._parse_headers(func, name, synthetic_action_url),
                 request_body=self._parse_request_body(func, name, synthetic_action_url),
                 response_body=self._parse_response_body(metadata),
+                exceptions=[
+                    self._parse_exception(exception)
+                    for exception in (
+                        (metadata.exception_models or [])
+                        if not isinstance(
+                            metadata.exception_models, MountaineerUnsetValue
+                        )
+                        else []
+                    )
+                ],
                 action_type=metadata.action_type,
                 controller_to_url=metadata.controller_mounts,
             )
             actions[name] = action
 
         return actions
+
+    def _parse_exception(self, exception: Type[APIException]):
+        if exception in self.parsed_exceptions:
+            return self.parsed_exceptions[exception]
+
+        print(
+            "PARSE EXCEPTION",
+            exception.__name__,
+            exception.InternalModel.model_fields.items(),
+        )
+
+        wrapper = ExceptionWrapper(
+            name=exception.__name__,
+            status_code=exception.status_code,
+            exception=exception,
+            value_models=[
+                self._parse_field(name, field_info)
+                for name, field_info in exception.InternalModel.model_fields.items()
+            ],
+        )
+        self.parsed_exceptions[exception] = wrapper
+        return wrapper
 
     def _get_valid_mro_classes(
         self, cls: type, base_exclude_classes: tuple[type, ...]

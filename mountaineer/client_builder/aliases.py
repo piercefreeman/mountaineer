@@ -40,6 +40,9 @@ class AliasManager:
         for enum in parser.parsed_enums.values():
             enum.name = normalize_interface(enum.name)
             reference_counts.update([enum.name])
+        for exception in parser.parsed_exceptions.values():
+            exception.name = normalize_interface(exception.name)
+            reference_counts.update([exception.name])
         for controller in parser.parsed_controllers.values():
             controller.name = normalize_interface(controller.name)
             reference_counts.update([controller.name])
@@ -63,6 +66,12 @@ class AliasManager:
             if enum.name in duplicate_names:
                 prefix = self._typescript_prefix_from_module(enum.enum.__module__)
                 enum.name = f"{prefix}_{enum.name}"
+        for exception in parser.parsed_exceptions.values():
+            if exception.name in duplicate_names:
+                prefix = self._typescript_prefix_from_module(
+                    exception.exception.__module__
+                )
+                exception.name = f"{prefix}_{exception.name}"
         for controller in parser.parsed_controllers.values():
             if controller.name in duplicate_names:
                 prefix = self._typescript_prefix_from_module(

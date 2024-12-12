@@ -1,18 +1,20 @@
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 from time import monotonic_ns
-from typing import Dict
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.aliases import AliasManager
 from mountaineer.client_builder.file_generators.base import ParsedController
-from mountaineer.client_builder.file_generators.globals import GlobalLinkGenerator, GlobalControllerGenerator
+from mountaineer.client_builder.file_generators.globals import (
+    GlobalControllerGenerator,
+    GlobalLinkGenerator,
+)
 from mountaineer.client_builder.file_generators.locals import (
-    LocalLinkGenerator,
     LocalActionGenerator,
+    LocalIndexGenerator,
+    LocalLinkGenerator,
     LocalModelGenerator,
     LocalUseServerGenerator,
-    LocalIndexGenerator,
 )
 from mountaineer.client_builder.parser import (
     ControllerParser,
@@ -75,7 +77,7 @@ class APIBuilder:
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""
         parser = ControllerParser()
-        parsed_controllers : list[ParsedController] = []
+        parsed_controllers: list[ParsedController] = []
 
         for controller_def in self.app.controllers:
             controller = controller_def.controller
@@ -87,12 +89,14 @@ class APIBuilder:
             view_path = self.view_root.get_controller_view_path(controller)
 
             # Create ParsedController instance
-            parsed_controllers.append(ParsedController(
-                wrapper=parsed_wrapper,
-                view_path=view_path,
-                url_prefix=controller_def.url_prefix,
-                is_layout=isinstance(controller, LayoutControllerBase),
-            ))
+            parsed_controllers.append(
+                ParsedController(
+                    wrapper=parsed_wrapper,
+                    view_path=view_path,
+                    url_prefix=controller_def.url_prefix,
+                    is_layout=isinstance(controller, LayoutControllerBase),
+                )
+            )
 
         return parser, parsed_controllers
 
@@ -103,7 +107,9 @@ class APIBuilder:
         global_root = self.view_root.get_managed_code_dir()
 
         global_controller_generator = GlobalControllerGenerator(
-            controller_wrappers=[controller.wrapper for controller in parsed_controllers],
+            controller_wrappers=[
+                controller.wrapper for controller in parsed_controllers
+            ],
             managed_path=global_root / "controllers.ts",
         )
         global_link_generator = GlobalLinkGenerator(

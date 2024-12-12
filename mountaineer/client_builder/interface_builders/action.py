@@ -86,6 +86,7 @@ class ActionInterface(InterfaceBase):
             "url": url,
             "path": {},
             "query": {},
+            "errors": {},
             "signal": TSLiteral("signal"),
         }
 
@@ -96,6 +97,9 @@ class ActionInterface(InterfaceBase):
         if action.request_body:
             payload["body"] = TSLiteral("requestBody")
             payload["mediaType"] = "application/json"
+
+        for exception in action.exceptions:
+            payload["errors"][exception.status_code] = TSLiteral(exception.name)
 
         # Clean up empty dicts
         for key in ["path", "query"]:

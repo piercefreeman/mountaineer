@@ -59,7 +59,7 @@ def test_python_payload_to_typescript_primitives(payload: Any, expected_str: str
                 "    'd': someVariable\n"
                 "  }\n"
                 "}"
-            )
+            ),
         )
     ],
 )

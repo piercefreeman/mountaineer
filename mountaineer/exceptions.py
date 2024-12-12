@@ -3,6 +3,8 @@ from typing import Any, Type, cast, get_type_hints
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, create_model
 
+from mountaineer.annotation_helpers import MountaineerUnsetValue
+
 # Keys that are used to initialize the HTTPException model
 HTTPExceptionKeys = ["status_code", "detail", "headers"]
 
@@ -34,7 +36,7 @@ class InternalModelMeta(type):
         fields = {
             key: (
                 key_type,
-                getattr(cls, key, Field(default_factory=lambda: None)),
+                getattr(cls, key, cls._build_default_field(key, key_type)),
             )
             for key, key_type in type_hints.items()
             if key not in ["InternalModel", "internal_model"]
@@ -47,6 +49,14 @@ class InternalModelMeta(type):
             **cast(Any, fields),
         )
         cls.InternalModel.__module__ = cls.__module__
+
+    def _build_default_field(cls, key, key_type):
+        default_value = getattr(cls, key, MountaineerUnsetValue())
+
+        if isinstance(default_value, MountaineerUnsetValue):
+            return Field(key_type)
+        else:
+            return Field(default_factory=lambda: default_value)
 
     def __call__(cls, *args, **kwargs):
         # Override the __call__ method to instantiate models like Pydantic does

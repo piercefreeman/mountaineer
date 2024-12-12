@@ -10,6 +10,7 @@ from mountaineer.client_builder.file_generators.base import (
 )
 from mountaineer.client_builder.interface_builders.controller import ControllerInterface
 from mountaineer.client_builder.interface_builders.enum import EnumInterface
+from mountaineer.client_builder.interface_builders.exception import ExceptionInterface
 from mountaineer.client_builder.interface_builders.model import ModelInterface
 from mountaineer.client_builder.parser import (
     ControllerWrapper,
@@ -47,16 +48,16 @@ class GlobalControllerGenerator(FileGeneratorBase):
         controllers = ControllerWrapper.get_all_embedded_controllers(
             self.controller_wrappers
         )
-        models, enums = ControllerWrapper.get_all_embedded_types(controllers, include_superclasses=True)
-
-        print("ALL MODELS", [
-            model.name for model in models
-        ])
+        embedded_types = ControllerWrapper.get_all_embedded_types(
+            controllers, include_superclasses=True
+        )
 
         # Resolve the MRO ordering for all the interfaces, since they'll be defined
         # in one file
         controller_sorted = self._build_controller_graph(controllers)
-        model_enum_sorted = self._build_model_enum_graph(models, enums)
+        model_enum_sorted = self._build_model_enum_graph(
+            embedded_types.models, embedded_types.enums
+        )
 
         yield CodeBlock(
             "/*",
@@ -73,6 +74,16 @@ class GlobalControllerGenerator(FileGeneratorBase):
                 yield CodeBlock(EnumInterface.from_enum(item).to_js())
             else:
                 raise ValueError(f"Unsupported item type: {item}")
+
+        yield CodeBlock(
+            "/*",
+            " * Exceptions",
+            " */",
+        )
+
+        # Exceptions don't have other dependencies so they can be added in any order
+        for exception in embedded_types.exceptions:
+            yield CodeBlock(ExceptionInterface.from_exception(exception).to_js())
 
         yield CodeBlock(
             "/*",
