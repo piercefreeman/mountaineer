@@ -25,6 +25,12 @@ class APIExceptionInternalModelBase(BaseModel):
 
 
 class InternalModelMeta(type):
+    """
+    Introspect APIException class definitions where they're defined to convert
+    their class-based typehints into an internal Pydantic BaseModel that can validate
+    individual instances.
+
+    """
     def __new__(mcs, name, bases, namespace):
         cls = super().__new__(mcs, name, bases, namespace)
         cls._create_internal_model()
@@ -54,7 +60,7 @@ class InternalModelMeta(type):
         default_value = getattr(cls, key, MountaineerUnsetValue())
 
         if isinstance(default_value, MountaineerUnsetValue):
-            return Field(key_type)
+            return Field()
         else:
             return Field(default_factory=lambda: default_value)
 
@@ -101,7 +107,12 @@ class APIException(HTTPException, metaclass=InternalModelMeta):
     detail: str = "A server error occurred"
     headers: dict[str, str] = Field(default_factory=dict)
 
+    # Set by the metaclass to provide internal validation for runtime values assigned
+    # to our marked up typehints
     InternalModel: Type[APIExceptionInternalModelBase]
+
+    # Set on the instance of the exception with the user values, these are
+    # used to pass to the client caller
     internal_model: APIExceptionInternalModelBase
 
     # We can't synthetically create an API contract with the instance variables

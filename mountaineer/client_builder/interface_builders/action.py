@@ -96,13 +96,14 @@ class ActionInterface(InterfaceBase):
 
         if action.request_body:
             payload["body"] = TSLiteral("requestBody")
-            payload["mediaType"] = "application/json"
+            payload["mediaType"] = action.request_body.body_type
 
         for exception in action.exceptions:
             payload["errors"][exception.status_code] = TSLiteral(exception.name)
 
-        # Clean up empty dicts
-        for key in ["path", "query"]:
+        # Clean up empty dicts. These are optional in the request API interface and
+        # clean up the generated code
+        for key in ["path", "query", "errors"]:
             if not payload[key]:
                 del payload[key]
 

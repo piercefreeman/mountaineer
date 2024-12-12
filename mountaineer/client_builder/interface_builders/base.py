@@ -4,6 +4,9 @@ from types import NoneType
 from typing import Any
 from uuid import UUID
 
+from fastapi import UploadFile
+from fastapi.params import File
+
 from mountaineer.client_builder.parser import (
     EnumWrapper,
     ModelWrapper,
@@ -60,11 +63,13 @@ class InterfaceBase:
             datetime: "string",
             date: "string",
             time: "string",
+            UploadFile: "Blob",
             UUID: "string",
             None: "null",
             NoneType: "null",
             Any: "any",
         }
+        print(py_type)
         return type_map.get(py_type)
 
     @classmethod

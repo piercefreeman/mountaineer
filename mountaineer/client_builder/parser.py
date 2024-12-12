@@ -11,9 +11,10 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter
-from fastapi.params import Body, Depends, Header
+from fastapi import APIRouter, UploadFile
+from fastapi.params import Body, Depends, Header, File, Form
 from fastapi.routing import APIRoute
+from inflection import camelize
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
 
@@ -52,6 +53,7 @@ class ModelWrapper:
     isolated_model: type[BaseModel]  # Model with only direct fields
     superclasses: list["ModelWrapper"]
     value_models: list[FieldWrapper]
+    body_type: str = "application/json"
 
 
 @dataclass
@@ -543,14 +545,55 @@ class ControllerParser:
         """Parse request body using FastAPI's dependency system"""
         route = self._create_temp_route(func, name, url)
 
-        if route.dependant.body_params:
-            body_param = route.dependant.body_params[0]  # Get first body param
-            if isinstance(body_param.type_, type) and issubclass(
-                body_param.type_, BaseModel
-            ):
-                return self._parse_model(body_param.type_)
+        if not route.dependant.body_params:
+            return None
 
-        return None
+        body_fields: dict[str, FieldInfo] = {}
+        has_files = False
+        has_form = False
+
+        # Analyze all body parameters
+        for body_param in route.dependant.body_params:
+            field_info = body_param.field_info
+            field_type = body_param.type_
+
+            # Handle Pydantic models
+            if isinstance(field_type, type) and issubclass(field_type, BaseModel):
+                return self._parse_model(field_type)
+
+            # Handle File uploads, subclass of Form
+            elif isinstance(field_info, File):
+                has_files = True
+                body_fields[body_param.name] = field_info
+
+            # Handle Form fields
+            elif isinstance(field_info, Form):
+                has_form = True
+                body_fields[body_param.name] = field_info
+
+
+        # Create dynamic model for the body, since forms don't otherwise
+        # have a Pydantic model that wraps the values
+        body_model = create_model(
+            f"{camelize(name)}Form",
+            __module__=func.__module__,
+            **{
+                name: (field_info.annotation, field_info) # type: ignore
+                for name, field_info in body_fields.items()
+            }
+        )
+
+        # Determine the type of request body
+        if has_files:
+            body_type = "multipart/form-data"
+        elif has_form:
+            body_type = "application/x-www-form-urlencoded"
+        else:
+            return None
+
+        model_wrapped = self._parse_model(body_model)
+        model_wrapped.body_type = body_type
+        return model_wrapped
 
     def _parse_response_body(
         self, metadata: FunctionMetadata
@@ -602,12 +645,6 @@ class ControllerParser:
     def _parse_exception(self, exception: Type[APIException]):
         if exception in self.parsed_exceptions:
             return self.parsed_exceptions[exception]
-
-        print(
-            "PARSE EXCEPTION",
-            exception.__name__,
-            exception.InternalModel.model_fields.items(),
-        )
 
         wrapper = ExceptionWrapper(
             name=exception.__name__,
