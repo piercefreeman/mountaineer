@@ -32,7 +32,7 @@ class TypeComparisonHelpers:
         if isinstance(type1, TypeDefinition) and isinstance(type2, TypeDefinition):
             return TypeComparisonHelpers.are_type_definitions_equivalent(type1, type2)
 
-        return type1 == type2
+        return bool(type1 == type2)
 
     @staticmethod
     def find_matching_type(target: Any, candidates: tuple[Any, ...]) -> bool:

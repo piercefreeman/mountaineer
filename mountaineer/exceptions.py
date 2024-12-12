@@ -31,6 +31,7 @@ class InternalModelMeta(type):
     individual instances.
 
     """
+
     def __new__(mcs, name, bases, namespace):
         cls = super().__new__(mcs, name, bases, namespace)
         cls._create_internal_model()

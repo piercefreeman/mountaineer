@@ -375,11 +375,11 @@ def test_parse_self_referencing_model(controller_parser):
 
     # Test primitive fields
     assert fields["id"].value == int
-    assert fields["id"].required == True
+    assert fields["id"].required
     assert fields["name"].value == str
-    assert fields["name"].required == True
+    assert fields["name"].required
     assert fields["created_at"].value == datetime
-    assert fields["created_at"].required == True
+    assert fields["created_at"].required
 
     # Test self-referencing fields
     parent_field = fields["parent"]
@@ -390,7 +390,7 @@ def test_parse_self_referencing_model(controller_parser):
     assert self_reference.model == CategoryNode
 
     children_field = fields["children"]
-    assert children_field.required == False  # Has default value
+    assert not children_field.required  # Has default value
     assert hasattr(children_field.value, "children")  # Should have type info preserved
 
     # Verify isolated model contains all direct fields
@@ -434,21 +434,21 @@ def test_parse_generic_model(controller_parser):
     assert len(string_fields) == 1
     assert "value" in string_fields
     assert string_fields["value"].value == str
-    assert string_fields["value"].required == True
+    assert string_fields["value"].required
 
     # Test field structure for int variant
     int_fields = {f.name: f for f in int_model.value_models}
     assert len(int_fields) == 1
     assert "value" in int_fields
     assert int_fields["value"].value == int
-    assert int_fields["value"].required == True
+    assert int_fields["value"].required
 
     # Test field structure for datetime variant
     date_fields = {f.name: f for f in date_model.value_models}
     assert len(date_fields) == 1
     assert "value" in date_fields
     assert date_fields["value"].value == datetime
-    assert date_fields["value"].required == True
+    assert date_fields["value"].required
 
     # Test that the isolated model preserves the field structure
     assert set(string_model.isolated_model.model_fields.keys()) == {"value"}
@@ -464,7 +464,7 @@ def test_parse_generic_nested(controller_parser):
 
     assert len(nested_fields) == 1
     assert "value" in nested_fields
-    assert nested_fields["value"].required == True
+    assert nested_fields["value"].required
 
     # Test that the isolated model preserves the field structure
     assert set(nested_model.isolated_model.model_fields.keys()) == {"value"}
@@ -495,7 +495,7 @@ def test_parse_generic_list_generic(controller_parser):
     assert hasattr(
         list_fields["value"].value, "children"
     )  # Should preserve list type info
-    assert list_fields["value"].required == True
+    assert list_fields["value"].required
 
 
 def test_parse_generic_model_complex(controller_parser):

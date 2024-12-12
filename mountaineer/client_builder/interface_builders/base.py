@@ -5,7 +5,6 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import UploadFile
-from fastapi.params import File
 
 from mountaineer.client_builder.parser import (
     EnumWrapper,
@@ -69,7 +68,6 @@ class InterfaceBase:
             NoneType: "null",
             Any: "any",
         }
-        print(py_type)
         return type_map.get(py_type)
 
     @classmethod
@@ -84,9 +82,7 @@ class InterfaceBase:
             return f"Array<{cls._get_annotated_value(type_hint.type)}>"
 
         if isinstance(type_hint, TupleOf):
-            values = [
-                cls._get_annotated_value(t) for t in type_hint.types
-            ]
+            values = [cls._get_annotated_value(t) for t in type_hint.types]
             return f"[{','.join(values)}]"
 
         if isinstance(type_hint, SetOf):

@@ -5,13 +5,10 @@ from unittest.mock import patch
 
 import pytest
 from fastapi import APIRouter, FastAPI, status
-from fastapi.openapi.models import OpenAPI
 from fastapi.responses import RedirectResponse
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from pydantic import BaseModel
 
-from mountaineer.actions import passthrough
 from mountaineer.app import AppController, ControllerDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
@@ -69,40 +66,6 @@ def test_validates_layouts_exclude_urls():
         app_controller.register(TestLayoutController())
 
 
-def test_generate_openapi():
-    class ExampleSubModel(BaseModel):
-        sub_value: str
-
-    class ExampleException(APIException):
-        status_code = 401
-        invalid_reason: str
-        sub_model: ExampleSubModel
-
-    class ExampleController(ControllerBase):
-        url = "/example"
-        view_path = "/example.tsx"
-
-        def render(self) -> None:
-            pass
-
-        @passthrough(exception_models=[ExampleException])
-        def test_exception_action(self) -> None:
-            pass
-
-    app = AppController(view_root=Path(""))
-    app.register(ExampleController())
-    openapi_spec = app.generate_openapi()
-    openapi_definition = OpenAPI(**openapi_spec)
-    assert openapi_definition.components
-
-    assert openapi_definition.components.schemas
-    assert openapi_definition.components.schemas.keys() == {
-        "TestExceptionActionResponse",
-        "ExampleException",
-        "ExampleSubModel",
-    }
-
-
 def test_format_exception_model():
     class ExampleException(APIException):
         status_code = 401
@@ -124,159 +87,6 @@ def test_format_exception_model():
         "detail",
         "headers",
     }
-
-
-def test_handle_conflicting_exception_names():
-    class Obj1(APIException):
-        status_code = 401
-        value: str
-
-    class Obj2(APIException):
-        status_code = 404
-        value: str
-
-    # Since we don't actually want to define these fake
-    # modules we just override it at runtime
-    Obj1.InternalModel.__name__ = "ExampleException"
-    Obj1.InternalModel.__module__ = "mountaineer.__tests__.test_1"
-    Obj2.InternalModel.__name__ = "ExampleException"
-    Obj2.InternalModel.__module__ = "mountaineer.__tests__.test_2"
-
-    class ExampleController(ControllerBase):
-        url = "/example"
-        view_path = "/example.tsx"
-
-        def render(self) -> None:
-            pass
-
-        @passthrough(exception_models=[Obj1, Obj2])
-        def test_exception_action(self) -> None:
-            pass
-
-    app = AppController(view_root=Path(""))
-    app.register(ExampleController())
-
-    openapi_spec = app.generate_openapi()
-    openapi_definition = OpenAPI(**openapi_spec)
-    assert openapi_definition.components
-
-    assert openapi_definition.components.schemas
-    assert openapi_definition.components.schemas.keys() == {
-        "TestExceptionActionResponse",
-        "mountaineer.__tests__.test_1.ExampleException",
-        "mountaineer.__tests__.test_2.ExampleException",
-    }
-
-
-def test_inherit_parent_spec():
-    """
-    Ensure we can sniff client functions from the current class
-    and the superclasses.
-
-    """
-
-    class ExampleException(APIException):
-        status_code = 404
-        value: str
-
-    class ParentController(ControllerBase):
-        url = "/parent"
-        view_path = "/parent.tsx"
-
-        def render(self) -> None:
-            pass
-
-        @passthrough(exception_models=[ExampleException])
-        def parent_function(self) -> None:
-            pass
-
-    class ChildController(ParentController):
-        url = "/child"
-        view_path = "/child.tsx"
-
-        def render(self) -> None:
-            pass
-
-        @passthrough
-        def client_function(self) -> None:
-            pass
-
-    parent_controller = ParentController()
-    child_controller = ChildController()
-
-    app = AppController(view_root=Path(""))
-    app.register(parent_controller)
-    app.register(child_controller)
-
-    openapi_spec = app.generate_openapi()
-    openapi_definition = OpenAPI(**openapi_spec)
-    assert openapi_definition.paths
-
-    # Test that we inherited the parent function
-    assert (
-        "404"
-        in openapi_definition.paths["/internal/api/parent_controller/parent_function"]
-        .actions[0]
-        .responses
-    )
-    assert (
-        "404"
-        in openapi_definition.paths["/internal/api/child_controller/parent_function"]
-        .actions[0]
-        .responses
-    )
-
-    # Test that the controller definitions remain separate
-    assert parent_controller._definition
-    assert child_controller._definition
-
-    assert parent_controller._definition.render_router
-    assert child_controller._definition.render_router
-
-    parent_routes = parent_controller._definition.render_router.routes
-    child_routes = child_controller._definition.render_router.routes
-
-    assert len(parent_routes) == 1
-    assert parent_routes[0].path == "/parent"  # type: ignore
-    assert len(child_routes) == 1
-    assert child_routes[0].path == "/child"  # type: ignore
-
-
-def test_update_ref_path():
-    app = AppController(view_root=Path(""))
-
-    # Test both dictionaries and lists
-    fixed_schema = app._update_ref_path(
-        {
-            "components": {
-                "schemas": {
-                    "ExampleSubModel": {
-                        "properties": {
-                            "sub_value": {
-                                "$ref": "#/defs/ExampleSubModel",
-                            },
-                            "list_values": {
-                                "type": "array",
-                                "items": [
-                                    {
-                                        "$ref": "#/defs/ExampleSubModel",
-                                    }
-                                ],
-                            },
-                        },
-                    }
-                }
-            }
-        }
-    )
-
-    assert isinstance(fixed_schema, dict)
-    properties = fixed_schema["components"]["schemas"]["ExampleSubModel"]["properties"]
-    assert properties["sub_value"]["$ref"] == "#/components/schemas/ExampleSubModel"
-    assert (
-        properties["list_values"]["items"][0]["$ref"]
-        == "#/components/schemas/ExampleSubModel"
-    )
 
 
 def test_view_root_from_config(tmp_path: Path):

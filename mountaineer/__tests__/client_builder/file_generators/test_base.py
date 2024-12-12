@@ -5,17 +5,11 @@ import pytest
 from mountaineer.client_builder.file_generators.base import CodeBlock
 
 
-@pytest.fixture
-def sample_code_block():
-    return CodeBlock(["line1", "line2"])
-
-
 class TestCodeBlock:
-    def test_initialization(self, sample_code_block):
-        assert sample_code_block.lines == ["line1", "line2"]
+    def test_initialization(self):
+        simple_code_block = CodeBlock("line1", "line2")
+        assert simple_code_block.lines == ["line1", "line2"]
 
-
-class TestCodeBlockIndent:
     @pytest.mark.parametrize(
         "input_str, expected",
         [

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from inspect import isclass
 from typing import (
+    Any,
     Callable,
     Generator,
     Optional,
@@ -11,8 +12,8 @@ from typing import (
     Union,
 )
 
-from fastapi import APIRouter, UploadFile
-from fastapi.params import Body, Depends, Header, File, Form
+from fastapi import APIRouter
+from fastapi.params import Body, Depends, File, Form, Header
 from fastapi.routing import APIRoute
 from inflection import camelize
 from pydantic import BaseModel, create_model
@@ -38,6 +39,7 @@ from mountaineer.render import RenderBase
 
 T = TypeVar("T")
 
+
 class WrapperName:
     # The original name given to the object, just used for record-keeping.
     raw_name: str
@@ -55,6 +57,12 @@ class WrapperName:
 
 
 @dataclass
+class CoreWrapper:
+    name: WrapperName
+    module_name: str
+
+
+@dataclass
 class FieldWrapper:
     name: str
     value: Union[type["ModelWrapper"], type["EnumWrapper"], type]
@@ -62,9 +70,7 @@ class FieldWrapper:
 
 
 @dataclass
-class ModelWrapper:
-    name: WrapperName
-    module_name: str
+class ModelWrapper(CoreWrapper):
     model: type[BaseModel]
     isolated_model: type[BaseModel]  # Model with only direct fields
     superclasses: list["ModelWrapper"]
@@ -73,18 +79,14 @@ class ModelWrapper:
 
 
 @dataclass
-class ExceptionWrapper:
-    name: WrapperName
-    module_name: str
+class ExceptionWrapper(CoreWrapper):
     status_code: int
     exception: Type[APIException]
     value_models: list[FieldWrapper]
 
 
 @dataclass
-class EnumWrapper:
-    name: WrapperName
-    module_name: str
+class EnumWrapper(CoreWrapper):
     enum: type[Enum]
 
 
@@ -109,9 +111,7 @@ class ActionWrapper:
 
 
 @dataclass
-class ControllerWrapper:
-    name: WrapperName
-    module_name: str
+class ControllerWrapper(CoreWrapper):
     entrypoint_url: str | None
     controller: type[ControllerBase]
     superclasses: list["ControllerWrapper"]
@@ -234,7 +234,9 @@ class ControllerWrapper:
 
     @classmethod
     def _traverse_iterator(
-        cls, logic: Callable[[T], Generator[T, None, None]], initial_queue: list[T]
+        cls,
+        logic: Callable[[T | Any], Generator[T | Any, None, None]],
+        initial_queue: list[T],
     ):
         """
         Memory-identity traversal, only will traverse each unique object once.
@@ -379,7 +381,8 @@ class ControllerParser:
         # by complex types like List, Dict, etc.
         root_definition = self.type_parser.parse_type(field_info.annotation)
 
-        # Now we can recursively parse the children
+        # Now we can recursively parse the children. We want to wrap all of the sub-models
+        # in their own wrapper objects.
         def update_children(type_definition: TypeDefinition | type):
             if isinstance(type_definition, TypeDefinition):
                 type_definition.update_children(
@@ -411,7 +414,7 @@ class ControllerParser:
 
         return FieldWrapper(
             name=name,
-            value=root_definition,
+            value=root_definition,  # type: ignore
             required=field_info.is_required(),
         )
 
@@ -423,7 +426,7 @@ class ControllerParser:
         wrapper = EnumWrapper(
             name=WrapperName(enum_type.__name__),
             module_name=enum_type.__module__,
-            enum=enum_type
+            enum=enum_type,
         )
         self.parsed_enums[enum_type] = wrapper
         return wrapper
@@ -481,7 +484,7 @@ class ControllerParser:
             args = generic_metadata["args"]
 
             # Create synthetic annotations by mapping generic parameters to concrete types
-            type_params = getattr(origin, "__parameters__", ())
+            type_params: tuple[TypeVar, ...] = getattr(origin, "__parameters__", ())
             type_mapping = dict(zip(type_params, args))
 
             # Build annotations dict by resolving generic types
@@ -495,7 +498,7 @@ class ControllerParser:
                 # it will affect the original model's state.
                 annotations[field_name] = (resolved_type, copy(field_info))
 
-            return create_model(
+            return create_model(  # type: ignore
                 model.__name__,
                 __config__=model.model_config,
                 **annotations,  # type: ignore
@@ -507,7 +510,7 @@ class ControllerParser:
                 for field_name, field_info in model.model_fields.items()
                 if field_name in model.__dict__.get("__annotations__", {})
             }
-            return create_model(
+            return create_model(  # type: ignore
                 model.__name__,
                 __config__=model.model_config,
                 **include_fields,  # type: ignore
@@ -537,14 +540,14 @@ class ControllerParser:
         path_params: list[FieldWrapper] = [
             self._parse_field(
                 name=param.name,
-                field_info=param.field_info if hasattr(param, "field_info") else None,
+                field_info=param.field_info,
             )
             for param in route.dependant.path_params
         ]
         query_params: list[FieldWrapper] = [
             self._parse_field(
                 name=param.name,
-                field_info=(param.field_info if hasattr(param, "field_info") else None),
+                field_info=param.field_info,
             )
             for param in route.dependant.query_params
             if not isinstance(param.field_info, (Body, Header, Depends))
@@ -560,7 +563,7 @@ class ControllerParser:
         for param in route.dependant.header_params:
             field = self._parse_field(
                 name=param.name,
-                field_info=param.field_info if hasattr(param, "field_info") else None,
+                field_info=param.field_info,
             )
             headers.append(field)
 
@@ -598,16 +601,15 @@ class ControllerParser:
                 has_form = True
                 body_fields[body_param.name] = field_info
 
-
         # Create dynamic model for the body, since forms don't otherwise
         # have a Pydantic model that wraps the values
         body_model = create_model(
             f"{camelize(name)}Form",
             __module__=func.__module__,
             **{
-                name: (field_info.annotation, field_info) # type: ignore
+                name: (field_info.annotation, field_info)  # type: ignore
                 for name, field_info in body_fields.items()
-            }
+            },
         )
 
         # Determine the type of request body

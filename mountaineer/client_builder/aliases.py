@@ -1,10 +1,15 @@
 from collections import Counter
-from typing import Type
+from typing import Sequence, Type
 
 from inflection import camelize
 from pydantic import BaseModel
 
-from mountaineer.client_builder.parser import ControllerParser, ControllerWrapper, ModelWrapper
+from mountaineer.client_builder.parser import (
+    ControllerParser,
+    ControllerWrapper,
+    CoreWrapper,
+    ModelWrapper,
+)
 from mountaineer.client_builder.typescript import normalize_interface
 
 
@@ -26,7 +31,7 @@ class AliasManager:
         Assign globally unique names to potentially duplicate models, enums, controllers, etc
 
         """
-        reference_counts : Counter[str] = Counter()
+        reference_counts: Counter[str] = Counter()
 
         # Each of these dictionaries are keyed with the actual classes in memory themselves, so
         # any values should be unique representations of different logical classes
@@ -35,14 +40,18 @@ class AliasManager:
             # No need to update the reference counts, since we expect these to just
             # point to an existing model anyway
 
-        for parsed_group in [
-            parser.parsed_models,
-            parser.parsed_enums,
-            parser.parsed_exceptions,
-            parser.parsed_controllers,
-        ]:
-            for parsed_wrapper in parsed_group.values():
-                parsed_wrapper.name.global_name = normalize_interface(parsed_wrapper.name.global_name)
+        parsed_groups: Sequence[Sequence[CoreWrapper]] = [
+            list(parser.parsed_models.values()),
+            list(parser.parsed_enums.values()),
+            list(parser.parsed_exceptions.values()),
+            list(parser.parsed_controllers.values()),
+        ]
+
+        for parsed_group in parsed_groups:
+            for parsed_wrapper in parsed_group:
+                parsed_wrapper.name.global_name = normalize_interface(
+                    parsed_wrapper.name.global_name
+                )
                 reference_counts.update([parsed_wrapper.name.global_name])
 
         # Any reference counts that have more than one reference need to be uniquified
@@ -53,19 +62,20 @@ class AliasManager:
         converted_models: dict[Type[BaseModel], str] = {}
 
         # Models must be updated before the self references
-        for parsed_group in [
-            parser.parsed_models,
-            parser.parsed_enums,
-            parser.parsed_exceptions,
-            parser.parsed_controllers,
-        ]:
-            for parsed_wrapper in parsed_group.values():
+        for parsed_group in parsed_groups:
+            for parsed_wrapper in parsed_group:
                 if parsed_wrapper.name.global_name in duplicate_names:
-                    prefix = self._typescript_prefix_from_module(parsed_wrapper.module_name)
-                    parsed_wrapper.name.global_name = f"{prefix}_{parsed_wrapper.name.global_name}"
+                    prefix = self._typescript_prefix_from_module(
+                        parsed_wrapper.module_name
+                    )
+                    parsed_wrapper.name.global_name = (
+                        f"{prefix}_{parsed_wrapper.name.global_name}"
+                    )
 
                     if isinstance(parsed_wrapper, ModelWrapper):
-                        converted_models[parsed_wrapper.model] = parsed_wrapper.name.global_name
+                        converted_models[
+                            parsed_wrapper.model
+                        ] = parsed_wrapper.name.global_name
 
         # Only once we update the models should we update the self references to the
         # new values - otherwise the lookup map will be empty
@@ -89,23 +99,35 @@ class AliasManager:
                 [controller], include_superclasses=True
             )
 
-            reference_counter : Counter[str] = Counter()
+            reference_counter: Counter[str] = Counter()
 
-            for parsed_group in [controllers, embedded_types.models, embedded_types.enums, embedded_types.exceptions]:
+            parsed_groups: Sequence[Sequence[CoreWrapper]] = [
+                controllers,
+                embedded_types.models,
+                embedded_types.enums,
+                embedded_types.exceptions,
+            ]
+
+            for parsed_group in parsed_groups:
                 for parsed_wrapper in parsed_group:
-                    parsed_wrapper.name.local_name = normalize_interface(parsed_wrapper.name.local_name)
+                    parsed_wrapper.name.local_name = normalize_interface(
+                        parsed_wrapper.name.local_name
+                    )
                     reference_counter.update([parsed_wrapper.name.local_name])
 
             duplicate_names = {
                 name for name, count in reference_counter.items() if count > 1
             }
 
-
-            for parsed_group in [controllers, embedded_types.models, embedded_types.enums, embedded_types.exceptions]:
+            for parsed_group in parsed_groups:
                 for parsed_wrapper in parsed_group:
                     if parsed_wrapper.name.local_name in duplicate_names:
-                        prefix = self._typescript_prefix_from_module(parsed_wrapper.module_name)
-                        parsed_wrapper.name.local_name = f"{prefix}_{parsed_wrapper.name.local_name}"
+                        prefix = self._typescript_prefix_from_module(
+                            parsed_wrapper.module_name
+                        )
+                        parsed_wrapper.name.local_name = (
+                            f"{prefix}_{parsed_wrapper.name.local_name}"
+                        )
 
     def _typescript_prefix_from_module(self, module: str):
         module_parts = module.split(".")

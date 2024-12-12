@@ -28,12 +28,14 @@ def test_exceptions():
     # which is all we care about
     assert exception.internal_model.custom_value == "custom"  # type: ignore
 
+
 def test_internal_model_constructor():
     """
     Test the translation of the APIException to an internal Pydantic model with
     the correct internal types.
 
     """
+
     class Test402(APIException):
         status_code = 402
         detail = "Test 402"
@@ -42,6 +44,7 @@ def test_internal_model_constructor():
     assert not Test402.InternalModel.model_fields["status_code"].is_required()
     assert not Test402.InternalModel.model_fields["detail"].is_required()
     assert Test402.InternalModel.model_fields["custom_value"].is_required()
+
 
 def test_exceptions_validate_values():
     class Test402(APIException):

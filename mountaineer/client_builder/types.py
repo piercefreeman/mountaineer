@@ -183,7 +183,7 @@ class TypeParser:
     Type parser that converts Python types into TypeDefinition instances
     """
 
-    def parse_type(self, field_type: Any) -> TypeDefinition | type:
+    def parse_type(self, field_type: Any):
         """
         Convert any Python type into a TypeDefinition instance
 
@@ -233,14 +233,14 @@ class TypeParser:
         # For unknown origin types, wrap in Or
         raise ValueError(f"Unsupported origin type: {origin_type}")
 
-    def _parse_basic_type(self, field_type: Any) -> TypeDefinition | type:
+    def _parse_basic_type(self, field_type: Any) -> Any:
         """Parse basic types without args"""
         if isinstance(field_type, type):
             if issubclass(field_type, (list, List)):
                 return ListOf(type=Any)
             elif issubclass(field_type, (dict, Dict)):
                 return DictOf(key_type=Any, value_type=Any)
-            elif issubclass(field_type, (tuple, Tuple)):
+            elif issubclass(field_type, (tuple, Tuple)):  # type: ignore
                 return TupleOf(types=(Any,))
             elif issubclass(field_type, (set, Set)):
                 return SetOf(type=Any)

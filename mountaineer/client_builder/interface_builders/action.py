@@ -99,7 +99,9 @@ class ActionInterface(InterfaceBase):
             payload["mediaType"] = action.request_body.body_type
 
         for exception in action.exceptions:
-            payload["errors"][exception.status_code] = TSLiteral(exception.name.global_name)
+            payload["errors"][exception.status_code] = TSLiteral(
+                exception.name.global_name
+            )
 
         if action.is_raw_response:
             payload["outputFormat"] = "raw"

@@ -44,6 +44,12 @@ class APIBuilder:
 
         self.alias_manager = AliasManager()
 
+        self.update_controller(app)
+
+    def update_controller(self, controller: AppController):
+        self.app = controller
+        self.view_root = ManagedViewPath.from_view_root(controller._view_root)
+
     async def build_all(self):
         # Totally clear away the old build cache, so we start fresh
         # and don't have additional files hanging around
