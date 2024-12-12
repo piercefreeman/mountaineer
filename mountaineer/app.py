@@ -21,6 +21,7 @@ from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions import (
     FunctionActionType,
     fuse_metadata_to_response_typehint,
+    get_function_metadata,
     init_function_metadata,
 )
 from mountaineer.actions.fields import FunctionMetadata
@@ -450,6 +451,9 @@ class AppController:
             view_router = APIRouter()
             view_router.get(controller.url)(generate_controller_html)
             self.app.include_router(view_router)
+            render_metadata.register_controller_url(
+                controller.__class__, controller.url
+            )
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
@@ -473,10 +477,12 @@ class AppController:
                     return_annotation=metadata.return_model
                 )
 
-            controller_api.post(
-                f"/{metadata.function_name}",
-                openapi_extra=metadata.get_openapi_extras(),
-            )(fn)
+            action_path = f"/{metadata.function_name}"
+            controller_api.post(action_path)(fn)
+            function_metadata = get_function_metadata(fn)
+            function_metadata.register_controller_url(
+                controller.__class__, f"{controller_url_prefix}/{action_path}"
+            )
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__
         # But the application greedily copies all contents from the router when it's added via `include_router`, so this

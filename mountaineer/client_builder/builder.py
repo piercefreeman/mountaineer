@@ -15,12 +15,17 @@ from mountaineer.client_builder.converters import (
     TypeScriptLinkConverter,
     TypeScriptServerHookConverter,
 )
+from mountaineer.client_builder.formatter import TypeScriptFormatter
 from mountaineer.client_builder.parser import (
     ControllerParser,
     ControllerWrapper,
     ModelWrapper,
 )
-from mountaineer.client_builder.typescript import normalize_interface
+from mountaineer.client_builder.typescript import (
+    TSLiteral,
+    normalize_interface,
+    python_payload_to_typescript,
+)
 from mountaineer.console import CONSOLE
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.paths import ManagedViewPath, generate_relative_import
@@ -56,6 +61,7 @@ class APIBuilder:
 
         # Initialize parser
         self.parser = ControllerParser()
+        self.formatter = TypeScriptFormatter()
 
         # Initialize converters
         self.root_controller_converter = TypeScriptGenerator(export_interface=True)
@@ -106,7 +112,10 @@ class APIBuilder:
 
         for controller_def in self.app.controllers:
             controller = controller_def.controller
-            controller_id = controller.__class__.__name__
+            # TODO: REMOVE
+            controller_id = (
+                f"{controller.__class__.__module__}.{controller.__class__.__name__}"
+            )
 
             # Parse the controller
             parsed_wrapper = self.parser.parse_controller(controller.__class__)
@@ -130,10 +139,20 @@ class APIBuilder:
         # Each of these dictionaries are keyed with the actual classes in memory themselves, so
         # any values should be unique representations of different logical classes
         for model in self.parser.parsed_models.values():
+            model.name = normalize_interface(model.name)
             reference_counts.update([model.name])
+
+            print("Model normalize", model.name, model.model)
+
+        for self_reference in self.parser.parsed_self_references:
+            self_reference.name = normalize_interface(self_reference.name)
+            # No need to update the reference counts, since we expect these to just
+            # point to an existing model anyway
         for enum in self.parser.parsed_enums.values():
+            enum.name = normalize_interface(enum.name)
             reference_counts.update([enum.name])
         for controller in self.parser.parsed_controllers.values():
+            controller.name = normalize_interface(controller.name)
             reference_counts.update([controller.name])
 
         # Any reference counts that have more than one reference need to be uniquified
@@ -179,16 +198,20 @@ class APIBuilder:
         )
 
         # Write global schemas
-        (global_code_dir / "controllers.ts").write_text(schemas_content)
+        (global_code_dir / "controllers.ts").write_text(
+            self.formatter.format(schemas_content)
+        )
 
-        # Generate per-controller model files
+        # Generate per-controller model files that will import the global definitions locally
         for controller_id, parsed_controller in self.parsed_controllers.items():
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
             imports = generate_relative_import(
                 controller_dir / "models.ts", global_code_dir / "controllers.ts"
             )
 
-            exports = [f"export type {{ {controller_id} }} from '{imports}';"]
+            exports = [
+                f"export type {{ {parsed_controller.wrapper.name} }} from '{imports}';"
+            ]
 
             # Add model exports
             if parsed_controller.wrapper.render:
@@ -196,13 +219,15 @@ class APIBuilder:
                     parsed_controller.wrapper.render, exports, imports
                 )
 
-            for action in parsed_controller.wrapper.actions.values():
+            for action in parsed_controller.wrapper.all_actions:
                 if action.request_body:
                     self._add_model_exports(action.request_body, exports, imports)
                 if action.response_body:
                     self._add_model_exports(action.response_body, exports, imports)
 
-            (controller_dir / "models.ts").write_text("\n".join(exports))
+            (controller_dir / "models.ts").write_text(
+                self.formatter.format("\n".join(exports))
+            )
 
     def _add_model_exports(
         self, model: ModelWrapper, exports: list[str], import_path: str
@@ -213,9 +238,7 @@ class APIBuilder:
             self._add_model_exports(superclass, exports, import_path)
 
         # Export model
-        exports.append(
-            f"export type {{ {normalize_interface(model.model.__name__)} }} from '{import_path}';"
-        )
+        exports.append(f"export type {{ {model.name} }} from '{import_path}';")
 
     def _generate_action_definitions(self):
         """Generate TypeScript action definitions for all controllers"""
@@ -224,6 +247,13 @@ class APIBuilder:
                 continue
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
+            root_code_dir = self.view_root.get_managed_code_dir()
+
+            controller_action_path = controller_dir / "actions.ts"
+            root_common_handler = root_code_dir / "api.ts"
+            root_api_import_path = generate_relative_import(
+                controller_action_path, root_common_handler
+            )
 
             # Convert each action. We also include the superclass methods, since they're
             # actually bound to the controller instance with separate urls.
@@ -241,18 +271,18 @@ class APIBuilder:
             deps = set()
             for action in parsed_controller.wrapper.all_actions:
                 if action.request_body:
-                    deps.add(normalize_interface(action.request_body.model.__name__))
+                    deps.add(action.request_body.name)
                 if action.response_body:
-                    deps.add(normalize_interface(action.response_body.model.__name__))
+                    deps.add(action.response_body.name)
 
             # Generate imports
             imports = [
-                "import { __request, FetchErrorBase } from '../api';",
+                f"import {{ __request, FetchErrorBase }} from '{root_api_import_path}';",
                 f"import type {{ {', '.join(deps)} }} from './models';",
             ]
 
             (controller_dir / "actions.ts").write_text(
-                "\n\n".join(imports + actions_ts)
+                self.formatter.format("\n\n".join(imports + actions_ts))
             )
 
     def _generate_link_shortcuts(self):
@@ -262,17 +292,31 @@ class APIBuilder:
                 continue
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
+            root_code_dir = self.view_root.get_managed_code_dir()
+
+            controller_links_path = controller_dir / "links.ts"
+
+            root_common_handler = root_code_dir / "api.ts"
+            root_api_import_path = generate_relative_import(
+                controller_links_path, root_common_handler
+            )
 
             # Generate link content
             link_content = self.link_converter.convert_controller_links(
-                parsed_controller.wrapper, parsed_controller.url_prefix or ""
+                parsed_controller.wrapper
             )
 
             if link_content:
-                content = ["import { __getLink } from '../api';", "", link_content]
-                (controller_dir / "links.ts").write_text("\n".join(content))
+                content = [
+                    f"import {{ __getLink }} from '{root_api_import_path}';\n",
+                    "",
+                    link_content,
+                ]
+                controller_links_path.write_text(
+                    self.formatter.format("\n".join(content))
+                )
             else:
-                (controller_dir / "links.ts").write_text("")
+                controller_links_path.write_text("")
 
     def _generate_link_aggregator(self):
         """Generate global link aggregator"""
@@ -290,19 +334,25 @@ class APIBuilder:
             )
 
             # Add import and setter for this controller
-            local_name = f"{controller_id}GetLinks"
+            local_name = f"{parsed_controller.wrapper.name}GetLinks"
             imports.append(f"import {{ getLink as {local_name} }} from '{rel_import}';")
-            link_setters[controller_id] = local_name
+            link_setters[
+                # Mirror the lowercase camelcase convention of previous versions
+                camelize(
+                    parsed_controller.wrapper.controller.__name__,
+                    uppercase_first_letter=False,
+                )
+            ] = TSLiteral(local_name)
 
         content = [
             *imports,
             "",
-            f"const linkGenerator = {link_setters};",
+            f"const linkGenerator = {python_payload_to_typescript(link_setters)};",
             "",
             "export default linkGenerator;",
         ]
 
-        (global_dir / "links.ts").write_text("\n".join(content))
+        (global_dir / "links.ts").write_text(self.formatter.format("\n".join(content)))
 
     def _generate_view_servers(self):
         """Generate useServer hooks for each controller"""
@@ -311,14 +361,29 @@ class APIBuilder:
                 continue
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()
-            # render_model = parsed_controller.wrapper.render.model.__name__
+
+            controller_model_path = self.view_root.get_controller_view_path(
+                parsed_controller.wrapper.controller
+            ).get_managed_code_dir()
+            global_server_path = self.view_root.get_managed_code_dir()
+            relative_server_path = generate_relative_import(
+                controller_model_path, global_server_path
+            )
+
+            imports = [
+                "import React, { useState } from 'react';",
+                f"import {{ applySideEffect }} from '{relative_server_path}/api';",
+                f"import LinkGenerator from '{relative_server_path}/links';",
+            ]
 
             script = self.hook_converter.convert_controller_hooks(
-                parsed_controller.wrapper, controller_id
+                parsed_controller.wrapper
             )
 
             # Write the complete file
-            (controller_dir / "useServer.ts").write_text(script)
+            (controller_dir / "useServer.ts").write_text(
+                self.formatter.format("\n".join(imports) + "\n" + script)
+            )
 
     def _generate_index_files(self):
         """Generate index files for each controller"""

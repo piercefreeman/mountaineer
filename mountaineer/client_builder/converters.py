@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from datetime import date, datetime, time
 from json import dumps as json_dumps
 from typing import Any
+from uuid import UUID
 
 from graphlib import TopologicalSorter
 
@@ -94,15 +96,15 @@ class BaseTypeScriptConverter:
     def _get_annotated_value(self, value):
         """Convert a field type to TypeScript type."""
         if isinstance(value, ModelWrapper):
-            return value.model.__name__
+            return value.name
         elif isinstance(value, EnumWrapper):
-            return value.enum.__name__
+            return value.name
         else:
             complex_value = self._handle_complex_type(value, requires_complex=True)
             if complex_value:
                 return complex_value
             if isinstance(value, SelfReference):
-                return value.model.__name__
+                return value.name
             primitive_value = self._map_primitive_type_to_typescript(value)
             if primitive_value:
                 return primitive_value
@@ -115,6 +117,11 @@ class BaseTypeScriptConverter:
             int: "number",
             float: "number",
             bool: "boolean",
+            # TODO: We should cast this to a Date internally
+            datetime: "string",
+            date: "string",
+            time: "string",
+            UUID: "string",
             None: "null",
         }
         return type_map.get(py_type)
@@ -170,11 +177,11 @@ class TypeScriptActionConverter(BaseTypeScriptConverter):
             parameters_dict[param.name] = TSLiteral(param.name)
             typehint_dict[
                 TSLiteral(f"{param.name}{'?' if not param.required else ''}")
-            ] = self._get_field_type(param)
+            ] = TSLiteral(self._get_field_type(param))
 
         # Add request body if present
         if action.request_body:
-            model_name = action.request_body.model.__name__
+            model_name = action.request_body.name
             parameters_dict["requestBody"] = TSLiteral("requestBody")
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
             required_models.append(model_name)
@@ -190,7 +197,7 @@ class TypeScriptActionConverter(BaseTypeScriptConverter):
 
         response_type = self._get_response_type(action)
         if action.response_body:
-            required_models.append(action.response_body.model.__name__)
+            required_models.append(action.response_body.name)
 
         return TypescriptAction(
             name=name,
@@ -232,7 +239,7 @@ class TypeScriptActionConverter(BaseTypeScriptConverter):
         if not action.response_body:
             return "Promise<void>"
 
-        response_type = action.response_body.model.__name__
+        response_type = action.response_body.name
 
         if getattr(action.response_body.model, "is_stream", False):
             return f"Promise<AsyncGenerator<{response_type}, void, unknown>>"
@@ -246,13 +253,9 @@ class TypeScriptSchemaConverter(BaseTypeScriptConverter):
     def __init__(self, export_interface: bool = False):
         super().__init__()
         self.export_interface = export_interface
-        self.generated_schemas = {}
 
     def convert_model(self, model: ModelWrapper) -> TypescriptSchema:
         """Convert a model to a TypeScript interface"""
-        if model.model.__name__ in self.generated_schemas:
-            return None
-
         # Process superclasses first
         for superclass in model.superclasses:
             self.convert_model(superclass)
@@ -266,20 +269,15 @@ class TypeScriptSchemaConverter(BaseTypeScriptConverter):
 
         schema = TypescriptSchema(
             interface_type="interface",
-            name=model.model.__name__,
+            name=model.name,
             body="\n".join(fields),
             include_export=self.export_interface,
-            include_superclasses=[s.model.__name__ for s in model.superclasses],
+            include_superclasses=[s.name for s in model.superclasses],
         )
-
-        self.generated_schemas[model.model.__name__] = schema
         return schema
 
     def convert_enum(self, enum: EnumWrapper) -> TypescriptSchema:
         """Convert an enum to a TypeScript enum"""
-        if enum.enum.__name__ in self.generated_schemas:
-            return None
-
         fields = []
         for name, value in enum.enum.__members__.items():
             if isinstance(value.value, (int, float)):
@@ -289,12 +287,10 @@ class TypeScriptSchemaConverter(BaseTypeScriptConverter):
 
         schema = TypescriptSchema(
             interface_type="enum",
-            name=enum.enum.__name__,
+            name=enum.name,
             body="\n".join(fields),
             include_export=self.export_interface,
         )
-
-        self.generated_schemas[enum.enum.__name__] = schema
         return schema
 
     def _process_model_dependencies(self, model: ModelWrapper) -> None:
@@ -310,40 +306,81 @@ class TypeScriptSchemaConverter(BaseTypeScriptConverter):
 class TypeScriptLinkConverter(BaseTypeScriptConverter):
     """Converts controller routes to TypeScript link generators"""
 
-    def convert_controller_links(
-        self, controller: ControllerWrapper, url_prefix: str = ""
-    ) -> str:
+    def convert_controller_links(self, controller: ControllerWrapper) -> str:
         """Generate link formatter for a controller's routes"""
         if not controller.render:
             return ""
+        if not controller.entrypoint_url:
+            return ""
 
         # Collect parameters from render model
-        parameters: dict[str, Any] = {}
-        typehints: dict[str, Any] = {}
+        query_parameters: dict[str, Any] = {}
+        path_parameters: dict[str, Any] = {}
+        query_typehints: dict[str, Any] = {}
+        path_typehints: dict[str, Any] = {}
 
-        for field in controller.render.value_models:
-            if field.required:  # Only include required fields as URL parameters
-                parameters[field.name] = TSLiteral(field.name)
-                typehints[TSLiteral(field.name)] = self._get_field_type(field)
+        # Split parameters into query and path
+        for field in controller.queries:
+            query_parameters[field.name] = TSLiteral(field.name)
+            query_typehints[TSLiteral(field.name)] = TSLiteral(
+                self._get_field_type(field)
+            )
 
-        # Generate the link function
-        return self._generate_link_function(url_prefix, parameters, typehints)
+        for field in controller.paths:
+            path_parameters[field.name] = TSLiteral(field.name)
+            path_typehints[TSLiteral(field.name)] = TSLiteral(
+                self._get_field_type(field)
+            )
+
+        # Combine all parameters for the function signature
+        all_parameters = {**query_parameters, **path_parameters}
+        all_typehints = {**query_typehints, **path_typehints}
+
+        return self._generate_link_function(
+            controller.entrypoint_url,
+            all_parameters,
+            all_typehints,
+            query_parameters,
+            path_parameters,
+        )
 
     def _generate_link_function(
-        self, url_prefix: str, parameters: dict[str, Any], typehints: dict[str, Any]
+        self,
+        url: str,
+        parameters: dict[str, Any],
+        typehints: dict[str, Any],
+        query_parameters: dict[str, Any],
+        path_parameters: dict[str, Any],
     ) -> str:
+        """Generate the TypeScript link function"""
         param_str = python_payload_to_typescript(parameters)
         typehint_str = python_payload_to_typescript(typehints)
 
-        return f"""export const getLink = ({param_str} : {typehint_str}) => {{
-  const url = '{url_prefix}';
-  const queryParameters = {param_str};
-  return __getLink({{
-    rawUrl: url,
-    queryParameters,
-    pathParameters: {{}}
-  }});
-}};"""
+        query_dict_str = python_payload_to_typescript(query_parameters)
+        path_dict_str = python_payload_to_typescript(path_parameters)
+
+        chunks = []
+
+        # Function signature with all parameters
+        chunks.append(f"export const getLink = ({param_str}: {typehint_str}) => {{")
+
+        # Split parameters into query and path
+        chunks.extend(
+            [
+                f"  const url = `{url}`;",
+                f"  const queryParameters: Record<string, any> = {query_dict_str};",
+                f"  const pathParameters: Record<string, any> = {path_dict_str};",
+                "",
+                "  return __getLink({",
+                "    rawUrl: url,",
+                "    queryParameters,",
+                "    pathParameters",
+                "  });",
+                "}",
+            ]
+        )
+
+        return "\n".join(chunks)
 
 
 class TypeScriptServerHookConverter(BaseTypeScriptConverter):
@@ -352,29 +389,25 @@ class TypeScriptServerHookConverter(BaseTypeScriptConverter):
     def convert_controller_hooks(
         self,
         controller: ControllerWrapper,
-        controller_id: str,
     ) -> str:
         """Generate useServer hook for a controller"""
         if not controller.render:
             return ""
 
-        render_model = controller.render.model.__name__
+        render_model = controller.render.name
 
-        imports = self._generate_imports(controller, controller_id, render_model)
-        interface = self._generate_interface(render_model, controller_id)
-        hook = self._generate_hook(controller, controller_id, render_model)
+        imports = self._generate_imports(controller, render_model)
+        interface = self._generate_interface(render_model, controller.name)
+        hook = self._generate_hook(controller, render_model)
 
         return "\n\n".join(["\n".join(imports), "\n".join(interface), "\n".join(hook)])
 
     def _generate_imports(
-        self, controller: ControllerWrapper, controller_id: str, render_model: str
+        self, controller: ControllerWrapper, render_model: str
     ) -> list[str]:
         """Generate import statements"""
         imports = [
-            "import React, { useState } from 'react';",
-            "import { applySideEffect } from '../api';",
-            "import LinkGenerator from '../links';",
-            f"import {{ {render_model}, {controller_id} }} from './models';",
+            f"import {{ {render_model}, {controller.name} }} from './models';",
         ]
 
         if controller.all_actions:
@@ -388,13 +421,17 @@ class TypeScriptServerHookConverter(BaseTypeScriptConverter):
     def _generate_interface(self, render_model: str, controller_id: str) -> list[str]:
         """Generate ServerState interface"""
         return [
+            "declare global {",
+            "var SERVER_DATA: any;",
+            "}",
+            "",
             f"export interface ServerState extends {render_model}, {controller_id} {{",
             "  linkGenerator: typeof LinkGenerator;",
             "}",
         ]
 
     def _generate_hook(
-        self, controller: ControllerWrapper, controller_id: str, render_model: str
+        self, controller: ControllerWrapper, render_model: str
     ) -> list[str]:
         """Generate useServer hook implementation"""
         server_response = {
@@ -410,14 +447,27 @@ class TypeScriptServerHookConverter(BaseTypeScriptConverter):
             )
 
         response_body = python_payload_to_typescript(server_response)
+        # Special case: refactor to an explicit controller property
+        server_key = controller.controller.__name__
 
-        return [
+        chunks = []
+        optional_model_name = f"{render_model}Optional"
+        chunks.append(f"export type {optional_model_name} = Partial<{render_model}>;")
+
+        chunks += [
             "export const useServer = () : ServerState => {",
-            f"  const [serverState, setServerState] = useState(SERVER_DATA['{controller_id}'] as {render_model});",
-            "",
-            f"  return {response_body}",
+            f"const [serverState, setServerState] = useState(SERVER_DATA['{server_key}'] as {render_model});",
+            f"const setControllerState = (payload: {optional_model_name}) => {{",
+            "setServerState((state) => ({",
+            "...state,",
+            "...payload,",
+            "}));",
+            "};",
+            f"return {response_body}",
             "};",
         ]
+
+        return chunks
 
 
 class TypeScriptControllerConverter(BaseTypeScriptConverter):
@@ -433,7 +483,7 @@ class TypeScriptControllerConverter(BaseTypeScriptConverter):
         """Convert a controller to a TypeScript interface"""
         fields: list[str] = []
 
-        # Convert each action
+        # Convert each action that's directly owned by the controller
         for name, action in wrapper.actions.items():
             action_def = self.action_converter.convert_action(name, action, url_prefix)
             fields.append(
@@ -445,7 +495,7 @@ class TypeScriptControllerConverter(BaseTypeScriptConverter):
             name=controller_id,
             body="\n".join(fields),
             include_export=True,
-            include_superclasses=[s.__class__.__name__ for s in wrapper.superclasses],
+            include_superclasses=[s.name for s in wrapper.superclasses],
         )
 
 
@@ -478,8 +528,10 @@ class TypeScriptGenerator:
         for item in model_enum_sorter:
             if isinstance(item, ModelWrapper):
                 schema = self.schema_converter.convert_model(item)
-            else:  # EnumWrapper
+            elif isinstance(item, EnumWrapper):
                 schema = self.schema_converter.convert_enum(item)
+            else:
+                raise ValueError(f"Unsupported item type: {item}")
             if schema:
                 schemas.append(schema.to_js())
 

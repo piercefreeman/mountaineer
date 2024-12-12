@@ -30,7 +30,7 @@ from typing import (
 import starlette.responses
 from fastapi.responses import JSONResponse, Response
 from inflection import camelize
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
@@ -127,6 +127,11 @@ class FunctionMetadata(BaseModel):
     # Inserted by the render decorator
     return_model: Type[BaseModel] | MountaineerUnsetValue = MountaineerUnsetValue()
 
+    # An API action might be mounted by multiple controllers, if it comes from a superclass
+    # that's inherited by multiple child controllers. This lookup lets us track which
+    # URL is associated with which controller.
+    controller_mounts: dict[Any, str] = Field(default_factory=dict)
+
     model_config = {
         "arbitrary_types_allowed": True,
     }
@@ -170,16 +175,26 @@ class FunctionMetadata(BaseModel):
             raise ValueError("Return model not set")
         return self.return_model
 
-    def get_openapi_extras(self):
-        openapi_extra: dict[str, Any] = {"is_raw_response": self.get_is_raw_response()}
+    def register_controller_url(self, controller: Type["ControllerBase"], url: str):
+        if controller in self.controller_mounts:
+            # See if it's the same URL
+            if self.controller_mounts[controller] != url:
+                raise ValueError(
+                    f"Controller {controller} already mounted at {self.controller_mounts[controller]} with different URL\n"
+                    f"Old: {self.controller_mounts[controller]} New: {url}"
+                )
+        self.controller_mounts[controller] = url
 
-        if not self.get_is_raw_response():
-            # Pass along relevant tags in the OpenAPI meta struct
-            # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
-            if self.get_media_type():
-                openapi_extra["media_type"] = self.get_media_type()
+    # def get_openapi_extras(self):
+    #     openapi_extra: dict[str, Any] = {"is_raw_response": self.get_is_raw_response()}
 
-        return openapi_extra
+    #     if not self.get_is_raw_response():
+    #         # Pass along relevant tags in the OpenAPI meta struct
+    #         # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
+    #         if self.get_media_type():
+    #             openapi_extra["media_type"] = self.get_media_type()
+
+    #     return openapi_extra
 
 
 METADATA_ATTRIBUTE = "_mountaineer_metadata"
@@ -234,6 +249,7 @@ def fuse_metadata_to_response_typehint(
 
     base_response_name = camelize(metadata.function_name) + "Response"
     base_response_params = {}
+    base_module = controller.__module__
 
     if metadata.passthrough_model is not None and not isinstance(
         metadata.passthrough_model, MountaineerUnsetValue
@@ -243,6 +259,7 @@ def fuse_metadata_to_response_typehint(
     if metadata.action_type == FunctionActionType.SIDEEFFECT and render_model:
         # By default, reload all fields
         sideeffect_model = render_model
+        base_module = render_model.__module__
 
         if metadata.reload_states is not None and not isinstance(
             metadata.reload_states, MountaineerUnsetValue
@@ -264,7 +281,8 @@ def fuse_metadata_to_response_typehint(
                 )
             sideeffect_model = (
                 create_model(
-                    base_response_name + "SideEffect",
+                    base_response_name + camelize(metadata.function_name) + "SideEffect",
+                    __module__=base_module,
                     **{
                         field_name: (field_definition.annotation, field_definition)  # type: ignore
                         for field_name, field_definition in render_model.model_fields.items()
@@ -287,6 +305,7 @@ def fuse_metadata_to_response_typehint(
 
     model: Type[BaseModel] = create_model(
         base_response_name,
+        __module__=base_module,
         **base_response_params,  # type: ignore
     )
 

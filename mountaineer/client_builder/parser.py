@@ -24,7 +24,11 @@ from mountaineer.actions.fields import (
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_builder.types import TypeDefinition, TypeParser
-from mountaineer.controller import ControllerBase, get_client_functions_cls
+from mountaineer.controller import (
+    ControllerBase,
+    class_fn_as_method,
+    get_client_functions_cls,
+)
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.generics import resolve_generic_type
 from mountaineer.render import RenderBase
@@ -68,12 +72,19 @@ class ActionWrapper:
 @dataclass
 class ControllerWrapper:
     name: str
+    entrypoint_url: str | None
     controller: type[ControllerBase]
     superclasses: list["ControllerWrapper"]
+
+    # Render entrypoint
+    queries: list[FieldWrapper]
+    paths: list[FieldWrapper]
+    render: Optional[ModelWrapper]
+
+    # Actions
     actions: dict[
         str, ActionWrapper
     ]  # {url: action} directly implemented for this controller
-    render: Optional[ModelWrapper]
 
     @property
     def all_actions(self) -> list[ActionWrapper]:
@@ -81,11 +92,17 @@ class ControllerWrapper:
         # actually bound to the controller instance with separate urls.
         all_actions: list[ActionWrapper] = []
 
+        # If an action is overridden in a subclass, we shouldn't include it twice
+        seen_actions: set[str] = set()
+
         def parse_controller(controller):
+            for action in controller.actions.values():
+                if action.name in seen_actions:
+                    continue
+                all_actions.append(action)
+                seen_actions.add(action.name)
             for superclass in controller.superclasses:
                 parse_controller(superclass)
-            for action in controller.actions.values():
-                all_actions.append(action)
 
         parse_controller(self)
         return all_actions
@@ -128,7 +145,9 @@ class ControllerParser:
         controller_classes = self._get_valid_mro_classes(controller, base_exclude)
 
         # Get render model from the concrete controller
-        render = self._parse_render(controller)
+        render, render_path, render_query, entrypoint_url = self._parse_render(
+            controller
+        )
         actions = self._parse_actions(controller)
 
         # Parse superclasses
@@ -136,13 +155,18 @@ class ControllerParser:
         for superclass in controller_classes[1:]:
             superclass_controllers.append(self.parse_controller(superclass))
 
-        return ControllerWrapper(
+        wrapper = ControllerWrapper(
             name=controller.__name__,
+            entrypoint_url=entrypoint_url,
             controller=controller,
             actions=actions,
+            queries=render_query or [],
+            paths=render_path or [],
             render=render,
             superclasses=superclass_controllers,
         )
+        self.parsed_controllers[controller] = wrapper
+        return wrapper
 
     def _parse_model(
         self, model: type[BaseModel], skip_object_ids: tuple | None = None
@@ -236,23 +260,42 @@ class ControllerParser:
         self.parsed_enums[enum_type] = wrapper
         return wrapper
 
-    def _parse_render(self, controller: type[ControllerBase]) -> Optional[ModelWrapper]:
+    def _parse_render(
+        self, controller: type[ControllerBase]
+    ) -> tuple[
+        ModelWrapper | None,
+        list[FieldWrapper] | None,
+        list[FieldWrapper] | None,
+        str | None,
+    ]:
         """Parse the render method's return type"""
         render = getattr(controller, "render", None)
         if not render:
-            return None
+            return None, None, None, None
 
         try:
             metadata = get_function_metadata(render)
         except AttributeError:
-            return None
+            return None, None, None, None
 
         return_model = metadata.get_render_model()
-
         if not return_model:
-            return None
+            return None, None, None, None
 
-        return self._parse_model(return_model)
+        # Only standard controllers will have url mounts. For layout controllers since they don't
+        # mount to an actual path in the router it's fine to use any synthetic path.
+        # This also applies to inherited render methods that come from a parent, they
+        # can only use query params.
+        entrypoint_url = metadata.controller_mounts.get(controller)
+
+        # Only parse models and params for concrete render() implementation, not parent classes
+        # that just inherit the ControllerBase's ABC generic signature
+        model_schema = self._parse_model(return_model)
+        path_params, query_params = self._parse_params(
+            class_fn_as_method(render), "render", entrypoint_url or "/render"
+        )
+
+        return model_schema, path_params, query_params, entrypoint_url
 
     def _create_isolated_model(
         self,
@@ -302,53 +345,53 @@ class ControllerParser:
                 **include_fields,  # type: ignore
             )
 
-    def _create_temp_route(self, func: Callable, name: str) -> APIRoute:
+    def _create_temp_route(self, func: Callable, name: str, url: str) -> APIRoute:
         """Create a temporary FastAPI route using the actual function"""
         router = APIRouter()
         router.add_api_route(
-            path=f"/{name}",
+            # We need to use the right path so it can separate out the path paramss
+            # from the query params
+            path=f"/{url}",
             endpoint=func,
         )
 
         route = next(
             route
             for route in router.routes
-            if isinstance(route, APIRoute) and route.path == f"/{name}"
+            if isinstance(route, APIRoute) and route.path == f"/{url}"
         )
 
         return route
 
-    def _parse_params(self, func: Callable, name: str) -> list[FieldWrapper]:
+    def _parse_params(self, func: Callable, name: str, url: str):
         """Parse route parameters using FastAPI's dependency system"""
-        route = self._create_temp_route(func, name)
-        params: list[FieldWrapper] = []
-
-        for param in route.dependant.path_params:
-            field = self._create_field_from_param(
+        route = self._create_temp_route(func, name, url)
+        path_params: list[FieldWrapper] = [
+            self._create_field_from_param(
                 name=param.name,
                 type_=param.type_,
                 required=param.required,
                 field_info=param.field_info if hasattr(param, "field_info") else None,
             )
-            params.append(field)
+            for param in route.dependant.path_params
+        ]
+        print("PATH PARAMS", path_params)
+        query_params: list[FieldWrapper] = [
+            self._create_field_from_param(
+                name=param.name,
+                type_=param.type_,
+                required=param.required,
+                field_info=(param.field_info if hasattr(param, "field_info") else None),
+            )
+            for param in route.dependant.query_params
+            if not isinstance(param.field_info, (Body, Header, Depends))
+        ]
 
-        for param in route.dependant.query_params:
-            if not isinstance(param.field_info, (Body, Header, Depends)):
-                field = self._create_field_from_param(
-                    name=param.name,
-                    type_=param.type_,
-                    required=param.required,
-                    field_info=param.field_info
-                    if hasattr(param, "field_info")
-                    else None,
-                )
-                params.append(field)
+        return path_params, query_params
 
-        return params
-
-    def _parse_headers(self, func: Callable, name: str) -> list[FieldWrapper]:
+    def _parse_headers(self, func: Callable, name: str, url: str) -> list[FieldWrapper]:
         """Parse header parameters using FastAPI's dependency system"""
-        route = self._create_temp_route(func, name)
+        route = self._create_temp_route(func, name, url)
         headers: list[FieldWrapper] = []
 
         for param in route.dependant.header_params:
@@ -362,9 +405,11 @@ class ControllerParser:
 
         return headers
 
-    def _parse_request_body(self, func: Callable, name: str) -> Optional[ModelWrapper]:
+    def _parse_request_body(
+        self, func: Callable, name: str, url: str
+    ) -> Optional[ModelWrapper]:
         """Parse request body using FastAPI's dependency system"""
-        route = self._create_temp_route(func, name)
+        route = self._create_temp_route(func, name, url)
 
         if route.dependant.body_params:
             body_param = route.dependant.body_params[0]  # Get first body param
@@ -388,17 +433,24 @@ class ControllerParser:
         return None
 
     def _parse_actions(
-        self, controller: type[ControllerBase]
+        self, controller: Type[ControllerBase]
     ) -> dict[str, ActionWrapper]:
         """Parse all actions in a controller"""
         actions: dict[str, ActionWrapper] = {}
 
         for name, func, metadata in get_client_functions_cls(controller):
+            # We don't need a url for the action, since actions can't take path
+            # parameters all kwargs will just be query params
+            synthetic_action_url = f"/{name}"
+
+            path_params, query_params = self._parse_params(
+                func, name, synthetic_action_url
+            )
             action = ActionWrapper(
                 name=name,
-                params=self._parse_params(func, name),
-                headers=self._parse_headers(func, name),
-                request_body=self._parse_request_body(func, name),
+                params=query_params,
+                headers=self._parse_headers(func, name, synthetic_action_url),
+                request_body=self._parse_request_body(func, name, synthetic_action_url),
                 response_body=self._parse_response_body(metadata),
                 action_type=metadata.action_type,
             )
