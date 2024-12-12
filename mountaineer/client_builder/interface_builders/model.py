@@ -3,7 +3,10 @@ from dataclasses import dataclass
 from mountaineer.client_builder.interface_builders.base import InterfaceBase
 from mountaineer.client_builder.parser import (
     EnumWrapper,
+    ModelWrapper,
 )
+from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
+from typing import Any
 
 
 @dataclass
@@ -13,22 +16,19 @@ class ModelInterface(InterfaceBase):
     include_superclasses: list[str]
     include_export: bool = True
 
-    def from_model(self, value: ModelWrapper):
-        fields: list[str] = []
-        for field in model.value_models:
-            field_type = self._get_field_type(field)
-            fields.append(
-                f"  {field.name}{'?' if not field.required else ''}: {field_type};"
-            )
+    @classmethod
+    def from_model(cls, value: ModelWrapper):
+        fields: dict[str, Any] = {}
+        for field in value.value_models:
+            field_name = f"{field.name}{'?' if not field.required else ''}"
+            field_type = cls._get_annotated_value(field.value)
+            fields[TSLiteral(field_name)] = TSLiteral(field_type)
 
-        schema = TypescriptSchema(
-            interface_type="interface",
-            name=model.name,
-            body="\n".join(fields),
-            include_export=self.export_interface,
-            include_superclasses=[s.name for s in model.superclasses],
+        return cls(
+            name=value.name,
+            body=python_payload_to_typescript(fields),
+            include_superclasses=[s.name for s in value.superclasses],
         )
-        return schema
 
     def to_js(self) -> str:
         schema_def = f"interface {self.name}"
@@ -36,7 +36,8 @@ class ModelInterface(InterfaceBase):
         if self.include_superclasses:
             schema_def += f" extends {', '.join(self.include_superclasses)}"
 
-        schema_def += f" {{\n{self.body}\n}}"
+        # Our stored body will include the starting/closing brackets
+        schema_def += f" {self.body}"
 
         if self.include_export:
             schema_def = f"export {schema_def}"

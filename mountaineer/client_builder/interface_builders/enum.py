@@ -4,21 +4,42 @@ from mountaineer.client_builder.interface_builders.base import InterfaceBase
 from mountaineer.client_builder.parser import (
     EnumWrapper,
 )
+from typing import Any
+
+from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_typescript
 
 
 @dataclass
 class EnumInterface(InterfaceBase):
     name: str
-    values: list[str]
+    body: str
     include_export: bool = True
 
-    def from_enum(self, enum: EnumWrapper):
-        pass
+    @classmethod
+    def from_enum(cls, enum: EnumWrapper):
+        fields : dict[str, Any] = {}
+
+        # Mirror the format of JS enums
+        # https://www.typescriptlang.org/docs/handbook/enums.html
+        # enum Direction {
+        #  Up = 1,
+        #  Down,
+        #  Left,
+        #  Right,
+        # }
+        for name, value in enum.enum.__members__.items():
+            fields[TSLiteral(name)] = value.value
+
+        return cls(
+            name=enum.name,
+            body=python_payload_to_typescript(fields),
+        )
 
     def to_js(self) -> str:
         schema_def = f"enum {self.name}"
 
-        schema_def += f" {{\n{self.body}\n}}"
+        # Body includes the { } tokens
+        schema_def += f" {self.body}"
 
         if self.include_export:
             schema_def = f"export {schema_def}"
