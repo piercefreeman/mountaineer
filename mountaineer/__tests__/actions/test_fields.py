@@ -175,6 +175,7 @@ def test_fuse_metadata_to_response_typehint_inherit_render():
         ].keys()
     ) == {"render_value_a"}
 
+
 def test_fuse_metadata_to_response_typehint_unique_models():
     """
     Ensure that render_bases from different files will be considered unique
@@ -185,6 +186,7 @@ def test_fuse_metadata_to_response_typehint_unique_models():
     """
     # Controllers, mock out different modules for defined controllers / renders
     raise NotImplementedError
+
 
 def test_annotation_is_metadata():
     assert annotation_is_metadata(Metadata)

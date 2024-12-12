@@ -281,7 +281,9 @@ def fuse_metadata_to_response_typehint(
                 )
             sideeffect_model = (
                 create_model(
-                    base_response_name + camelize(metadata.function_name) + "SideEffect",
+                    base_response_name
+                    + camelize(metadata.function_name)
+                    + "SideEffect",
                     __module__=base_module,
                     **{
                         field_name: (field_definition.annotation, field_definition)  # type: ignore

@@ -4,6 +4,7 @@ class CodeBlock:
     from other ones with two blank lines.
 
     """
+
     def __init__(self, lines: list[str]):
         self.lines = lines
 

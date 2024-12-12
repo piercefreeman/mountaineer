@@ -8,11 +8,10 @@ from typing import (
     Type,
     TypeVar,
     Union,
-    get_origin,
 )
 
 from fastapi import APIRouter
-from fastapi.params import Body, Depends, Header, Param
+from fastapi.params import Body, Depends, Header
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo
@@ -112,7 +111,6 @@ class ControllerWrapper:
 class SelfReference:
     name: str
     model: Type[BaseModel]
-
 
 
 # Main parser class

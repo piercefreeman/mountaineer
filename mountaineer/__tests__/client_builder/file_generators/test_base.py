@@ -1,68 +1,66 @@
-import pytest
 from textwrap import dedent
 
+import pytest
+
 from mountaineer.client_builder.file_generators.base import CodeBlock
+
 
 @pytest.fixture
 def sample_code_block():
     return CodeBlock(["line1", "line2"])
 
+
 class TestCodeBlock:
     def test_initialization(self, sample_code_block):
         assert sample_code_block.lines == ["line1", "line2"]
 
+
 class TestCodeBlockIndent:
-    @pytest.mark.parametrize("input_str, expected", [
-        # Empty string cases
-        ("", ""),
-        # Single line cases
-        ("hello", "hello"),
-        ("    hello", "    hello"),
-        ("\thello", "\thello"),
-        # Basic multi-line cases - adding to subsequent indentation
-        (
-            "    first\n        second\n            third",
-            "    first\n            second\n                third"
-        ),
-        (
-            "\tfirst\n\t\tsecond\n\t\t\tthird",
-            "\tfirst\n\t\t\tsecond\n\t\t\t\tthird"
-        ),
-        # Cases with trailing newlines
-        (
-            "    first\n        second\n",
-            "    first\n            second\n"
-        ),
-        # Cases with empty lines
-        (
-            "    first\n\n        third",
-            "    first\n\n            third"
-        ),
-        (
-            "    first\n  \n        third",
-            "    first\n  \n            third"
-        ),
-        # Cases with mixed indentation - adding first line indent
-        (
-            "    first\n  second\n      third",
-            "    first\n      second\n          third"
-        ),
-        # Cases with tabs and spaces
-        (
-            "\tfirst\n    second\n\t\tthird",
-            "\tfirst\n\t    second\n\t\t\tthird"
-        ),
-        # Complex multi-line string cases
-        (dedent("""
+    @pytest.mark.parametrize(
+        "input_str, expected",
+        [
+            # Empty string cases
+            ("", ""),
+            # Single line cases
+            ("hello", "hello"),
+            ("    hello", "    hello"),
+            ("\thello", "\thello"),
+            # Basic multi-line cases - adding to subsequent indentation
+            (
+                "    first\n        second\n            third",
+                "    first\n            second\n                third",
+            ),
+            (
+                "\tfirst\n\t\tsecond\n\t\t\tthird",
+                "\tfirst\n\t\t\tsecond\n\t\t\t\tthird",
+            ),
+            # Cases with trailing newlines
+            ("    first\n        second\n", "    first\n            second\n"),
+            # Cases with empty lines
+            ("    first\n\n        third", "    first\n\n            third"),
+            ("    first\n  \n        third", "    first\n  \n            third"),
+            # Cases with mixed indentation - adding first line indent
+            (
+                "    first\n  second\n      third",
+                "    first\n      second\n          third",
+            ),
+            # Cases with tabs and spaces
+            ("\tfirst\n    second\n\t\tthird", "\tfirst\n\t    second\n\t\t\tthird"),
+            # Complex multi-line string cases
+            (
+                dedent(
+                    """
             def example():
                 x = '''
                 multi
                 line
                 string'''
-            """).strip(),
-            "def example():\n    x = '''\n    multi\n    line\n    string'''"
-        ),
-    ])
+            """
+                ).strip(),
+                "def example():\n    x = '''\n    multi\n    line\n    string'''",
+            ),
+        ],
+    )
     def test_indent_variations(self, input_str, expected):
         result = CodeBlock.indent(input_str)
         assert result == expected
@@ -79,7 +77,9 @@ class TestCodeBlockIndent:
             second
                 third"""
         input_str = f"    function({var})"
-        expected = "    function(first\n                second\n                    third)"
+        expected = (
+            "    function(first\n                second\n                    third)"
+        )
         assert CodeBlock.indent(input_str) == expected
 
     def test_whitespace_preservation(self):
