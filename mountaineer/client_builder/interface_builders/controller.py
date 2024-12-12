@@ -12,6 +12,12 @@ from mountaineer.client_builder.typescript import TSLiteral, python_payload_to_t
 
 @dataclass
 class ControllerInterface(InterfaceBase):
+    """
+    The Controller interfaces consolidate all actions that belong to
+    this controller in the backend. Render function inputs are stored
+    separately in their respective ModelInterface.
+
+    """
     name: str
     body: str
     include_superclasses: list[str]
