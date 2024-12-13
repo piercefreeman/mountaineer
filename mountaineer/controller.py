@@ -158,7 +158,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         self.resolve_paths()
 
-    @abstractmethod
     def render(
         self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
     ) -> RenderBase | None | Coroutine[Any, Any, RenderBase | None]:
