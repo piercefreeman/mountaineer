@@ -34,11 +34,16 @@ class ControllerInterface(InterfaceBase):
         for url, action in controller.actions.items():
             # We don't need a URL here because we just want the type definition, not
             # the full definition
-            action_def = ActionInterface.from_action(action, url="")
+            action_def = ActionInterface.from_action(action, url="", controller=None)
 
             # If we only have optional params, we will default the inputs to an empty object
             # which makes the whole params object optional
             optional_params = "?" if action_def.default_initializer else ""
+
+            if not action_def.response_type:
+                raise ValueError(
+                    f"Action {action_def.name} is missing an auto-detected response type"
+                )
 
             action_signature = f"(params{optional_params}: {action_def.typehints}) => {action_def.response_type}"
 

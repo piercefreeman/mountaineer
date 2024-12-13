@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Type
 
 from mountaineer.client_builder.file_generators.base import CodeBlock
 from mountaineer.client_builder.interface_builders.base import InterfaceBase
@@ -10,6 +10,7 @@ from mountaineer.client_builder.typescript import (
     TSLiteral,
     python_payload_to_typescript,
 )
+from mountaineer.controller import ControllerBase
 
 
 @dataclass
@@ -31,7 +32,15 @@ class ActionInterface(InterfaceBase):
         return script
 
     @classmethod
-    def from_action(cls, action: ActionWrapper, url: str):
+    def from_action(
+        cls, action: ActionWrapper, url: str, controller: Type[ControllerBase] | None
+    ):
+        """
+        If controller is None, we should take the union of all response bodies. This is used for global definitions
+        where the exact model might be different by the concrete controller (like for @sideeffects that must include
+        the specific controller's render model).
+
+        """
         parameters_dict: dict[str, Any] = {}
         typehint_dict: dict[str, Any] = {}
         required_models: list[str] = []
@@ -63,16 +72,25 @@ class ActionInterface(InterfaceBase):
 
         request_payload = cls._build_request_payload(url, action, parameters_dict)
 
-        response_type = cls._get_response_type(action)
-        if action.response_body:
-            required_models.append(action.response_body.name.global_name)
+        response_types: set[str] = set()
+        controllers = [controller] if controller else action.response_bodies.keys()
+        if controllers:
+            for controller in controllers:
+                response_types.add(cls._get_response_type(action, controller))
+                response_body = cls._get_response_body(action, controller)
+                if response_body:
+                    required_models.append(response_body.name.global_name)
+        else:
+            # Fallback in the case that no concrete controllers are mounted with this action
+            # In this case we just use a generic typehint for the return value
+            response_types.add(cls._get_response_type(action, None))
 
         return cls(
             name=action.name,
             parameters=python_payload_to_typescript(parameters_dict),
             typehints=python_payload_to_typescript(typehint_dict),
             default_initializer=not has_nonsystem_parameters,
-            response_type=response_type,
+            response_type=" | ".join(response_types),
             body=["return __request(", CodeBlock.indent(f"  {request_payload}"), ");"],
             required_models=required_models,
         )
@@ -119,16 +137,28 @@ class ActionInterface(InterfaceBase):
         return python_payload_to_typescript(payload)
 
     @classmethod
-    def _get_response_type(cls, action: ActionWrapper) -> str:
+    def _get_response_type(
+        cls, action: ActionWrapper, controller: Type[ControllerBase] | None
+    ) -> str:
         if action.is_raw_response:
             return "Promise<Response>"
 
-        if not action.response_body:
+        if not controller:
+            return "Promise<any>"
+
+        response_body = cls._get_response_body(action, controller)
+        if not response_body:
             return "Promise<void>"
 
-        response_type = action.response_body.name.global_name
+        response_type = response_body.name.global_name
 
         if action.is_streaming_response:
             return f"Promise<AsyncGenerator<{response_type}, void, unknown>>"
 
         return f"Promise<{response_type}>"
+
+    @classmethod
+    def _get_response_body(
+        cls, action: ActionWrapper, controller: Type[ControllerBase]
+    ):
+        return action.response_bodies.get(controller)

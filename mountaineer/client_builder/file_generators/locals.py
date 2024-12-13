@@ -198,7 +198,9 @@ class LocalActionGenerator(LocalGeneratorBase):
         # actually bound to the controller instance with separate urls.
         all_actions = [
             ActionInterface.from_action(
-                action, action.controller_to_url[controller.controller]
+                action,
+                action.controller_to_url[controller.controller],
+                controller.controller,
             )
             for action in controller.all_actions
         ]
@@ -210,8 +212,9 @@ class LocalActionGenerator(LocalGeneratorBase):
         for action in parsed_controller.all_actions:
             if action.request_body:
                 deps.add(action.request_body.name.global_name)
-            if action.response_body:
-                deps.add(action.response_body.name.global_name)
+            response_body = action.response_bodies.get(parsed_controller.controller)
+            if response_body:
+                deps.add(response_body.name.global_name)
         return deps
 
     def _generate_exceptions(self, parsed_controller: ControllerWrapper):

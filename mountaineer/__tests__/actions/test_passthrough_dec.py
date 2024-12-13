@@ -44,7 +44,6 @@ def test_markup_passthrough():
     assert metadata.function_name == "get_external_data"
     assert isinstance(metadata.reload_states, MountaineerUnsetValue)
     assert isinstance(metadata.render_model, MountaineerUnsetValue)
-    assert isinstance(metadata.return_model, MountaineerUnsetValue)
 
 
 class ExampleRenderModel(RenderBase):

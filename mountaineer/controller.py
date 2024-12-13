@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isfunction, ismethod
 from pathlib import Path

@@ -241,8 +241,8 @@ def test_fuse_metadata_to_response_typehint_unique_models():
 
     # Verify the models have different modules and inherited the ones
     # from the render models
-    assert response_a.__module__ == "renders.a"
-    assert response_b.__module__ == "renders.b"
+    assert response_a.__module__ == "controller_a"
+    assert response_b.__module__ == "controller_b"
 
 
 def test_annotation_is_metadata():

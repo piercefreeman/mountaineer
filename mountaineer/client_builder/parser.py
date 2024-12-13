@@ -98,7 +98,7 @@ class ActionWrapper:
     params: list[FieldWrapper]
     headers: list[FieldWrapper]
     request_body: Optional[ModelWrapper]
-    response_body: Optional[ModelWrapper]
+    response_bodies: dict[Type[ControllerBase], ModelWrapper | None]
     exceptions: list[ExceptionWrapper]
 
     is_raw_response: bool
@@ -187,8 +187,8 @@ class ControllerWrapper(CoreWrapper):
             elif isinstance(item, ActionWrapper):
                 if item.request_body:
                     yield item.request_body
-                if item.response_body:
-                    yield item.response_body
+                if item.response_bodies:
+                    yield from item.response_bodies.values()
                 yield from item.exceptions
 
             elif isinstance(item, ModelWrapper):
@@ -627,15 +627,14 @@ class ControllerParser:
         model_wrapped.body_type = body_type
         return model_wrapped
 
-    def _parse_response_body(
-        self, metadata: FunctionMetadata
-    ) -> Optional[ModelWrapper]:
+    def _parse_response_bodies(self, metadata: FunctionMetadata):
         """Parse response model from metadata"""
-        if not isinstance(metadata.return_model, MountaineerUnsetValue):
-            model = metadata.get_return_model()
-            if issubclass(model, BaseModel):
-                return self._parse_model(model)
-        return None
+        return {
+            controller: self._parse_model(model)
+            if issubclass(model, BaseModel)
+            else None
+            for controller, model in metadata.return_models.items()
+        }
 
     def _parse_actions(
         self, controller: Type[ControllerBase]
@@ -657,7 +656,7 @@ class ControllerParser:
                 params=query_params,
                 headers=self._parse_headers(func, name, synthetic_action_url),
                 request_body=self._parse_request_body(func, name, synthetic_action_url),
-                response_body=self._parse_response_body(metadata),
+                response_bodies=self._parse_response_bodies(metadata),
                 is_raw_response=metadata.is_raw_response,
                 is_streaming_response=metadata.media_type == STREAM_EVENT_TYPE,
                 exceptions=[

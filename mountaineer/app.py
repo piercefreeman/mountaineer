@@ -466,15 +466,22 @@ class AppController:
                 # decorators run before the class is actually mounted, they're isolated from the larger class/controller
                 # context that the action function is being defined within. Here since we have a global view
                 # of the controller (render function + actions) this becomes trivial
-                metadata.return_model = fuse_metadata_to_response_typehint(
+                return_model = fuse_metadata_to_response_typehint(
                     metadata, controller, render_metadata.get_render_model()
                 )
 
+                # Only mount the first time we register the function, otherwise we risk overwriting
+                # the same function multiple times
+                if controller.__class__ not in metadata.return_models:
+                    metadata.register_return_model(controller.__class__, return_model)
+
                 # Update the signature of the internal function, which fastapi will sniff for the return declaration
                 # https://github.com/tiangolo/fastapi/blob/a235d93002b925b0d2d7aa650b7ab6d7bb4b24dd/fastapi/dependencies/utils.py#L207
+                # Since these are consumed immediately by FastAPI, it's okay to overwrite previously set values (in the case
+                # of superclass functions that are imported by multiple subclass controllers)
                 method_function: Callable = fn.__func__  # type: ignore
                 method_function.__signature__ = signature(method_function).replace(  # type: ignore
-                    return_annotation=metadata.return_model
+                    return_annotation=return_model
                 )
 
             action_path = f"/{metadata.function_name}"

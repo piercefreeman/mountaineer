@@ -124,8 +124,8 @@ class FunctionMetadata(BaseModel):
         RenderBase
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
 
-    # Inserted by the render decorator
-    return_model: Type[BaseModel] | MountaineerUnsetValue = MountaineerUnsetValue()
+    # Inserted when concrete controllers are mounted to the application controller
+    return_models: dict[Any, Type[BaseModel]] = Field(default_factory=dict)
 
     # An API action might be mounted by multiple controllers, if it comes from a superclass
     # that's inherited by multiple child controllers. This lookup lets us track which
@@ -170,10 +170,10 @@ class FunctionMetadata(BaseModel):
     def get_is_raw_response(self) -> bool:
         return self.is_raw_response
 
-    def get_return_model(self) -> Type[BaseModel]:
-        if isinstance(self.return_model, MountaineerUnsetValue):
+    def get_return_model(self, controller: Type["ControllerBase"]) -> Type[BaseModel]:
+        if controller not in self.return_models:
             raise ValueError("Return model not set")
-        return self.return_model
+        return self.return_models[controller]
 
     def register_controller_url(self, controller: Type["ControllerBase"], url: str):
         if controller in self.controller_mounts:
@@ -184,6 +184,17 @@ class FunctionMetadata(BaseModel):
                     f"Old: {self.controller_mounts[controller]} New: {url}"
                 )
         self.controller_mounts[controller] = url
+
+    def register_return_model(
+        self, controller: Type["ControllerBase"], model: Type[BaseModel]
+    ):
+        if controller in self.return_models:
+            if self.return_models[controller] != model:
+                raise ValueError(
+                    f"Controller {controller} already registered with a different return model\n"
+                    f"Old: {self.return_models[controller]} New: {model}"
+                )
+        self.return_models[controller] = model
 
     # def get_openapi_extras(self):
     #     openapi_extra: dict[str, Any] = {"is_raw_response": self.get_is_raw_response()}
@@ -250,8 +261,9 @@ def fuse_metadata_to_response_typehint(
     base_response_name = camelize(metadata.function_name) + "ResponseWrapped"
     base_response_params = {}
 
-    # Prefer the location of the render model
-    base_module = render_model.__module__ if render_model else controller.__module__
+    # Prefer the location of the concrete controller when defining the model, since a render function
+    # could be imported by multiple controllers
+    base_module = controller.__module__
 
     if metadata.passthrough_model is not None and not isinstance(
         metadata.passthrough_model, MountaineerUnsetValue

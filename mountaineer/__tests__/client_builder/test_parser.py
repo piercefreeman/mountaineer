@@ -202,10 +202,11 @@ def test_base_controller_actions(parsed_controller: ControllerWrapper):
 
     action = base_controller.actions["get_system_status"]
     assert len(action.params) == 0
-    assert action.response_body is not None
 
     # Test response structure
-    fields = {f.name: f for f in action.response_body.value_models}
+    response_model = action.response_bodies[parsed_controller.controller]
+    assert isinstance(response_model, ModelWrapper)
+    fields = {f.name: f for f in response_model.value_models}
     assert set(fields.keys()) == {"passthrough"}
 
     system_status = fields["passthrough"].value
@@ -233,8 +234,9 @@ def test_shared_controller_actions(parsed_controller: ControllerWrapper):
     role_action = shared_controller.actions["get_user_role"]
     assert len(role_action.params) == 0
 
-    assert isinstance(role_action.response_body, ModelWrapper)
-    fields = {f.name: f for f in role_action.response_body.value_models}
+    response_model = role_action.response_bodies[parsed_controller.controller]
+    assert isinstance(response_model, ModelWrapper)
+    fields = {f.name: f for f in response_model.value_models}
     role_wrapper = fields["passthrough"].value
     assert isinstance(role_wrapper, ModelWrapper)
     role_fields = {f.name: f for f in role_wrapper.value_models}
@@ -349,14 +351,18 @@ def test_action_response_wrappers(parsed_controller: ControllerWrapper):
     """Test the structure of action response wrappers"""
     # Test sideeffect wrapper
     update_action = parsed_controller.actions["update_profile"]
-    assert isinstance(update_action.response_body, ModelWrapper)
-    response_fields = {f.name: f for f in update_action.response_body.value_models}
+
+    response_model = update_action.response_bodies[parsed_controller.controller]
+    assert isinstance(response_model, ModelWrapper)
+
+    response_fields = {f.name: f for f in response_model.value_models}
     assert set(response_fields.keys()) == {"sideeffect", "passthrough"}
 
     # Test passthrough wrapper
     friends_action = parsed_controller.actions["get_friends"]
-    assert isinstance(friends_action.response_body, ModelWrapper)
-    friends_fields = {f.name: f for f in friends_action.response_body.value_models}
+    response_model = friends_action.response_bodies[parsed_controller.controller]
+    assert isinstance(response_model, ModelWrapper)
+    friends_fields = {f.name: f for f in response_model.value_models}
     assert set(friends_fields.keys()) == {"passthrough"}
 
 
