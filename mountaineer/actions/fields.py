@@ -249,7 +249,9 @@ def fuse_metadata_to_response_typehint(
 
     base_response_name = camelize(metadata.function_name) + "ResponseWrapped"
     base_response_params = {}
-    base_module = controller.__module__
+
+    # Prefer the location of the render model
+    base_module = render_model.__module__ if render_model else controller.__module__
 
     if metadata.passthrough_model is not None and not isinstance(
         metadata.passthrough_model, MountaineerUnsetValue
@@ -259,7 +261,6 @@ def fuse_metadata_to_response_typehint(
     if metadata.action_type == FunctionActionType.SIDEEFFECT and render_model:
         # By default, reload all fields
         sideeffect_model = render_model
-        base_module = render_model.__module__
 
         if metadata.reload_states is not None and not isinstance(
             metadata.reload_states, MountaineerUnsetValue
@@ -279,16 +280,14 @@ def fuse_metadata_to_response_typehint(
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )
-            sideeffect_model = (
-                create_model(
-                    base_response_name + "SideEffectWrapped",
-                    __module__=base_module,
-                    **{
-                        field_name: (field_definition.annotation, field_definition)  # type: ignore
-                        for field_name, field_definition in render_model.model_fields.items()
-                        if field_name in reload_keys
-                    },
-                ),
+            sideeffect_model = create_model(
+                base_response_name + "SideEffectWrapped",
+                __module__=base_module,
+                **{
+                    field_name: (field_definition.annotation, field_definition)  # type: ignore
+                    for field_name, field_definition in render_model.model_fields.items()
+                    if field_name in reload_keys
+                },
             )
 
     if passthrough_model:
