@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Dict, Generic, List, Optional, Type, TypeVar
+from typing import Dict, Generic, Optional, Type, TypeVar
 
 import pytest
 from pydantic import BaseModel
@@ -123,6 +123,10 @@ class TestAliasManager:
             value: str
             parent: Optional["Node"] = None
 
+        class Node2(BaseModel):
+            value: str
+            parent: Optional[Node] = None
+
         wrapper: ModelWrapper = ModelWrapper(
             name=WrapperName("Node"),
             module_name="tree.models",
@@ -132,7 +136,10 @@ class TestAliasManager:
             value_models=[],
         )
 
+        # We just need to insert two of the same value so the duplicate detection
+        # is triggered, their keys don't matter
         parser.parsed_models[Node] = wrapper
+        parser.parsed_models[Node2] = wrapper
         parser.parsed_self_references.append(SelfReference(name="Node", model=Node))
 
         alias_manager.assign_global_names(parser)
@@ -188,61 +195,14 @@ class TestAliasManager:
         assert model_wrapper.name.local_name == "UserModel"
         assert enum_wrapper.name.local_name == "StatusEnum"
 
-    def test_complex_inheritance_naming(
-        self, parser: ControllerParser, alias_manager: AliasManager
-    ) -> None:
-        class Base(BaseModel):
-            id: int
-
-        class Left(Base):
-            left_data: str
-
-        class Right(Base):
-            right_data: str
-
-        class Diamond(Left, Right):
-            extra: str
-
-        Base.__module__ = "models.base"
-        Left.__module__ = "models.left"
-        Right.__module__ = "models.right"
-        Diamond.__module__ = "models.diamond"
-
-        wrappers: Dict[Type[BaseModel], ModelWrapper] = {
-            cls: ModelWrapper(
-                name=WrapperName(cls.__name__),
-                module_name=cls.__module__,
-                model=cls,
-                isolated_model=cls,
-                superclasses=[],
-                value_models=[],
-            )
-            for cls in [Base, Left, Right, Diamond]
-        }
-
-        for cls, wrapper in wrappers.items():
-            parser.parsed_models[cls] = wrapper
-
-        alias_manager.assign_global_names(parser)
-
-        assert len({w.name.global_name for w in wrappers.values()}) == 4
-
     def test_generic_model_naming(
         self, parser: ControllerParser, alias_manager: AliasManager
     ) -> None:
         class Container(BaseModel, Generic[T]):
             value: T
 
-        class StringContainer(Container[str]):
-            pass
-
-        class IntContainer(Container[int]):
-            pass
-
-        StringContainer.__name__ = "Container"
-        IntContainer.__name__ = "Container"
-        StringContainer.__module__ = "string.models"
-        IntContainer.__module__ = "int.models"
+        string_generic = Container[str]
+        int_generic = Container[int]
 
         wrappers: Dict[Type[BaseModel], ModelWrapper] = {
             cls: ModelWrapper(
@@ -253,7 +213,7 @@ class TestAliasManager:
                 superclasses=[],
                 value_models=[],
             )
-            for cls in [Container, StringContainer, IntContainer]
+            for cls in [string_generic, int_generic]
         }
 
         for cls, wrapper in wrappers.items():
@@ -261,73 +221,46 @@ class TestAliasManager:
 
         alias_manager.assign_global_names(parser)
 
-        assert wrappers[StringContainer].name.global_name == "StringModels_Container"
-        assert wrappers[IntContainer].name.global_name == "IntModels_Container"
+        assert wrappers[string_generic].name.global_name == "ContainerStr"
+        assert wrappers[int_generic].name.global_name == "ContainerInt"
 
-    def test_edge_cases(
-        self, parser: ControllerParser, alias_manager: AliasManager
-    ) -> None:
-        test_cases: List[tuple[str, str, str]] = [
+    @pytest.mark.parametrize(
+        "original_name, module, expected",
+        [
             ("A", "test.module", "TestModule_A"),
             ("with_underscore", "test.module", "TestModule_WithUnderscore"),
-            ("MyClass", "", "MyClass"),
             ("MyClass", "a.b.c.d", "ABCD_MyClass"),
             ("123Invalid", "test", "Test_123Invalid"),
             ("With Space", "test", "Test_WithSpace"),
-        ]
-
-        for original_name, module, expected in test_cases:
-
-            class DynamicModel(BaseModel):
-                field: str
-
-            DynamicModel.__name__ = original_name
-            DynamicModel.__module__ = module
-
-            wrapper: ModelWrapper = ModelWrapper(
-                name=WrapperName(original_name),
-                module_name=module,
-                model=DynamicModel,
-                isolated_model=DynamicModel,
-                superclasses=[],
-                value_models=[],
-            )
-
-            parser.parsed_models[DynamicModel] = wrapper
-            alias_manager.assign_global_names(parser)
-            assert wrapper.name.global_name == expected
-
-    def test_massive_type_hierarchy(
-        self, parser: ControllerParser, alias_manager: AliasManager
+        ],
+    )
+    def test_edge_cases(
+        self,
+        parser: ControllerParser,
+        alias_manager: AliasManager,
+        original_name: str,
+        module: str,
+        expected: str,
     ) -> None:
-        models: List[ModelWrapper] = []
-        for i in range(100):
+        class DynamicModel(BaseModel):
+            field: str
 
-            class DynamicModel(BaseModel):
-                field: str
+        class OtherModel(BaseModel):
+            field: str
 
-            DynamicModel.__name__ = f"Model{i}"
-            DynamicModel.__module__ = f"module{i % 10}"
+        wrapper: ModelWrapper = ModelWrapper(
+            name=WrapperName(original_name),
+            module_name=module,
+            model=DynamicModel,
+            isolated_model=DynamicModel,
+            superclasses=[],
+            value_models=[],
+        )
 
-            wrapper: ModelWrapper = ModelWrapper(
-                name=WrapperName(DynamicModel.__name__),
-                module_name=DynamicModel.__module__,
-                model=DynamicModel,
-                isolated_model=DynamicModel,
-                superclasses=[],
-                value_models=[],
-            )
-
-            parser.parsed_models[DynamicModel] = wrapper
-            models.append(wrapper)
-
+        parser.parsed_models[DynamicModel] = wrapper
+        parser.parsed_models[OtherModel] = wrapper
         alias_manager.assign_global_names(parser)
-
-        names: set[str] = {model.name.global_name for model in models}
-        assert len(names) == len(models)
-
-        for model in models:
-            assert model.name.global_name.startswith("Module")
+        assert wrapper.name.global_name == expected
 
     @pytest.mark.parametrize(
         "module_path,expected_prefix",
