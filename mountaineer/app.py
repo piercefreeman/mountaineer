@@ -21,6 +21,7 @@ from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions import (
     FunctionActionType,
     fuse_metadata_to_response_typehint,
+    get_function_metadata,
     init_function_metadata,
 )
 from mountaineer.actions.fields import FunctionMetadata
@@ -450,6 +451,9 @@ class AppController:
             view_router = APIRouter()
             view_router.get(controller.url)(generate_controller_html)
             self.app.include_router(view_router)
+            render_metadata.register_controller_url(
+                controller.__class__, controller.url
+            )
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
@@ -457,34 +461,35 @@ class AppController:
             f"{self.internal_api_prefix}/{underscore(controller.__class__.__name__)}"
         )
         for _, fn, metadata in controller._get_client_functions():
-            openapi_extra: dict[str, Any] = {
-                "is_raw_response": metadata.get_is_raw_response()
-            }
-
             if not metadata.get_is_raw_response():
                 # We need to delay adding the typehint for each function until we are here, adding the view. Since
                 # decorators run before the class is actually mounted, they're isolated from the larger class/controller
                 # context that the action function is being defined within. Here since we have a global view
                 # of the controller (render function + actions) this becomes trivial
-                metadata.return_model = fuse_metadata_to_response_typehint(
+                return_model = fuse_metadata_to_response_typehint(
                     metadata, controller, render_metadata.get_render_model()
                 )
 
+                # Only mount the first time we register the function, otherwise we risk overwriting
+                # the same function multiple times
+                if controller.__class__ not in metadata.return_models:
+                    metadata.register_return_model(controller.__class__, return_model)
+
                 # Update the signature of the internal function, which fastapi will sniff for the return declaration
                 # https://github.com/tiangolo/fastapi/blob/a235d93002b925b0d2d7aa650b7ab6d7bb4b24dd/fastapi/dependencies/utils.py#L207
+                # Since these are consumed immediately by FastAPI, it's okay to overwrite previously set values (in the case
+                # of superclass functions that are imported by multiple subclass controllers)
                 method_function: Callable = fn.__func__  # type: ignore
                 method_function.__signature__ = signature(method_function).replace(  # type: ignore
-                    return_annotation=metadata.return_model
+                    return_annotation=return_model
                 )
 
-                # Pass along relevant tags in the OpenAPI meta struct
-                # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
-                if metadata.get_media_type():
-                    openapi_extra["media_type"] = metadata.get_media_type()
-
-            controller_api.post(
-                f"/{metadata.function_name}", openapi_extra=openapi_extra
-            )(fn)
+            action_path = f"/{metadata.function_name}"
+            controller_api.post(action_path)(fn)
+            function_metadata = get_function_metadata(fn)
+            function_metadata.register_controller_url(
+                controller.__class__, f"{controller_url_prefix}{action_path}"
+            )
 
         # Originally we tried implementing a sub-router for the internal API that was registered in the __init__
         # But the application greedily copies all contents from the router when it's added via `include_router`, so this

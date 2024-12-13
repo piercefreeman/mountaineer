@@ -1,6 +1,6 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from importlib.metadata import PackageNotFoundError
-from inspect import getmembers, ismethod
+from inspect import getmembers, isfunction, ismethod
 from pathlib import Path
 from re import compile as re_compile
 from typing import (
@@ -158,7 +158,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         self.resolve_paths()
 
-    @abstractmethod
     def render(
         self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
     ) -> RenderBase | None | Coroutine[Any, Any, RenderBase | None]:
@@ -217,15 +216,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # Iterate over all the functions in this class and see which ones have a _metadata attribute
         # We specifically traverse through the MRO, except the last one (object class)
         for name, func in getmembers(self, predicate=ismethod):
-            try:
-                metadata = get_function_metadata(func)
-                if metadata.action_type in {
-                    FunctionActionType.PASSTHROUGH,
-                    FunctionActionType.SIDEEFFECT,
-                }:
-                    yield name, func, metadata
-            except AttributeError:
-                continue
+            yield from function_is_action(name, func)
 
     def resolve_paths(self, view_base: Path | None = None, force: bool = True) -> bool:
         """
@@ -295,3 +286,44 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         """
         return underscore(self.__class__.__name__)
+
+
+def class_fn_as_method(fn):
+    """
+    Converts a class-bound action where `self` is not passed as the first argument
+    to a method where `self` is passed as the first argument. This lets our dependency
+    injection resolution work as normal without misinterpreting `self` as a query parameter.
+
+    """
+
+    class FunctionWrapper:
+        pass
+
+    setattr(FunctionWrapper, fn.__name__, fn)
+    cls = FunctionWrapper()
+    return getattr(cls, fn.__name__)
+
+
+def function_is_action(name, func):
+    try:
+        metadata = get_function_metadata(func)
+        if metadata.action_type in {
+            FunctionActionType.PASSTHROUGH,
+            FunctionActionType.SIDEEFFECT,
+        }:
+            yield name, func, metadata
+    except AttributeError:
+        return
+
+
+def get_client_functions_cls(cls) -> Iterable[tuple[str, Callable, FunctionMetadata]]:
+    """
+    Gets the client functions defined on the class level, so only includes the
+    functions that are implemented at this class level (versus MRO superclasses).
+
+    """
+    # Only look at functions directly defined in this class using __dict__
+    for name, func in cls.__dict__.items():
+        if isfunction(func):
+            for name, func, metadata in function_is_action(name, func):
+                yield name, class_fn_as_method(func), metadata

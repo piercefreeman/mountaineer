@@ -30,7 +30,7 @@ from typing import (
 import starlette.responses
 from fastapi.responses import JSONResponse, Response
 from inflection import camelize
-from pydantic import BaseModel, create_model
+from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
@@ -124,8 +124,13 @@ class FunctionMetadata(BaseModel):
         RenderBase
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
 
-    # Inserted by the render decorator
-    return_model: Type[BaseModel] | MountaineerUnsetValue = MountaineerUnsetValue()
+    # Inserted when concrete controllers are mounted to the application controller
+    return_models: dict[Any, Type[BaseModel]] = Field(default_factory=dict)
+
+    # An API action might be mounted by multiple controllers, if it comes from a superclass
+    # that's inherited by multiple child controllers. This lookup lets us track which
+    # URL is associated with which controller.
+    controller_mounts: dict[Any, str] = Field(default_factory=dict)
 
     model_config = {
         "arbitrary_types_allowed": True,
@@ -165,10 +170,42 @@ class FunctionMetadata(BaseModel):
     def get_is_raw_response(self) -> bool:
         return self.is_raw_response
 
-    def get_return_model(self) -> Type[BaseModel]:
-        if isinstance(self.return_model, MountaineerUnsetValue):
+    def get_return_model(self, controller: Type["ControllerBase"]) -> Type[BaseModel]:
+        if controller not in self.return_models:
             raise ValueError("Return model not set")
-        return self.return_model
+        return self.return_models[controller]
+
+    def register_controller_url(self, controller: Type["ControllerBase"], url: str):
+        if controller in self.controller_mounts:
+            # See if it's the same URL
+            if self.controller_mounts[controller] != url:
+                raise ValueError(
+                    f"Controller {controller} already mounted at {self.controller_mounts[controller]} with different URL\n"
+                    f"Old: {self.controller_mounts[controller]} New: {url}"
+                )
+        self.controller_mounts[controller] = url
+
+    def register_return_model(
+        self, controller: Type["ControllerBase"], model: Type[BaseModel]
+    ):
+        if controller in self.return_models:
+            if self.return_models[controller] != model:
+                raise ValueError(
+                    f"Controller {controller} already registered with a different return model\n"
+                    f"Old: {self.return_models[controller]} New: {model}"
+                )
+        self.return_models[controller] = model
+
+    # def get_openapi_extras(self):
+    #     openapi_extra: dict[str, Any] = {"is_raw_response": self.get_is_raw_response()}
+
+    #     if not self.get_is_raw_response():
+    #         # Pass along relevant tags in the OpenAPI meta struct
+    #         # This will appear in the root key of the API route, at the same level of "summary" and "parameters"
+    #         if self.get_media_type():
+    #             openapi_extra["media_type"] = self.get_media_type()
+
+    #     return openapi_extra
 
 
 METADATA_ATTRIBUTE = "_mountaineer_metadata"
@@ -214,25 +251,28 @@ def fuse_metadata_to_response_typehint(
     """
     Functions can either be marked up with side effects, explicit responses, or both.
     This function merges them into the expected output payload so we can typehint the responses.
+
     """
-    passthrough_fields = {}
-    sideeffect_fields = {}
+    # Prefer to use existing BaseModels where possible, we only create synthetic values
+    # if we need to mask the response model
+    passthrough_model: Type[BaseModel] | None = None
+    sideeffect_model: Type[BaseModel] | None = None
+
+    base_response_name = camelize(metadata.function_name) + "ResponseWrapped"
+    base_response_params = {}
+
+    # Prefer the location of the concrete controller when defining the model, since a render function
+    # could be imported by multiple controllers
+    base_module = controller.__module__
 
     if metadata.passthrough_model is not None and not isinstance(
         metadata.passthrough_model, MountaineerUnsetValue
     ):
-        passthrough_fields = {**metadata.passthrough_model.model_fields}
+        passthrough_model = metadata.passthrough_model
 
     if metadata.action_type == FunctionActionType.SIDEEFFECT and render_model:
         # By default, reload all fields
-        sideeffect_fields = {**render_model.model_fields}
-
-        # Ignore the metadata since this shouldn't be passed during sideeffects
-        sideeffect_fields = {
-            field_name: field_definition
-            for field_name, field_definition in sideeffect_fields.items()
-            if not annotation_is_metadata(field_definition.annotation)
-        }
+        sideeffect_model = render_model
 
         if metadata.reload_states is not None and not isinstance(
             metadata.reload_states, MountaineerUnsetValue
@@ -252,41 +292,31 @@ def fuse_metadata_to_response_typehint(
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )
-            sideeffect_fields = {
-                field_name: field_definition
-                for field_name, field_definition in render_model.model_fields.items()
-                if field_name in reload_keys
-            }
-
-    base_response_name = camelize(metadata.function_name) + "Response"
-    base_response_params = {}
-
-    if passthrough_fields:
-        base_response_params["passthrough"] = (
-            create_model(
-                base_response_name + "Passthrough",
+            sideeffect_model = create_model(
+                base_response_name + "SideEffectWrapped",
+                __module__=base_module,
                 **{
                     field_name: (field_definition.annotation, field_definition)  # type: ignore
-                    for field_name, field_definition in passthrough_fields.items()
+                    for field_name, field_definition in render_model.model_fields.items()
+                    if field_name in reload_keys
                 },
-            ),
+            )
+
+    if passthrough_model:
+        base_response_params["passthrough"] = (
+            passthrough_model,
             FieldInfo(alias="passthrough"),
         )
 
-    if sideeffect_fields:
+    if sideeffect_model:
         base_response_params["sideeffect"] = (
-            create_model(
-                base_response_name + "SideEffect",
-                **{
-                    field_name: (field_definition.annotation, field_definition)  # type: ignore
-                    for field_name, field_definition in sideeffect_fields.items()
-                },
-            ),
+            sideeffect_model,
             FieldInfo(alias="sideeffect"),
         )
 
     model: Type[BaseModel] = create_model(
         base_response_name,
+        __module__=base_module,
         **base_response_params,  # type: ignore
     )
 
