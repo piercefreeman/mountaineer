@@ -12,7 +12,9 @@ from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.app import AppController
 from mountaineer.client_builder.parser import (
     ControllerParser,
+    ControllerWrapper,
     EnumWrapper,
+    ModelWrapper,
     SelfReference,
 )
 from mountaineer.client_builder.types import Or
@@ -174,24 +176,26 @@ def app_controller():
 
 
 @pytest.fixture
-def parsed_controller(controller_parser, app_controller):
+def parsed_controller(
+    controller_parser: ControllerParser, app_controller: AppController
+):
     controller = UserDashboardController()
     app_controller.register(controller)
     return controller_parser.parse_controller(controller.__class__)
 
 
 # Test Controller Inheritance Structure
-def test_controller_inheritance(parsed_controller):
+def test_controller_inheritance(parsed_controller: ControllerWrapper):
     """Test the inheritance structure of the controller"""
     assert len(parsed_controller.superclasses) == 2
 
-    superclass_names = [sc.name for sc in parsed_controller.superclasses]
+    superclass_names = [sc.name.global_name for sc in parsed_controller.superclasses]
     assert "SharedController" in superclass_names
     assert "BaseController" in superclass_names
 
 
 # Test Base Controller Actions
-def test_base_controller_actions(parsed_controller):
+def test_base_controller_actions(parsed_controller: ControllerWrapper):
     """Test the actions defined in the base controller"""
     base_controller = parsed_controller.superclasses[1]
     assert set(base_controller.actions.keys()) == {"get_system_status"}
@@ -205,6 +209,7 @@ def test_base_controller_actions(parsed_controller):
     assert set(fields.keys()) == {"passthrough"}
 
     system_status = fields["passthrough"].value
+    assert isinstance(system_status, ModelWrapper)
     status_fields = {f.name: f for f in system_status.value_models}
     assert set(status_fields.keys()) == {"status", "last_check"}
     assert status_fields["status"].value == bool
@@ -212,7 +217,7 @@ def test_base_controller_actions(parsed_controller):
 
 
 # Test Shared Controller Actions
-def test_shared_controller_actions(parsed_controller):
+def test_shared_controller_actions(parsed_controller: ControllerWrapper):
     """Test the actions defined in the shared controller"""
     shared_controller = parsed_controller.superclasses[0]
     assert set(shared_controller.actions.keys()) == {"shared_friends", "get_user_role"}
@@ -228,8 +233,10 @@ def test_shared_controller_actions(parsed_controller):
     role_action = shared_controller.actions["get_user_role"]
     assert len(role_action.params) == 0
 
+    assert isinstance(role_action.response_body, ModelWrapper)
     fields = {f.name: f for f in role_action.response_body.value_models}
     role_wrapper = fields["passthrough"].value
+    assert isinstance(role_wrapper, ModelWrapper)
     role_fields = {f.name: f for f in role_wrapper.value_models}
     assert set(role_fields.keys()) == {"role", "permissions"}
     assert isinstance(role_fields["role"].value, EnumWrapper)
@@ -237,7 +244,7 @@ def test_shared_controller_actions(parsed_controller):
 
 
 # Test Dashboard Controller Actions
-def test_dashboard_controller_actions(parsed_controller):
+def test_dashboard_controller_actions(parsed_controller: ControllerWrapper):
     """Test the actions defined in the dashboard controller"""
     assert set(parsed_controller.actions.keys()) == {"update_profile", "get_friends"}
 
@@ -258,7 +265,7 @@ def test_dashboard_controller_actions(parsed_controller):
 
 
 # Test Render Model Structure
-def test_render_model_structure(parsed_controller):
+def test_render_model_structure(parsed_controller: ControllerWrapper):
     """Test the structure of the render model"""
     assert parsed_controller.render is not None
     assert len(parsed_controller.render.superclasses) == 0
@@ -268,6 +275,7 @@ def test_render_model_structure(parsed_controller):
     assert not fields["pending_notifications"].required
 
     user_profile = fields["user"].value
+    assert isinstance(user_profile, ModelWrapper)
     profile_fields = {f.name: f for f in user_profile.value_models}
     assert set(profile_fields.keys()) == {
         "id",
@@ -281,10 +289,12 @@ def test_render_model_structure(parsed_controller):
 
 
 # Test Complex Model Inheritance
-def test_complex_model_inheritance(parsed_controller):
+def test_complex_model_inheritance(parsed_controller: ControllerWrapper):
     """Test the inheritance structure of complex models"""
+    assert parsed_controller.render is not None
     user_field = parsed_controller.render.value_models[0]
     profile = user_field.value
+    assert isinstance(profile, ModelWrapper)
 
     assert len(profile.superclasses) == 2
     superclass_names = {sc.model.__name__ for sc in profile.superclasses}
@@ -306,19 +316,23 @@ def test_complex_model_inheritance(parsed_controller):
 
 
 # Test Nested Models
-def test_nested_models(parsed_controller):
+def test_nested_models(parsed_controller: ControllerWrapper):
     """Test the structure of nested models"""
+    assert parsed_controller.render is not None
     user_field = parsed_controller.render.value_models[0]
+    assert isinstance(user_field.value, ModelWrapper)
     profile_fields = {f.name: f for f in user_field.value.value_models}
 
     # Test Location model
     location = profile_fields["location"].value
+    assert isinstance(location, ModelWrapper)
     location_fields = {f.name: f for f in location.value_models}
     assert set(location_fields.keys()) == {"city", "country", "postal_code"}
     assert not location_fields["postal_code"].required
 
     # Test UserSettings model
     settings = profile_fields["settings"].value
+    assert isinstance(settings, ModelWrapper)
     settings_fields = {f.name: f for f in settings.value_models}
     assert set(settings_fields.keys()) == {
         "theme",
@@ -331,15 +345,17 @@ def test_nested_models(parsed_controller):
 
 
 # Test Action Response Wrappers
-def test_action_response_wrappers(parsed_controller):
+def test_action_response_wrappers(parsed_controller: ControllerWrapper):
     """Test the structure of action response wrappers"""
     # Test sideeffect wrapper
     update_action = parsed_controller.actions["update_profile"]
+    assert isinstance(update_action.response_body, ModelWrapper)
     response_fields = {f.name: f for f in update_action.response_body.value_models}
     assert set(response_fields.keys()) == {"sideeffect", "passthrough"}
 
     # Test passthrough wrapper
     friends_action = parsed_controller.actions["get_friends"]
+    assert isinstance(friends_action.response_body, ModelWrapper)
     friends_fields = {f.name: f for f in friends_action.response_body.value_models}
     assert set(friends_fields.keys()) == {"passthrough"}
 
@@ -357,7 +373,7 @@ class CategoryNode(BaseModel):
 CategoryNode.model_rebuild()
 
 
-def test_parse_self_referencing_model(controller_parser):
+def test_parse_self_referencing_model(controller_parser: ControllerParser):
     """Test parsing a Pydantic model with self-referencing fields"""
     # Parse the model
     parsed_model = controller_parser._parse_model(CategoryNode)
@@ -411,7 +427,7 @@ class GenericValueModel(BaseModel, Generic[T]):
     value: T
 
 
-def test_parse_generic_model(controller_parser):
+def test_parse_generic_model(controller_parser: ControllerParser):
     """Test parsing a Pydantic model with generic fields"""
     # Test with different type parameters
     StringValue = GenericValueModel[str]
@@ -456,7 +472,7 @@ def test_parse_generic_model(controller_parser):
     assert set(date_model.isolated_model.model_fields.keys()) == {"value"}
 
 
-def test_parse_generic_nested(controller_parser):
+def test_parse_generic_nested(controller_parser: ControllerParser):
     # Test with nested generic types
     NestedValue = GenericValueModel[GenericValueModel[str]]
     nested_model = controller_parser._parse_model(NestedValue)
@@ -470,7 +486,7 @@ def test_parse_generic_nested(controller_parser):
     assert set(nested_model.isolated_model.model_fields.keys()) == {"value"}
 
 
-def test_parse_generic_optional_generic(controller_parser):
+def test_parse_generic_optional_generic(controller_parser: ControllerParser):
     # Test with optional generic types
     OptionalValue = GenericValueModel[Optional[str]]
     optional_model = controller_parser._parse_model(OptionalValue)
@@ -498,7 +514,7 @@ def test_parse_generic_list_generic(controller_parser):
     assert list_fields["value"].required
 
 
-def test_parse_generic_model_complex(controller_parser):
+def test_parse_generic_model_complex(controller_parser: ControllerParser):
     # Test with multiple generic parameters
     T = TypeVar("T")
     S = TypeVar("S")
@@ -514,8 +530,7 @@ def test_parse_generic_model_complex(controller_parser):
     complex_model = controller_parser._parse_model(ComplexValue)
     isolated_complex = complex_model.isolated_model
 
-    assert set(isolated_complex.model_fields.keys()) == {"first", "second", "value"}
+    assert set(isolated_complex.model_fields.keys()) == {"first", "second"}
     assert isolated_complex.model_fields["first"].annotation == str
-    assert isolated_complex.model_fields["value"].annotation == str
     assert get_origin(isolated_complex.model_fields["second"].annotation) == list
     assert get_args(isolated_complex.model_fields["second"].annotation) == (int,)

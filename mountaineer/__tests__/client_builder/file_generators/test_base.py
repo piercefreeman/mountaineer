@@ -8,7 +8,7 @@ from mountaineer.client_builder.file_generators.base import CodeBlock
 class TestCodeBlock:
     def test_initialization(self):
         simple_code_block = CodeBlock("line1", "line2")
-        assert simple_code_block.lines == ["line1", "line2"]
+        assert simple_code_block.lines == ("line1", "line2")
 
     @pytest.mark.parametrize(
         "input_str, expected",

@@ -34,7 +34,6 @@ from mountaineer.controller import (
 )
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import APIException as APIException
-from mountaineer.generics import resolve_generic_type
 from mountaineer.render import RenderBase
 
 T = TypeVar("T")
@@ -356,6 +355,8 @@ class ControllerParser:
         fields: list[FieldWrapper] = []
         isolated_model = self._create_isolated_model(model)
         for name, field in isolated_model.model_fields.items():
+            if field.exclude:
+                continue
             # No user schema will self-reference the isolated model, it will only
             # reference the original definition
             fields.append(self._parse_field(name, field, self_model=model))
@@ -477,31 +478,33 @@ class ControllerParser:
         Handles both regular Pydantic models and generic model instances.
 
         """
+        generic_origin: Type[BaseModel] | None = None
+        generic_args: tuple[Any, ...] | None = None
+
         # For generic models, we need to synthesize annotations from the generic metadata
         if hasattr(model, "__pydantic_generic_metadata__"):
             generic_metadata = model.__pydantic_generic_metadata__
-            origin = generic_metadata["origin"]
-            args = generic_metadata["args"]
+            generic_origin = generic_metadata["origin"]
+            generic_args = generic_metadata["args"]
 
-            # Create synthetic annotations by mapping generic parameters to concrete types
-            type_params: tuple[TypeVar, ...] = getattr(origin, "__parameters__", ())
-            type_mapping = dict(zip(type_params, args))
-
-            # Build annotations dict by resolving generic types
-            annotations = {}
-            for field_name, field_info in model.model_fields.items():
-                field_type = field_info.annotation
-                resolved_type = resolve_generic_type(field_type, type_mapping)
-
-                # Since we're modifying the annotation types, we need to copy the full
-                # field_info since .annotation will be set on the new model. Without a copy
-                # it will affect the original model's state.
-                annotations[field_name] = (resolved_type, copy(field_info))
+        if generic_origin and generic_args:
+            # Build annotations dict by resolving generic types just for the fields that
+            # were defined directly on the superclass. Since we're iterating with model_fields
+            # on the synthetically created generic subclass, all of the annotations should be resolved
+            # to real types by this point
+            parent_owned_fields = generic_origin.__dict__.get("__annotations__", {})
 
             return create_model(  # type: ignore
                 model.__name__,
                 __config__=model.model_config,
-                **annotations,  # type: ignore
+                **{
+                    # Since we're modifying the annotation types, we need to copy the full
+                    # field_info since .annotation will be set on the new model. Without a copy
+                    # it will affect the original model's state.
+                    field_name: (field_info.annotation, copy(field_info))  # type: ignore
+                    for field_name, field_info in model.model_fields.items()
+                    if field_name in parent_owned_fields
+                },
             )
         else:
             # Regular model - use original logic
