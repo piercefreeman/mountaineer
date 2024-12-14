@@ -4,17 +4,17 @@ from typing import Any, Optional
 import pytest
 from pydantic import BaseModel
 
+from mountaineer.__tests__.client_builder.interface_builders.common import (
+    create_action_wrapper,
+    create_controller_wrapper,
+    create_model_wrapper,
+)
 from mountaineer.actions.fields import FunctionActionType
 from mountaineer.client_builder.interface_builders.controller import ControllerInterface
 from mountaineer.client_builder.parser import (
-    ActionWrapper,
-    ControllerWrapper,
     FieldWrapper,
-    ModelWrapper,
-    WrapperName,
 )
 from mountaineer.client_builder.types import DictOf, Or
-from mountaineer.controller import ControllerBase
 
 
 # Test Models
@@ -33,66 +33,6 @@ class FormData(BaseModel):
     name: str
     email: str
     preferences: dict[str, bool] = {}
-
-
-# Helper functions for creating wrapper objects
-def create_model_wrapper(model: type[BaseModel], name: str) -> ModelWrapper:
-    wrapper_name = WrapperName(name)
-    return ModelWrapper(
-        name=wrapper_name,
-        module_name="test_module",
-        model=model,
-        isolated_model=model,
-        superclasses=[],
-        value_models=[],
-    )
-
-
-def create_action_wrapper(
-    name: str,
-    params: list[FieldWrapper] = None,
-    response_model: type[BaseModel] = None,
-    request_body: ModelWrapper = None,
-    action_type: FunctionActionType = FunctionActionType.PASSTHROUGH,
-) -> ActionWrapper:
-    response_wrapper = (
-        create_model_wrapper(response_model, response_model.__name__)
-        if response_model
-        else None
-    )
-    return ActionWrapper(
-        name=name,
-        module_name="test_module",
-        action_type=action_type,
-        params=params or [],
-        headers=[],
-        request_body=request_body,
-        response_bodies={ControllerBase: response_wrapper} if response_wrapper else {},
-        exceptions=[],
-        is_raw_response=False,
-        is_streaming_response=False,
-        controller_to_url={ControllerBase: f"/api/{name}"},
-    )
-
-
-def create_controller_wrapper(
-    name: str,
-    actions: dict[str, ActionWrapper] = None,
-    superclasses: list[ControllerWrapper] = None,
-    entrypoint_url: str = None,
-) -> ControllerWrapper:
-    wrapper_name = WrapperName(name)
-    return ControllerWrapper(
-        name=wrapper_name,
-        module_name="test_module",
-        entrypoint_url=entrypoint_url,
-        controller=type(name, (ControllerBase,), {}),
-        superclasses=superclasses or [],
-        queries=[],
-        paths=[],
-        render=None,
-        actions=actions or {},
-    )
 
 
 class TestBasicInterfaceGeneration:

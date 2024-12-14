@@ -256,7 +256,7 @@ class TestControllerParser:
         wrapper = parser.parse_controller(SpecialTypesController)
         action = wrapper.actions.get("stream_action")
         assert action is not None
-        assert action.is_raw_response
+        assert action.is_streaming_response
 
     def test_parse_multiple_response_types(self, parser: ControllerParser):
         """
@@ -277,11 +277,17 @@ class TestControllerParser:
                 pass
 
         class ResponseAController(MultiResponseParent):
-            async def render() -> ResponseA:  # type: ignore
+            url = "/response_a"
+            view_path = "/response_a.tsx"
+
+            async def render(self) -> ResponseA:  # type: ignore
                 pass
 
         class ResponseBController(MultiResponseParent):
-            async def render() -> ResponseB:  # type: ignore
+            url = "/response_b"
+            view_path = "/response_b.tsx"
+
+            async def render(self) -> ResponseB:  # type: ignore
                 pass
 
         app_controller = AppController(view_root=Path())
@@ -291,14 +297,21 @@ class TestControllerParser:
         wrapper: ControllerWrapper = parser.parse_controller(MultiResponseParent)
         action = wrapper.actions["multi_action"]
 
-        response_a_response = action.response_bodies[ResponseAController]
-        response_b_response = action.response_bodies[ResponseBController]
+        a_response = action.response_bodies[ResponseAController]
+        b_response = action.response_bodies[ResponseBController]
 
-        assert response_a_response
-        assert response_b_response
+        assert a_response
+        assert b_response
 
-        assert response_a_response.model == ResponseA
-        assert response_b_response.model == ResponseB
+        response_a_sideeffect = next(
+            field for field in a_response.value_models if field.name == "sideeffect"
+        )
+        response_b_sideeffect = next(
+            field for field in b_response.value_models if field.name == "sideeffect"
+        )
+
+        assert response_a_sideeffect.value.model == ResponseA
+        assert response_b_sideeffect.value.model == ResponseB
 
 
 class TestInheritanceHandling:

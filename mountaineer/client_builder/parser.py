@@ -64,7 +64,7 @@ class CoreWrapper:
 @dataclass
 class FieldWrapper:
     name: str
-    value: Union[type["ModelWrapper"], type["EnumWrapper"], type]
+    value: Union["ModelWrapper", "EnumWrapper", type]
     required: bool
 
 
@@ -530,6 +530,10 @@ class ControllerParser:
             # from the query params
             path=f"/{url}",
             endpoint=func,
+            # We don't use the FastAPI's sniffed response model parsing in our pipeline, and
+            # some definitions like server-side streaming AsyncIterables can't be handled
+            # natively by FastAPI
+            response_model=None,
         )
 
         route = next(

@@ -27,9 +27,9 @@ from mountaineer.client_builder.types import (
 
 # Test Models and Types
 class Status(Enum):
-    ACTIVE: str = "active"
-    INACTIVE: str = "inactive"
-    PENDING: str = "pending"
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    PENDING = "pending"
 
 
 class SimpleModel(BaseModel):
@@ -150,12 +150,12 @@ class TestComplexTypeHandling:
         assert result == "Set<number>"
 
     def test_tuple_conversion(self) -> None:
-        type_def: TupleOf = TupleOf([str, int, bool])
+        type_def = TupleOf[str, int, bool]
         result: str = TypeConverter.convert(type_def)
         assert result == "[string,number,boolean]"
 
     def test_union_conversion(self) -> None:
-        type_def: Or = Or([str, int, bool])
+        type_def = Or[str, int, bool]
         result: str = TypeConverter.convert(type_def)
         assert result == "string | number | boolean"
 
@@ -167,10 +167,10 @@ class TestComplexTypeHandling:
     @pytest.mark.parametrize(
         "type_def,expected",
         [
-            (DictOf(str, ListOf(int)), "Record<string, Array<number>>"),
-            (ListOf(DictOf(str, bool)), "Array<Record<string, boolean>>"),
+            (DictOf[str, ListOf[int]], "Record<string, Array<number>>"),
+            (ListOf[DictOf[str, bool]], "Array<Record<string, boolean>>"),
             (
-                Or([ListOf(str), DictOf(str, int)]),
+                Or[ListOf[str], DictOf[str, int]],
                 "Array<string> | Record<string, number>",
             ),
         ],
@@ -204,9 +204,9 @@ class TestModelHandling:
 class TestComplexScenarios:
     def test_deeply_nested_structure(self) -> None:
         # Create a deeply nested structure
-        deep_type: ListOf = ListOf(
-            DictOf(str, Or([ListOf(TupleOf([str, int])), DictOf(str, SetOf(float))]))
-        )
+        deep_type = ListOf[
+            DictOf[str, Or[ListOf[TupleOf[str, int], DictOf[str, SetOf[float]]]]]
+        ]
         result: str = TypeConverter.convert(deep_type)
         expected: str = "Array<Record<string, Array<[string,number]> | Record<string, Set<number>>>>"
         assert result == expected
@@ -214,21 +214,21 @@ class TestComplexScenarios:
     def test_mixed_model_and_primitive_types(
         self, model_wrapper: ModelWrapper, enum_wrapper: EnumWrapper
     ) -> None:
-        type_def: Or = Or([model_wrapper, ListOf(enum_wrapper), DictOf(str, int)])
+        type_def = Or[model_wrapper, ListOf[enum_wrapper], DictOf[str, int]]
         result: str = TypeConverter.convert(type_def)
         assert "SimpleModel | Array<Status> | Record<string, number>" == result
 
     def test_complex_union_types(self) -> None:
         # Test union with various nested types
-        type_def: Or = Or(
+        type_def = Or[
             [
-                ListOf(str),
-                DictOf(str, bool),
-                SetOf(int),
-                TupleOf([str, int]),
-                LiteralOf(["a", "b"]),
+                ListOf[str],
+                DictOf[str, bool],
+                SetOf[int],
+                TupleOf[str, int],
+                LiteralOf["a", "b"],
             ]
-        )
+        ]
         result: str = TypeConverter.convert(type_def)
         expected: str = 'Array<string> | Record<string, boolean> | Set<number> | [string,number] | "a" | "b"'
         assert result == expected
@@ -237,15 +237,15 @@ class TestComplexScenarios:
         "type_def,expected",
         [
             (
-                DictOf(LiteralOf(["id", "name"]), Or([str, int])),
+                DictOf[LiteralOf["id", "name"], Or[str, int]],
                 'Record<"id" | "name", string | number>',
             ),
             (
-                ListOf(TupleOf([LiteralOf(["GET", "POST"]), str])),
+                ListOf[TupleOf[LiteralOf["GET", "POST"], str]],
                 'Array<["GET" | "POST",string]>',
             ),
             (
-                SetOf(Or([LiteralOf([1, 2]), LiteralOf(["a", "b"])])),
+                SetOf[Or[LiteralOf[1, 2], LiteralOf["a", "b"]]],
                 'Set<1 | 2 | "a" | "b">',
             ),
         ],

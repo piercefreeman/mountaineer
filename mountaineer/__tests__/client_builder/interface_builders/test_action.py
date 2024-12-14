@@ -1,9 +1,13 @@
 from datetime import datetime
-from typing import Type
 
 import pytest
 from pydantic import BaseModel
 
+from mountaineer.__tests__.client_builder.interface_builders.common import (
+    create_exception_wrapper,
+    create_field_wrapper,
+    create_model_wrapper,
+)
 from mountaineer.actions.fields import FunctionActionType
 from mountaineer.client_builder.interface_builders.action import ActionInterface
 from mountaineer.client_builder.parser import (
@@ -11,7 +15,6 @@ from mountaineer.client_builder.parser import (
     ExceptionWrapper,
     FieldWrapper,
     ModelWrapper,
-    WrapperName,
 )
 from mountaineer.client_builder.types import ListOf, Or
 from mountaineer.controller import ControllerBase
@@ -37,40 +40,6 @@ class FormData(BaseModel):
 class AlternateResponse(BaseModel):
     status: str
     code: int
-
-
-# Helper function to create model wrappers
-def create_model_wrapper(model: Type[BaseModel], name: str) -> ModelWrapper:
-    wrapper_name = WrapperName(name)
-    return ModelWrapper(
-        name=wrapper_name,
-        module_name="test_module",
-        model=model,
-        isolated_model=model,  # Simplified for testing
-        superclasses=[],
-        value_models=[],
-    )
-
-
-# Helper function to create field wrappers
-def create_field_wrapper(
-    name: str, type_hint: Type, required: bool = True
-) -> FieldWrapper:
-    return FieldWrapper(name=name, value=type_hint, required=required)
-
-
-# Helper function to create exception wrappers
-def create_exception_wrapper(
-    exception: Type[APIException], name: str, status_code: int
-) -> ExceptionWrapper:
-    wrapper_name = WrapperName(name)
-    return ExceptionWrapper(
-        name=wrapper_name,
-        module_name="test_module",
-        status_code=status_code,
-        exception=exception,
-        value_models=[],
-    )
 
 
 @pytest.fixture
@@ -113,7 +82,7 @@ class TestBasicInterfaceGeneration:
         assert "Promise<StandardResponse>" in interface.response_type
         assert "StandardResponse" in interface.response_type
 
-    @pytest.mark.parameterize(
+    @pytest.mark.parametrize(
         "params, expected_strs, expected_default_initializer",
         [
             # At least one required parameter, should require user input on functions
@@ -135,14 +104,14 @@ class TestBasicInterfaceGeneration:
             ),
         ],
     )
-    def test_parameterized_action_interface(
+    def test_parametrized_action_interface(
         self,
         params: list[FieldWrapper],
         expected_strs: list[str],
         expected_default_initializer: bool,
     ):
         action = ActionWrapper(
-            name="parameterized_action",
+            name="parametrized_action",
             module_name="test_module",
             action_type=FunctionActionType.PASSTHROUGH,
             params=params,
@@ -156,11 +125,11 @@ class TestBasicInterfaceGeneration:
             exceptions=[],
             is_raw_response=False,
             is_streaming_response=False,
-            controller_to_url={ControllerBase: "/api/main/parameterized_action"},
+            controller_to_url={ControllerBase: "/api/main/parametrized_action"},
         )
 
         interface = ActionInterface.from_action(
-            action, "/api/main/parameterized_action", ControllerBase
+            action, "/api/main/parametrized_action", ControllerBase
         )
 
         ts_code = interface.to_js()

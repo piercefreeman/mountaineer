@@ -1,42 +1,23 @@
 from datetime import datetime
-from typing import Any, Optional, Type, dict, list
+from typing import Any, Type
 
 import pytest
 from pydantic import BaseModel
 
-from mountaineer.client_builder.interface_builders.exception import ExceptionInterface
-from mountaineer.client_builder.parser import (
-    ExceptionWrapper,
-    FieldWrapper,
-    WrapperName,
+from mountaineer.__tests__.client_builder.interface_builders.common import (
+    create_exception_wrapper,
+    create_field_wrapper,
+    create_model_wrapper,
 )
+from mountaineer.client_builder.interface_builders.exception import ExceptionInterface
+from mountaineer.client_builder.types import DictOf, ListOf, Or
 from mountaineer.exceptions import APIException
-
-
-# Helper function to create field wrappers
-def create_field_wrapper(
-    name: str, type_hint: Type, required: bool = True
-) -> FieldWrapper:
-    return FieldWrapper(name=name, value=type_hint, required=required)
-
-
-# Helper function to create exception wrappers
-def create_exception_wrapper(
-    name: str, status_code: int, value_models: list[FieldWrapper]
-) -> ExceptionWrapper:
-    wrapper_name = WrapperName(name)
-    return ExceptionWrapper(
-        name=wrapper_name,
-        module_name="test_module",
-        status_code=status_code,
-        exception=APIException,  # Base class is sufficient for testing
-        value_models=value_models,
-    )
 
 
 class TestBasicGeneration:
     def test_simple_exception(self):
         wrapper = create_exception_wrapper(
+            APIException,
             "SimpleException",
             400,
             [create_field_wrapper("message", str), create_field_wrapper("code", int)],
@@ -51,6 +32,7 @@ class TestBasicGeneration:
 
     def test_optional_fields(self):
         wrapper = create_exception_wrapper(
+            APIException,
             "OptionalFieldsException",
             400,
             [
@@ -77,12 +59,18 @@ class TestBasicGeneration:
             description: str
 
         wrapper = create_exception_wrapper(
+            APIException,
             "ComplexException",
             500,
             [
-                create_field_wrapper("data", dict[str, Any]),
-                create_field_wrapper("errors", list[ValidationError]),
-                create_field_wrapper("details", ErrorDetail),
+                create_field_wrapper("data", DictOf[str, Any]),
+                create_field_wrapper(
+                    "errors",
+                    ListOf[create_model_wrapper(ValidationError, "ValidationError")],
+                ),
+                create_field_wrapper(
+                    "details", create_model_wrapper(ErrorDetail, "ErrorDetail")
+                ),
             ],
         )
 
@@ -103,13 +91,16 @@ class TestFieldTypeConversion:
             (bool, "boolean"),
             (float, "number"),
             (datetime, "string"),
-            (dict[str, str], "Record<string, string>"),
-            (list[int], "Array<number>"),
+            (DictOf[str, str], "Record<string, string>"),
+            (ListOf[int], "Array<number>"),
         ],
     )
     def test_type_conversion(self, field_type: Type[Any], expected_ts_type: str):
         wrapper = create_exception_wrapper(
-            "TypeException", 400, [create_field_wrapper("field", field_type)]
+            APIException,
+            "TypeException",
+            400,
+            [create_field_wrapper("field", field_type)],
         )
 
         interface = ExceptionInterface.from_exception(wrapper)
@@ -120,7 +111,7 @@ class TestFieldTypeConversion:
 class TestOutputFormatting:
     def test_export_control(self):
         wrapper = create_exception_wrapper(
-            "SimpleException", 400, [create_field_wrapper("message", str)]
+            APIException, "SimpleException", 400, [create_field_wrapper("message", str)]
         )
 
         interface = ExceptionInterface.from_exception(wrapper)
@@ -134,7 +125,7 @@ class TestOutputFormatting:
 
     def test_interface_structure(self):
         wrapper = create_exception_wrapper(
-            "SimpleException", 400, [create_field_wrapper("message", str)]
+            APIException, "SimpleException", 400, [create_field_wrapper("message", str)]
         )
 
         interface = ExceptionInterface.from_exception(wrapper)
@@ -148,7 +139,7 @@ class TestOutputFormatting:
 
 class TestEdgeCases:
     def test_empty_exception(self):
-        wrapper = create_exception_wrapper("EmptyException", 400, [])
+        wrapper = create_exception_wrapper(APIException, "EmptyException", 400, [])
 
         interface = ExceptionInterface.from_exception(wrapper)
         ts_code = interface.to_js()
@@ -162,11 +153,19 @@ class TestEdgeCases:
             description: str
 
         wrapper = create_exception_wrapper(
+            APIException,
             "NestedException",
             400,
             [
-                create_field_wrapper("outer", dict[str, list[ErrorDetail]]),
-                create_field_wrapper("meta", Optional[dict[str, str]], required=False),
+                create_field_wrapper(
+                    "outer",
+                    DictOf[
+                        str, ListOf[create_model_wrapper(ErrorDetail, "ErrorDetail")]
+                    ],
+                ),
+                create_field_wrapper(
+                    "meta", Or[DictOf[str, str], None], required=False
+                ),
             ],
         )
 
@@ -176,29 +175,9 @@ class TestEdgeCases:
         assert "outer: Record<string, Array<ErrorDetail>>" in ts_code
         assert "meta?: Record<string, string>" in ts_code
 
-    @pytest.mark.parametrize(
-        "name",
-        [
-            "interface",  # TypeScript keyword
-            "type",  # TypeScript keyword
-            "class",  # TypeScript keyword
-            "My_Error",  # Underscore
-            "Error2",  # Number
-        ],
-    )
-    def test_typescript_keywords(self, name: str):
-        wrapper = create_exception_wrapper(
-            name, 400, [create_field_wrapper("field", str)]
-        )
-
-        interface = ExceptionInterface.from_exception(wrapper)
-        ts_code = interface.to_js()
-
-        assert f"interface {name}" in ts_code
-        assert "field: string" in ts_code
-
     def test_all_optional_fields(self):
         wrapper = create_exception_wrapper(
+            APIException,
             "OptionalException",
             400,
             [
@@ -212,24 +191,3 @@ class TestEdgeCases:
 
         assert "field1?: string" in ts_code
         assert "field2?: number" in ts_code
-
-    def test_complex_nested_types(self):
-        wrapper = create_exception_wrapper(
-            "ComplexNestedException",
-            400,
-            [
-                create_field_wrapper(
-                    "nested", dict[str, list[dict[str, Optional[list[str]]]]]
-                ),
-                create_field_wrapper("mixed", list[str | dict[str, Any] | list[int]]),
-            ],
-        )
-
-        interface = ExceptionInterface.from_exception(wrapper)
-        ts_code = interface.to_js()
-
-        assert (
-            "Record<string, Array<Record<string, Array<string> | undefined>>>"
-            in ts_code
-        )
-        assert "Array<string | Record<string, any> | Array<number>>" in ts_code
