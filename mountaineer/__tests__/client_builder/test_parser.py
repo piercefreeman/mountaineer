@@ -310,6 +310,9 @@ class TestControllerParser:
             field for field in b_response.value_models if field.name == "sideeffect"
         )
 
+        assert isinstance(response_a_sideeffect.value, ModelWrapper)
+        assert isinstance(response_b_sideeffect.value, ModelWrapper)
+
         assert response_a_sideeffect.value.model == ResponseA
         assert response_b_sideeffect.value.model == ResponseB
 

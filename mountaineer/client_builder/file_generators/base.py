@@ -96,3 +96,7 @@ class CodeBlock:
                 break
             indent_str += char
         return indent_str, len(indent_str)
+
+    @property
+    def content(self):
+        return "\n".join(self.lines)

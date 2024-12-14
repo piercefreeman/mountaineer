@@ -1,11 +1,12 @@
 from enum import Enum
-from typing import Iterator, List, Sequence, Type
+from pathlib import Path
+from typing import List
 
 import pytest
-from pydantic import BaseModel
 
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
+from mountaineer.app import AppController
 from mountaineer.client_builder.file_generators.base import ParsedController
 from mountaineer.client_builder.file_generators.globals import (
     GlobalControllerGenerator,
@@ -15,16 +16,17 @@ from mountaineer.client_builder.parser import ControllerParser, ControllerWrappe
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.paths import ManagedViewPath
+from mountaineer.render import RenderBase
 
 
 # Test Classes
 class StatusEnum(Enum):
-    ACTIVE: str = "active"
-    PENDING: str = "pending"
-    INACTIVE: str = "inactive"
+    ACTIVE = "active"
+    PENDING = "pending"
+    INACTIVE = "inactive"
 
 
-class MainModel(BaseModel):
+class MainModel(RenderBase):
     name: str
     status: StatusEnum
 
@@ -43,31 +45,34 @@ class DependentModel(MainModel):
 # Controllers
 class BaseController(ControllerBase):
     @passthrough
-    def base_action(self) -> MainModel:
+    def base_action(self) -> MainModel:  # type: ignore
         pass
 
 
 class ChildController(BaseController):
     url: str = "/child"
+    view_path = "/child.tsx"
 
-    async def render(self) -> DependentModel:
+    async def render(self) -> DependentModel:  # type: ignore
         pass
 
     @sideeffect
-    def update(self, data: ChildModel) -> DependentModel:
+    def update(self, data: ChildModel) -> DependentModel:  # type: ignore
         pass
 
 
 class LayoutController(LayoutControllerBase):
-    async def render(self) -> MainModel:
+    view_path = "/layout.tsx"
+
+    async def render(self) -> MainModel:  # type: ignore
         pass
 
 
 # Tests
 class TestGlobalControllerGenerator:
     @pytest.fixture
-    def managed_path(self) -> ManagedViewPath:
-        return ManagedViewPath("/test/root/controllers.ts")
+    def managed_path(self, tmp_path: Path) -> ManagedViewPath:
+        return ManagedViewPath(tmp_path)
 
     @pytest.fixture
     def controller_parser(self) -> ControllerParser:
@@ -77,6 +82,12 @@ class TestGlobalControllerGenerator:
     def controller_wrappers(
         self, controller_parser: ControllerParser
     ) -> List[ControllerWrapper]:
+        # Concrete instances should be mounted to an AppController to augment
+        # some of the runtime type information
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ChildController())
+        app_controller.register(LayoutController())
+
         return [
             controller_parser.parse_controller(ChildController),
             controller_parser.parse_controller(LayoutController),
@@ -97,9 +108,7 @@ class TestGlobalControllerGenerator:
     ) -> None:
         """Test that models and enums are sorted correctly"""
         # Get embedded types
-        controllers: Sequence[
-            Type[ControllerBase]
-        ] = ControllerWrapper.get_all_embedded_controllers(
+        controllers = ControllerWrapper.get_all_embedded_controllers(
             generator.controller_wrappers
         )
         embedded = ControllerWrapper.get_all_embedded_types(
@@ -120,7 +129,7 @@ class TestGlobalControllerGenerator:
         base_model_idx: int = next(
             i
             for i, item in enumerate(sorted_items)
-            if item.name.raw_name == "BaseModel"
+            if item.name.raw_name == "MainModel"
         )
         assert enum_idx < base_model_idx
 
@@ -132,21 +141,18 @@ class TestGlobalControllerGenerator:
         )
         assert base_model_idx < child_model_idx
 
-        # Verify both models come before DependentModel
         dependent_idx: int = next(
             i
             for i, item in enumerate(sorted_items)
             if item.name.raw_name == "DependentModel"
         )
-        assert child_model_idx < dependent_idx
+        assert base_model_idx < dependent_idx
 
     def test_controller_graph_resolution(
         self, generator: GlobalControllerGenerator
     ) -> None:
         """Test that controllers are sorted correctly"""
-        controllers: Sequence[
-            Type[ControllerBase]
-        ] = ControllerWrapper.get_all_embedded_controllers(
+        controllers = ControllerWrapper.get_all_embedded_controllers(
             generator.controller_wrappers
         )
         sorted_controllers = generator._build_controller_graph(controllers)
@@ -168,13 +174,13 @@ class TestGlobalControllerGenerator:
 
     def test_script_generation(self, generator: GlobalControllerGenerator) -> None:
         """Test the complete script generation"""
-        blocks: Iterator[any] = generator.script()
-        content: str = "\n".join(block.content for block in blocks)
+        blocks = generator.script()
+        content = "\n".join("\n".join(block.lines) for block in blocks)
 
         # Verify models are generated
-        assert "export interface BaseModel" in content
-        assert "export interface ChildModel extends BaseModel" in content
-        assert "export interface DependentModel" in content
+        assert "export interface MainModel" in content
+        assert "export interface ChildModel extends MainModel" in content
+        assert "export interface DependentModel extends MainModel" in content
 
         # Verify enum is generated
         assert "export enum StatusEnum" in content
@@ -190,8 +196,8 @@ class TestGlobalControllerGenerator:
 
 class TestGlobalLinkGenerator:
     @pytest.fixture
-    def managed_path(self) -> ManagedViewPath:
-        return ManagedViewPath("/test/root/links.ts")
+    def managed_path(self, tmp_path) -> ManagedViewPath:
+        return ManagedViewPath(tmp_path)
 
     @pytest.fixture
     def controller_parser(self) -> ControllerParser:
@@ -199,17 +205,20 @@ class TestGlobalLinkGenerator:
 
     @pytest.fixture
     def parsed_controllers(
-        self, controller_parser: ControllerParser
+        self, controller_parser: ControllerParser, managed_path: ManagedViewPath
     ) -> List[ParsedController]:
+        (managed_path / "child").mkdir()
+        (managed_path / "layout").mkdir()
+
         return [
             ParsedController(
                 wrapper=controller_parser.parse_controller(ChildController),
-                view_path=ManagedViewPath("/test/views/child"),
+                view_path=ManagedViewPath(managed_path / "child"),
                 is_layout=False,
             ),
             ParsedController(
                 wrapper=controller_parser.parse_controller(LayoutController),
-                view_path=ManagedViewPath("/test/views/layout"),
+                view_path=ManagedViewPath(managed_path / "layout"),
                 is_layout=True,
             ),
         ]
@@ -225,7 +234,7 @@ class TestGlobalLinkGenerator:
     def test_script_generation(self, generator: GlobalLinkGenerator) -> None:
         """Test link aggregator generation"""
         blocks = generator.script()
-        content: str = "\n".join(line for block in blocks for line in block.lines)
+        content = "\n".join(line for block in blocks for line in block.lines)
 
         # Verify imports
         assert "import { getLink as ChildControllerGetLinks }" in content

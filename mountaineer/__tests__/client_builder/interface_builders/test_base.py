@@ -205,10 +205,10 @@ class TestComplexScenarios:
     def test_deeply_nested_structure(self) -> None:
         # Create a deeply nested structure
         deep_type = ListOf[
-            DictOf[str, Or[ListOf[TupleOf[str, int], DictOf[str, SetOf[float]]]]]
+            DictOf[str, Or[ListOf[TupleOf[str, int]], DictOf[str, SetOf[float]]]]
         ]
-        result: str = TypeConverter.convert(deep_type)
-        expected: str = "Array<Record<string, Array<[string,number]> | Record<string, Set<number>>>>"
+        result = TypeConverter.convert(deep_type)
+        expected = "Array<Record<string, Array<[string,number]> | Record<string, Set<number>>>>"
         assert result == expected
 
     def test_mixed_model_and_primitive_types(
@@ -221,13 +221,11 @@ class TestComplexScenarios:
     def test_complex_union_types(self) -> None:
         # Test union with various nested types
         type_def = Or[
-            [
-                ListOf[str],
-                DictOf[str, bool],
-                SetOf[int],
-                TupleOf[str, int],
-                LiteralOf["a", "b"],
-            ]
+            ListOf[str],
+            DictOf[str, bool],
+            SetOf[int],
+            TupleOf[str, int],
+            LiteralOf["a", "b"],
         ]
         result: str = TypeConverter.convert(type_def)
         expected: str = 'Array<string> | Record<string, boolean> | Set<number> | [string,number] | "a" | "b"'

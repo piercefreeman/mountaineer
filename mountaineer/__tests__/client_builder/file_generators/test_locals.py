@@ -1,4 +1,5 @@
 from enum import Enum
+from pathlib import Path
 from typing import Any, List
 
 import pytest
@@ -7,6 +8,7 @@ from pydantic import BaseModel
 
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
+from mountaineer.app import AppController
 from mountaineer.client_builder.file_generators.base import CodeBlock
 from mountaineer.client_builder.file_generators.locals import (
     LocalActionGenerator,
@@ -21,7 +23,6 @@ from mountaineer.client_builder.parser import (
     ControllerWrapper,
 )
 from mountaineer.controller import ControllerBase
-from mountaineer.exceptions import APIException
 from mountaineer.paths import ManagedViewPath
 from mountaineer.render import RenderBase
 
@@ -32,74 +33,76 @@ class TestStatus(Enum):
     INACTIVE = "inactive"
 
 
-class TestException(APIException):
-    status_code: int = 400
-
-    class InternalModel(BaseModel):
-        message: str
-        code: int
-
-
-class TestBaseModel(BaseModel):
+class ExampleBaseModel(BaseModel):
     name: str
     status: TestStatus
 
 
-class TestRequestModel(BaseModel):
+class ExampleRequestModel(BaseModel):
     query: str
     limit: int = 10
 
 
-class TestResponseModel(BaseModel):
+class ExampleResponseModel(BaseModel):
     results: List[str]
     total: int
 
 
 class TestRenderModel(RenderBase):
     title: str
-    items: List[TestBaseModel]
+    items: List[ExampleBaseModel]
 
 
 # Test Controllers
 class TestBaseController(ControllerBase):
     @passthrough
-    def base_action(self) -> TestResponseModel:  # type: ignore
+    def base_action(self) -> ExampleResponseModel:  # type: ignore
         """Base action that returns a response model"""
         pass
 
 
-class TestController(TestBaseController):
-    url: str = "/test"
+@pytest.fixture
+def managed_path(tmp_path: Path) -> ManagedViewPath:
+    controller_path = tmp_path / "test_controller"
+    controller_path.mkdir()
+    return ManagedViewPath(controller_path)
 
-    async def render(self, path_param: str, query_param: int = 0) -> TestRenderModel:  # type: ignore
+
+@pytest.fixture
+def global_root(tmp_path: Path) -> ManagedViewPath:
+    return ManagedViewPath(tmp_path)
+
+
+class ExampleController(TestBaseController):
+    url: str = "/test"
+    view_path: str = "/test.tsx"
+
+    async def render(
+        self,
+        path_param: str,
+        query_param: int = 0,
+        enum_param: TestStatus = TestStatus.ACTIVE,
+    ) -> TestRenderModel:  # type: ignore
         """Main render method"""
         pass
 
     @passthrough
-    def get_data(self) -> TestBaseModel:  # type: ignore
+    def get_data(self) -> ExampleBaseModel:  # type: ignore
         """Get basic data"""
         pass
 
     @sideeffect
-    def update_data(self, data: TestRequestModel) -> TestResponseModel:  # type: ignore
+    def update_data(self, data: ExampleRequestModel) -> ExampleResponseModel:  # type: ignore
         """Update data with side effects"""
         pass
 
     @sideeffect
-    async def upload_file(self, file: bytes = File(...)) -> TestResponseModel:  # type: ignore
+    async def upload_file(self, file: bytes = File(...)) -> ExampleResponseModel:  # type: ignore
         """File upload endpoint"""
         pass
 
 
 class TestLocalGeneratorBase:
-    @pytest.fixture
-    def managed_path(self) -> ManagedViewPath:
-        return ManagedViewPath("/test/path/file.ts")
-
-    @pytest.fixture
-    def global_root(self) -> ManagedViewPath:
-        return ManagedViewPath("/test/root")
-
     @pytest.fixture
     def generator(self, managed_path: ManagedViewPath, global_root: ManagedViewPath):
         class ConcreteGeneratorBase(LocalGeneratorBase):
@@ -110,18 +113,18 @@ class TestLocalGeneratorBase:
 
     def test_initialization(
         self,
-        generator: Any,
+        generator: LocalGeneratorBase,
         managed_path: ManagedViewPath,
         global_root: ManagedViewPath,
     ) -> None:
         assert generator.managed_path == managed_path
         assert generator.global_root == global_root
 
-    def test_get_global_import_path(self, generator: Any) -> None:
+    def test_get_global_import_path(self, generator: LocalGeneratorBase) -> None:
         result: str = generator.get_global_import_path("test.ts")
         assert isinstance(result, str)
         assert "../" in result
-        assert result.endswith("test.ts")
+        assert result.endswith("test")
 
 
 class TestLocalLinkGenerator:
@@ -133,7 +136,10 @@ class TestLocalLinkGenerator:
     def controller_wrapper(
         self, controller_parser: ControllerParser
     ) -> ControllerWrapper:
-        return controller_parser.parse_controller(TestController)
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ExampleController())
+
+        return controller_parser.parse_controller(ExampleController)
 
     @pytest.fixture
     def generator(
@@ -148,25 +154,29 @@ class TestLocalLinkGenerator:
             global_root=global_root,
         )
 
-    def test_script_generation(self, generator: Any) -> None:
-        result: List[Any] = list(generator.script())
+    def test_script_generation(self, generator: LocalLinkGenerator) -> None:
+        result = list(generator.script())
         assert len(result) > 0
-        content: str = "\n".join(block.content for block in result)
+        content = "\n".join(block.content for block in result)
         assert "import" in content
         assert "getLink" in content
         assert "path_param" in content
         assert "query_param" in content
+        assert "enum_param" in content
 
-    def test_get_link_implementation_with_parameters(self, generator: Any) -> None:
-        impl: str = generator._get_link_implementation(generator.controller)
+    def test_get_link_implementation_with_parameters(
+        self, generator: LocalLinkGenerator
+    ) -> None:
+        impl = generator._get_link_implementation(generator.controller)
         assert "path_param" in impl
         assert "query_param?" in impl  # Optional parameter
+        assert "enum_param?" in impl  # Optional parameter
         assert "/test" in impl
 
-    def test_get_imports(self, generator: Any) -> None:
-        imports: List[Any] = list(generator._get_imports(generator.controller))
-        assert any("api.ts" in block.content for block in imports)
-        assert any("controllers.ts" in block.content for block in imports)
+    def test_get_imports(self, generator: LocalLinkGenerator) -> None:
+        imports = list(generator._get_imports(generator.controller))
+        assert any("../api" in block.content for block in imports)
+        assert any("../controllers" in block.content for block in imports)
 
 
 class TestLocalActionGenerator:
@@ -178,7 +188,10 @@ class TestLocalActionGenerator:
     def controller_wrapper(
         self, controller_parser: ControllerParser
     ) -> ControllerWrapper:
-        return controller_parser.parse_controller(TestController)
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ExampleController())
+
+        return controller_parser.parse_controller(ExampleController)
 
     @pytest.fixture
     def generator(
@@ -193,7 +206,7 @@ class TestLocalActionGenerator:
             global_root=global_root,
         )
 
-    def test_generate_controller_actions(self, generator: Any) -> None:
+    def test_generate_controller_actions(self, generator: LocalActionGenerator) -> None:
         actions: List[str] = list(
             generator._generate_controller_actions(generator.controller)
         )
@@ -205,15 +218,22 @@ class TestLocalActionGenerator:
         }
         assert len(action_names) == 4
 
-    def test_get_dependent_imports(self, generator: Any) -> None:
-        deps: List[str] = generator._get_dependent_imports(generator.controller)
-        assert "TestRequestModel" in deps
-        assert "TestResponseModel" in deps
-        assert "TestBaseModel" in deps
+    def test_get_dependent_imports(self, generator: LocalActionGenerator) -> None:
+        deps = generator._get_dependent_imports(generator.controller)
 
-    def test_generate_exceptions(self, generator: Any) -> None:
-        imports: List[str]
-        definitions: List[str]
+        # Response wrapped models
+        assert deps == {
+            "BaseActionResponseWrapped",
+            "ExampleRequestModel",
+            "GetDataResponseWrapped",
+            "UpdateDataResponseWrapped",
+            "UploadFileForm",
+            "UploadFileResponseWrapped",
+        }
+
+    def test_generate_exceptions(self, generator: LocalActionGenerator) -> None:
+        imports: list[str]
+        definitions: list[str]
         imports, definitions = generator._generate_exceptions(generator.controller)
         assert isinstance(imports, list)
         assert isinstance(definitions, list)
@@ -228,7 +248,12 @@ class TestLocalModelGenerator:
     def controller_wrapper(
         self, controller_parser: ControllerParser
     ) -> ControllerWrapper:
-        return controller_parser.parse_controller(TestController)
+        # Concrete instances should be mounted to an AppController to augment
+        # some of the runtime type information
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ExampleController())
+
+        return controller_parser.parse_controller(ExampleController)
 
     @pytest.fixture
     def generator(
@@ -243,19 +268,18 @@ class TestLocalModelGenerator:
             global_root=global_root,
         )
 
-    def test_script_generation(self, generator: Any) -> None:
+    def test_script_generation(self, generator: LocalModelGenerator) -> None:
         result: List[Any] = list(generator.script())
         assert len(result) > 0
         content: str = "\n".join(block.content for block in result)
 
         # Check for model exports
-        assert "export type { TestBaseModel }" in content
-        assert "export type { TestRequestModel }" in content
-        assert "export type { TestResponseModel }" in content
-        assert "export type { TestRenderModel }" in content
+        assert "export type { ExampleRequestModel as ExampleRequestModel }" in content
+        assert "export type { ExampleResponseModel as ExampleResponseModel }" in content
+        assert "export type { TestRenderModel as TestRenderModel }" in content
 
         # Check for enum exports
-        assert "export { TestStatus }" in content
+        assert "export { TestStatus as TestStatus }" in content
 
 
 class TestLocalUseServerGenerator:
@@ -267,7 +291,7 @@ class TestLocalUseServerGenerator:
     def controller_wrapper(
         self, controller_parser: ControllerParser
     ) -> ControllerWrapper:
-        return controller_parser.parse_controller(TestController)
+        return controller_parser.parse_controller(ExampleController)
 
     @pytest.fixture
     def generator(
@@ -282,7 +306,9 @@ class TestLocalUseServerGenerator:
             global_root=global_root,
         )
 
-    def test_script_generation_with_render(self, generator: Any) -> None:
+    def test_script_generation_with_render(
+        self, generator: LocalUseServerGenerator
+    ) -> None:
         result: List[Any] = list(generator.script())
         content: str = "\n".join(block.content for block in result)
         assert "useServer" in content
@@ -300,7 +326,7 @@ class TestLocalIndexGenerator:
     def controller_wrapper(
         self, controller_parser: ControllerParser
     ) -> ControllerWrapper:
-        return controller_parser.parse_controller(TestController)
+        return controller_parser.parse_controller(ExampleController)
 
     @pytest.fixture
     def generator(
@@ -315,7 +341,9 @@ class TestLocalIndexGenerator:
             global_root=global_root,
         )
 
-    def test_script_generation(self, generator: Any, tmp_path: Any) -> None:
+    def test_script_generation(
+        self, generator: LocalIndexGenerator, tmp_path: Any
+    ) -> None:
         # Set up temporary test files
         base_path = tmp_path / "test"
         base_path.mkdir()
