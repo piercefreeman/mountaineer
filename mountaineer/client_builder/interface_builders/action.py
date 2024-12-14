@@ -21,7 +21,6 @@ class ActionInterface(InterfaceBase):
     default_initializer: bool
     response_type: str
     body: list[str]
-    required_models: list[str]
 
     def to_js(self) -> str:
         script = f"export const {self.name} = ({self.parameters} : {self.typehints}"
@@ -43,7 +42,6 @@ class ActionInterface(InterfaceBase):
         """
         parameters_dict: dict[str, Any] = {}
         typehint_dict: dict[str, Any] = {}
-        required_models: list[str] = []
 
         # System parameters (always optional)
         system_parameters = {"signal": TSLiteral("signal")}
@@ -63,10 +61,11 @@ class ActionInterface(InterfaceBase):
             model_name = action.request_body.name.global_name
             parameters_dict["requestBody"] = TSLiteral("requestBody")
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
-            required_models.append(model_name)
 
         # Merge system parameters
-        has_nonsystem_parameters = bool(parameters_dict)
+        has_required_nonsystem_parameters = (
+            any([param.required for param in action.params]) if action.params else False
+        )
         parameters_dict.update(system_parameters)
         typehint_dict.update(system_typehints)
 
@@ -77,9 +76,6 @@ class ActionInterface(InterfaceBase):
         if controllers:
             for controller in controllers:
                 response_types.add(cls._get_response_type(action, controller))
-                response_body = cls._get_response_body(action, controller)
-                if response_body:
-                    required_models.append(response_body.name.global_name)
         else:
             # Fallback in the case that no concrete controllers are mounted with this action
             # In this case we just use a generic typehint for the return value
@@ -89,10 +85,9 @@ class ActionInterface(InterfaceBase):
             name=action.name,
             parameters=python_payload_to_typescript(parameters_dict),
             typehints=python_payload_to_typescript(typehint_dict),
-            default_initializer=not has_nonsystem_parameters,
+            default_initializer=not has_required_nonsystem_parameters,
             response_type=" | ".join(response_types),
             body=["return __request(", CodeBlock.indent(f"  {request_payload}"), ");"],
-            required_models=required_models,
         )
 
     @classmethod

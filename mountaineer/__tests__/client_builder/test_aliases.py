@@ -88,28 +88,31 @@ class TestAliasManager:
     def test_cross_type_conflict_resolution(
         self, parser: ControllerParser, alias_manager: AliasManager
     ) -> None:
-        class Status(BaseModel):
+        class Status1(BaseModel):
             code: int
 
-        class Status(Enum):
-            ACTIVE: str = "active"
-            INACTIVE: str = "inactive"
+        class Status2(Enum):
+            ACTIVE = "active"
+            INACTIVE = "inactive"
+
+        Status1.__name__ = "Status"
+        Status2.__name__ = "Status"
 
         model_wrapper: ModelWrapper = ModelWrapper(
             name=WrapperName("Status"),
             module_name="models.status",
-            model=Status,
-            isolated_model=Status,
+            model=Status1,
+            isolated_model=Status2,
             superclasses=[],
             value_models=[],
         )
 
         enum_wrapper: EnumWrapper = EnumWrapper(
-            name=WrapperName("Status"), module_name="enums.status", enum=Status
+            name=WrapperName("Status"), module_name="enums.status", enum=Status2
         )
 
-        parser.parsed_models[Status] = model_wrapper
-        parser.parsed_enums[Status] = enum_wrapper
+        parser.parsed_models[Status1] = model_wrapper
+        parser.parsed_enums[Status2] = enum_wrapper
 
         alias_manager.assign_global_names(parser)
 

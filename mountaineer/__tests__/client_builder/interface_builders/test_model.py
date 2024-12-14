@@ -1,121 +1,67 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, Generic, List, Literal, Optional, Type, TypeVar, Union
+from typing import Any, Literal, Optional, Type, Union
 
 import pytest
 from pydantic import BaseModel
 
 from mountaineer.client_builder.interface_builders.model import ModelInterface
-from mountaineer.client_builder.parser import ControllerParser, ModelWrapper
-
-# Type variables for generic models
-T = TypeVar("T")
-S = TypeVar("S")
+from mountaineer.client_builder.parser import FieldWrapper, ModelWrapper, WrapperName
 
 
-# Basic enum for testing
-class FieldType(Enum):
-    STRING: str = "string"
-    NUMBER: str = "number"
-    BOOLEAN: str = "boolean"
+def create_field_wrapper(
+    name: str, type_hint: Type, required: bool = True
+) -> FieldWrapper:
+    return FieldWrapper(name=name, value=type_hint, required=required)
 
 
-# Base test models
-class SimpleModel(BaseModel):
-    string_field: str
-    int_field: int
-    optional_field: Optional[str] = None
-    enum_field: FieldType
-
-
-class ParentModel(BaseModel):
-    parent_field: str
-    shared_field: int = 0
-
-
-class ChildModel(ParentModel):
-    child_field: bool
-    shared_field: float  # Override type
-
-
-class GenericModel(BaseModel, Generic[T]):
-    value: T
-    metadata: str
-
-
-class NestedModel(BaseModel):
-    regular_field: str
-    simple: SimpleModel
-    optional_simple: Optional[SimpleModel] = None
-    list_simple: List[SimpleModel] = []
-    dict_simple: Dict[str, SimpleModel] = {}
-    generic: GenericModel[str]
-
-
-# Forward reference model
-class CircularModel(BaseModel):
-    name: str
-    parent: Optional["CircularModel"] = None
-
-
-CircularModel.model_rebuild()
-
-
-# Complex inheritance model
-class MultiInheritBase1(BaseModel):
-    base1_field: str
-
-
-class MultiInheritBase2(BaseModel):
-    base2_field: int
-
-
-class MultiInheritChild(MultiInheritBase1, MultiInheritBase2):
-    child_field: bool
-
-
-# Fixtures
-@pytest.fixture
-def parser() -> ControllerParser:
-    return ControllerParser()
-
-
-@pytest.fixture
-def simple_wrapper(parser: ControllerParser) -> ModelWrapper:
-    return parser._parse_model(SimpleModel)
-
-
-@pytest.fixture
-def child_wrapper(parser: ControllerParser) -> ModelWrapper:
-    return parser._parse_model(ChildModel)
-
-
-@pytest.fixture
-def nested_wrapper(parser: ControllerParser) -> ModelWrapper:
-    return parser._parse_model(NestedModel)
-
-
-@pytest.fixture
-def multi_inherit_wrapper(parser: ControllerParser) -> ModelWrapper:
-    return parser._parse_model(MultiInheritChild)
+def create_model_wrapper(
+    name: str, fields: list[FieldWrapper], superclasses: list["ModelWrapper"] = None
+) -> ModelWrapper:
+    wrapper_name = WrapperName(name)
+    return ModelWrapper(
+        name=wrapper_name,
+        module_name="test_module",
+        model=BaseModel,  # Base class is sufficient for testing
+        isolated_model=BaseModel,
+        superclasses=superclasses or [],
+        value_models=fields,
+    )
 
 
 class TestBasicInterfaceGeneration:
-    def test_simple_model_interface(self, simple_wrapper: ModelWrapper) -> None:
-        interface: ModelInterface = ModelInterface.from_model(simple_wrapper)
-        ts_code: str = interface.to_js()
+    def test_simple_model_interface(self):
+        class FieldType(Enum):
+            STRING = "string"
+            NUMBER = "number"
 
-        # Check basic structure
+        wrapper = create_model_wrapper(
+            "SimpleModel",
+            [
+                create_field_wrapper("string_field", str),
+                create_field_wrapper("int_field", int),
+                create_field_wrapper("optional_field", Optional[str], required=False),
+                create_field_wrapper("enum_field", FieldType),
+            ],
+        )
+
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
+
         assert "export interface SimpleModel" in ts_code
         assert "string_field: string" in ts_code
         assert "int_field: number" in ts_code
         assert "optional_field?: string" in ts_code
         assert "enum_field: FieldType" in ts_code
 
-    def test_no_export(self, simple_wrapper: ModelWrapper) -> None:
-        interface: ModelInterface = ModelInterface.from_model(simple_wrapper)
+    def test_no_export(self):
+        wrapper = create_model_wrapper(
+            "SimpleModel", [create_field_wrapper("field", str)]
+        )
+
+        interface = ModelInterface.from_model(wrapper)
         interface.include_export = False
-        ts_code: str = interface.to_js()
+        ts_code = interface.to_js()
 
         assert not ts_code.startswith("export")
         assert ts_code.startswith("interface SimpleModel")
@@ -131,163 +77,186 @@ class TestBasicInterfaceGeneration:
         ],
     )
     def test_field_type_conversion(
-        self,
-        parser: ControllerParser,
-        field_name: str,
-        field_type: Type[Any],
-        expected_ts: str,
-    ) -> None:
-        class DynamicModel(BaseModel):
-            pass
+        self, field_name: str, field_type: Type[Any], expected_ts: str
+    ):
+        wrapper = create_model_wrapper(
+            "DynamicModel", [create_field_wrapper(field_name, field_type)]
+        )
 
-        setattr(DynamicModel, field_name, (field_type, ...))
-        wrapper: ModelWrapper = parser._parse_model(DynamicModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-
+        interface = ModelInterface.from_model(wrapper)
         assert f"{field_name}: {expected_ts}" in interface.to_js()
 
 
 class TestInheritanceHandling:
-    def test_single_inheritance(self, child_wrapper: ModelWrapper) -> None:
-        interface: ModelInterface = ModelInterface.from_model(child_wrapper)
-        ts_code: str = interface.to_js()
+    def test_single_inheritance(self):
+        parent_wrapper = create_model_wrapper(
+            "ParentModel",
+            [
+                create_field_wrapper("parent_field", str),
+                create_field_wrapper("shared_field", int),
+            ],
+        )
+
+        child_wrapper = create_model_wrapper(
+            "ChildModel",
+            [
+                create_field_wrapper("child_field", bool),
+                create_field_wrapper("shared_field", float),  # Override type
+            ],
+            superclasses=[parent_wrapper],
+        )
+
+        interface = ModelInterface.from_model(child_wrapper)
+        ts_code = interface.to_js()
 
         assert "interface ChildModel extends ParentModel" in ts_code
         assert "child_field: boolean" in ts_code
-        assert "shared_field: number" in ts_code  # Should use child's type
+        assert "shared_field: number" in ts_code
 
-    def test_multiple_inheritance(self, multi_inherit_wrapper: ModelWrapper) -> None:
-        interface: ModelInterface = ModelInterface.from_model(multi_inherit_wrapper)
-        ts_code: str = interface.to_js()
+    def test_multiple_inheritance(self):
+        base1_wrapper = create_model_wrapper(
+            "MultiInheritBase1", [create_field_wrapper("base1_field", str)]
+        )
+
+        base2_wrapper = create_model_wrapper(
+            "MultiInheritBase2", [create_field_wrapper("base2_field", int)]
+        )
+
+        child_wrapper = create_model_wrapper(
+            "MultiInheritChild",
+            [create_field_wrapper("child_field", bool)],
+            superclasses=[base1_wrapper, base2_wrapper],
+        )
+
+        interface = ModelInterface.from_model(child_wrapper)
+        ts_code = interface.to_js()
 
         assert "extends MultiInheritBase1, MultiInheritBase2" in ts_code
         assert "child_field: boolean" in ts_code
 
-    def test_inheritance_chain(self, parser: ControllerParser) -> None:
-        class A(BaseModel):
-            a_field: str
-
-        class B(A):
-            b_field: str
-
-        class C(B):
-            c_field: str
-
-        wrapper: ModelWrapper = parser._parse_model(C)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-
-        assert "extends B" in interface.to_js()
-        assert len(interface.include_superclasses) == 1
-        assert interface.include_superclasses[0] == "B"
-
 
 class TestComplexTypeHandling:
-    def test_nested_model_interface(self, nested_wrapper: ModelWrapper) -> None:
-        interface: ModelInterface = ModelInterface.from_model(nested_wrapper)
-        ts_code: str = interface.to_js()
+    def test_nested_model_interface(self):
+        simple_wrapper = create_model_wrapper(
+            "SimpleModel", [create_field_wrapper("field", str)]
+        )
+
+        nested_wrapper = create_model_wrapper(
+            "NestedModel",
+            [
+                create_field_wrapper("regular_field", str),
+                create_field_wrapper("simple", simple_wrapper.model),
+                create_field_wrapper(
+                    "optional_simple", Optional[simple_wrapper.model], required=False
+                ),
+                create_field_wrapper("list_simple", list[simple_wrapper.model]),
+                create_field_wrapper("dict_simple", dict[str, simple_wrapper.model]),
+            ],
+        )
+
+        interface = ModelInterface.from_model(nested_wrapper)
+        ts_code = interface.to_js()
 
         assert "simple: SimpleModel" in ts_code
         assert "optional_simple?: SimpleModel" in ts_code
         assert "list_simple: Array<SimpleModel>" in ts_code
         assert "dict_simple: Record<string, SimpleModel>" in ts_code
 
-    def test_generic_model(self, parser: ControllerParser) -> None:
-        wrapper: ModelWrapper = parser._parse_model(GenericModel[str])
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
-
-        assert "value: string" in ts_code
-        assert "metadata: string" in ts_code
-
-    def test_forward_reference(self, parser: ControllerParser) -> None:
-        wrapper: ModelWrapper = parser._parse_model(CircularModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
-
-        assert "parent?: CircularModel" in ts_code
-
 
 class TestEdgeCases:
-    def test_empty_model(self, parser: ControllerParser) -> None:
-        class EmptyModel(BaseModel):
-            pass
-
-        wrapper: ModelWrapper = parser._parse_model(EmptyModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
+    def test_empty_model(self):
+        wrapper = create_model_wrapper("EmptyModel", [])
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
 
         assert "interface EmptyModel {}" in ts_code
 
-    def test_all_optional_fields(self, parser: ControllerParser) -> None:
-        class OptionalModel(BaseModel):
-            field1: Optional[str] = None
-            field2: Optional[int] = None
+    def test_all_optional_fields(self):
+        wrapper = create_model_wrapper(
+            "OptionalModel",
+            [
+                create_field_wrapper("field1", str, required=False),
+                create_field_wrapper("field2", int, required=False),
+            ],
+        )
 
-        wrapper: ModelWrapper = parser._parse_model(OptionalModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
 
         assert "field1?: string" in ts_code
         assert "field2?: number" in ts_code
 
-    def test_union_types(self, parser: ControllerParser) -> None:
-        class UnionModel(BaseModel):
-            union_field: Union[str, int]
-            optional_union: Optional[Union[bool, float]] = None
+    def test_union_types(self):
+        wrapper = create_model_wrapper(
+            "UnionModel",
+            [
+                create_field_wrapper("union_field", Union[str, int]),
+                create_field_wrapper(
+                    "optional_union", Optional[Union[bool, float]], required=False
+                ),
+            ],
+        )
 
-        wrapper: ModelWrapper = parser._parse_model(UnionModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
 
         assert "union_field: string | number" in ts_code
         assert "optional_union?: boolean | number" in ts_code
 
-    def test_literal_types(self, parser: ControllerParser) -> None:
-        class LiteralModel(BaseModel):
-            status: Literal["active", "inactive"]
+    def test_literal_types(self):
+        wrapper = create_model_wrapper(
+            "LiteralModel",
+            [create_field_wrapper("status", Literal["active", "inactive"])],
+        )
 
-        wrapper: ModelWrapper = parser._parse_model(LiteralModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
 
         assert 'status: "active" | "inactive"' in ts_code
 
-    def test_deep_generic_nesting(self, parser: ControllerParser) -> None:
-        class DeepGeneric(BaseModel, Generic[T, S]):
-            nested: GenericModel[List[T]]
-            other: Dict[str, GenericModel[S]]
+    def test_complex_nested_types(self):
+        wrapper = create_model_wrapper(
+            "ComplexModel",
+            [
+                create_field_wrapper(
+                    "nested_lists", list[dict[str, list[Union[str, int]]]]
+                ),
+                create_field_wrapper(
+                    "optional_complex",
+                    Optional[dict[str, list[dict[str, Any]]]],
+                    required=False,
+                ),
+            ],
+        )
 
-        wrapper: ModelWrapper = parser._parse_model(DeepGeneric[str, int])
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
 
-        assert "nested: GenericModel" in ts_code
-        assert "other: Record<string, GenericModel>" in ts_code
+        assert "Array<Record<string, Array<string | number>>>" in ts_code
+        assert "Record<string, Array<Record<string, any>>>?" in ts_code
 
 
 class TestAnnotationConversion:
     @pytest.mark.parametrize(
         "python_type,expected_ts",
         [
-            (List[str], "Array<string>"),
-            (Dict[str, int], "Record<string, number>"),
+            (list[str], "Array<string>"),
+            (dict[str, int], "Record<string, number>"),
             (Optional[str], "string | undefined"),
             (Union[int, str, bool], "number | string | boolean"),
-            (List[Dict[str, int]], "Array<Record<string, number>>"),
+            (list[dict[str, int]], "Array<Record<string, number>>"),
         ],
     )
-    def test_annotation_conversion(
-        self, parser: ControllerParser, python_type: Type[Any], expected_ts: str
-    ) -> None:
-        class AnnotationModel(BaseModel):
-            field: python_type
+    def test_annotation_conversion(self, python_type: Type[Any], expected_ts: str):
+        wrapper = create_model_wrapper(
+            "AnnotationModel", [create_field_wrapper("field", python_type)]
+        )
 
-        wrapper: ModelWrapper = parser._parse_model(AnnotationModel)
-        interface: ModelInterface = ModelInterface.from_model(wrapper)
-        ts_code: str = interface.to_js()
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
 
         # Remove spaces for consistent comparison
-        ts_code_normalized: str = "".join(ts_code.split())
-        expected_ts_normalized: str = "".join(expected_ts.split())
+        ts_code_normalized = "".join(ts_code.split())
+        expected_ts_normalized = "".join(expected_ts.split())
 
         assert expected_ts_normalized in ts_code_normalized

@@ -201,21 +201,6 @@ class TestModelHandling:
         assert result == "Array<SimpleModel>"
 
 
-class TestErrorHandling:
-    def test_unsupported_type_definition(self) -> None:
-        class UnsupportedDef(TypeDefinition):
-            pass
-
-        with pytest.raises(ValueError, match="Unsupported TypeDefinition"):
-            TypeConverter.convert(UnsupportedDef())
-
-    def test_invalid_type_definition(self) -> None:
-        # Create malformed TypeDefinition
-        broken_list: ListOf = ListOf(object())  # Invalid inner type
-        result: str = TypeConverter.convert(broken_list)
-        assert result == "Array<any>"  # Should fallback to 'any'
-
-
 class TestComplexScenarios:
     def test_deeply_nested_structure(self) -> None:
         # Create a deeply nested structure

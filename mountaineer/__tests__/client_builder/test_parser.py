@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Generic, List, Optional, TypeVar
+from typing import AsyncIterator, Generic, Optional, TypeVar
 
 import pytest
 from fastapi import File, Form, UploadFile
@@ -34,7 +34,7 @@ class TestEnum(Enum):
 
 
 # Core test models
-class TestModelBase(BaseModel):
+class ExampleModelBase(BaseModel):
     string_field: str
     int_field: int
     enum_field: TestEnum
@@ -63,11 +63,11 @@ class MultiGenericTestModel(GenericTestModel[T], Generic[T, S]):
 
 class NestedGenericTestModel(BaseModel, Generic[T]):
     wrapper: GenericTestModel[T]
-    list_of: List[GenericTestModel[T]]
+    list_of: list[GenericTestModel[T]]
 
 
 # Inheritance test models
-class BaseInheritanceModel(TestModelBase):
+class BaseInheritanceModel(ExampleModelBase):
     base_field: str
 
 
@@ -104,7 +104,7 @@ class FileUploadResponse(BaseModel):
 
 
 class RenderResponse(RenderBase):
-    data: TestModelBase
+    data: ExampleModelBase
     count: int = 0
 
 
@@ -123,7 +123,7 @@ class ExampleController(BaseExampleController):
         pass
 
     @passthrough
-    def get_data(self) -> TestModelBase:  # type: ignore
+    def get_data(self) -> ExampleModelBase:  # type: ignore
         pass
 
     @sideeffect
@@ -137,6 +137,19 @@ class ExampleController(BaseExampleController):
         pass
 
 
+class SpecialTypesController(ControllerBase):
+    url = "/test2"
+    view_path = "/test2.tsx"
+
+    @passthrough(raw_response=True)
+    async def raw_action(self) -> ExampleModelBase:  # type: ignore
+        pass
+
+    @passthrough
+    async def stream_action(self) -> AsyncIterator[ExampleModelBase]:
+        yield ExampleModelBase(string_field="test", int_field=1, enum_field=TestEnum.A)
+
+
 # Tests
 class TestControllerParser:
     @pytest.fixture
@@ -148,7 +161,7 @@ class TestControllerParser:
 
     @pytest.fixture
     def base_model_wrapper(self, parser: ControllerParser):
-        return parser._parse_model(TestModelBase)
+        return parser._parse_model(ExampleModelBase)
 
     @pytest.fixture
     def test_controller_wrapper(self, parser: ControllerParser):
@@ -161,9 +174,9 @@ class TestControllerParser:
         assert wrapper.name.raw_name == "TestEnum"
 
     def test_parse_base_model(self, parser: ControllerParser):
-        wrapper = parser._parse_model(TestModelBase)
+        wrapper = parser._parse_model(ExampleModelBase)
         assert isinstance(wrapper, ModelWrapper)
-        assert wrapper.model == TestModelBase
+        assert wrapper.model == ExampleModelBase
         assert len(wrapper.value_models) == 3
         assert wrapper.superclasses == []
 
@@ -233,6 +246,60 @@ class TestControllerParser:
         assert action.request_body is not None
         assert action.request_body.body_type == "multipart/form-data"
 
+    def test_parse_raw_response(self, parser: ControllerParser):
+        wrapper = parser.parse_controller(SpecialTypesController)
+        action = wrapper.actions.get("raw_action")
+        assert action is not None
+        assert action.is_raw_response
+
+    def test_parse_server_side_renderer(self, parser: ControllerParser):
+        wrapper = parser.parse_controller(SpecialTypesController)
+        action = wrapper.actions.get("stream_action")
+        assert action is not None
+        assert action.is_raw_response
+
+    def test_parse_multiple_response_types(self, parser: ControllerParser):
+        """
+        Test that one action that's shared by multiple children will have
+        a response type that includes all possible response models.
+
+        """
+
+        class ResponseA(RenderBase):
+            pass
+
+        class ResponseB(RenderBase):
+            pass
+
+        class MultiResponseParent(ControllerBase):
+            @sideeffect
+            def multi_action(self) -> None:
+                pass
+
+        class ResponseAController(MultiResponseParent):
+            async def render() -> ResponseA:  # type: ignore
+                pass
+
+        class ResponseBController(MultiResponseParent):
+            async def render() -> ResponseB:  # type: ignore
+                pass
+
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ResponseAController())
+        app_controller.register(ResponseBController())
+
+        wrapper: ControllerWrapper = parser.parse_controller(MultiResponseParent)
+        action = wrapper.actions["multi_action"]
+
+        response_a_response = action.response_bodies[ResponseAController]
+        response_b_response = action.response_bodies[ResponseBController]
+
+        assert response_a_response
+        assert response_b_response
+
+        assert response_a_response.model == ResponseA
+        assert response_b_response.model == ResponseB
+
 
 class TestInheritanceHandling:
     @pytest.fixture
@@ -242,7 +309,7 @@ class TestInheritanceHandling:
     def test_basic_inheritance(self, parser: ControllerParser):
         wrapper = parser._parse_model(BaseInheritanceModel)
         assert len(wrapper.superclasses) == 1
-        assert wrapper.superclasses[0].model == TestModelBase
+        assert wrapper.superclasses[0].model == ExampleModelBase
 
     def test_diamond_inheritance(self, parser: ControllerParser):
         wrapper = parser._parse_model(DiamondInheritanceModel)
@@ -294,11 +361,11 @@ class TestControllerWrapperFeatures:
     @pytest.mark.parametrize(
         "include_superclasses, expected_models",
         [
-            (False, {"TestModelBase", "FileUploadResponse", "RenderResponse"}),
+            (False, {"ExampleModelBase", "FileUploadResponse", "RenderResponse"}),
             (
                 True,
                 {
-                    "TestModelBase",
+                    "ExampleModelBase",
                     "ControllerResponse",
                     "FileUploadResponse",
                     "RenderResponse",
