@@ -28,14 +28,14 @@ from mountaineer.render import RenderBase
 
 
 # Test Models and Enums
-class TestStatus(Enum):
+class ExampleStatus(Enum):
     ACTIVE = "active"
     INACTIVE = "inactive"
 
 
 class ExampleBaseModel(BaseModel):
     name: str
-    status: TestStatus
+    status: ExampleStatus
 
 
 class ExampleRequestModel(BaseModel):
@@ -48,20 +48,20 @@ class ExampleResponseModel(BaseModel):
     total: int
 
 
-class TestRenderModel(RenderBase):
+class ExampleRenderModel(RenderBase):
     title: str
     items: List[ExampleBaseModel]
 
 
 # Test Controllers
-class TestBaseController(ControllerBase):
+class ExampleBaseController(ControllerBase):
     @passthrough
     def base_action(self) -> ExampleResponseModel:  # type: ignore
         """Base action that returns a response model"""
         pass
 
 
-class ExampleController(TestBaseController):
+class ExampleController(ExampleBaseController):
     url = "/test"
     view_path = "/test.tsx"
 
@@ -69,8 +69,8 @@ class ExampleController(TestBaseController):
         self,
         path_param: str,
         query_param: int = 0,
-        enum_param: TestStatus = TestStatus.ACTIVE,
-    ) -> TestRenderModel:  # type: ignore
+        enum_param: ExampleStatus = ExampleStatus.ACTIVE,
+    ) -> ExampleRenderModel:  # type: ignore
         """Main render method"""
         pass
 
@@ -230,10 +230,10 @@ class TestLocalModelGenerator:
         # Check for model exports
         assert "export type { ExampleRequestModel as ExampleRequestModel }" in content
         assert "export type { ExampleResponseModel as ExampleResponseModel }" in content
-        assert "export type { TestRenderModel as TestRenderModel }" in content
+        assert "export type { ExampleRenderModel as ExampleRenderModel }" in content
 
         # Check for enum exports
-        assert "export { TestStatus as TestStatus }" in content
+        assert "export { ExampleStatus as ExampleStatus }" in content
 
 
 class TestLocalUseServerGenerator:

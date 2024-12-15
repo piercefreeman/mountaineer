@@ -5,7 +5,7 @@ from typing import AsyncIterator, Generic, Optional, TypeVar
 
 import pytest
 from fastapi import File, Form, UploadFile
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from mountaineer.actions.fields import FunctionActionType
 from mountaineer.actions.passthrough_dec import passthrough
@@ -39,16 +39,11 @@ class ExampleModelBase(BaseModel):
     int_field: int
     enum_field: TestEnum
 
-    @validator("string_field")
+    @field_validator("string_field")
     def validate_string(cls, v):
         if len(v) < 3:
             raise ValueError("String too short")
         return v.upper()
-
-    class Config:
-        str_strip_whitespace = True
-        allow_mutation = False
-        extra = "forbid"
 
 
 # Generic test models
@@ -493,9 +488,10 @@ class TestIsolatedModelCreation:
         class CustomModel(BaseModel):
             field: str
 
-            class Config:
-                str_strip_whitespace = True
-                frozen = True
+            model_config = ConfigDict(
+                str_strip_whitespace=True,
+                frozen=True,
+            )
 
         isolated = parser._create_isolated_model(CustomModel)
 
