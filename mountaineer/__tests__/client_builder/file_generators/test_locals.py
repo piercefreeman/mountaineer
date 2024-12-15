@@ -61,18 +61,6 @@ class TestBaseController(ControllerBase):
         pass
 
 
-@pytest.fixture
-def managed_path(tmp_path: Path) -> ManagedViewPath:
-    controller_path = tmp_path / "test_controller"
-    controller_path.mkdir()
-    return ManagedViewPath(controller_path)
-
-
-@pytest.fixture
-def global_root(tmp_path: Path) -> ManagedViewPath:
-    return ManagedViewPath(tmp_path)
-
-
 class ExampleController(TestBaseController):
     url = "/test"
     view_path = "/test.tsx"
@@ -102,6 +90,31 @@ class ExampleController(TestBaseController):
         pass
 
 
+@pytest.fixture
+def managed_path(tmp_path: Path) -> ManagedViewPath:
+    controller_path = tmp_path / "test_controller"
+    controller_path.mkdir()
+    return ManagedViewPath(controller_path)
+
+
+@pytest.fixture
+def global_root(tmp_path: Path) -> ManagedViewPath:
+    return ManagedViewPath(tmp_path)
+
+
+@pytest.fixture
+def controller_parser() -> ControllerParser:
+    return ControllerParser()
+
+
+@pytest.fixture
+def controller_wrapper(controller_parser: ControllerParser) -> ControllerWrapper:
+    app_controller = AppController(view_root=Path())
+    app_controller.register(ExampleController())
+
+    return controller_parser.parse_controller(ExampleController)
+
+
 class TestLocalGeneratorBase:
     @pytest.fixture
     def generator(self, managed_path: ManagedViewPath, global_root: ManagedViewPath):
@@ -128,19 +141,6 @@ class TestLocalGeneratorBase:
 
 
 class TestLocalLinkGenerator:
-    @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def controller_wrapper(
-        self, controller_parser: ControllerParser
-    ) -> ControllerWrapper:
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ExampleController())
-
-        return controller_parser.parse_controller(ExampleController)
-
     @pytest.fixture
     def generator(
         self,
@@ -180,19 +180,6 @@ class TestLocalLinkGenerator:
 
 
 class TestLocalActionGenerator:
-    @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def controller_wrapper(
-        self, controller_parser: ControllerParser
-    ) -> ControllerWrapper:
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ExampleController())
-
-        return controller_parser.parse_controller(ExampleController)
-
     @pytest.fixture
     def generator(
         self,
@@ -241,21 +228,6 @@ class TestLocalActionGenerator:
 
 class TestLocalModelGenerator:
     @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def controller_wrapper(
-        self, controller_parser: ControllerParser
-    ) -> ControllerWrapper:
-        # Concrete instances should be mounted to an AppController to augment
-        # some of the runtime type information
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ExampleController())
-
-        return controller_parser.parse_controller(ExampleController)
-
-    @pytest.fixture
     def generator(
         self,
         managed_path: ManagedViewPath,
@@ -284,16 +256,6 @@ class TestLocalModelGenerator:
 
 class TestLocalUseServerGenerator:
     @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def controller_wrapper(
-        self, controller_parser: ControllerParser
-    ) -> ControllerWrapper:
-        return controller_parser.parse_controller(ExampleController)
-
-    @pytest.fixture
     def generator(
         self,
         managed_path: ManagedViewPath,
@@ -318,16 +280,6 @@ class TestLocalUseServerGenerator:
 
 
 class TestLocalIndexGenerator:
-    @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def controller_wrapper(
-        self, controller_parser: ControllerParser
-    ) -> ControllerWrapper:
-        return controller_parser.parse_controller(ExampleController)
-
     @pytest.fixture
     def generator(
         self,

@@ -68,31 +68,32 @@ class LayoutController(LayoutControllerBase):
         pass
 
 
+@pytest.fixture
+def managed_path(tmp_path: Path) -> ManagedViewPath:
+    return ManagedViewPath(tmp_path)
+
+
+@pytest.fixture
+def controller_parser() -> ControllerParser:
+    return ControllerParser()
+
+
+@pytest.fixture
+def controller_wrappers(controller_parser: ControllerParser) -> list[ControllerWrapper]:
+    # Concrete instances should be mounted to an AppController to augment
+    # some of the runtime type information
+    app_controller = AppController(view_root=Path())
+    app_controller.register(ChildController())
+    app_controller.register(LayoutController())
+
+    return [
+        controller_parser.parse_controller(ChildController),
+        controller_parser.parse_controller(LayoutController),
+    ]
+
+
 # Tests
 class TestGlobalControllerGenerator:
-    @pytest.fixture
-    def managed_path(self, tmp_path: Path) -> ManagedViewPath:
-        return ManagedViewPath(tmp_path)
-
-    @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def controller_wrappers(
-        self, controller_parser: ControllerParser
-    ) -> List[ControllerWrapper]:
-        # Concrete instances should be mounted to an AppController to augment
-        # some of the runtime type information
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ChildController())
-        app_controller.register(LayoutController())
-
-        return [
-            controller_parser.parse_controller(ChildController),
-            controller_parser.parse_controller(LayoutController),
-        ]
-
     @pytest.fixture
     def generator(
         self,
@@ -195,14 +196,6 @@ class TestGlobalControllerGenerator:
 
 
 class TestGlobalLinkGenerator:
-    @pytest.fixture
-    def managed_path(self, tmp_path) -> ManagedViewPath:
-        return ManagedViewPath(tmp_path)
-
-    @pytest.fixture
-    def controller_parser(self) -> ControllerParser:
-        return ControllerParser()
-
     @pytest.fixture
     def parsed_controllers(
         self, controller_parser: ControllerParser, managed_path: ManagedViewPath
