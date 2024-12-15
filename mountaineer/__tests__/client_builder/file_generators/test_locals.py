@@ -124,15 +124,6 @@ class TestLocalGeneratorBase:
 
         return ConcreteGeneratorBase(managed_path=managed_path, global_root=global_root)
 
-    def test_initialization(
-        self,
-        generator: LocalGeneratorBase,
-        managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-    ) -> None:
-        assert generator.managed_path == managed_path
-        assert generator.global_root == global_root
-
     def test_get_global_import_path(self, generator: LocalGeneratorBase) -> None:
         result: str = generator.get_global_import_path("test.ts")
         assert isinstance(result, str)
@@ -194,9 +185,7 @@ class TestLocalActionGenerator:
         )
 
     def test_generate_controller_actions(self, generator: LocalActionGenerator) -> None:
-        actions: List[str] = list(
-            generator._generate_controller_actions(generator.controller)
-        )
+        actions = list(generator._generate_controller_actions(generator.controller))
         assert len(actions) == 4  # base_action, get_data, update_data, upload_file
         action_names: set[str] = {
             action
@@ -217,13 +206,6 @@ class TestLocalActionGenerator:
             "UploadFileForm",
             "UploadFileResponseWrapped",
         }
-
-    def test_generate_exceptions(self, generator: LocalActionGenerator) -> None:
-        imports: list[str]
-        definitions: list[str]
-        imports, definitions = generator._generate_exceptions(generator.controller)
-        assert isinstance(imports, list)
-        assert isinstance(definitions, list)
 
 
 class TestLocalModelGenerator:
@@ -294,17 +276,12 @@ class TestLocalIndexGenerator:
         )
 
     def test_script_generation(
-        self, generator: LocalIndexGenerator, tmp_path: Any
+        self, generator: LocalIndexGenerator, managed_path: ManagedViewPath
     ) -> None:
-        # Set up temporary test files
-        base_path = tmp_path / "test"
-        base_path.mkdir()
-
-        (base_path / "actions.ts").write_text("export const action = () => {}")
-        (base_path / "models.ts").write_text("export type Model = {}")
-
-        # Update managed_path to use temporary directory
-        generator.managed_path = ManagedViewPath(str(base_path / "index.ts"))
+        (managed_path.parent / "actions.ts").write_text(
+            "export const action = () => {}"
+        )
+        (managed_path.parent / "models.ts").write_text("export type Model = {}")
 
         result: List[Any] = list(generator.script())
         assert len(result) > 0

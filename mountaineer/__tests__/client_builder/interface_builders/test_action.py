@@ -104,7 +104,7 @@ class TestBasicInterfaceGeneration:
             ),
         ],
     )
-    def test_parametrized_action_interface(
+    def test_action_url_query_parameters(
         self,
         params: list[FieldWrapper],
         expected_strs: list[str],

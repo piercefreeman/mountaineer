@@ -32,9 +32,7 @@ class FileGeneratorBase(ABC):
     def build(self):
         blocks = list(self.script())
         blocks = [self.standard_header] + blocks
-        self.managed_path.write_text(
-            "\n\n".join("\n".join(block.lines) for block in blocks)
-        )
+        self.managed_path.write_text("\n\n".join(block.content for block in blocks))
 
     @abstractmethod
     def script(self) -> Generator["CodeBlock", None, None]:

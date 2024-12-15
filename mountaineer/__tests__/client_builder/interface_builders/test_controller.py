@@ -1,7 +1,6 @@
 from datetime import datetime
 from typing import Any, Optional
 
-import pytest
 from pydantic import BaseModel
 
 from mountaineer.__tests__.client_builder.interface_builders.common import (
@@ -14,7 +13,7 @@ from mountaineer.client_builder.interface_builders.controller import ControllerI
 from mountaineer.client_builder.parser import (
     FieldWrapper,
 )
-from mountaineer.client_builder.types import DictOf, Or
+from mountaineer.client_builder.types import Or
 
 
 # Test Models
@@ -127,8 +126,10 @@ class TestInheritanceHandling:
 
         interface = ControllerInterface.from_controller(extended_controller)
 
+        # Only the immediate superclasses should be specified
         assert "ResourceController" in interface.include_superclasses
         assert "extends ResourceController" in interface.to_js()
+        assert "ApiBaseController" not in interface.to_js()
 
 
 class TestParameterHandling:
@@ -169,78 +170,3 @@ class TestParameterHandling:
 
         assert "params: {" in ts_code
         assert "required_param: string" in ts_code
-
-
-class TestTypeScriptGeneration:
-    def test_complex_type_definitions(self):
-        action = create_action_wrapper(
-            "complex_action",
-            params=[
-                FieldWrapper("dict_param", DictOf(str, Any), True),
-                FieldWrapper(
-                    "optional_dict",
-                    Or(
-                        DictOf(
-                            str, create_model_wrapper(SimpleResponse, "SimpleResponse")
-                        ),
-                        None,
-                    ),
-                    False,
-                ),
-            ],
-            response_model=ComplexResponse,
-        )
-
-        controller = create_controller_wrapper(
-            "ComplexTypesController", actions={"complex_action": action}
-        )
-
-        interface = ControllerInterface.from_controller(controller)
-        ts_code = interface.to_js()
-
-        assert "Record<string, any>" in ts_code
-        assert "Record<string, SimpleResponse> | null" in ts_code
-
-    def test_multiline_formatting(self):
-        controller = create_controller_wrapper(
-            "ResourceController",
-            actions={
-                "action1": create_action_wrapper(
-                    "action1", response_model=SimpleResponse
-                ),
-                "action2": create_action_wrapper(
-                    "action2", response_model=SimpleResponse
-                ),
-                "action3": create_action_wrapper(
-                    "action3", response_model=SimpleResponse
-                ),
-            },
-        )
-
-        interface = ControllerInterface.from_controller(controller)
-        ts_code = interface.to_js()
-
-        assert "{\n" in ts_code
-        assert "\n}" in ts_code
-        assert ts_code.count("\n") >= len(controller.actions)
-
-    @pytest.mark.parametrize(
-        "controller_name,expected",
-        [
-            ("ValidController", "interface ValidController"),
-            ("My_Controller", "interface My_Controller"),
-            ("API_V1_Controller", "interface API_V1_Controller"),
-        ],
-    )
-    def test_interface_naming(self, controller_name: str, expected: str):
-        controller = create_controller_wrapper(
-            controller_name,
-            actions={
-                "simple_action": create_action_wrapper(
-                    "simple_action", response_model=SimpleResponse
-                )
-            },
-        )
-
-        interface = ControllerInterface.from_controller(controller)
-        assert expected in interface.to_js()

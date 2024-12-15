@@ -1,6 +1,6 @@
 from enum import Enum
 from pathlib import Path
-from typing import List
+from typing import List, Sequence
 
 import pytest
 
@@ -12,7 +12,12 @@ from mountaineer.client_builder.file_generators.globals import (
     GlobalControllerGenerator,
     GlobalLinkGenerator,
 )
-from mountaineer.client_builder.parser import ControllerParser, ControllerWrapper
+from mountaineer.client_builder.parser import (
+    ControllerParser,
+    ControllerWrapper,
+    EnumWrapper,
+    ModelWrapper,
+)
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.paths import ManagedViewPath
@@ -121,33 +126,21 @@ class TestGlobalControllerGenerator:
             embedded.models, embedded.enums
         )
 
+        # Hierarchy is:
+        # StatusEnum
+        # MainModel <- DependentModel
+        #           <- ChildModel
         # Verify StatusEnum comes before BaseModel
-        enum_idx: int = next(
-            i
-            for i, item in enumerate(sorted_items)
-            if item.name.raw_name == "StatusEnum"
-        )
-        base_model_idx: int = next(
-            i
-            for i, item in enumerate(sorted_items)
-            if item.name.raw_name == "MainModel"
-        )
-        assert enum_idx < base_model_idx
+        # Enums come before models and parents come before their subclasses
+        enum_idx = self.get_item_order(sorted_items, "StatusEnum")
+        main_model_idx = self.get_item_order(sorted_items, "MainModel")
+        assert enum_idx < main_model_idx
 
-        # Verify BaseModel comes before ChildModel
-        child_model_idx: int = next(
-            i
-            for i, item in enumerate(sorted_items)
-            if item.name.raw_name == "ChildModel"
-        )
-        assert base_model_idx < child_model_idx
+        child_model_idx = self.get_item_order(sorted_items, "ChildModel")
+        assert main_model_idx < child_model_idx
 
-        dependent_idx: int = next(
-            i
-            for i, item in enumerate(sorted_items)
-            if item.name.raw_name == "DependentModel"
-        )
-        assert base_model_idx < dependent_idx
+        dependent_model_idx = self.get_item_order(sorted_items, "DependentModel")
+        assert main_model_idx < dependent_model_idx
 
     def test_controller_graph_resolution(
         self, generator: GlobalControllerGenerator
@@ -158,17 +151,8 @@ class TestGlobalControllerGenerator:
         )
         sorted_controllers = generator._build_controller_graph(controllers)
 
-        # Find indices
-        base_idx: int = next(
-            i
-            for i, c in enumerate(sorted_controllers)
-            if c.name.raw_name == "BaseController"
-        )
-        child_idx: int = next(
-            i
-            for i, c in enumerate(sorted_controllers)
-            if c.name.raw_name == "ChildController"
-        )
+        base_idx = self.get_item_order(sorted_controllers, "BaseController")
+        child_idx = self.get_item_order(sorted_controllers, "ChildController")
 
         # Base should come before Child
         assert base_idx < child_idx
@@ -176,7 +160,7 @@ class TestGlobalControllerGenerator:
     def test_script_generation(self, generator: GlobalControllerGenerator) -> None:
         """Test the complete script generation"""
         blocks = generator.script()
-        content = "\n".join("\n".join(block.lines) for block in blocks)
+        content = "\n".join(block.content for block in blocks)
 
         # Verify models are generated
         assert "export interface MainModel" in content
@@ -193,6 +177,15 @@ class TestGlobalControllerGenerator:
 
         # Verify layout controller is included
         assert "export interface LayoutController" in content
+
+    def get_item_order(
+        self,
+        sorted_items: Sequence[ModelWrapper | EnumWrapper | ControllerWrapper],
+        raw_name: str,
+    ):
+        return next(
+            i for i, item in enumerate(sorted_items) if item.name.raw_name == raw_name
+        )
 
 
 class TestGlobalLinkGenerator:
@@ -227,7 +220,7 @@ class TestGlobalLinkGenerator:
     def test_script_generation(self, generator: GlobalLinkGenerator) -> None:
         """Test link aggregator generation"""
         blocks = generator.script()
-        content = "\n".join(line for block in blocks for line in block.lines)
+        content = "\n".join(block.content for block in blocks)
 
         # Verify imports
         assert "import { getLink as ChildControllerGetLinks }" in content
