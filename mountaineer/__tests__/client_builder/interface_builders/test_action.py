@@ -282,8 +282,8 @@ class TestTypeScriptGeneration:
             module_name="test_module",
             action_type=FunctionActionType.PASSTHROUGH,
             params=[
-                create_field_wrapper("list_param", ListOf[str]),
-                create_field_wrapper("optional_param", Or[str, None], False),
+                create_field_wrapper("list_param", ListOf(str)),
+                create_field_wrapper("optional_param", Or(str, None), False),
             ],
             headers=[],
             request_body=None,

@@ -127,7 +127,7 @@ class ExampleController(BaseExampleController):
         pass
 
     @sideeffect
-    def update_form(
+    def update_form(  # type: ignore
         self, name: str = Form(...), size: int = Form(...)
     ) -> FileUploadResponse:  # type: ignore
         pass
@@ -141,7 +141,7 @@ class SpecialTypesController(ControllerBase):
     url = "/test2"
     view_path = "/test2.tsx"
 
-    @passthrough(raw_response=True)
+    @passthrough(raw_response=True)  # type: ignore
     async def raw_action(self) -> ExampleModelBase:  # type: ignore
         pass
 
@@ -500,8 +500,8 @@ class TestIsolatedModelCreation:
         isolated = parser._create_isolated_model(CustomModel)
 
         # Check that model configuration is preserved
-        assert isolated.model_config["str_strip_whitespace"] is True
-        assert isolated.model_config["frozen"] is True
+        assert isolated.model_config["str_strip_whitespace"] is True  # type: ignore
+        assert isolated.model_config["frozen"] is True  # type: ignore
 
     def test_empty_model_isolation(self, parser: ControllerParser):
         class EmptyParent(BaseModel):

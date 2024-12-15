@@ -28,7 +28,7 @@ class TestBasicInterfaceGeneration:
             [
                 create_field_wrapper("string_field", str),
                 create_field_wrapper("int_field", int),
-                create_field_wrapper("optional_field", Or[str, None], required=False),
+                create_field_wrapper("optional_field", Or(str, None), required=False),
                 create_field_wrapper("enum_field", create_enum_wrapper(FieldType)),
             ],
         )

@@ -74,10 +74,10 @@ def global_root(tmp_path: Path) -> ManagedViewPath:
 
 
 class ExampleController(TestBaseController):
-    url: str = "/test"
-    view_path: str = "/test.tsx"
+    url = "/test"
+    view_path = "/test.tsx"
 
-    async def render(
+    async def render(  # type: ignore
         self,
         path_param: str,
         query_param: int = 0,

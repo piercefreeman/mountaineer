@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod, abstractproperty
-from dataclasses import dataclass
 from types import UnionType
 from typing import (
     Any,
@@ -43,17 +42,17 @@ class TypeDefinition(ABC):
         """Return a new instance with updated children"""
         raise NotImplementedError
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}({', '.join(repr(child) for child in self.children)})"
 
-@dataclass
+
 class Or(TypeDefinition):
     """Represents a Union type"""
 
     types: tuple[Any, ...]
 
-    def __class_getitem__(cls, types):
-        if not isinstance(types, tuple):
-            types = (types,)
-        return cls(types=types)
+    def __init__(self, *types):
+        self.types = types
 
     @property
     def children(self):
@@ -63,14 +62,13 @@ class Or(TypeDefinition):
         self.types = tuple(children)
 
 
-@dataclass
 class ListOf(TypeDefinition):
     """Represents a List type"""
 
     type: Any
 
-    def __class_getitem__(cls, type):
-        return cls(type=type)
+    def __init__(self, type):
+        self.type = type
 
     @property
     def children(self):
@@ -81,18 +79,15 @@ class ListOf(TypeDefinition):
         self.type = children[0]
 
 
-@dataclass
 class DictOf(TypeDefinition):
     """Represents a Dict type"""
 
     key_type: Any
     value_type: Any
 
-    def __class_getitem__(cls, types):
-        if not isinstance(types, tuple) or len(types) != 2:
-            raise ValueError("DictOf requires exactly two type parameters")
-        key_type, value_type = types
-        return cls(key_type=key_type, value_type=value_type)
+    def __init__(self, key, value):
+        self.key_type = key
+        self.value_type = value
 
     @property
     def children(self):
@@ -104,16 +99,13 @@ class DictOf(TypeDefinition):
         self.value_type = children[1]
 
 
-@dataclass
 class TupleOf(TypeDefinition):
     """Represents a Tuple type"""
 
     types: tuple[Any, ...]
 
-    def __class_getitem__(cls, types):
-        if not isinstance(types, tuple):
-            types = (types,)
-        return cls(types=types)
+    def __init__(self, *types):
+        self.types = types
 
     @property
     def children(self):
@@ -123,14 +115,13 @@ class TupleOf(TypeDefinition):
         self.types = tuple(children)
 
 
-@dataclass
 class SetOf(TypeDefinition):
     """Represents a Set type"""
 
     type: Any
 
-    def __class_getitem__(cls, type_):
-        return cls(type=type_)
+    def __init__(self, type_):
+        self.type = type_
 
     @property
     def children(self):
@@ -140,21 +131,13 @@ class SetOf(TypeDefinition):
         self.types = tuple(children)
 
 
-@dataclass
 class LiteralOf(TypeDefinition):
     """Represents a Literal type"""
 
     values: list[Any]
 
-    def __class_getitem__(cls, values):
-        return cls(values=values)
-
-    def __post_init__(self):
-        """Validate that all values are primitive types"""
-        # Convert None-like values to None
-        self.values = [
-            value if not is_none_type(value) else None for value in self.values
-        ]
+    def __init__(self, *values):
+        self.values = [value if not is_none_type(value) else None for value in values]
         self._validate_primitive_values(self.values)
 
     @staticmethod
@@ -162,6 +145,7 @@ class LiteralOf(TypeDefinition):
         """
         Ensures all values are primitive types (str, int, float, bool, None).
         Raises TypeError for non-primitive values.
+
         """
         for value in values:
             if not isinstance(value, (str, int, float, bool)) and value is not None:
@@ -200,7 +184,7 @@ class TypeParser:
         # Handle unions
         if is_union_type(field_type):
             union_types = get_union_types(field_type)
-            return Or(types=tuple(self.parse_type(arg) for arg in union_types))
+            return Or(*[self.parse_type(arg) for arg in union_types])
 
         # Handle built-in collections
         origin_type = get_origin(field_type)
@@ -219,16 +203,16 @@ class TypeParser:
             return ListOf(type=args[0])
 
         if origin_type in (dict, Dict):
-            return DictOf(key_type=args[0], value_type=args[1])
+            return DictOf(key=args[0], value=args[1])
 
         if origin_type in (tuple, Tuple):
-            return TupleOf(types=args)
+            return TupleOf(*args)
 
         if origin_type in (set, Set):
-            return SetOf(type=args[0])
+            return SetOf(args[0])
 
         if origin_type is Literal:
-            return LiteralOf(values=list(args))
+            return LiteralOf(*args)
 
         # For unknown origin types, wrap in Or
         raise ValueError(f"Unsupported origin type: {origin_type}")
@@ -237,12 +221,12 @@ class TypeParser:
         """Parse basic types without args"""
         if isinstance(field_type, type):
             if issubclass(field_type, (list, List)):
-                return ListOf(type=Any)
+                return ListOf(Any)
             elif issubclass(field_type, (dict, Dict)):
-                return DictOf(key_type=Any, value_type=Any)
+                return DictOf(key=Any, value=Any)
             elif issubclass(field_type, (tuple, Tuple)):  # type: ignore
-                return TupleOf(types=(Any,))
+                return TupleOf(Any)
             elif issubclass(field_type, (set, Set)):
-                return SetOf(type=Any)
+                return SetOf(Any)
 
         return field_type

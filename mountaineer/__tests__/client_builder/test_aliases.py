@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Dict, Generic, Optional, Type, TypeVar
+from typing import Generic, Optional, Type, TypeVar, cast
 
 import pytest
 from pydantic import BaseModel
@@ -102,7 +102,7 @@ class TestAliasManager:
             name=WrapperName("Status"),
             module_name="models.status",
             model=Status1,
-            isolated_model=Status2,
+            isolated_model=Status1,
             superclasses=[],
             value_models=[],
         )
@@ -154,8 +154,8 @@ class TestAliasManager:
         self, parser: ControllerParser, alias_manager: AliasManager
     ) -> None:
         class StatusEnum(Enum):
-            ACTIVE: str = "active"
-            INACTIVE: str = "inactive"
+            ACTIVE = "active"
+            INACTIVE = "inactive"
 
         class UserModel(BaseModel):
             name: str
@@ -204,10 +204,10 @@ class TestAliasManager:
         class Container(BaseModel, Generic[T]):
             value: T
 
-        string_generic = Container[str]
-        int_generic = Container[int]
+        string_generic = cast(Type[BaseModel], Container[str])
+        int_generic = cast(Type[BaseModel], Container[int])
 
-        wrappers: Dict[Type[BaseModel], ModelWrapper] = {
+        wrappers = {
             cls: ModelWrapper(
                 name=WrapperName(cls.__name__),
                 module_name=cls.__module__,

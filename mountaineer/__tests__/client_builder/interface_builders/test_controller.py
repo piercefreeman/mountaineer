@@ -136,7 +136,7 @@ class TestParameterHandling:
         action = create_action_wrapper(
             "optional_action",
             params=[
-                FieldWrapper("param1", Or[str, None], False),
+                FieldWrapper("param1", Or(str, None), False),
                 FieldWrapper("param2", int, False),
             ],
             response_model=SimpleResponse,
@@ -176,15 +176,15 @@ class TestTypeScriptGeneration:
         action = create_action_wrapper(
             "complex_action",
             params=[
-                FieldWrapper("dict_param", DictOf[str, Any], True),
+                FieldWrapper("dict_param", DictOf(str, Any), True),
                 FieldWrapper(
                     "optional_dict",
-                    Or[
-                        DictOf[
+                    Or(
+                        DictOf(
                             str, create_model_wrapper(SimpleResponse, "SimpleResponse")
-                        ],
+                        ),
                         None,
-                    ],
+                    ),
                     False,
                 ),
             ],

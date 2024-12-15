@@ -63,10 +63,10 @@ class TestBasicGeneration:
             "ComplexException",
             500,
             [
-                create_field_wrapper("data", DictOf[str, Any]),
+                create_field_wrapper("data", DictOf(str, Any)),
                 create_field_wrapper(
                     "errors",
-                    ListOf[create_model_wrapper(ValidationError, "ValidationError")],
+                    ListOf(create_model_wrapper(ValidationError, "ValidationError")),
                 ),
                 create_field_wrapper(
                     "details", create_model_wrapper(ErrorDetail, "ErrorDetail")
@@ -91,8 +91,8 @@ class TestFieldTypeConversion:
             (bool, "boolean"),
             (float, "number"),
             (datetime, "string"),
-            (DictOf[str, str], "Record<string, string>"),
-            (ListOf[int], "Array<number>"),
+            (DictOf(str, str), "Record<string, string>"),
+            (ListOf(int), "Array<number>"),
         ],
     )
     def test_type_conversion(self, field_type: Type[Any], expected_ts_type: str):
@@ -159,12 +159,12 @@ class TestEdgeCases:
             [
                 create_field_wrapper(
                     "outer",
-                    DictOf[
-                        str, ListOf[create_model_wrapper(ErrorDetail, "ErrorDetail")]
-                    ],
+                    DictOf(
+                        str, ListOf(create_model_wrapper(ErrorDetail, "ErrorDetail"))
+                    ),
                 ),
                 create_field_wrapper(
-                    "meta", Or[DictOf[str, str], None], required=False
+                    "meta", Or(DictOf(str, str), None), required=False
                 ),
             ],
         )

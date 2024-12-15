@@ -64,7 +64,7 @@ class CoreWrapper:
 @dataclass
 class FieldWrapper:
     name: str
-    value: Union["ModelWrapper", "EnumWrapper", type]
+    value: Union["ModelWrapper", "EnumWrapper", "TypeDefinition", type]
     required: bool
 
 

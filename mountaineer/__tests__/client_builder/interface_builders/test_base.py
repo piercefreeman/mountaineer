@@ -1,6 +1,18 @@
 from datetime import date, datetime, time
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Set,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 from uuid import UUID
 
 import pytest
@@ -58,11 +70,11 @@ T = TypeVar("T")
 
 
 class TypeConverter(InterfaceBase):
-    """Helper class for testing protected methods"""
+    """Helper class for testing the abstract base model"""
 
     @classmethod
     def convert(cls, value: Any) -> str:
-        return cls._get_annotated_value(value)
+        return cast(str, cls._get_annotated_value(value))
 
 
 # Test Fixtures
@@ -150,27 +162,27 @@ class TestComplexTypeHandling:
         assert result == "Set<number>"
 
     def test_tuple_conversion(self) -> None:
-        type_def = TupleOf[str, int, bool]
+        type_def = TupleOf(str, int, bool)
         result: str = TypeConverter.convert(type_def)
         assert result == "[string,number,boolean]"
 
     def test_union_conversion(self) -> None:
-        type_def = Or[str, int, bool]
+        type_def = Or(str, int, bool)
         result: str = TypeConverter.convert(type_def)
         assert result == "string | number | boolean"
 
     def test_literal_conversion(self) -> None:
-        type_def: LiteralOf = LiteralOf(["active", "inactive"])
+        type_def = LiteralOf("active", "inactive")
         result: str = TypeConverter.convert(type_def)
         assert result == '"active" | "inactive"'
 
     @pytest.mark.parametrize(
         "type_def,expected",
         [
-            (DictOf[str, ListOf[int]], "Record<string, Array<number>>"),
-            (ListOf[DictOf[str, bool]], "Array<Record<string, boolean>>"),
+            (DictOf(str, ListOf(int)), "Record<string, Array<number>>"),
+            (ListOf(DictOf(str, bool)), "Array<Record<string, boolean>>"),
             (
-                Or[ListOf[str], DictOf[str, int]],
+                Or(ListOf(str), DictOf(str, int)),
                 "Array<string> | Record<string, number>",
             ),
         ],
@@ -204,9 +216,9 @@ class TestModelHandling:
 class TestComplexScenarios:
     def test_deeply_nested_structure(self) -> None:
         # Create a deeply nested structure
-        deep_type = ListOf[
-            DictOf[str, Or[ListOf[TupleOf[str, int]], DictOf[str, SetOf[float]]]]
-        ]
+        deep_type = ListOf(
+            DictOf(str, Or(ListOf(TupleOf(str, int)), DictOf(str, SetOf(float))))
+        )
         result = TypeConverter.convert(deep_type)
         expected = "Array<Record<string, Array<[string,number]> | Record<string, Set<number>>>>"
         assert result == expected
@@ -214,19 +226,19 @@ class TestComplexScenarios:
     def test_mixed_model_and_primitive_types(
         self, model_wrapper: ModelWrapper, enum_wrapper: EnumWrapper
     ) -> None:
-        type_def = Or[model_wrapper, ListOf[enum_wrapper], DictOf[str, int]]
+        type_def = Or(model_wrapper, ListOf(enum_wrapper), DictOf(str, int))
         result: str = TypeConverter.convert(type_def)
         assert "SimpleModel | Array<Status> | Record<string, number>" == result
 
     def test_complex_union_types(self) -> None:
         # Test union with various nested types
-        type_def = Or[
-            ListOf[str],
-            DictOf[str, bool],
-            SetOf[int],
-            TupleOf[str, int],
-            LiteralOf["a", "b"],
-        ]
+        type_def = Or(
+            ListOf(str),
+            DictOf(str, bool),
+            SetOf(int),
+            TupleOf(str, int),
+            LiteralOf("a", "b"),
+        )
         result: str = TypeConverter.convert(type_def)
         expected: str = 'Array<string> | Record<string, boolean> | Set<number> | [string,number] | "a" | "b"'
         assert result == expected
@@ -235,15 +247,15 @@ class TestComplexScenarios:
         "type_def,expected",
         [
             (
-                DictOf[LiteralOf["id", "name"], Or[str, int]],
+                DictOf(LiteralOf("id", "name"), Or(str, int)),
                 'Record<"id" | "name", string | number>',
             ),
             (
-                ListOf[TupleOf[LiteralOf["GET", "POST"], str]],
+                ListOf(TupleOf(LiteralOf("GET", "POST"), str)),
                 'Array<["GET" | "POST",string]>',
             ),
             (
-                SetOf[Or[LiteralOf[1, 2], LiteralOf["a", "b"]]],
+                SetOf(Or(LiteralOf(1, 2), LiteralOf("a", "b"))),
                 'Set<1 | 2 | "a" | "b">',
             ),
         ],

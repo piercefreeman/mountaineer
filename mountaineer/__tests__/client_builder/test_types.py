@@ -82,51 +82,31 @@ class TypeComparisonHelpers:
         if type(def1) != type(def2):
             return False
 
-        # Get all relevant attributes (those that define the type)
-        attrs = [
-            attr
-            for attr in dir(def1)
-            if not attr.startswith("_") and not callable(getattr(def1, attr))
+        non_type_1 = [
+            child for child in def1.children if not isinstance(child, TypeDefinition)
+        ]
+        non_type_2 = [
+            child for child in def2.children if not isinstance(child, TypeDefinition)
         ]
 
-        # Compare each attribute recursively
-        return all(
-            TypeComparisonHelpers.are_types_equivalent(
-                getattr(def1, attr), getattr(def2, attr)
-            )
-            for attr in attrs
-        )
+        if non_type_1 != non_type_2:
+            return False
 
-    @staticmethod
-    def describe_type_difference(type1: Any, type2: Any) -> str:
-        """
-        Returns a detailed description of why two types are different.
-        Useful for debugging test failures.
-        """
-        if type(type1) != type(type2):
-            return f"Type mismatch: {type(type1)} != {type(type2)}"
+        child_types_1 = [
+            child for child in def1.children if isinstance(child, TypeDefinition)
+        ]
+        child_types_2 = [
+            child for child in def2.children if isinstance(child, TypeDefinition)
+        ]
 
-        if isinstance(type1, Or) and isinstance(type2, Or):
-            if len(type1.types) != len(type2.types):
-                return f"Or types have different lengths: {len(type1.types)} != {len(type2.types)}"
-            return f"Or types contain different types: {type1.types} != {type2.types}"
+        if len(child_types_1) != len(child_types_2):
+            return False
 
-        if isinstance(type1, LiteralOf) and isinstance(type2, LiteralOf):
-            if set(type1.values) != set(type2.values):
-                return f"LiteralOf values differ: {set(type1.values)} != {set(type2.values)}"
+        for a, b in zip(child_types_1, child_types_2):
+            if not TypeComparisonHelpers.are_types_equivalent(a, b):
+                return False
 
-        if isinstance(type1, TypeDefinition) and isinstance(type2, TypeDefinition):
-            attrs = [
-                attr
-                for attr in dir(type1)
-                if not attr.startswith("_") and not callable(getattr(type1, attr))
-            ]
-            for attr in attrs:
-                v1, v2 = getattr(type1, attr), getattr(type2, attr)
-                if not TypeComparisonHelpers.are_types_equivalent(v1, v2):
-                    return f"Attribute '{attr}' differs: {v1} != {v2}"
-
-        return f"Values differ: {type1} != {type2}"
+        return True
 
 
 @pytest.fixture
@@ -181,61 +161,49 @@ class TestUnionTypeDetection:
 
 class TestModernTypeSyntax:
     @pytest.mark.parametrize(
-        "input_type,expected_type,expected_attributes",
+        "input_type,expected_type",
         [
-            (str | int, Or, {"types": (str, int)}),
-            (str | None, Or, {"types": (str, type(None))}),
-            (int | str | float, Or, {"types": (int, str, float)}),
-            (list[int], ListOf, {"type": int}),
-            (dict[str, int], DictOf, {"key_type": str, "value_type": int}),
-            (tuple[str, int], TupleOf, {"types": (str, int)}),
-            (set[int], SetOf, {"type": int}),
-            (list[str | int], ListOf, {"type": Or(types=(str, int))}),
+            (str | int, Or(str, int)),
+            (str | None, Or(str, type(None))),
+            (int | str | float, Or(int, str, float)),
+            (list[int], ListOf(int)),
+            (dict[str, int], DictOf(str, int)),
+            (tuple[str, int], TupleOf(str, int)),
+            (set[int], SetOf(int)),
+            (list[str | int], ListOf(Or(str, int))),
             (
                 dict[str, list[int]],
-                DictOf,
-                {"key_type": str, "value_type": ListOf(type=int)},
+                DictOf(str, ListOf(int)),
             ),
             (
                 tuple[int, str | None],
-                TupleOf,
-                {"types": (int, Or(types=(str, type(None))))},
+                TupleOf(int, Or(str, type(None))),
             ),
             (
                 dict[str | int, list[tuple[int, str]]],
-                DictOf,
-                {
-                    "key_type": Or(types=(str, int)),
-                    "value_type": ListOf(type=TupleOf(types=(int, str))),
-                },
+                DictOf(Or(str, int), ListOf(TupleOf(int, str))),
             ),
             (
                 list[dict[str, int | None]],
-                ListOf,
-                {"type": DictOf(key_type=str, value_type=Or(types=(int, type(None))))},
+                ListOf(DictOf(str, Or(int, type(None)))),
             ),
         ],
     )
-    def test_modern_type_syntax(
-        self, parser, type_compare, input_type, expected_type, expected_attributes
-    ):
+    def test_modern_type_syntax(self, parser, type_compare, input_type, expected_type):
         result = parser.parse_type(input_type)
-        assert isinstance(result, expected_type)
-        expected = expected_type(**expected_attributes)
-        assert type_compare.are_types_equivalent(result, expected)
+        assert isinstance(result, type(expected_type))
+        assert type_compare.are_types_equivalent(result, expected_type)
 
     def test_complex_modern_nested_types(self, parser, type_compare):
         complex_type = dict[str, list[tuple[int | None, str] | set[bool]]]
         result = parser.parse_type(complex_type)
 
         expected = DictOf(
-            key_type=str,
-            value_type=ListOf(
-                type=Or(
-                    types=(
-                        TupleOf(types=(Or(types=(int, type(None))), str)),
-                        SetOf(type=bool),
-                    )
+            key=str,
+            value=ListOf(
+                Or(
+                    TupleOf(Or(int, type(None)), str),
+                    SetOf(bool),
                 )
             ),
         )
@@ -258,43 +226,32 @@ class TestModernTypeSyntax:
 
 class TestLiteralTypes:
     @pytest.mark.parametrize(
-        "input_type,expected_type,expected_attributes",
+        "input_type,expected_type",
         [
-            (Literal["a", "b"], LiteralOf, {"values": ["a", "b"]}),
-            (Literal[1, 2, 3], LiteralOf, {"values": [1, 2, 3]}),
-            (Literal[True, False], LiteralOf, {"values": [True, False]}),
-            (Literal[None], LiteralOf, {"values": [None]}),
-            (Literal["a", 1, True, None], LiteralOf, {"values": ["a", 1, True, None]}),
-            (list[Literal["a", "b"]], ListOf, {"type": LiteralOf(values=["a", "b"])}),
+            (Literal["a", "b"], LiteralOf("a", "b")),
+            (Literal[1, 2, 3], LiteralOf(1, 2, 3)),
+            (Literal[True, False], LiteralOf(True, False)),
+            (Literal[None], LiteralOf(None)),
+            (Literal["a", 1, True, None], LiteralOf("a", 1, True, None)),
+            (list[Literal["a", "b"]], ListOf(LiteralOf("a", "b"))),
             (
                 dict[str, Literal[1, 2, 3]],
-                DictOf,
-                {"key_type": str, "value_type": LiteralOf(values=[1, 2, 3])},
+                DictOf(str, LiteralOf(1, 2, 3)),
             ),
             (
                 Literal["a", "b"] | int,
-                Or,
-                {"types": (LiteralOf(values=["a", "b"]), int)},
+                Or(LiteralOf("a", "b"), int),
             ),
             (
                 dict[Literal["x", "y"], list[Literal[1, 2] | str]],
-                DictOf,
-                {
-                    "key_type": LiteralOf(values=["x", "y"]),
-                    "value_type": ListOf(
-                        type=Or(types=(LiteralOf(values=[1, 2]), str))
-                    ),
-                },
+                DictOf(LiteralOf("x", "y"), ListOf(type=Or(LiteralOf(1, 2), str))),
             ),
         ],
     )
-    def test_literal_types(
-        self, parser, type_compare, input_type, expected_type, expected_attributes
-    ):
+    def test_literal_types(self, parser, type_compare, input_type, expected_type):
         result = parser.parse_type(input_type)
-        assert isinstance(result, expected_type)
-        expected = expected_type(**expected_attributes)
-        assert type_compare.are_types_equivalent(result, expected)
+        assert isinstance(result, type(expected_type))
+        assert type_compare.are_types_equivalent(result, expected_type)
 
     def test_invalid_literal_values(self, parser):
         with pytest.raises(TypeError):

@@ -13,6 +13,7 @@ from mountaineer.client_builder.parser import (
     ModelWrapper,
     WrapperName,
 )
+from mountaineer.client_builder.types import TypeDefinition
 from mountaineer.controller import ControllerBase
 from mountaineer.exceptions import APIException
 
@@ -36,7 +37,9 @@ def create_model_wrapper(
 
 # Helper function to create field wrappers
 def create_field_wrapper(
-    name: str, type_hint: Type | ModelWrapper | EnumWrapper, required: bool = True
+    name: str,
+    type_hint: type | ModelWrapper | EnumWrapper | TypeDefinition,
+    required: bool = True,
 ) -> FieldWrapper:
     return FieldWrapper(name=name, value=type_hint, required=required)
 
@@ -60,9 +63,9 @@ def create_exception_wrapper(
 
 def create_action_wrapper(
     name: str,
-    params: list[FieldWrapper] = None,
-    response_model: type[BaseModel] = None,
-    request_body: ModelWrapper = None,
+    params: list[FieldWrapper] | None = None,
+    response_model: Type[BaseModel] | None = None,
+    request_body: ModelWrapper | None = None,
     action_type: FunctionActionType = FunctionActionType.PASSTHROUGH,
 ) -> ActionWrapper:
     response_wrapper = (
@@ -87,9 +90,9 @@ def create_action_wrapper(
 
 def create_controller_wrapper(
     name: str,
-    actions: dict[str, ActionWrapper] = None,
-    superclasses: list[ControllerWrapper] = None,
-    entrypoint_url: str = None,
+    actions: dict[str, ActionWrapper] | None = None,
+    superclasses: list[ControllerWrapper] | None = None,
+    entrypoint_url: str | None = None,
 ) -> ControllerWrapper:
     wrapper_name = WrapperName(name)
     return ControllerWrapper(
