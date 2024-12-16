@@ -10,4 +10,4 @@ class TextEncoder {
   }
 }
 
-const SERVER_DATA = {};
+var SERVER_DATA = {};

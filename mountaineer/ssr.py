@@ -71,7 +71,7 @@ def render_ssr(
     polyfill_script = get_static_path("ssr_polyfills.js").read_text()
     data_json = json_dumps(render_data)
 
-    injected_script = f"const SERVER_DATA = {data_json};\n{polyfill_script}\n"
+    injected_script = f"var SERVER_DATA = {data_json};\n{polyfill_script}\n"
     full_script = f"{injected_script}{script}"
 
     try:
