@@ -122,3 +122,21 @@ class APIException(HTTPException, metaclass=InternalModelMeta):
     # versus being statically checked
     def __init__(self, **kwargs: Any):
         super().__init__(**kwargs)
+
+
+class RequestValidationFailure(BaseModel):
+    error_type: str
+    location: list[str]
+    message: str
+    value_input: Any
+
+
+class RequestValidationError(APIException):
+    """
+    Exception to be raised when a Pydantic model or url parameters fails to validate.
+
+    """
+
+    status_code: int = 422
+    detail: str = "Request validation failed"
+    errors: list[RequestValidationFailure]

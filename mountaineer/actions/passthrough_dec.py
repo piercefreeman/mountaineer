@@ -173,7 +173,7 @@ def passthrough(*args, **kwargs):  # type: ignore
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
-            metadata.exception_models = exception_models
+            metadata.exception_models += exception_models or []
             metadata.is_raw_response = raw_response or False
             metadata.media_type = (
                 STREAM_EVENT_TYPE

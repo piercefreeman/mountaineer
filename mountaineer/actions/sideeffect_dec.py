@@ -235,7 +235,7 @@ def sideeffect(*args, **kwargs):  # type: ignore
             metadata = init_function_metadata(inner, FunctionActionType.SIDEEFFECT)
             metadata.reload_states = reload
             metadata.passthrough_model = passthrough_model
-            metadata.exception_models = exception_models
+            metadata.exception_models += exception_models or []
             metadata.media_type = None  # Use the default json response type
 
             inner.original = create_original_fn(func)  # type: ignore

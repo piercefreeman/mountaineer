@@ -206,6 +206,9 @@ class ControllerWrapper(CoreWrapper):
             elif isinstance(item, ExceptionWrapper):
                 exceptions.append(item)
 
+                for field in item.value_models:
+                    yield field.value
+
             elif isinstance(item, TypeDefinition):
                 yield from item.children
 
@@ -668,13 +671,7 @@ class ControllerParser:
                 is_streaming_response=metadata.media_type == STREAM_EVENT_TYPE,
                 exceptions=[
                     self._parse_exception(exception)
-                    for exception in (
-                        (metadata.exception_models or [])
-                        if not isinstance(
-                            metadata.exception_models, MountaineerUnsetValue
-                        )
-                        else []
-                    )
+                    for exception in metadata.exception_models
                 ],
                 action_type=metadata.action_type,
                 controller_to_url=metadata.controller_mounts,
