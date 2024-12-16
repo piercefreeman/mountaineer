@@ -24,7 +24,6 @@ from mountaineer.actions.fields import (
     FunctionMetadata,
     get_function_metadata,
 )
-from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_builder.types import TypeDefinition, TypeParser
 from mountaineer.constants import STREAM_EVENT_TYPE
 from mountaineer.controller import (
