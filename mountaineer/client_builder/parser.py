@@ -64,7 +64,7 @@ class CoreWrapper:
 @dataclass
 class FieldWrapper:
     name: str
-    value: Union[type["ModelWrapper"], type["EnumWrapper"], type]
+    value: Union["ModelWrapper", "EnumWrapper", "TypeDefinition", type]
     required: bool
 
 
@@ -304,8 +304,9 @@ class ControllerParser:
             return self.parsed_controllers[controller]
 
         # Get all valid superclasses in MRO order
-        base_exclude = (RenderBase, ControllerBase, LayoutControllerBase)
-        controller_classes = self._get_valid_mro_classes(controller, base_exclude)
+        controller_classes = self._get_valid_parent_classes(
+            controller, ControllerBase, (ControllerBase, LayoutControllerBase)
+        )
 
         # Get render model from the concrete controller
         render, render_path, render_query, entrypoint_url = self._parse_render(
@@ -315,7 +316,7 @@ class ControllerParser:
 
         # Parse superclasses
         superclass_controllers: list[ControllerWrapper] = []
-        for superclass in controller_classes[1:]:
+        for superclass in controller_classes:
             superclass_controllers.append(self.parse_controller(superclass))
 
         wrapper = ControllerWrapper(
@@ -341,11 +342,13 @@ class ControllerParser:
             return self.parsed_models[model]
 
         # Get all valid superclasses in MRO order, excluding BaseModel and above
-        model_classes = self._get_valid_mro_classes(model, (BaseModel, RenderBase))
+        model_classes = self._get_valid_parent_classes(
+            model, BaseModel, (BaseModel, RenderBase)
+        )
 
         # Parse direct superclasses (excluding the model itself)
         superclasses: list[ModelWrapper] = []
-        for base in model_classes[1:]:  # Skip the first class (model itself)
+        for base in model_classes:
             if base not in self.parsed_models:
                 # Now parse it properly
                 self.parsed_models[base] = self._parse_model(base)
@@ -527,6 +530,10 @@ class ControllerParser:
             # from the query params
             path=f"/{url}",
             endpoint=func,
+            # We don't use the FastAPI's sniffed response model parsing in our pipeline, and
+            # some definitions like server-side streaming AsyncIterables can't be handled
+            # natively by FastAPI
+            response_model=None,
         )
 
         route = next(
@@ -704,17 +711,19 @@ class ControllerParser:
         self.parsed_exceptions[exception] = wrapper
         return wrapper
 
-    def _get_valid_mro_classes(
-        self, cls: type, base_exclude_classes: tuple[type, ...]
+    def _get_valid_parent_classes(
+        self, cls: type, base_require: type, base_exclude_classes: tuple[type, ...]
     ) -> list[type]:
-        """Helper to get valid MRO classes, excluding certain base classes and anything above them"""
-        mro = []
-        for base in cls.__mro__:
-            # Stop when we hit any of the excluded base classes
-            if base in base_exclude_classes:
-                break
-            # Skip object() as well
-            if base is object:
-                continue
-            mro.append(base)
-        return mro
+        """
+        Helper to get valid MRO parents, excluding certain base classes
+
+        """
+        return [
+            base
+            for base in cls.__bases__
+            if (
+                base not in base_exclude_classes
+                and base is not object
+                and issubclass(base, base_require)
+            )
+        ]

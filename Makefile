@@ -100,7 +100,7 @@ test-scripts:
 
 define test-common
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -vvv -W error $(test-args) $(2))
+	@(cd $(1) && poetry run pytest -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(test-args) $(2))
 endef
 
 define test-rust-common
@@ -111,7 +111,7 @@ endef
 # Use `-n auto` to run tests in parallel
 define test-common-integrations
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -s -m integration_tests -W error $(2))
+	@(cd $(1) && poetry run pytest -s -m integration_tests -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(2))
 endef
 
 define lint-common

@@ -45,6 +45,7 @@ tqdm = "^4.66.2"
 toml = "^0.10.2"
 types-toml = "^0.10.8.20240310"
 types-pygments = "^2.18.0.20240506"
+python-multipart = "^0.0.19"
 
 [build-system]
 # Pin for maturin until the latest pypi distribution action supports

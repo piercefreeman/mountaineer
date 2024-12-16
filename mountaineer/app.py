@@ -727,7 +727,7 @@ class AppController:
         <body>
         <div id="root">{ssr_html}</div>
         <script type="text/javascript">
-        const SERVER_DATA = {json_dumps(server_data_json)};
+        var SERVER_DATA = {json_dumps(server_data_json)};
         </script>
         {client_import}
         </body>

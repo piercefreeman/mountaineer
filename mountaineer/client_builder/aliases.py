@@ -131,4 +131,5 @@ class AliasManager:
 
     def _typescript_prefix_from_module(self, module: str):
         module_parts = module.split(".")
+        module_parts = [module.strip("_") for module in module_parts]
         return "".join([camelize(component) for component in module_parts])

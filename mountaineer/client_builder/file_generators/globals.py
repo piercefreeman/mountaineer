@@ -180,9 +180,11 @@ class GlobalLinkGenerator(FileGeneratorBase):
             )
             link_setters[
                 # @pierce: 12-11-2024: Mirror the lowercase camelcase convention of previous versions
-                camelize(
-                    parsed_controller.wrapper.controller.__name__,
-                    uppercase_first_letter=False,
+                TSLiteral(
+                    camelize(
+                        parsed_controller.wrapper.controller.__name__,
+                        uppercase_first_letter=False,
+                    )
                 )
             ] = TSLiteral(local_name)
 
