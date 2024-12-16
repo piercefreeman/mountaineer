@@ -37,10 +37,12 @@ interface FetchParams {
   signal?: AbortSignal;
 }
 
-// Helper function to convert various types to string for URL parameters
 export const convertToUrlString = (
   value: UrlParamValue | UrlParam,
 ): string | undefined => {
+  /*
+   * Helper function to convert various types to string for URL parameters
+   */
   if (value === null || value === undefined) {
     return undefined;
   }
@@ -52,10 +54,12 @@ export const convertToUrlString = (
   return String(value);
 };
 
-// Helper function to process URL parameters
 export const processUrlParams = (
   params: Record<string, UrlParam>,
 ): URLSearchParams => {
+  /*
+   * Helper function to process URL parameters
+   */
   const searchParams = new URLSearchParams();
 
   for (const [key, value] of Object.entries(params)) {
@@ -98,6 +102,13 @@ export const handleOutputFormat = async (
 };
 
 export const __request = async (params: FetchParams) => {
+  /*
+   * Core function that handles all the logic for issuing actions to the server. Interally
+   * this mostly wraps the fetch API, but adds some additional functionality to:
+   * - Automatically handle JSON serialization and deserialization
+   * - Handle dynamic URL parameter conventions
+   * - Parse error responses and serialize them into exceptions
+   */
   let contentType: string | undefined = params.mediaType || "application/json";
   let payloadBody: string | FormData | undefined = undefined;
 
