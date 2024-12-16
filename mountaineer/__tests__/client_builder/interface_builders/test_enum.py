@@ -55,11 +55,11 @@ class TestBasicEnumGeneration:
 
 class TestEnumFormatting:
     def test_export_statement(self):
-        class TestEnum(Enum):
+        class ExampleEnum(Enum):
             A = "a"
             B = "b"
 
-        interface = EnumInterface.from_enum(create_enum_wrapper(TestEnum))
+        interface = EnumInterface.from_enum(create_enum_wrapper(ExampleEnum))
 
         # Test with export
         assert interface.to_js().startswith("export enum")
@@ -70,17 +70,17 @@ class TestEnumFormatting:
         assert "export" not in interface.to_js()
 
     def test_enum_structure(self):
-        class TestEnum(Enum):
+        class ExampleEnum(Enum):
             A = "a"
             B = "b"
             C = "c"
 
-        interface = EnumInterface.from_enum(create_enum_wrapper(TestEnum))
+        interface = EnumInterface.from_enum(create_enum_wrapper(ExampleEnum))
         ts_code = interface.to_js()
 
         assert ts_code.count("{") == 1
         assert ts_code.count("}") == 1
-        assert ts_code.count(",") == len(TestEnum) - 1
+        assert ts_code.count(",") == len(ExampleEnum) - 1
 
     @pytest.mark.parametrize(
         "value, expected",

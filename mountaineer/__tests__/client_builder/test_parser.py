@@ -27,7 +27,7 @@ S = TypeVar("S")
 
 
 # Core test enum
-class TestEnum(Enum):
+class ExampleEnum(Enum):
     A = "a"
     B = "b"
     C = "c"
@@ -37,7 +37,7 @@ class TestEnum(Enum):
 class ExampleModelBase(BaseModel):
     string_field: str
     int_field: int
-    enum_field: TestEnum
+    enum_field: ExampleEnum
 
     @field_validator("string_field")
     def validate_string(cls, v):
@@ -142,7 +142,9 @@ class SpecialTypesController(ControllerBase):
 
     @passthrough
     async def stream_action(self) -> AsyncIterator[ExampleModelBase]:
-        yield ExampleModelBase(string_field="test", int_field=1, enum_field=TestEnum.A)
+        yield ExampleModelBase(
+            string_field="test", int_field=1, enum_field=ExampleEnum.A
+        )
 
 
 # Tests
@@ -163,10 +165,10 @@ class TestControllerParser:
         return parser.parse_controller(ExampleController)
 
     def test_parse_enum(self, parser: ControllerParser):
-        wrapper = parser._parse_enum(TestEnum)
+        wrapper = parser._parse_enum(ExampleEnum)
         assert isinstance(wrapper, EnumWrapper)
-        assert wrapper.enum == TestEnum
-        assert wrapper.name.raw_name == "TestEnum"
+        assert wrapper.enum == ExampleEnum
+        assert wrapper.name.raw_name == "ExampleEnum"
 
     def test_parse_base_model(self, parser: ControllerParser):
         wrapper = parser._parse_model(ExampleModelBase)
