@@ -19,7 +19,8 @@ interface FetchParams {
   method: string;
   url: string;
   path?: Record<string, string | number>;
-  query?: Record<string, string | number>;
+  query?: Record<string, string | number | undefined>;
+  headers?: Record<string, string | number | undefined>;
   errors?: Record<
     number,
     new (statusCode: number, body: any) => FetchErrorBase<any>
@@ -70,15 +71,27 @@ export const __request = async (params: FetchParams) => {
 
   // Fill query parameters
   Object.entries(params.query || {}).forEach(([key, value], i) => {
+    if (value === undefined) {
+      return;
+    }
     filledUrl = `${filledUrl}${i === 0 ? "?" : "&"}${key}=${value}`;
+  });
+
+  // Fill headers
+  const headers = {
+    ...(contentType && { "Content-Type": contentType }),
+  };
+  Object.entries(params.headers || {}).forEach(([key, value]) => {
+    if (value === undefined) {
+      return;
+    }
+    headers[key] = value.toString();
   });
 
   try {
     const response = await fetch(filledUrl, {
       method: params.method,
-      headers: {
-        ...(contentType && { "Content-Type": contentType }),
-      },
+      headers,
       body: payloadBody,
       signal: params.signal,
     });
