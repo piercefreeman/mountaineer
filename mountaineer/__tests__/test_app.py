@@ -15,7 +15,11 @@ from mountaineer.app import AppController, ControllerDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.exceptions import APIException, RequestValidationError
+from mountaineer.exceptions import (
+    APIException,
+    RequestValidationError,
+    RequestValidationFailure,
+)
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -325,6 +329,7 @@ async def test_parse_validation_exception():
     exception = exc_info.value
     assert len(exception.internal_model.errors) == 1  # type: ignore
     error = exception.internal_model.errors[0]  # type: ignore
+    assert isinstance(error, RequestValidationFailure)
 
     # Verify the error is parsed correctly
     assert error.error_type == "int_parsing"
