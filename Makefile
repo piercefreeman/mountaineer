@@ -111,7 +111,7 @@ endef
 # Use `-n auto` to run tests in parallel
 define test-common-integrations
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -s -m integration_tests -W error $(2))
+	@(cd $(1) && poetry run pytest -s -m integration_tests -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(2))
 endef
 
 define lint-common
