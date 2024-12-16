@@ -1,4 +1,4 @@
-import { FetchErrorBase, __getLink, __request, applySideEffect } from "../api";
+import { FetchErrorBase, __getLink, __request, applySideEffect, convertToUrlString, processUrlParams, handleOutputFormat } from "../api";
 
 // Mock fetch globally
 global.fetch = jest.fn();
@@ -10,6 +10,99 @@ describe("FetchErrorBase", () => {
     expect(error.statusCode).toBe(404);
     expect(error.body).toBe("Not Found");
     expect(error.message).toBe("Error 404: Not Found");
+  });
+});
+
+describe("convertToUrlString", () => {
+  it("should convert various types to string", () => {
+    const testCases = [
+      { input: "test", expected: "test" },
+      { input: 123, expected: "123" },
+      { input: true, expected: "true" },
+      { input: new Date("2024-01-01"), expected: "2024-01-01T00:00:00.000Z" },
+      { input: null, expected: undefined },
+      { input: undefined, expected: undefined },
+    ];
+
+    testCases.forEach(({ input, expected }) => {
+      expect(convertToUrlString(input)).toBe(expected);
+    });
+  });
+});
+
+describe("processUrlParams", () => {
+  it("should process single value parameters", () => {
+    const params = {
+      name: "John",
+      age: 30,
+      active: true,
+    };
+
+    const result = processUrlParams(params);
+    expect(result.toString()).toBe("name=John&age=30&active=true");
+  });
+
+  it("should handle array parameters", () => {
+    const params = {
+      tags: ["javascript", "typescript"],
+      ids: [1, 2, 3],
+    };
+
+    const result = processUrlParams(params);
+    expect(result.toString()).toBe("tags=javascript&tags=typescript&ids=1&ids=2&ids=3");
+  });
+
+  it("should skip null and undefined values", () => {
+    const params = {
+      name: "John",
+      age: null,
+      city: undefined,
+      active: true,
+    };
+
+    const result = processUrlParams(params);
+    expect(result.toString()).toBe("name=John&active=true");
+  });
+
+  it("should handle empty objects", () => {
+    const params = {};
+    const result = processUrlParams(params);
+    expect(result.toString()).toBe("");
+  });
+});
+
+describe("handleOutputFormat", () => {
+  it("should handle text format", async () => {
+    const mockResponse = {
+      text: jest.fn().mockResolvedValue("Hello World"),
+    };
+
+    const result = await handleOutputFormat(mockResponse as unknown as Response, "text");
+    expect(result).toBe("Hello World");
+    expect(mockResponse.text).toHaveBeenCalled();
+  });
+
+  it("should handle raw format", async () => {
+    const mockResponse = {
+      text: jest.fn(),
+      json: jest.fn(),
+    };
+
+    const result = await handleOutputFormat(mockResponse as unknown as Response, "raw");
+    expect(result).toBe(mockResponse);
+    expect(mockResponse.text).not.toHaveBeenCalled();
+    expect(mockResponse.json).not.toHaveBeenCalled();
+  });
+
+  it("should handle json format by default", async () => {
+    const mockData = { message: "Hello" };
+    const mockResponse = {
+      json: jest.fn().mockResolvedValue(mockData),
+    };
+
+    const result = await handleOutputFormat(mockResponse as unknown as Response);
+    expect(result).toEqual(mockData);
+    expect(mockResponse.json).toHaveBeenCalled();
   });
 });
 
