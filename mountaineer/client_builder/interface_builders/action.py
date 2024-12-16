@@ -56,6 +56,12 @@ class ActionInterface(InterfaceBase):
                 TSLiteral(f"{param.name}{'?' if not param.required else ''}")
             ] = TSLiteral(cls._get_annotated_value(param.value))
 
+        for header in action.headers:
+            parameters_dict[header.name] = TSLiteral(header.name)
+            typehint_dict[
+                TSLiteral(f"{header.name}{'?' if not header.required else ''}")
+            ] = TSLiteral(cls._get_annotated_value(header.value))
+
         # Add request body if present
         if action.request_body:
             model_name = action.request_body.name.global_name
@@ -63,9 +69,6 @@ class ActionInterface(InterfaceBase):
             typehint_dict[TSLiteral("requestBody")] = TSLiteral(model_name)
 
         # Merge system parameters
-        has_required_nonsystem_parameters = (
-            any([param.required for param in action.params]) if action.params else False
-        )
         parameters_dict.update(system_parameters)
         typehint_dict.update(system_typehints)
 
@@ -85,7 +88,7 @@ class ActionInterface(InterfaceBase):
             name=action.name,
             parameters=python_payload_to_typescript(parameters_dict),
             typehints=python_payload_to_typescript(typehint_dict),
-            default_initializer=not has_required_nonsystem_parameters,
+            default_initializer=not action.has_required_params(),
             response_type=" | ".join(response_types),
             body=["return __request(", CodeBlock.indent(f"  {request_payload}"), ");"],
         )
@@ -98,6 +101,7 @@ class ActionInterface(InterfaceBase):
             "method": "POST",
             "url": url,
             "path": {},
+            "headers": {},
             "query": {},
             "errors": {},
             "signal": TSLiteral("signal"),
@@ -106,6 +110,10 @@ class ActionInterface(InterfaceBase):
         for param in action.params:
             if param.name in parameters:
                 payload["query"][param.name] = TSLiteral(param.name)
+
+        for header in action.headers:
+            if header.name in parameters:
+                payload["headers"][header.name] = TSLiteral(header.name)
 
         if action.request_body:
             payload["body"] = TSLiteral("requestBody")
@@ -125,11 +133,13 @@ class ActionInterface(InterfaceBase):
 
         # Clean up empty dicts. These are optional in the request API interface and
         # clean up the generated code
-        for key in ["path", "query", "errors"]:
+        for key in ["path", "headers", "query", "errors"]:
             if not payload[key]:
                 del payload[key]
 
-        return python_payload_to_typescript(payload)
+        return python_payload_to_typescript(
+            {TSLiteral(key): value for key, value in payload.items()}
+        )
 
     @classmethod
     def _get_response_type(

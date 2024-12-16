@@ -3,6 +3,11 @@
  * to each component project during schema generation.
  */
 
+// Type for values that can be converted to strings for URL parameters
+export type UrlParamValue = string | number | boolean | Date | null | undefined;
+export type UrlParamArray = Array<string | number | boolean | Date>;
+export type UrlParam = UrlParamValue | UrlParamArray;
+
 export class FetchErrorBase<T> extends Error {
   statusCode: number;
   body: T;
@@ -18,8 +23,9 @@ export class FetchErrorBase<T> extends Error {
 interface FetchParams {
   method: string;
   url: string;
-  path?: Record<string, string | number>;
-  query?: Record<string, string | number>;
+  path?: Record<string, UrlParamValue>;
+  query?: Record<string, UrlParam>;
+  headers?: Record<string, UrlParam>;
   errors?: Record<
     number,
     new (statusCode: number, body: any) => FetchErrorBase<any>
@@ -31,7 +37,60 @@ interface FetchParams {
   signal?: AbortSignal;
 }
 
-const handleOutputFormat = async (response: Response, format?: string) => {
+export const convertToUrlString = (
+  value: UrlParamValue | UrlParam,
+): string | undefined => {
+  /*
+   * Helper function to convert various types to string for URL parameters
+   */
+  if (value === null || value === undefined) {
+    return undefined;
+  }
+
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  return String(value);
+};
+
+export const processUrlParams = (
+  params: Record<string, UrlParam>,
+): URLSearchParams => {
+  /*
+   * Helper function to process URL parameters
+   */
+  const searchParams = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === null || value === undefined) {
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      // Handle array values
+      value.forEach((item) => {
+        const strValue = convertToUrlString(item);
+        if (strValue !== undefined) {
+          searchParams.append(key, strValue);
+        }
+      });
+    } else {
+      // Handle single values
+      const strValue = convertToUrlString(value);
+      if (strValue !== undefined) {
+        searchParams.append(key, strValue);
+      }
+    }
+  }
+
+  return searchParams;
+};
+
+export const handleOutputFormat = async (
+  response: Response,
+  format?: string,
+) => {
   if (format === "text") {
     return await response.text();
   } else if (format == "raw") {
@@ -43,6 +102,13 @@ const handleOutputFormat = async (response: Response, format?: string) => {
 };
 
 export const __request = async (params: FetchParams) => {
+  /*
+   * Core function that handles all the logic for issuing actions to the server. Interally
+   * this mostly wraps the fetch API, but adds some additional functionality to:
+   * - Automatically handle JSON serialization and deserialization
+   * - Handle dynamic URL parameter conventions
+   * - Parse error responses and serialize them into exceptions
+   */
   let contentType: string | undefined = params.mediaType || "application/json";
   let payloadBody: string | FormData | undefined = undefined;
 
@@ -61,24 +127,45 @@ export const __request = async (params: FetchParams) => {
     }
   }
 
-  let filledUrl = params.url;
+  // Process URL and path parameters
+  let url = new URL(params.url);
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.path || {})) {
-    filledUrl = filledUrl.replace(`{${key}}`, value.toString());
+    const strValue = convertToUrlString(value);
+    if (strValue === undefined) {
+      throw new Error(`Missing required path parameter ${key}`);
+    }
+    url.pathname = decodeURIComponent(url.pathname).replace(
+      `{${key}}`,
+      strValue,
+    );
   }
 
-  // Fill query parameters
-  Object.entries(params.query || {}).forEach(([key, value], i) => {
-    filledUrl = `${filledUrl}${i === 0 ? "?" : "&"}${key}=${value}`;
-  });
+  // Process and append query parameters
+  if (params.query) {
+    const searchParams = processUrlParams(params.query);
+    url.search = searchParams.toString();
+  }
+
+  // Fill headers
+  const headers: Record<string, string> = {
+    ...(contentType && { "Content-Type": contentType }),
+  };
+
+  if (params.headers) {
+    for (const [key, value] of Object.entries(params.headers)) {
+      const strValue = convertToUrlString(value);
+      if (strValue !== undefined) {
+        headers[key] = strValue;
+      }
+    }
+  }
 
   try {
-    const response = await fetch(filledUrl, {
+    const response = await fetch(url.toString(), {
       method: params.method,
-      headers: {
-        ...(contentType && { "Content-Type": contentType }),
-      },
+      headers,
       body: payloadBody,
       signal: params.signal,
     });
@@ -200,43 +287,31 @@ export function applySideEffect<
 
 interface GetLinkParams {
   rawUrl: string;
-  queryParameters: Record<string, string>;
-  pathParameters: Record<string, string>;
+  queryParameters: Record<string, UrlParam>;
+  pathParameters: Record<string, UrlParamValue>;
 }
 
 export const __getLink = (params: GetLinkParams) => {
-  // Format the query parameters in raw JS, since our SSR environment doesn't  have
-  // access to the URLSearchParams API.
-  const parsedParams = Object.entries(params.queryParameters).reduce(
-    (acc, [key, value]) => {
-      if (value === undefined) {
-        return acc;
-      }
+  // Format the URL using the standard URL API
+  const url = new URL(params.rawUrl);
 
-      // If we've been given an array, we want separate key-value pairs for each element
-      if (Array.isArray(value)) {
-        for (const element of value) {
-          acc.push(`${key}=${element}`);
-        }
-      } else {
-        acc.push(`${key}=${value}`);
-      }
-      return acc;
-    },
-    [] as string[],
-  );
-  const paramString = parsedParams.join("&");
-
-  // Now fill in the path parameters
-  let url = params.rawUrl;
+  // Fill path parameters
   for (const [key, value] of Object.entries(params.pathParameters)) {
-    if (value === undefined) {
+    const strValue = convertToUrlString(value);
+    if (strValue === undefined) {
       throw new Error(`Missing required path parameter ${key}`);
     }
-    url = url.replace(`{${key}}`, value);
+    url.pathname = decodeURIComponent(url.pathname).replace(
+      `{${key}}`,
+      strValue,
+    );
   }
-  if (paramString) {
-    url = `${url}?${paramString}`;
+
+  // Process query parameters
+  if (params.queryParameters) {
+    const searchParams = processUrlParams(params.queryParameters);
+    url.search = searchParams.toString();
   }
-  return url;
+
+  return decodeURIComponent(url.toString());
 };

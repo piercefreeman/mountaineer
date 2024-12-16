@@ -4,16 +4,22 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from fastapi import APIRouter, FastAPI, status
+from fastapi import APIRouter, FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
 from fastapi.responses import RedirectResponse
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from pydantic import BaseModel, ValidationError
 
 from mountaineer.app import AppController, ControllerDefinition
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.exceptions import APIException
+from mountaineer.exceptions import (
+    APIException,
+    RequestValidationError,
+    RequestValidationFailure,
+)
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -285,3 +291,48 @@ def test_explicit_response_metadata():
         response = client.get("/redirect", follow_redirects=False)
         assert response.status_code == status.HTTP_307_TEMPORARY_REDIRECT
         assert response.headers["location"] == "/"
+
+
+@pytest.mark.asyncio
+async def test_parse_validation_exception():
+    """
+    Test that FastAPI validation errors are correctly parsed into our RequestValidationError format.
+    """
+
+    class TestModel(BaseModel):
+        age: int
+
+    app_controller = AppController(view_root=Path(""))
+
+    # Create a test request with invalid data
+    request = Request(
+        scope={
+            "type": "http",
+            "method": "POST",
+            "path": "/",
+            "headers": [],
+        }
+    )
+
+    # Create a validation error by trying to validate invalid data
+    raw_error: RequestValidationErrorRaw | None = None
+    try:
+        TestModel.model_validate({"age": "not_a_number"})
+    except ValidationError as e:
+        raw_error = RequestValidationErrorRaw(errors=e.errors())
+
+    # Test the parsing
+    assert raw_error
+    with pytest.raises(RequestValidationError) as exc_info:
+        await app_controller._parse_validation_exception(request, raw_error)
+
+    exception = exc_info.value
+    assert len(exception.internal_model.errors) == 1  # type: ignore
+    error = exception.internal_model.errors[0]  # type: ignore
+    assert isinstance(error, RequestValidationFailure)
+
+    # Verify the error is parsed correctly
+    assert error.error_type == "int_parsing"
+    assert error.location == ["age"]
+    assert "input should be a valid integer" in error.message.lower()
+    assert error.value_input == "not_a_number"

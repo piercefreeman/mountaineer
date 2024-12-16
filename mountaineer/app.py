@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional, Type, cast, overload
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.routing import APIRoute
@@ -31,7 +32,11 @@ from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.exceptions import APIException
+from mountaineer.exceptions import (
+    APIException,
+    RequestValidationError,
+    RequestValidationFailure,
+)
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
@@ -214,6 +219,9 @@ class AppController:
             name="static",
         )
 
+        self.app.exception_handler(RequestValidationErrorRaw)(
+            self._parse_validation_exception
+        )
         self.app.exception_handler(APIException)(self._handle_exception)
 
         self.app.openapi = self.generate_openapi  # type: ignore
@@ -824,6 +832,21 @@ class AppController:
         return JSONResponse(
             status_code=exc.status_code,
             content=exc.internal_model.model_dump(),
+        )
+
+    async def _parse_validation_exception(
+        self, request: Request, exc: RequestValidationErrorRaw
+    ):
+        raise RequestValidationError(
+            errors=[
+                RequestValidationFailure(
+                    error_type=error["type"],
+                    location=error["loc"],
+                    message=error["msg"],
+                    value_input=error["input"],
+                )
+                for error in exc.errors()
+            ]
         )
 
     def merge_render_signatures(

@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field, create_model
 from pydantic.fields import FieldInfo
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.exceptions import APIException
+from mountaineer.exceptions import APIException, RequestValidationError
 from mountaineer.render import FieldClassDefinition, Metadata, RenderBase, RenderNull
 
 if sys.version_info >= (3, 11):
@@ -112,9 +112,7 @@ class FunctionMetadata(BaseModel):
     passthrough_model: Type[
         BaseModel
     ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
-    exception_models: list[
-        Type[APIException]
-    ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    exception_models: list[Type[APIException]] = [RequestValidationError]
     media_type: str | None | MountaineerUnsetValue = MountaineerUnsetValue()
     is_raw_response: bool = False
 

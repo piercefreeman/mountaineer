@@ -7,19 +7,31 @@ import pytest
 from fastapi import File, Form, UploadFile
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from mountaineer.__tests__.client_builder.interface_builders.common import (
+    create_field_wrapper,
+    create_model_wrapper,
+)
 from mountaineer.actions.fields import FunctionActionType
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.app import AppController
 from mountaineer.client_builder.parser import (
+    ActionWrapper,
     ControllerParser,
     ControllerWrapper,
     EnumWrapper,
+    FieldWrapper,
     ModelWrapper,
 )
 from mountaineer.client_builder.types import ListOf
 from mountaineer.controller import ControllerBase
 from mountaineer.render import RenderBase
+
+
+# Create a simple response model for testing
+class StandardResponse(BaseModel):
+    message: str
+
 
 # Type variables for generic tests
 T = TypeVar("T")
@@ -512,3 +524,98 @@ class TestIsolatedModelCreation:
 
         # Should have no fields since child defines none directly
         assert not isolated.model_fields
+
+
+class TestActionWrapper:
+    @pytest.fixture
+    def parser(self):
+        parser = ControllerParser()
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ExampleController())
+        return parser
+
+    @pytest.mark.parametrize(
+        "params, headers, request_body, expected_has_required",
+        [
+            # Base cases - no headers or request body
+            ([], [], None, False),
+            ([create_field_wrapper("optional_param", str, False)], [], None, False),
+            ([create_field_wrapper("required_param", str, True)], [], None, True),
+            # Headers only
+            ([], [create_field_wrapper("optional_header", str, False)], None, False),
+            ([], [create_field_wrapper("required_header", str, True)], None, True),
+            (
+                [],
+                [
+                    create_field_wrapper("required_header", str, True),
+                    create_field_wrapper("optional_header", str, False),
+                ],
+                None,
+                True,
+            ),
+            # Request body only
+            (
+                [],
+                [],
+                create_model_wrapper(ExampleModelBase, "ExampleModelBase"),
+                True,  # Request body is always required
+            ),
+            # Combination of params, headers, and request body
+            (
+                [create_field_wrapper("optional_param", str, False)],
+                [create_field_wrapper("optional_header", str, False)],
+                None,
+                False,
+            ),
+            (
+                [create_field_wrapper("required_param", str, True)],
+                [create_field_wrapper("optional_header", str, False)],
+                None,
+                True,
+            ),
+            (
+                [create_field_wrapper("optional_param", str, False)],
+                [create_field_wrapper("required_header", str, True)],
+                None,
+                True,
+            ),
+            (
+                [create_field_wrapper("optional_param", str, False)],
+                [create_field_wrapper("optional_header", str, False)],
+                create_model_wrapper(ExampleModelBase, "ExampleModelBase"),
+                True,  # Request body makes it required
+            ),
+            (
+                [create_field_wrapper("required_param", str, True)],
+                [create_field_wrapper("required_header", str, True)],
+                create_model_wrapper(ExampleModelBase, "ExampleModelBase"),
+                True,
+            ),
+        ],
+    )
+    def test_has_required_params(
+        self,
+        params: list[FieldWrapper],
+        headers: list[FieldWrapper],
+        request_body: Optional[ModelWrapper],
+        expected_has_required: bool,
+    ):
+        action = ActionWrapper(
+            name="test_action",
+            module_name="test_module",
+            action_type=FunctionActionType.PASSTHROUGH,
+            params=params,
+            headers=headers,
+            request_body=request_body,
+            response_bodies={
+                ControllerBase: create_model_wrapper(
+                    StandardResponse, "StandardResponse"
+                )
+            },
+            exceptions=[],
+            is_raw_response=False,
+            is_streaming_response=False,
+            controller_to_url={ControllerBase: "/api/test"},
+        )
+
+        assert action.has_required_params() == expected_has_required

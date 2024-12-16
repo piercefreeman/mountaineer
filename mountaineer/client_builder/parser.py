@@ -24,7 +24,6 @@ from mountaineer.actions.fields import (
     FunctionMetadata,
     get_function_metadata,
 )
-from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_builder.types import TypeDefinition, TypeParser
 from mountaineer.constants import STREAM_EVENT_TYPE
 from mountaineer.controller import (
@@ -107,6 +106,17 @@ class ActionWrapper:
     # Actions can be mounted to multiple controllers through inheritance
     # This will store a mapping of each controller to the url that the action is mounted to
     controller_to_url: dict[Type[ControllerBase], str]
+
+    def has_required_params(self):
+        return (
+            (any([param.required for param in self.params]) if self.params else False)
+            or (
+                any([header.required for header in self.headers])
+                if self.headers
+                else False
+            )
+            or self.request_body is not None
+        )
 
 
 @dataclass
@@ -205,6 +215,9 @@ class ControllerWrapper(CoreWrapper):
 
             elif isinstance(item, ExceptionWrapper):
                 exceptions.append(item)
+
+                for field in item.value_models:
+                    yield field.value
 
             elif isinstance(item, TypeDefinition):
                 yield from item.children
@@ -668,13 +681,7 @@ class ControllerParser:
                 is_streaming_response=metadata.media_type == STREAM_EVENT_TYPE,
                 exceptions=[
                     self._parse_exception(exception)
-                    for exception in (
-                        (metadata.exception_models or [])
-                        if not isinstance(
-                            metadata.exception_models, MountaineerUnsetValue
-                        )
-                        else []
-                    )
+                    for exception in metadata.exception_models
                 ],
                 action_type=metadata.action_type,
                 controller_to_url=metadata.controller_mounts,
