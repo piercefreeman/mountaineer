@@ -128,7 +128,7 @@ export const __request = async (params: FetchParams) => {
   }
 
   // Process URL and path parameters
-  let url = new URL(params.url);
+  let url = new URL(params.url, window.location.href);
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.path || {})) {
@@ -293,7 +293,7 @@ interface GetLinkParams {
 
 export const __getLink = (params: GetLinkParams) => {
   // Format the URL using the standard URL API
-  const url = new URL(params.rawUrl);
+  const url = new URL(params.rawUrl, window.location.href);
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.pathParameters)) {
