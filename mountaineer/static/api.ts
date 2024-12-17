@@ -56,11 +56,11 @@ export const convertToUrlString = (
 
 export const processUrlParams = (
   params: Record<string, UrlParam>,
-): URLSearchParams => {
+): ServerURLSearchParams => {
   /*
    * Helper function to process URL parameters
    */
-  const searchParams = new URLSearchParams();
+  const searchParams = new ServerURLSearchParams();
 
   for (const [key, value] of Object.entries(params)) {
     if (value === null || value === undefined) {
@@ -128,7 +128,7 @@ export const __request = async (params: FetchParams) => {
   }
 
   // Process URL and path parameters
-  let url = new URL(params.url, window.location.href);
+  let url = new ServerURL(params.url);
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.path || {})) {
@@ -293,7 +293,7 @@ interface GetLinkParams {
 
 export const __getLink = (params: GetLinkParams) => {
   // Format the URL using the standard URL API
-  const url = new URL(params.rawUrl, window.location.href);
+  const url = new ServerURL(params.rawUrl);
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.pathParameters)) {
@@ -315,3 +315,129 @@ export const __getLink = (params: GetLinkParams) => {
 
   return decodeURIComponent(url.toString());
 };
+
+export class ServerURL {
+  private _protocol: string = "";
+  private _host: string = "";
+  private _pathname: string = "";
+  private _search: string = "";
+
+  constructor(url: string, base?: string) {
+    // Handle absolute URLs (those starting with a protocol)
+    if (url.match(/^[a-zA-Z]+:\/\//)) {
+      const [protocol, rest] = url.split("://");
+      const [host, ...pathParts] = rest.split("/");
+      this._protocol = protocol;
+      this._host = host;
+      this._pathname = "/" + pathParts.join("/");
+      return;
+    }
+
+    // Split URL into pathname and search parts
+    const [pathname, search] = url.split("?");
+    
+    // Handle base path
+    if (base && !pathname.startsWith("/")) {
+      const baseDir = base.endsWith("/") ? base : base + "/";
+      this._pathname = this.normalizePath(baseDir + pathname);
+    } else {
+      this._pathname = this.normalizePath(pathname);
+    }
+
+    this._search = search ? `?${search}` : "";
+  }
+
+  private normalizePath(path: string): string {
+    // Ensure path starts with /
+    if (!path.startsWith("/")) {
+      path = "/" + path;
+    }
+
+    // Split into segments and normalize
+    const segments = path.split("/");
+    const normalized: string[] = [];
+
+    for (const segment of segments) {
+      if (!segment || segment === ".") continue;
+      if (segment === "..") {
+        normalized.pop();
+      } else {
+        normalized.push(segment);
+      }
+    }
+
+    return "/" + normalized.join("/");
+  }
+
+  get pathname(): string {
+    return this._pathname;
+  }
+
+  set pathname(value: string) {
+    this._pathname = this.normalizePath(value);
+  }
+
+  get search(): string {
+    return this._search;
+  }
+
+  set search(value: string) {
+    this._search = value ? (value.startsWith("?") ? value : `?${value}`) : "";
+  }
+
+  toString(): string {
+    if (this._protocol && this._host) {
+      return `${this._protocol}://${this._host}${this._pathname}${this._search}`;
+    }
+    return `${this._pathname}${this._search}`;
+  }
+}
+
+export class ServerURLSearchParams {
+  private params: Map<string, string[]>;
+
+  constructor(init?: string | Record<string, string | string[]>) {
+    this.params = new Map();
+
+    if (!init) return;
+
+    if (typeof init === "string") {
+      // Handle string initialization
+      const query = init.startsWith("?") ? init.slice(1) : init;
+      for (const pair of query.split("&")) {
+        if (!pair) continue;
+        const [key, value] = pair.split("=").map(decodeURIComponent);
+        this.append(key, value ?? "");
+      }
+    } else {
+      // Handle object initialization
+      for (const [key, value] of Object.entries(init)) {
+        if (Array.isArray(value)) {
+          for (const v of value) {
+            this.append(key, v);
+          }
+        } else {
+          this.append(key, value);
+        }
+      }
+    }
+  }
+
+  append(key: string, value: string): void {
+    const values = this.params.get(key) || [];
+    values.push(String(value));
+    this.params.set(key, values);
+  }
+
+  toString(): string {
+    const pairs: string[] = [];
+    for (const [key, values] of this.params) {
+      for (const value of values) {
+        pairs.push(
+          `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
+        );
+      }
+    }
+    return pairs.join("&");
+  }
+}
