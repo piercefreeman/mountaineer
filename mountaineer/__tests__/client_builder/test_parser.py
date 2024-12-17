@@ -116,13 +116,13 @@ class RenderResponse(RenderBase):
 
 
 # Controller hierarchy
-class BaseExampleController(ControllerBase):
+class BaseExampleController:
     @passthrough
     def base_action(self) -> ControllerResponse:  # type: ignore
         pass
 
 
-class ExampleController(BaseExampleController):
+class ExampleController(ControllerBase, BaseExampleController):
     url = "/test/{path_param}"
     view_path = "/test.tsx"
 

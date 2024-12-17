@@ -316,9 +316,15 @@ class ControllerParser:
         if controller in self.parsed_controllers:
             return self.parsed_controllers[controller]
 
-        # Get all valid superclasses in MRO order
+        # Get all valid superclasses in MRO order. Include any controller that is either explicitly a subclass
+        # of ControllerBase or has client functions defined on it.
         controller_classes = self._get_valid_parent_classes(
-            controller, ControllerBase, (ControllerBase, LayoutControllerBase)
+            controller,
+            base_require_predicate=lambda base: (
+                issubclass(base, ControllerBase)
+                or len(list(get_client_functions_cls(base))) > 0
+            ),
+            base_exclude_classes=(ControllerBase, LayoutControllerBase),
         )
 
         # Get render model from the concrete controller
@@ -356,7 +362,7 @@ class ControllerParser:
 
         # Get all valid superclasses in MRO order, excluding BaseModel and above
         model_classes = self._get_valid_parent_classes(
-            model, BaseModel, (BaseModel, RenderBase)
+            model, base_require=BaseModel, base_exclude_classes=(BaseModel, RenderBase)
         )
 
         # Parse direct superclasses (excluding the model itself)
@@ -656,9 +662,7 @@ class ControllerParser:
             for controller, model in metadata.return_models.items()
         }
 
-    def _parse_actions(
-        self, controller: Type[ControllerBase]
-    ) -> dict[str, ActionWrapper]:
+    def _parse_actions(self, controller: type) -> dict[str, ActionWrapper]:
         """Parse all actions in a controller"""
         actions: dict[str, ActionWrapper] = {}
 
@@ -719,7 +723,12 @@ class ControllerParser:
         return wrapper
 
     def _get_valid_parent_classes(
-        self, cls: type, base_require: type, base_exclude_classes: tuple[type, ...]
+        self,
+        cls: type,
+        *,
+        base_require: type | None = None,
+        base_require_predicate: Callable[[type], bool] | None = None,
+        base_exclude_classes: tuple[type, ...],
     ) -> list[type]:
         """
         Helper to get valid MRO parents, excluding certain base classes
@@ -731,6 +740,7 @@ class ControllerParser:
             if (
                 base not in base_exclude_classes
                 and base is not object
-                and issubclass(base, base_require)
+                and (not base_require or issubclass(base, base_require))
+                and (not base_require_predicate or base_require_predicate(base))
             )
         ]
