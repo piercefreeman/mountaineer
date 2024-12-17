@@ -1,4 +1,14 @@
-import { FetchErrorBase, __getLink, __request, applySideEffect, convertToUrlString, processUrlParams, handleOutputFormat } from "../api";
+import {
+  __getLink,
+  __request,
+  applySideEffect,
+  convertToUrlString,
+  FetchErrorBase,
+  handleOutputFormat,
+  processUrlParams,
+  ServerURLSearchParams,
+  ServerURL,
+} from "../api";
 
 // Mock fetch globally
 global.fetch = jest.fn();
@@ -49,7 +59,9 @@ describe("processUrlParams", () => {
     };
 
     const result = processUrlParams(params);
-    expect(result.toString()).toBe("tags=javascript&tags=typescript&ids=1&ids=2&ids=3");
+    expect(result.toString()).toBe(
+      "tags=javascript&tags=typescript&ids=1&ids=2&ids=3",
+    );
   });
 
   it("should skip null and undefined values", () => {
@@ -77,7 +89,10 @@ describe("handleOutputFormat", () => {
       text: jest.fn().mockResolvedValue("Hello World"),
     };
 
-    const result = await handleOutputFormat(mockResponse as unknown as Response, "text");
+    const result = await handleOutputFormat(
+      mockResponse as unknown as Response,
+      "text",
+    );
     expect(result).toBe("Hello World");
     expect(mockResponse.text).toHaveBeenCalled();
   });
@@ -88,7 +103,10 @@ describe("handleOutputFormat", () => {
       json: jest.fn(),
     };
 
-    const result = await handleOutputFormat(mockResponse as unknown as Response, "raw");
+    const result = await handleOutputFormat(
+      mockResponse as unknown as Response,
+      "raw",
+    );
     expect(result).toBe(mockResponse);
     expect(mockResponse.text).not.toHaveBeenCalled();
     expect(mockResponse.json).not.toHaveBeenCalled();
@@ -100,7 +118,9 @@ describe("handleOutputFormat", () => {
       json: jest.fn().mockResolvedValue(mockData),
     };
 
-    const result = await handleOutputFormat(mockResponse as unknown as Response);
+    const result = await handleOutputFormat(
+      mockResponse as unknown as Response,
+    );
     expect(result).toEqual(mockData);
     expect(mockResponse.json).toHaveBeenCalled();
   });
@@ -317,20 +337,6 @@ describe("__getLink", () => {
     );
   });
 
-  /*it("should handle array query parameters", () => {
-    const url = __getLink({
-      rawUrl: "https://api.example.com/search",
-      pathParameters: {},
-      queryParameters: {
-        tags: ["javascript", "typescript"],
-      },
-    });
-
-    expect(url).toBe(
-      "https://api.example.com/search?tags=javascript&tags=typescript",
-    );
-  });*/
-
   it("should ignore undefined query parameters", () => {
     const url = __getLink({
       rawUrl: "https://api.example.com/users",
@@ -342,5 +348,90 @@ describe("__getLink", () => {
     });
 
     expect(url).toBe("https://api.example.com/users?name=John");
+  });
+});
+
+describe("ServerURL", () => {
+  describe("path handling", () => {
+    const pathTests = [
+      ["simple path", "foo/bar", undefined, "/foo/bar"],
+      ["absolute path", "/foo/bar", undefined, "/foo/bar"],
+      ["with base", "foo/bar", "/base/", "/base/foo/bar"],
+      ["with base no slash", "foo/bar", "/base", "/base/foo/bar"],
+      ["absolute with base", "/foo/bar", "/base/", "/foo/bar"],
+      ["with dots", "../foo/bar", "/base/path/", "/base/foo/bar"],
+      ["empty path", "", undefined, "/"],
+    ];
+
+    it.each(pathTests)("%s", (_, path, base, expected) => {
+      const url = new ServerURL(path, base);
+      expect(url.pathname).toBe(expected);
+    });
+  });
+
+  describe("search params", () => {
+    it("should handle search parameters", () => {
+      const url = new ServerURL("foo/bar?a=1&b=2");
+      expect(url.pathname).toBe("/foo/bar");
+      expect(url.search).toBe("?a=1&b=2");
+    });
+
+    it("should allow setting search", () => {
+      const url = new ServerURL("foo/bar");
+      url.search = "a=1&b=2";
+      expect(url.search).toBe("?a=1&b=2");
+    });
+  });
+
+  describe("pathname setter", () => {
+    it("should normalize paths", () => {
+      const url = new ServerURL("/foo/bar");
+      url.pathname = "baz/qux";
+      expect(url.pathname).toBe("/baz/qux");
+    });
+  });
+
+  describe("toString", () => {
+    it("should combine pathname and search", () => {
+      const url = new ServerURL("foo/bar?a=1");
+      expect(url.toString()).toBe("/foo/bar?a=1");
+    });
+  });
+});
+
+describe("ServerURLSearchParams", () => {
+  describe("constructor", () => {
+    it("should handle string input", () => {
+      const params = new ServerURLSearchParams("a=1&b=2");
+      expect(params.toString()).toBe("a=1&b=2");
+    });
+
+    it("should handle object input", () => {
+      const params = new ServerURLSearchParams({ a: "1", b: "2" });
+      expect(params.toString()).toBe("a=1&b=2");
+    });
+
+    it("should handle array values", () => {
+      const params = new ServerURLSearchParams({ a: ["1", "2"], b: "3" });
+      expect(params.toString()).toBe("a=1&a=2&b=3");
+    });
+  });
+
+  describe("append", () => {
+    it("should append values", () => {
+      const params = new ServerURLSearchParams();
+      params.append("a", "1");
+      params.append("a", "2");
+      expect(params.toString()).toBe("a=1&a=2");
+    });
+  });
+
+  describe("toString", () => {
+    it("should encode special characters", () => {
+      const params = new ServerURLSearchParams();
+      params.append("a", "hello world");
+      params.append("b", "1+2=3");
+      expect(params.toString()).toBe("a=hello%20world&b=1%2B2%3D3");
+    });
   });
 });
