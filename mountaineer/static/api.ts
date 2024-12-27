@@ -335,7 +335,7 @@ export class ServerURL {
 
     // Split URL into pathname and search parts
     const [pathname, search] = url.split("?");
-    
+
     // Handle base path
     if (base && !pathname.startsWith("/")) {
       const baseDir = base.endsWith("/") ? base : base + "/";
@@ -433,9 +433,7 @@ export class ServerURLSearchParams {
     const pairs: string[] = [];
     for (const [key, values] of this.params) {
       for (const value of values) {
-        pairs.push(
-          `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-        );
+        pairs.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
       }
     }
     return pairs.join("&");
