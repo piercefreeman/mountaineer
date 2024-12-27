@@ -65,6 +65,10 @@ def update_version_python(new_version: str):
 
     filedata["tool"]["poetry"]["version"] = python_version
 
+    # Also update project.version if it exists
+    if "project" in filedata and "version" in filedata["project"]:
+        filedata["project"]["version"] = python_version
+
     pyproject_path.write_text(toml.dumps(filedata))
 
 

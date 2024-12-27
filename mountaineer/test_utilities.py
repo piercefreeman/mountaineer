@@ -8,11 +8,7 @@ from time import monotonic_ns
 from typing import Any
 
 import pytest
-from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
-from sqlalchemy.ext.asyncio import AsyncEngine
 
-from mountaineer.database import SQLModel
 from mountaineer.logging import LOGGER
 
 
@@ -157,39 +153,3 @@ def benchmark_function(
         return wrapper
 
     return wrapper_fn
-
-
-async def bootstrap_database(engine: AsyncEngine):
-    # Test if we can connect to the database, if not throw an early error since
-    # the user likely hasn't booted up the test database
-    try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
-    except (DBAPIError, OSError) as e:
-        # Handle specific database connection errors or raise a custom exception
-        raise RuntimeError(
-            "Failed to connect to the test database. Please ensure the database is running and accessible."
-        ) from e
-
-    # We do this at the beginning (instead of auto-cleaning at the end) to make sure
-    # that interrupted runs aren't polluting our database state for a new run, and to
-    # allow us to inspect failed tests after they're run
-    LOGGER.info("Cleaning up test tables")
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.drop_all)
-
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
-
-        # Log the tables that were created
-        result = await conn.execute(
-            text(
-                """
-            SELECT table_name
-            FROM information_schema.tables
-            WHERE table_schema = 'public'
-        """
-            )
-        )
-        tables = "\n".join([f"* {table[0]}" for table in result.fetchall()])
-        LOGGER.info(f"Created tables:\n{tables}")
