@@ -42,10 +42,11 @@ readme = "README.md"
 
 dependencies = [
     {% if mountaineer_dev_path %}
-    "mountaineer @ file://{{ mountaineer_dev_path }}"
+    "mountaineer @ file://{{ mountaineer_dev_path }}",
     {% else %}
-    "mountaineer=={{ mountaineer_min_version }}"
+    "mountaineer=={{ mountaineer_min_version }}",
     {% endif %}
+    "iceaxe"
 ]
 
 [build-system]

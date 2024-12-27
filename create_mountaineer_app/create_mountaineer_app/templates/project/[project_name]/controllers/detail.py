@@ -2,8 +2,8 @@
 from uuid import UUID
 
 from mountaineer import Metadata, RenderBase, ControllerBase, APIException, sideeffect
-from mountaineer.database import DatabaseDependencies
-from mountaineer.database.session import AsyncSession
+from mountaineer.mountaineer import DatabaseDependencies
+from mountaineer import DBConnection
 
 from fastapi import Request, Depends
 from fastapi.exceptions import HTTPException
@@ -35,7 +35,7 @@ class DetailController(ControllerBase):
     async def render(
         self,
         detail_id: int,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> DetailRender:
         detail_item = await session.get(models.DetailItem, detail_id)
         if not detail_item:
@@ -52,12 +52,12 @@ class DetailController(ControllerBase):
         self,
         detail_id: int,
         payload: UpdateTextRequest,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> None:
         detail_item = await session.get(models.DetailItem, detail_id)
         if not detail_item:
             raise NotFoundException()
 
         detail_item.description = payload.description
-        await session.commit()
+        await session.update([detail_item])
 {% endif %}

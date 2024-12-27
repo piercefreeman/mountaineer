@@ -100,15 +100,15 @@ Below we go through some of the unique aspects of Mountaineer. Let's create a si
 
 For the purposes of this walkthrough we assume your project is generated with `create-mountaineer-app` and you've skipped MVC stub files. If not, you'll have to delete some of the pre-existing files.
 
-Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [SQLModel](https://github.com/tiangolo/sqlmodel).
+Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [iceaxe](https://github.com/piercefreeman/iceaxe). Mountaineer doesn't require any specific database ORM to work, but we have built Iceaxe to have tight integration with Mountaineer.
 
 ```python
 # my_webapp/models/todo.py
 
-from mountaineer.database import SQLModel, Field
+from iceaxe import TableBase, Field
 from uuid import UUID, uuid4
 
-class TodoItem(SQLModel, table=True):
+class TodoItem(TableBase):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
     description: str
@@ -137,11 +137,11 @@ Great! At this point we have our database tables created and have a basic server
 # my_webapp/controllers/home.py
 
 from mountaineer import sideeffect, ControllerBase, RenderBase
-from mountaineer.database import DatabaseDependencies
+
+from iceaxe.mountaineer import DatabaseDependencies
+from iceaxe import DBConnection, select
 
 from fastapi import Request, Depends
-from mountaineer.database.session import AsyncSession
-from sqlmodel import select
 
 from my_webapp.models.todo import TodoItem
 
@@ -156,9 +156,9 @@ class HomeController(ControllerBase):
     async def render(
         self,
         request: Request,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> HomeRender:
-        todos = (await session.exec(select(TodoItem))).all()
+        todos = await session.exec(select(TodoItem))
 
         return HomeRender(
             client_ip=(
@@ -181,10 +181,9 @@ This `render()` function is a core building block of Mountaineer. All Controller
 > [!TIP]
 > render() functions accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
 
-Note that the database session is provided via dependency injection, which plug-and-plays with [FastAPI's](https://github.com/tiangolo/fastapi) Depends syntax. The standard library provides two main dependency providers:
+Note that the database session is provided via dependency injection, which plug-and-plays with [FastAPI's](https://github.com/tiangolo/fastapi) Depends syntax. The standard library provides one main dependency provider:
 
 - mountaineer.CoreDependencies: helper functions for configurations and general dependency injection
-- mountaineer.database.DatabaseDependencies: helper functions for database lifecycle and management
 
 Now that we've newly created this controller, we wire it up to the application. This registers it for display when you load the homepage.
 

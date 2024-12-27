@@ -2,8 +2,8 @@
 from uuid import UUID, uuid4
 
 from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
-from mountaineer.database import DatabaseDependencies
-from mountaineer.database.session import AsyncSession
+from iceaxe.mountaineer import DatabaseDependencies
+from iceaxe import DBConnection
 
 from fastapi import Request, Depends
 from pydantic import BaseModel
@@ -22,9 +22,9 @@ class HomeController(ControllerBase):
 
     async def render(
         self,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> HomeRender:
-        items = (await session.exec(select(models.DetailItem))).all()
+        items = await session.exec(select(models.DetailItem))
         return HomeRender(
             items=items,
             metadata=Metadata(title="Home"),
@@ -33,9 +33,8 @@ class HomeController(ControllerBase):
     @sideeffect
     async def new_detail(
         self,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> None:
         obj = models.DetailItem(description="Untitled Item")
-        session.add(obj)
-        await session.commit()
+        await session.insert([obj])
 {% endif %}

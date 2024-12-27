@@ -1,7 +1,7 @@
 {% if create_stub_files %}
-from mountaineer.database import SQLModel, Field
+from iceaxe import TableBase, Field
 
-class DetailItem(SQLModel, table=True):
+class DetailItem(TableBase):
     id: int | None = Field(default=None, primary_key=True)
     description: str
 {% endif %}

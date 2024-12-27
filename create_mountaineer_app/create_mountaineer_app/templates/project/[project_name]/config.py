@@ -1,5 +1,5 @@
 from mountaineer import ConfigBase
-from mountaineer.database import DatabaseConfig
+from iceaxe.mountaineer import DatabaseConfig
 from pydantic_settings import SettingsConfigDict
 
 class AppConfig(ConfigBase, DatabaseConfig):
