@@ -1,5 +1,5 @@
 import React from "react";
-import { useServer, HTTPValidationErrorException } from "./_server";
+import { useServer, RequestValidationError } from "./_server";
 import { CustomComponent } from "./element";
 
 const Home = () => {
@@ -67,11 +67,11 @@ const Home = () => {
                 },
               });
             } catch (error) {
-              if (error instanceof HTTPValidationErrorException) {
+              if (error instanceof RequestValidationError) {
                 console.log(
                   "Validation Error",
-                  error.body.detail?.[0].loc,
-                  error.body.detail?.[0].msg,
+                  error.body.errors?.[0].location,
+                  error.body.errors?.[0].message,
                 );
               } else {
                 throw error;
