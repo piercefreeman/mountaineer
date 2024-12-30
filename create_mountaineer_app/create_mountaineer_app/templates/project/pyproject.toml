@@ -17,6 +17,8 @@ mountaineer = { path = "{{mountaineer_dev_path}}", develop = true }
 mountaineer = "^{{ mountaineer_min_version }}"
 {% endif %}
 
+iceaxe = "^0.5.0"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
@@ -46,7 +48,7 @@ dependencies = [
     {% else %}
     "mountaineer=={{ mountaineer_min_version }}",
     {% endif %}
-    "iceaxe"
+    "iceaxe>=0.5.0"
 ]
 
 [build-system]

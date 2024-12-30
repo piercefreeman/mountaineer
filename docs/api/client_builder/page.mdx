@@ -1,0 +1,52 @@
+## Client Builder
+
+Our "client builder" collection of classes manages generating the Typescript definitions from
+the defined Python controllers. While this component doesn't affect the actual value of the parsed
+values retrieved from the `fetched()` API at runtime, it's critical for development (IDE typehints
+and CI static typechecking). Working with semantic types that are always in sync with the backend
+is one of the core benefits of using Mountaineer.
+
+## Evolution
+
+In our 0.1-0.8 releases, the client builder operated on the OpenAPI schema that was generated from
+the API server. This ensured that definitions always matched the JS-like typing of the OpenAPI.
+There were some limitations to this approach:
+
+- Loss of inheritance tree: Each controller provided flat functions into the OpenAPI schema,
+  without any of their class inheritance structure. This made it impossible to define function
+  signatures in TS that relied on a common ancessor without specifying all of the downstream
+  client subclasses.
+- Formatting of enum: Enums only define their values within OpenAPI, not their Python names.
+  We would build up a synthetic enum key/value pair based on the string value but in cases
+  where key/value in Python were meaningfully different (e.g. `Enum("foo", "bar")`), we would
+  lose that information.
+
+In 0.9 we moved to a new approach that uses the Python controllers directly to generate the
+TypeScript definitions. This corrects all of the drawbacks of the OpenAPI approach in addition
+to cleaning up the code to more easily make extensions in the future.
+
+Our new architecture is structured like:
+
+```
+-> In-Memory Controllers
+
+-> Parser: Extracts all metadata of the controllers/models necessary to generate TypeScript definitions
+
+  -> ControllerWrapper
+  -> FieldWrapper
+  -> ActionWrapper
+  -> ModelWrapper
+  -> EnumWrapper
+
+-> InterfaceBuilder: Takes the metadata and generates isolated TypeScript definitions for just that
+  piece of the API
+
+  -> ControllerInterface
+  -> ModelInterface
+  -> EnumInterface
+  -> ActionInterface
+
+-> FileGenerators: Write the full TypeScript files to disk, which often requires collecting
+  multiple interfaces, tracking their imports, and assembling into a single file
+
+```

@@ -1,0 +1,77 @@
+# Controllers
+
+Controllers are the heart of Mountaineer. They are the Python classes that define the logic for your views, layouts, and apps. They are responsible for rendering the view, handling side effects, and managing the state of your application.
+
+## View Controller
+
+::: mountaineer.controller.ControllerBase
+
+---
+
+## Layout Controller
+
+::: mountaineer.controller_layout.LayoutControllerBase
+
+---
+
+## App Controller
+
+::: mountaineer.app.AppController
+
+---
+
+## Render
+
+::: mountaineer.render.RenderBase
+
+---
+
+## Metadata
+
+We provide support for all header tags that you'll find within an html `<head>`. These
+won't be rendered by your browser but are where you'll place style imports and page
+metadata for SEO.
+
+We have passthrough classes for all the common tags
+so they align to what's outputted in HTML. These are defined and referenced below as `ScriptAttribute`, `LinkAttribute`, `MetaAttribute`, etc.
+We also provide some convenient shortcuts for more complicated, common meta tags.
+
+::: mountaineer.render.Metadata
+
+---
+
+::: mountaineer.render.ScriptAttribute
+
+---
+
+::: mountaineer.render.LinkAttribute
+
+---
+
+::: mountaineer.render.MetaAttribute
+
+---
+
+::: mountaineer.render.ViewportMeta
+
+---
+
+::: mountaineer.render.ThemeColorMeta
+
+---
+
+# SSR
+
+Every page on Mountaineer is server-side rendered by default. Most SSR logic is handled in our embedded Rust layer. In Rust we spin up a V8 isolate, handle logging, catch and process exceptions, etc. This page only covers the client functions that are exposed to Python.
+
+::: mountaineer.ssr.render_ssr
+
+---
+
+::: mountaineer.ssr.V8RuntimeError
+
+---
+
+## Source Maps
+
+::: mountaineer.client_compiler.source_maps.SourceMapParser
