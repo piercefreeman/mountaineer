@@ -32,6 +32,12 @@ createdb = "{{ project_name }}.cli:createdb"
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 
+{% if editor_config == 'zed' %}
+[tool.pyright]
+venvPath = "{{venv_name}}"
+venv = "{{venv_name}}"
+{% endif %}
+
 {# VENV #}
 {% else %}
 
@@ -68,6 +74,12 @@ createdb = "{{ project_name }}.cli:createdb"
 
 [tool.mypy]
 plugins = ["pydantic.mypy"]
+
+{% if editor_config == 'zed' %}
+[tool.pyright]
+venvPath = "{{venv_name}}"
+venv = "{{venv_name}}"
+{% endif %}
 
 
 {% endif %}

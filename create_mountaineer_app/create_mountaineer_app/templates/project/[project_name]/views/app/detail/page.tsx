@@ -1,6 +1,5 @@
 {% if create_stub_files %}
 import React, { useState } from "react";
-import { useEffect } from "react";
 import { useServer } from "./_server/useServer";
 
 const Page = () => {

@@ -1,6 +1,0 @@
-{% if editor_config == 'zed' %}
-{
-    "venv": "{{venv_name}}",
-    "venvPath": "{{venv_base}}"
-}
-{% endif %}

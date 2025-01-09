@@ -1,12 +1,9 @@
 {% if create_stub_files %}
-from uuid import UUID, uuid4
-
 from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
 from iceaxe.mountaineer import DatabaseDependencies
 from iceaxe import DBConnection
 
-from fastapi import Request, Depends
-from pydantic import BaseModel
+from fastapi import Depends
 from sqlmodel import select
 
 from {{project_name}} import models
