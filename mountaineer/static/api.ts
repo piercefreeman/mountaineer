@@ -89,7 +89,7 @@ export const processUrlParams = (
 
 export const handleOutputFormat = async (
   response: Response,
-  format?: string,
+  format?: "text" | "raw" | "json",
 ) => {
   if (format === "text") {
     return await response.text();
@@ -179,12 +179,14 @@ export const __request = async (params: FetchParams) => {
       }
       return await handleOutputFormat(response, params.outputFormat);
     } else {
-      // Try to handle according to our error map
+      // Try to handle according to our error map. By convention if we have an error
+      // that's specified explicitly as an APIException type, the response payload
+      // will be in JSON format.
       if (params.errors && params.errors[response.status]) {
         const errorClass = params.errors[response.status];
         throw new errorClass(
           response.status,
-          await handleOutputFormat(response, params.outputFormat),
+          await handleOutputFormat(response, "json"),
         );
       }
 
@@ -192,7 +194,7 @@ export const __request = async (params: FetchParams) => {
       // can happen. Handle with a generic error.
       throw new FetchErrorBase<any>(
         response.status,
-        await handleOutputFormat(response, params.outputFormat),
+        await handleOutputFormat(response, "text"),
       );
     }
   } catch (e) {
