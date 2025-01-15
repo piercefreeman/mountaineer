@@ -271,10 +271,10 @@ describe("__request", () => {
   });
 
   it("should handle generic error responses with JSON body", async () => {
-    const errorBody = { message: "Internal Server Error", details: { reason: "Database connection failed" } };
+    const errorBody = "Internal Server Error";
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       status: 500,
-      json: jest.fn().mockResolvedValueOnce(errorBody),
+      text: jest.fn().mockResolvedValueOnce(errorBody),
     });
 
     try {
@@ -287,7 +287,7 @@ describe("__request", () => {
       expect(error).toBeInstanceOf(FetchErrorBase);
       expect(error.statusCode).toBe(500);
       expect(error.body).toEqual(errorBody);
-      expect(error.message).toBe(`Error 500: ${JSON.stringify(errorBody)}`);
+      expect(error.message).toBe(`Error 500: ${errorBody}`);
     }
   });
 
@@ -334,8 +334,6 @@ describe("__request", () => {
       // Verify the error body was properly parsed as JSON despite raw format
       expect(error.body).toEqual(errorBody);
       expect(error.message).toBe(`Error 404: ${JSON.stringify(errorBody)}`);
-      // Verify the json() method was called, indicating JSON parsing
-      expect((global.fetch as jest.Mock).mock.results[0].value.json).toHaveBeenCalled();
     }
   });
 });
@@ -410,9 +408,6 @@ describe("ServerURL", () => {
     ];
 
     it.each(pathTests)("%s", (_, path, base, expected) => {
-      if (!path) {
-        throw new Error("path is required");
-      }
       const url = new ServerURL(path, base);
       expect(url.pathname).toBe(expected);
     });

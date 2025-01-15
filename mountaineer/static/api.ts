@@ -13,7 +13,8 @@ export class FetchErrorBase<T> extends Error {
   body: T;
 
   constructor(statusCode: number, body: T) {
-    super(`Error ${statusCode}: ${body}`);
+    const bodyString = typeof body === "string" ? body : JSON.stringify(body);
+    super(`Error ${statusCode}: ${bodyString}`);
 
     this.statusCode = statusCode;
     this.body = body;
@@ -179,6 +180,8 @@ export const __request = async (params: FetchParams) => {
       }
       return await handleOutputFormat(response, params.outputFormat);
     } else {
+      console.log("ERROR", response.status)
+
       // Try to handle according to our error map. By convention if we have an error
       // that's specified explicitly as an APIException type, the response payload
       // will be in JSON format.
@@ -192,7 +195,7 @@ export const __request = async (params: FetchParams) => {
 
       // It's rare that we don't have typehinted context to a more specific exception, but it
       // can happen. Handle with a generic error.
-      throw new FetchErrorBase<any>(
+      throw new FetchErrorBase<string>(
         response.status,
         await handleOutputFormat(response, "text"),
       );
