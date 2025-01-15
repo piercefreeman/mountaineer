@@ -168,7 +168,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         This function must be explicitly typehinted with your response type, which allows the
         AppController to generate the correct TypeScript types for the frontend:
-        
+
         ```python
         class MyServerData(RenderBase):
             pass
