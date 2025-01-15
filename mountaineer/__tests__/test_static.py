@@ -4,7 +4,6 @@ from shutil import copy2, copytree
 
 import pytest
 
-from mountaineer.__tests__.static import get_static_fixtures_path
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 
@@ -40,8 +39,7 @@ def run_command(command: str, cwd: str) -> tuple[str, str]:
 @pytest.fixture(scope="session")
 def setup_test_environment(tmp_path_factory: pytest.TempPathFactory):
     temp_dir = tmp_path_factory.mktemp("test_environment")
-    harness_path = get_static_fixtures_path("harness")
-    api_file_path = get_static_path("api.ts")
+    harness_path = get_static_path(".")
 
     # Copy all files from harness directory to temp directory
     for item in os.listdir(harness_path):
@@ -52,8 +50,8 @@ def setup_test_environment(tmp_path_factory: pytest.TempPathFactory):
         else:
             copy2(s, d)
 
-    # Copy current api.ts to temp directory
-    copy2(api_file_path, temp_dir)
+    # The harness with package.json lives within one nested directory
+    temp_dir = temp_dir / "harness"
 
     try:
         run_command("npm install", cwd=str(temp_dir))

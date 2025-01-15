@@ -8,7 +8,7 @@ import {
   processUrlParams,
   ServerURLSearchParams,
   ServerURL,
-} from "../api";
+} from "../../api";
 
 // Mock fetch globally
 global.fetch = jest.fn();
@@ -245,7 +245,7 @@ describe("__request", () => {
   });
 
   it("should handle custom error responses", async () => {
-    const errorBody = { message: "Not Found" };
+    const errorBody = { message: "Not Found", code: "RESOURCE_NOT_FOUND" };
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       status: 404,
       json: jest.fn().mockResolvedValueOnce(errorBody),
@@ -253,44 +253,88 @@ describe("__request", () => {
 
     class CustomError extends FetchErrorBase<typeof errorBody> {}
 
-    await expect(
-      __request({
+    try {
+      await __request({
         method: "GET",
         url: "https://api.example.com/nonexistent",
         errors: {
           404: CustomError,
         },
-      }),
-    ).rejects.toThrow(CustomError);
+      });
+      fail("Expected error to be thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CustomError);
+      expect(error.statusCode).toBe(404);
+      expect(error.body).toEqual(errorBody);
+      expect(error.message).toBe(`Error 404: ${JSON.stringify(errorBody)}`);
+    }
   });
 
-  it("should handle generic error responses", async () => {
+  it("should handle generic error responses with JSON body", async () => {
+    const errorBody = "Internal Server Error";
     (global.fetch as jest.Mock).mockResolvedValueOnce({
       status: 500,
-      json: jest
-        .fn()
-        .mockResolvedValueOnce({ message: "Internal Server Error" }),
+      text: jest.fn().mockResolvedValueOnce(errorBody),
     });
 
-    await expect(
-      __request({
+    try {
+      await __request({
         method: "GET",
         url: "https://api.example.com/error",
-      }),
-    ).rejects.toThrow(FetchErrorBase);
+      });
+      fail("Expected error to be thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FetchErrorBase);
+      expect(error.statusCode).toBe(500);
+      expect(error.body).toEqual(errorBody);
+      expect(error.message).toBe(`Error 500: ${errorBody}`);
+    }
   });
 
-  it("should handle network errors", async () => {
-    (global.fetch as jest.Mock).mockRejectedValueOnce(
-      new Error("Network Error"),
-    );
+  it("should handle network errors with proper error body", async () => {
+    const networkError = new Error("Network Error");
+    (global.fetch as jest.Mock).mockRejectedValueOnce(networkError);
 
-    await expect(
-      __request({
+    try {
+      await __request({
         method: "GET",
         url: "https://api.example.com/network-error",
-      }),
-    ).rejects.toThrow(FetchErrorBase);
+      });
+      fail("Expected error to be thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(FetchErrorBase);
+      expect(error.statusCode).toBe(-1);
+      expect(error.body).toBe(networkError.toString());
+      expect(error.message).toBe(`Error -1: ${networkError.toString()}`);
+    }
+  });
+
+  it("should parse error JSON even when request format is raw", async () => {
+    const errorBody = { message: "Not Found", details: "Resource does not exist" };
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      status: 404,
+      json: jest.fn().mockResolvedValueOnce(errorBody),
+    });
+
+    class CustomError extends FetchErrorBase<typeof errorBody> {}
+
+    try {
+      await __request({
+        method: "GET",
+        url: "https://api.example.com/nonexistent",
+        outputFormat: "raw",
+        errors: {
+          404: CustomError,
+        },
+      });
+      fail("Expected error to be thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CustomError);
+      expect(error.statusCode).toBe(404);
+      // Verify the error body was properly parsed as JSON despite raw format
+      expect(error.body).toEqual(errorBody);
+      expect(error.message).toBe(`Error 404: ${JSON.stringify(errorBody)}`);
+    }
   });
 });
 

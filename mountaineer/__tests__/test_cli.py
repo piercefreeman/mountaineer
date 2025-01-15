@@ -89,9 +89,7 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         if not key.startswith("VIRTUAL_ENV")
     }
 
-    return_code = Popen(
-        ["poetry", "lock", "--no-update"], cwd=tmp_ci_webapp, env=poetry_env
-    ).wait()
+    return_code = Popen(["poetry", "lock"], cwd=tmp_ci_webapp, env=poetry_env).wait()
     assert return_code == 0
 
     # We need to poetry install the packages at the new path
