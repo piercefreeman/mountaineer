@@ -156,7 +156,6 @@ target
 *.ipynb
 *.ipynb_checkpoints
 
-pyrightconfig.json
 .ruff_cache
 node_modules
 .watchdog.lock
@@ -166,7 +165,6 @@ test-project
 
 # Include create-mountaineer-app env files, since these are part of the template
 !*/create_mountaineer_app/templates/project/.env
-!*/create_mountaineer_app/templates/editor_configs/zed/pyrightconfig.json
 
 # We don't commit our automatically managed files - you can in your project, but these
 # change so much we'd like to avoid them in code reviews.
