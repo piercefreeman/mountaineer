@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 from types import UnionType
 from typing import (
     Any,
@@ -32,7 +32,8 @@ def is_none_type(field_type: Any):
 class TypeDefinition(ABC):
     """Base class for all type definitions"""
 
-    @abstractproperty
+    @property
+    @abstractmethod
     def children(self) -> list[Any]:
         """Return a list of all types this definition wraps"""
         raise NotImplementedError
