@@ -95,141 +95,108 @@ class LayoutElement:
     cached_client_script: str | None = None
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
 class AppController:
-    """
-    Main entrypoint of a project web application.
+    """Main entrypoint of a project web application."""
 
-    """
+    builders: list[APIBuilderBase] = field(default_factory=list)
+    """Custom builders for processing frontend assets"""
 
-    builders: list[APIBuilderBase]
-
-    global_metadata: Metadata | None
+    global_metadata: Metadata | None = field(default=None)
     """
     Metadata that's injected into every page. This is useful for setting
-    global stylesheets and scripts. It's also useful for setting fallback
+    global stylesheets and scripts. It's also useful for setting fallback 
     metadata if it isn't overloaded by individual pages like setting a page title.
-
     """
 
-    config: ConfigBase | None
+    config: ConfigBase | None = field(default=None)
     """
     The configuration object for the application. This is the main place
     to place runtime configuration values that might be changed across
     environments. One instance is registered as a global singleton and cached
     within the AppController class as well.
-
     """
 
-    app: FastAPI
+    app: FastAPI = field(default_factory=FastAPI)
     """
-    Internal FastAPI application instance used by Mountaineer. Exposed to add
+    FastAPI application instance used by Mountaineer. Exposed to add
     API-only endpoints and middleware.
-
     """
 
-    fastapi_args: dict[str, Any] | None
-    """
-    Override or add additional arguments to the FastAPI constructor. See
-    the FastAPI [documentation](https://fastapi.tiangolo.com/reference/fastapi/) for
-    the attributes of this constructor.
-
-    """
-
-    live_reload_port: int
+    live_reload_port: int = field(default=0)
     """
     Port to use for live reloading of the webserver. This will be used to create a websocket connection
     to the browser to trigger a reload when the frontend has updates. By default
     we will bind to port 0 to guarantee an open system port.
-
     """
 
-    controllers: list[ControllerDefinition]
+    controllers: list[ControllerDefinition] = field(
+        init=False, repr=False, default_factory=list
+    )
     """
     Mounted controllers that are used to render the web application. Add
     a new one through `.register()`.
-
     """
 
-    internal_api_prefix: str
+    internal_api_prefix: str = field(init=False, repr=False, default="/internal/api")
     """
     URL prefix used for the action APIs that are auto-generated through @passthrough
     and @sideeffect decorators.
-
     """
 
-    hierarchy_paths: dict[Path, LayoutElement]
+    hierarchy_paths: dict[Path, LayoutElement] = field(
+        init=False, repr=False, default_factory=dict
+    )
     """
     Mapping of disk paths to file-system metadata about the controller. This internally
     builds up a DAG of the layout hierarchy to be used for rendering nested
     pages and layouts.
-
     """
 
-    def __init__(
-        self,
-        *,
-        name: str = "Mountaineer Webapp",
-        version: str = "0.1.0",
-        view_root: Path | None = None,
-        global_metadata: Metadata | None = None,
-        custom_builders: list[APIBuilderBase] | None = None,
-        config: ConfigBase | None = None,
-        fastapi_args: dict[str, Any] | None = None,
-    ):
-        self.app = FastAPI(title=name, version=version, **(fastapi_args or {}))
-        self.controllers: list[ControllerDefinition] = []
-        self.name = name
-        self.version = version
-        self.global_metadata = global_metadata
-        self.builders = custom_builders if custom_builders else []
+    view_root: Path | None = field(default=None)
+    """Path to the root directory containing view files"""
 
-        self._controller_names: set[str] = set()
+    # Internal state
+    _controller_names: set[str] = field(init=False, repr=False, default_factory=set)
+    _build_exception: Exception | None = field(init=False, repr=False, default=None)
+    _view_root: ManagedViewPath = field(init=False, repr=False)
+    _build_metadata: BuildMetadata | None = field(init=False, repr=False, default=None)
 
-        # If this flag is present, we will re-raise this error during render()
-        # so users can see the error in the browser.
-        # This is useful for debugging, but should not be used in production
-        self._build_exception: Exception | None = None
+    def __post_init__(self) -> None:
+        """Initialize the application state after dataclass fields are set."""
 
         # Follow our managed path conventions
-        if config is not None and config.PACKAGE is not None:
-            package_path = resolve_package_path(config.PACKAGE)
-            self._view_root = ManagedViewPath.from_view_root(package_path / "views")
-        elif view_root is not None:
-            self._view_root = ManagedViewPath.from_view_root(view_root)
+        if self.config is not None and self.config.PACKAGE is not None:
+            package_path = resolve_package_path(self.config.PACKAGE)
+            object.__setattr__(
+                self,
+                "_view_root",
+                ManagedViewPath.from_view_root(package_path / "views"),
+            )
+        elif self.view_root is not None:
+            object.__setattr__(
+                self, "_view_root", ManagedViewPath.from_view_root(self.view_root)
+            )
         else:
             raise ValueError(
                 "You must provide either a config.package or a view_root to the AppController"
             )
-
-        # The act of instantiating the config should register it with the
-        # global settings registry. We keep a reference to it so we can shortcut
-        # to the user-defined settings later, but this is largely optional.
-        self.config = config
-
-        self.internal_api_prefix = "/internal/api"
 
         # The static directory has to exist before we try to mount it
         static_dir = self._view_root.get_managed_static_dir()
 
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
-        self.app.mount(
-            "/static",
-            StaticFiles(directory=str(static_dir)),
-            name="static",
-        )
+        self.app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
+        # add custom exception handles
         self.app.exception_handler(RequestValidationErrorRaw)(
             self._parse_validation_exception
         )
         self.app.exception_handler(APIException)(self._handle_exception)
 
+        # generate the openapi spec using the custom mountainer generation capabilities
         self.app.openapi = self.generate_openapi  # type: ignore
-
-        # Edges that link the hierarchy together
-        self.hierarchy_paths: dict[Path, LayoutElement] = {}
-
-        self.live_reload_port: int = 0
 
     def register(self, controller: ControllerBase):
         """
@@ -935,8 +902,8 @@ class AppController:
 
         """
         openapi_base = get_openapi(
-            title=self.name,
-            version=self.version,
+            title=self.app.title,
+            version=self.app.version,
             routes=(routes if routes is not None else self.app.routes),
         )
 
@@ -1088,10 +1055,11 @@ class AppController:
         metadata_path = self._view_root.get_managed_metadata_dir() / "metadata.json"
         if not metadata_path.exists():
             return None
-        self._build_metadata = BuildMetadata.model_validate_json(
-            metadata_path.read_text()
-        )
-        return self._build_metadata
+
+        build_metadata = BuildMetadata.model_validate_json(metadata_path.read_text())
+        object.__setattr__(self, "_build_metadata", build_metadata)
+
+        return build_metadata
 
     @property
     def development_enabled(self):

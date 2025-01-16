@@ -12,9 +12,7 @@ controller = AppController(
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
-    custom_builders=[
-        PostCSSBundler(),
-    ],
+    builders=[PostCSSBundler()],
     config=AppConfig(),
 )
 controller.register(HomeController())
