@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 use crate::code_gen;
+use crate::bundle::{bundle, BundleOptions};
 
 #[pyfunction]
 pub fn compile_independent_bundles(
@@ -24,20 +25,27 @@ pub fn compile_independent_bundles(
         let temp_dir = create_temp_dir()?;
         let temp_file_path =
             create_entrypoint(&temp_dir, path_group, is_server, &live_reload_import)?;
-        let context_id = create_build_context(
-            &temp_file_path,
-            &node_modules_path,
-            &environment,
-            live_reload_port,
+        
+        let options = BundleOptions {
+            entry_points: vec![temp_file_path.to_str().unwrap().to_string()],
+            node_modules_path: node_modules_path.clone(),
+            environment: environment.clone(),
+            minify: false,
             is_server,
-        )?;
-        rebuild_context(py, context_id)?;
-
-        let compiled_content = read_compiled_file(&temp_file_path)?;
-        let sourcemap_content = read_sourcemap_file(&temp_file_path)?;
-
-        output_files.push(compiled_content);
-        sourcemap_files.push(sourcemap_content);
+            live_reload_port,
+            outdir: None,
+        };
+        
+        let results = bundle(options).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Bundle error: {}", e))
+        })?;
+        
+        for result in results {
+            output_files.push(result.code);
+            if let Some(map) = result.map {
+                sourcemap_files.push(map);
+            }
+        }
     }
 
     Ok((output_files, sourcemap_files))

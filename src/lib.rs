@@ -12,6 +12,7 @@ mod logging;
 mod source_map;
 mod ssr;
 mod timeout;
+mod bundle;
 
 #[macro_use]
 extern crate lazy_static;
@@ -64,7 +65,7 @@ impl BuildContextParams {
 }
 
 #[pymodule]
-fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
+fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
 
