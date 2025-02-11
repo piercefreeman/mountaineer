@@ -176,3 +176,133 @@ def test_update_version_python_with_project_version(tmp_path: Path):
         version = "^0.27.0.post1"
         """,
     )
+
+
+def test_update_version_python_with_project_version(tmp_path: Path):
+    pyproject_text = """
+        [tool.poetry]
+        name = "mountaineer"
+        version = "0.1.0"
+        description = ""
+        readme = "README.md"
+
+        [project]
+        name = "mountaineer"
+        version = "0.1.0"
+        description = ""
+
+        [tool.poetry.dependencies]
+        uvicorn = { extras = ["standard"], version = "^0.27.0.post1" }
+        fastapi = "^0.68.0"
+        """
+
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(pyproject_text)
+
+    with change_pwd(tmp_path):
+        update_version_python("0.2.0")
+
+    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
+        r"\s+",
+        "",
+        """
+        [tool.poetry]
+        name = "mountaineer"
+        version = "0.2.0"
+        description = ""
+        readme = "README.md"
+
+        [project]
+        name = "mountaineer"
+        version = "0.2.0"
+        description = ""
+
+        [tool.poetry.dependencies]
+        fastapi = "^0.68.0"
+
+        [tool.poetry.dependencies.uvicorn]
+        extras = ["standard",]
+        version = "^0.27.0.post1"
+        """,
+    )
+
+
+def test_update_version_python_only_project(tmp_path: Path):
+    pyproject_text = """
+        [project]
+        name = "mountaineer"
+        version = "0.1.0"
+        description = ""
+        """
+
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(pyproject_text)
+
+    with change_pwd(tmp_path):
+        update_version_python("0.2.0")
+
+    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
+        r"\s+",
+        "",
+        """
+        [project]
+        name = "mountaineer"
+        version = "0.2.0"
+        description = ""
+        """,
+    )
+
+
+def test_update_version_python_only_poetry(tmp_path: Path):
+    pyproject_text = """
+        [tool.poetry]
+        name = "mountaineer"
+        version = "0.1.0"
+        description = ""
+        """
+
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(pyproject_text)
+
+    with change_pwd(tmp_path):
+        update_version_python("0.2.0")
+
+    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
+        r"\s+",
+        "",
+        """
+        [tool.poetry]
+        name = "mountaineer"
+        version = "0.2.0"
+        description = ""
+        """,
+    )
+
+
+def test_update_version_python_no_version_sections(tmp_path: Path, capsys):
+    pyproject_text = """
+        [build-system]
+        requires = ["poetry-core"]
+        build-backend = "poetry.core.masonry.build"
+        """
+
+    pyproject_path = tmp_path / "pyproject.toml"
+    pyproject_path.write_text(pyproject_text)
+
+    with change_pwd(tmp_path):
+        update_version_python("0.2.0")
+
+    # Verify the warning was printed
+    captured = capsys.readouterr()
+    assert "Neither [tool.poetry] nor [project] sections found" in captured.out
+
+    # Verify the file wasn't modified
+    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
+        r"\s+",
+        "",
+        """
+        [build-system]
+        requires = ["poetry-core"]
+        build-backend = "poetry.core.masonry.build"
+        """,
+    )
