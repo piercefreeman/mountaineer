@@ -65,7 +65,7 @@ impl<'a> Ssr<'a> {
           static ref INIT_PLATFORM: () = {
               // Include ICU data file.
               // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
-              v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
+              v8::icu::set_common_data_74(deno_core_icudata::ICU_DATA).unwrap();
 
               //Initialize a new V8 platform
               let platform = v8::new_default_platform(0, false).make_shared();
@@ -102,7 +102,7 @@ impl<'a> Ssr<'a> {
         // let isolate_params = v8::CreateParams::default().heap_limits(0, 2000 * 1024 * 1024);
         let isolate = &mut v8::Isolate::new(Default::default());
         let handle_scope = &mut v8::HandleScope::new(isolate);
-        let mut context = v8::Context::new(handle_scope);
+        let mut context = v8::Context::new(handle_scope, Default::default());
         let scope = &mut v8::ContextScope::new(handle_scope, context);
 
         // Add logging support
@@ -218,7 +218,7 @@ impl<'a> Ssr<'a> {
                       mut ret_val: v8::ReturnValue| {
                     let data = args.data();
                     let logger_data = if data.is_external() {
-                        let external = unsafe { v8::Local::<v8::External>::cast(data) };
+                        let external = v8::Local::<v8::External>::try_from(data).unwrap();
                         let logger_data_ptr = external.value();
                         unsafe { &*(logger_data_ptr as *const LoggerData) }
                     } else {
@@ -296,7 +296,7 @@ impl<'a> Ssr<'a> {
 
                     let func = object.get(&mut scope, name).unwrap();
 
-                    let func = unsafe { v8::Local::<v8::Function>::cast(func) };
+                    let func = v8::Local::<v8::Function>::try_from(func).unwrap();
 
                     (
                         name.to_string(&mut scope)

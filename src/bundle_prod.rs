@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use crate::code_gen;
+use crate::bundle::{bundle, BundleOptions};
 
 #[pyfunction]
 pub fn compile_production_bundle(
@@ -28,18 +29,22 @@ pub fn compile_production_bundle(
     let entrypoint_paths =
         create_synthetic_entrypoints(temp_dir_path, &paths, is_server, &live_reload_import)?;
 
-    src_go::bundle_all(
-        entrypoint_paths.clone(),
+    let options = BundleOptions {
+        entry_points: entrypoint_paths,
         node_modules_path,
         environment,
         minify,
-        output_dir.to_str().unwrap().to_string(),
-    )
-    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+        is_server,
+        live_reload_port: 0,
+        outdir: Some(output_dir.to_str().unwrap().to_string()),
+    };
+
+    let results = bundle(options).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Bundle error: {}", e))
+    })?;
 
     let result = PyDict::new(py);
-    let (entrypoints, entrypoint_maps, supporting) =
-        process_output_files(py, &output_dir, &entrypoint_paths)?;
+    let (entrypoints, entrypoint_maps, supporting) = process_bundle_results(py, results)?;
 
     result.set_item("entrypoints", entrypoints)?;
     result.set_item("entrypoint_maps", entrypoint_maps)?;
@@ -71,20 +76,19 @@ fn create_synthetic_entrypoints(
         .collect()
 }
 
-fn process_output_files(
+fn process_bundle_results(
     py: Python,
-    output_dir: &PathBuf,
-    entrypoint_paths: &[String],
+    results: Vec<BundleResult>,
 ) -> PyResult<(Py<PyList>, Py<PyList>, Py<PyDict>)> {
     let entrypoints = PyList::empty(py);
     let entrypoint_maps = PyList::empty(py);
     let supporting = PyDict::new(py);
     let mut processed_files = HashSet::new();
 
-    for path in entrypoint_paths {
-        let file_name = Path::new(path).file_name().unwrap().to_str().unwrap();
-        let js_path = output_dir.join(file_name).with_extension("js");
-        let map_path = output_dir.join(file_name).with_extension("js.map");
+    for result in results {
+        let file_name = Path::new(&result.path).file_name().unwrap().to_str().unwrap();
+        let js_path = result.path.with_extension("js");
+        let map_path = result.path.with_extension("js.map");
 
         process_file(&js_path, &mut processed_files, |content| {
             entrypoints.append(content)
@@ -97,7 +101,7 @@ fn process_output_files(
 
     // Everything that's left is a supporting file that is imported from one
     // of the entrypoints
-    process_supporting_files(output_dir, &mut processed_files, supporting)?;
+    process_supporting_files(processed_files, supporting)?;
 
     Ok((
         entrypoints.into(),
@@ -123,8 +127,7 @@ where
 }
 
 fn process_supporting_files(
-    output_dir: &PathBuf,
-    processed_files: &mut HashSet<String>,
+    processed_files: HashSet<String>,
     supporting: &PyDict,
 ) -> PyResult<()> {
     for entry in fs::read_dir(output_dir)? {
