@@ -1,9 +1,9 @@
 from contextlib import contextmanager
 from os import chdir
 from pathlib import Path
-from re import sub
 
 import pytest
+import toml
 
 from scripts.update_version import (
     format_cargo_version,
@@ -58,20 +58,17 @@ def test_update_version_rust(tmp_path: Path):
     with change_pwd(tmp_path):
         update_version_rust("0.2.0")
 
-    assert sub(r"\s+", "", cargo_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [package]
-        name = "mountaineer"
-        version = "0.2.0"
-        edition = "2021"
-
-        [dependencies]
-        v8 = "0.89.0"
-        deno_core_icudata = "0.73.0"
-        """,
-    )
+    assert toml.loads(cargo_path.read_text()) == {
+        "package": {
+            "name": "mountaineer",
+            "version": "0.2.0",
+            "edition": "2021",
+        },
+        "dependencies": {
+            "v8": "0.89.0",
+            "deno_core_icudata": "0.73.0",
+        },
+    }
 
 
 @pytest.mark.parametrize(
@@ -109,73 +106,23 @@ def test_update_version_python(tmp_path: Path):
     with change_pwd(tmp_path):
         update_version_python("0.2.0")
 
-    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-        readme = "README.md"
-
-        [tool.poetry.dependencies]
-        fastapi = "^0.68.0"
-
-        [tool.poetry.dependencies.uvicorn]
-        extras = ["standard",]
-        version = "^0.27.0.post1"
-        """,
-    )
-
-
-def test_update_version_python_with_project_version(tmp_path: Path):
-    pyproject_text = """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.1.0"
-        description = ""
-        readme = "README.md"
-
-        [project]
-        name = "mountaineer"
-        version = "0.1.0"
-        description = ""
-
-        [tool.poetry.dependencies]
-        uvicorn = { extras = ["standard"], version = "^0.27.0.post1" }
-        fastapi = "^0.68.0"
-        """
-
-    pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_text(pyproject_text)
-
-    with change_pwd(tmp_path):
-        update_version_python("0.2.0")
-
-    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-        readme = "README.md"
-
-        [project]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-
-        [tool.poetry.dependencies]
-        fastapi = "^0.68.0"
-
-        [tool.poetry.dependencies.uvicorn]
-        extras = ["standard",]
-        version = "^0.27.0.post1"
-        """,
-    )
+    assert toml.loads(pyproject_path.read_text()) == {
+        "tool": {
+            "poetry": {
+                "name": "mountaineer",
+                "version": "0.2.0",
+                "description": "",
+                "readme": "README.md",
+                "dependencies": {
+                    "uvicorn": {
+                        "extras": ["standard"],
+                        "version": "^0.27.0.post1",
+                    },
+                    "fastapi": "^0.68.0",
+                },
+            },
+        },
+    }
 
 
 def test_update_version_python_with_project_version(tmp_path: Path):
@@ -202,29 +149,28 @@ def test_update_version_python_with_project_version(tmp_path: Path):
     with change_pwd(tmp_path):
         update_version_python("0.2.0")
 
-    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-        readme = "README.md"
-
-        [project]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-
-        [tool.poetry.dependencies]
-        fastapi = "^0.68.0"
-
-        [tool.poetry.dependencies.uvicorn]
-        extras = ["standard",]
-        version = "^0.27.0.post1"
-        """,
-    )
+    assert toml.loads(pyproject_path.read_text()) == {
+        "tool": {
+            "poetry": {
+                "name": "mountaineer",
+                "version": "0.2.0",
+                "description": "",
+                "readme": "README.md",
+                "dependencies": {
+                    "uvicorn": {
+                        "extras": ["standard"],
+                        "version": "^0.27.0.post1",
+                    },
+                    "fastapi": "^0.68.0",
+                },
+            },
+        },
+        "project": {
+            "name": "mountaineer",
+            "version": "0.2.0",
+            "description": "",
+        },
+    }
 
 
 def test_update_version_python_only_project(tmp_path: Path):
@@ -241,16 +187,13 @@ def test_update_version_python_only_project(tmp_path: Path):
     with change_pwd(tmp_path):
         update_version_python("0.2.0")
 
-    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [project]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-        """,
-    )
+    assert toml.loads(pyproject_path.read_text()) == {
+        "project": {
+            "name": "mountaineer",
+            "version": "0.2.0",
+            "description": "",
+        },
+    }
 
 
 def test_update_version_python_only_poetry(tmp_path: Path):
@@ -267,16 +210,15 @@ def test_update_version_python_only_poetry(tmp_path: Path):
     with change_pwd(tmp_path):
         update_version_python("0.2.0")
 
-    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.2.0"
-        description = ""
-        """,
-    )
+    assert toml.loads(pyproject_path.read_text()) == {
+        "tool": {
+            "poetry": {
+                "name": "mountaineer",
+                "version": "0.2.0",
+                "description": "",
+            },
+        },
+    }
 
 
 def test_update_version_python_no_version_sections(tmp_path: Path, capsys):
@@ -297,12 +239,9 @@ def test_update_version_python_no_version_sections(tmp_path: Path, capsys):
     assert "Neither [tool.poetry] nor [project] sections found" in captured.out
 
     # Verify the file wasn't modified
-    assert sub(r"\s+", "", pyproject_path.read_text()) == sub(
-        r"\s+",
-        "",
-        """
-        [build-system]
-        requires = ["poetry-core"]
-        build-backend = "poetry.core.masonry.build"
-        """,
-    )
+    assert toml.loads(pyproject_path.read_text()) == {
+        "build-system": {
+            "requires": ["poetry-core"],
+            "build-backend": "poetry.core.masonry.build",
+        },
+    }

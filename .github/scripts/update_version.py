@@ -52,7 +52,7 @@ def format_cargo_version(new_version: str) -> str:
 def update_version_python(new_version: str):
     pyproject_path = Path("pyproject.toml")
     if not pyproject_path.exists():
-        stdout.write("pyproject.toml not found, skipping version update")
+        print("pyproject.toml not found, skipping version update")  # noqa: T201
         return
 
     filedata = toml.loads(pyproject_path.read_text())
@@ -73,7 +73,9 @@ def update_version_python(new_version: str):
         updated = True
 
     if not updated:
-        stdout.write("Warning: Neither [tool.poetry] nor [project] sections found in pyproject.toml")
+        print(  # noqa: T201
+            "Warning: Neither [tool.poetry] nor [project] sections found in pyproject.toml"
+        )
         return
 
     pyproject_path.write_text(toml.dumps(filedata))
