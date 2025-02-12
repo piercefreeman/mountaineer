@@ -113,10 +113,6 @@ class DevAppManager:
         if self.webservice_thread is not None:
             self.webservice_thread.stop()
 
-        # Inject the live reload port so it's picked up even
-        # when the app changes
-        self.app_controller.live_reload_port = self.live_reload_port or 0
-
         self.webservice_thread = UvicornThread(
             name="Dev webserver",
             emoticon="🚀",
