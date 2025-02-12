@@ -288,6 +288,9 @@ async def get_render_parameters(
         }
     )
 
+    if (session := request.scope.get("session", None)) is not None:
+        view_request.scope["session"] = session
+
     if not controller._definition:
         raise RuntimeError(
             "Controller definition is not set. This might indicate you're calling a"

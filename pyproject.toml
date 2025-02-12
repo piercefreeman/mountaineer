@@ -82,6 +82,11 @@ addopts = "-m 'not integration_tests'"
 # since these can't pick up poetry's data definitions
 name = "mountaineer"
 version = "0.1.0"
+description = "Mountaineer is a batteries-included web framework for Python."
+authors = [
+    { name="Pierce Freeman", email="pierce@freeman.vc" }
+]
+readme = "README.md"
 dependencies = [
     "pydantic>=2.5.3,<3.0.0",
     "fastapi>=0.114.1,<1.0.0",
