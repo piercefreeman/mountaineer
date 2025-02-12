@@ -64,7 +64,7 @@ impl BuildContextParams {
 }
 
 #[pymodule]
-fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
+fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
 
