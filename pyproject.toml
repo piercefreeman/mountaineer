@@ -81,6 +81,7 @@ addopts = "-m 'not integration_tests'"
 # Maintaned just for local installation / testing purposes with venvironments
 # since these can't pick up poetry's data definitions
 name = "mountaineer"
+version = "0.1.0"
 dependencies = [
     "pydantic>=2.5.3,<3.0.0",
     "fastapi>=0.114.1,<1.0.0",
