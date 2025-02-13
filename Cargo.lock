@@ -965,9 +965,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "v8"
-version = "134.2.0"
+version = "134.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "542d388db9f9e5d3881bced2b4dc33815435fc5aa2258554ca75645904f83b14"
+checksum = "81a7bf4d0c2b03c45fcac29740cd38b695c4b07ebec9bef7ea60801e2b285204"
 dependencies = [
  "bindgen 0.70.1",
  "bitflags",
