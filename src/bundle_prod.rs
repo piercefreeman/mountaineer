@@ -97,7 +97,7 @@ fn process_output_files(
 
     // Everything that's left is a supporting file that is imported from one
     // of the entrypoints
-    process_supporting_files(output_dir, &mut processed_files, supporting)?;
+    process_supporting_files(output_dir, &mut processed_files, &supporting)?;
 
     Ok((
         entrypoints.into(),
@@ -125,7 +125,7 @@ where
 fn process_supporting_files(
     output_dir: &PathBuf,
     processed_files: &mut HashSet<String>,
-    supporting: &PyDict,
+    supporting: &Bound<'_, PyDict>,
 ) -> PyResult<()> {
     for entry in fs::read_dir(output_dir)? {
         let entry =

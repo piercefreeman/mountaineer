@@ -17,12 +17,6 @@ pub struct MapMetadata {
     symbol_index: Option<i32>,
 }
 
-impl ToPyObject for MapMetadata {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.clone().into_py(py)
-    }
-}
-
 #[pymethods]
 impl MapMetadata {
     #[new]

@@ -1,7 +1,7 @@
 use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyString};
 
 mod bundle_independent;
 mod bundle_prod;
@@ -64,13 +64,13 @@ impl BuildContextParams {
 }
 
 #[pymodule]
-fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
+fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
-    fn render_ssr(py: Python, js_string: String, hard_timeout: u64) -> PyResult<PyObject> {
+    fn render_ssr(py: Python, js_string: String, hard_timeout: u64) -> PyResult<Bound<'_, PyString>> {
         /*
          * :param js_string: the full ssr compiled .js script to execute in V8
          * :param hard_timeout: after this many milliseconds, the V8 engine will be forcibly
@@ -91,7 +91,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
         match result_value {
             Ok(result) => {
-                let result_py: PyObject = result.to_object(py);
+                let result_py = result.into_pyobject(py)?;
                 Ok(result_py)
             }
             Err(err) => match err {
@@ -103,7 +103,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "parse_source_map_mappings")]
-    fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<PyObject> {
+    fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<Bound<'_, PyDict>> {
         #[allow(clippy::print_stdout)]
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
@@ -115,7 +115,7 @@ fn mountaineer(_py: Python, m: &PyModule) -> PyResult<()> {
 
         match result {
             Ok(result) => {
-                let result_py: PyObject = result.to_object(py);
+                let result_py = result.into_pyobject(py)?;
                 Ok(result_py)
             }
             Err(_err) => Err(PyValueError::new_err("Unable to parse source map mappings")),
