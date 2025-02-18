@@ -5,7 +5,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-v8 = "134.3.0"
+v8 = "129.0.0"
 deno_core_icudata = "0.74.0"
 
 lazy_static = "1.5.0"
