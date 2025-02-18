@@ -282,9 +282,9 @@ checksum = "43da5946c66ffcc7745f48db692ffbb10a83bfe0afd96235c5c2a4fb23994929"
 
 [[package]]
 name = "deno_core_icudata"
-version = "0.74.0"
+version = "0.73.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe4dccb6147bb3f3ba0c7a48e993bfeb999d2c2e47a81badee80e2b370c8d695"
+checksum = "6f62601b00b651d26d422baa52499ff2ca6b624a78bee06fefdb1120a38a9ad3"
 
 [[package]]
 name = "either"

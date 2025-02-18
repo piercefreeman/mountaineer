@@ -65,7 +65,7 @@ impl<'a> Ssr<'a> {
           static ref INIT_PLATFORM: () = {
               // Include ICU data file.
               // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
-              v8::icu::set_common_data_74(deno_core_icudata::ICU_DATA).unwrap();
+              v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
 
               //Initialize a new V8 platform
               let platform = v8::new_default_platform(0, false).make_shared();
