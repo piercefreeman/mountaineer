@@ -207,7 +207,7 @@ async def test_handle_dev_exception(manager: DevAppManager):
     assert test_exception
 
     # Force un-mount so we can mount again
-    manager.app_controller.controllers = [
+    manager.app_controller.controllers[:] = [
         controller
         for controller in manager.app_controller.controllers
         if controller.controller.__class__.__name__

@@ -112,7 +112,7 @@ def test_view_root_from_config(tmp_path: Path):
         assert mock_resolve_package_path.call_args[0] == ("test_webapp",)
 
 
-def test_passthrough_fastapi_args():
+def test_passthrough_custom_fastapi():
     did_run_lifespan = False
 
     @asynccontextmanager
@@ -121,7 +121,7 @@ def test_passthrough_fastapi_args():
         did_run_lifespan = True
         yield
 
-    app = AppController(view_root=Path(""), fastapi_args=dict(lifespan=app_lifespan))
+    app = AppController(view_root=Path(""), app=FastAPI(lifespan=app_lifespan))
 
     with TestClient(app.app):
         assert did_run_lifespan
