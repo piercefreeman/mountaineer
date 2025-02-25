@@ -1,12 +1,9 @@
 {% if create_stub_files %}
-from uuid import UUID
-
 from mountaineer import Metadata, RenderBase, ControllerBase, APIException, sideeffect
-from mountaineer.mountaineer import DatabaseDependencies
-from mountaineer import DBConnection
+from iceaxe import DBConnection
+from iceaxe.mountaineer import DatabaseDependencies
 
-from fastapi import Request, Depends
-from fastapi.exceptions import HTTPException
+from fastapi import Depends
 from pydantic import BaseModel
 
 from {{project_name}} import models

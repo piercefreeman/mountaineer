@@ -1,10 +1,9 @@
 {% if create_stub_files %}
 from mountaineer import sideeffect, ControllerBase, Metadata, RenderBase
 from iceaxe.mountaineer import DatabaseDependencies
-from iceaxe import DBConnection
+from iceaxe import DBConnection, select
 
 from fastapi import Depends
-from sqlmodel import select
 
 from {{project_name}} import models
 
