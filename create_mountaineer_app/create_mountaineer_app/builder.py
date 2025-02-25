@@ -115,10 +115,11 @@ def build_project(metadata: ProjectMetadata, install_deps: bool = True):
 
         secho("Environment created successfully", fg="green")
 
-    # Now copy the editor-specific files
+    # Now copy the editor-specific files. Some editors don't need a config file so we can
+    # optionally skip them if their path is not provided.
     if metadata.editor_config:
-        editor_template_base = (
-            get_template_path("editor_configs") / metadata.editor_config.value
-        )
-        copy_source_to_project(editor_template_base, metadata)
+        metadata_path = metadata.editor_config.value.path
+        if metadata_path:
+            editor_template_base = get_template_path("editor_configs") / metadata_path
+            copy_source_to_project(editor_template_base, metadata)
         secho(f"Editor config created at {metadata.project_path}", fg="green")

@@ -122,7 +122,9 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         use_poetry=input_use_poetry,
         use_tailwind=input_use_tailwind,
         editor_config=(
-            EditorType(input_editor_config) if input_editor_config != "no" else None
+            EditorType.from_name(input_editor_config)
+            if input_editor_config != "no"
+            else None
         ),
         project_path=project_path,
         create_stub_files=input_create_stub_files,
