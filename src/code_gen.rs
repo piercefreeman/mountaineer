@@ -42,8 +42,19 @@ pub fn build_entrypoint(
         entrypoint_content += "const container = document.getElementById('root');\n";
         entrypoint_content += "hydrateRoot(container, <Entrypoint />);\n";
     } else {
-        entrypoint_content += "import { renderToString } from 'react-dom/server';\n";
-        entrypoint_content += "export const Index = () => renderToString(<Entrypoint />);\n";
+        // Support both React 18 and React 19 SSR APIs
+        entrypoint_content += "// For React 19, use the new prerender API if available\n";
+        entrypoint_content += "try {\n";
+        entrypoint_content += "  const { prerender } = require('react-dom/static');\n";
+        entrypoint_content += "  export const Index = async () => {\n";
+        entrypoint_content += "    const { prelude } = await prerender(<Entrypoint />);\n";
+        entrypoint_content += "    return prelude;\n";
+        entrypoint_content += "  };\n";
+        entrypoint_content += "} catch (e) {\n";
+        entrypoint_content += "  // Fallback to React 18's renderToString\n";
+        entrypoint_content += "  import { renderToString } from 'react-dom/server';\n";
+        entrypoint_content += "  export const Index = () => renderToString(<Entrypoint />);\n";
+        entrypoint_content += "}\n";
     }
 
     entrypoint_content
