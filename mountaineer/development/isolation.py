@@ -23,8 +23,8 @@ from mountaineer.development.messages import (
     ReloadResponse,
     ShutdownMessage,
 )
+from mountaineer.development.uvicorn import UvicornThread
 from mountaineer.logging import LOGGER
-from mountaineer.webservice import UvicornThread
 
 
 class IsolatedAppContext(Process):

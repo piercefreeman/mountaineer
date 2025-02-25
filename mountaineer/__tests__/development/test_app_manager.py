@@ -6,7 +6,7 @@ from fastapi.responses import Response
 
 from mountaineer.__tests__.development.conftest import AppPackageType
 from mountaineer.development.manager import DevAppManager
-from mountaineer.webservice import UvicornThread
+from mountaineer.development.uvicorn import UvicornThread
 
 
 def test_from_webcontroller(manager: DevAppManager, app_package: AppPackageType):

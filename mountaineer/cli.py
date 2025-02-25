@@ -21,6 +21,7 @@ from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
 )
+from mountaineer.development.watch_server import WatcherWebservice
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 from mountaineer.watch import (
@@ -29,7 +30,6 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
-from mountaineer.watch_server import WatcherWebservice
 
 
 def handle_watch(
