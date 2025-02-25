@@ -10,7 +10,7 @@ from watchfiles import Change, watch
 
 from mountaineer.console import CONSOLE
 from mountaineer.paths import resolve_package_path
-
+from mountaineer.logging import LOGGER, pluralize
 
 class CallbackType(Flag):
     CREATED = auto()
@@ -161,8 +161,9 @@ class PackageWatchdog:
 
             watcher = FileWatcher(callbacks=self.callbacks)
 
+            CONSOLE.print(f"👀 Watching {len(self.paths)} {pluralize(len(self.paths), 'path', 'paths')}")
             for path in self.paths:
-                CONSOLE.print(f"[green]Watching {path}")
+                LOGGER.info(f"Watching {path}")
 
             try:
                 for changes in watch(*self.paths, watch_filter=None):

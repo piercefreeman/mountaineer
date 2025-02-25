@@ -932,3 +932,57 @@ def test_resolve_relative_import(
         f"Expected: {expected}\n"
         f"Got: {result}"
     )
+
+
+def test_non_syntax_error_triggers_restart(test_package_dir: tuple[Path, str]):
+    """
+    Test that non-syntax errors during module reload trigger a server restart flag.
+    """
+    pkg_dir, pkg_name = test_package_dir
+
+    # Create initial module with a class that will be imported
+    (pkg_dir / "base.py").write_text(
+        textwrap.dedent(
+            """
+            class BaseClass:
+                def __init__(self):
+                    self.value = 10
+            """
+        )
+    )
+
+    # Initialize HotReloader
+    hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.base")
+
+    # Modify base class in a way that will cause a runtime error in child
+    # (removing the value attribute that child depends on)
+    (pkg_dir / "base.py").write_text(
+        textwrap.dedent(
+            """
+            raise ValueError("This is a runtime error")
+            """
+        )
+    )
+
+    # Attempt to reload - this should trigger a server restart
+    success, reloaded, needs_restart = hot_reloader.reload_module(f"{pkg_name}.base")
+    assert not success, "Reload should fail due to runtime error"
+    assert needs_restart, "Should indicate server restart is needed"
+    assert reloaded == [], "No modules should be marked as successfully reloaded"
+
+    # Now test a syntax error case for comparison
+    (pkg_dir / "base.py").write_text(
+        textwrap.dedent(
+            """
+            class BaseClass  # Syntax error: missing colon
+                def __init__(self):
+                    self.value = 10
+            """
+        )
+    )
+
+    # Attempt to reload - this should fail without triggering restart
+    success, reloaded, needs_restart = hot_reloader.reload_module(f"{pkg_name}.base")
+    assert not success, "Reload should fail due to syntax error"
+    assert not needs_restart, "Should not indicate server restart is needed for syntax error"
+    assert reloaded == [], "No modules should be marked as successfully reloaded"

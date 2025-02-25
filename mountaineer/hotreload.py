@@ -316,14 +316,19 @@ class HotReloader:
 
         return result
 
-    def reload_module(self, module_name: str) -> tuple[bool, list[str]]:
+    def reload_module(self, module_name: str) -> tuple[bool, list[str], bool]:
         return self.reload_modules([module_name])
 
-    def reload_modules(self, module_names: list[str]) -> tuple[bool, list[str]]:
+    def reload_modules(self, module_names: list[str]) -> tuple[bool, list[str], bool]:
         """
         Reload a module and all its dependencies. Note that this requires the underlying bite
         length to have changed: https://bugs.python.org/issue31772
 
+        Returns:
+            tuple[bool, list[str], bool]: (success, reloaded_modules, needs_server_restart)
+            - success: Whether the reload was successful
+            - reloaded_modules: List of modules that were successfully reloaded
+            - needs_server_restart: Whether a server restart is needed due to a non-syntax error
         """
         logger.info(f"=== Starting reload of {module_names} ===")
         self._log_dependency_state()
@@ -347,7 +352,7 @@ class HotReloader:
             logger.error(f"Modules {invalid_modules} are not loaded. Cannot reload.")
 
             if not valid_modules:
-                return False, reloaded_modules
+                return False, reloaded_modules, False
 
         try:
             affected = {
@@ -371,19 +376,27 @@ class HotReloader:
                     self.module_cache[mod_name] = module
                     reloaded_modules.append(mod_name)
 
+                except SyntaxError as e:
+                    # Syntax errors are fatal and should stop the reload process, however they can be easily
+                    # corrected when the user updates the file
+                    logger.error(f"Syntax error in {mod_name}: {e}", exc_info=True)
+                    return False, reloaded_modules, False
                 except Exception as e:
-                    logger.error(f"Failed to reload {mod_name}: {e}", exc_info=True)
-                    return False, reloaded_modules
+                    # Non-syntax errors indicate potential corruption with the current in-memory representation (like
+                    # reloading a database model that can only be mounted to a central registry once). In this case we
+                    # will restart the server to get a clean state.
+                    logger.error(f"Non-syntax error reloading {mod_name}: {e}", exc_info=True)
+                    return False, reloaded_modules, True
 
             logger.info("=== Rebuilding inheritance tree ===")
             self._build_inheritance_tree()
             self._log_dependency_state()
 
-            return True, reloaded_modules
+            return True, reloaded_modules, False
 
         except Exception as e:
             logger.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)
-            return False, reloaded_modules
+            return False, reloaded_modules, False
 
     def get_module_dependencies(self, module_name: str):
         """

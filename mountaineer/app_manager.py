@@ -2,11 +2,14 @@ import importlib
 import os
 import socket
 import sys
+from dataclasses import dataclass
 from importlib.metadata import distributions
+from multiprocessing import Process, Queue
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
 from types import ModuleType
+from typing import Any, Literal
 
 from fastapi import Request
 
@@ -16,7 +19,128 @@ from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import (
     ExceptionController,
 )
+from mountaineer.logging import LOGGER
 from mountaineer.webservice import UvicornThread
+
+
+@dataclass
+class ServerMessage:
+    """Message passed between main process and server worker"""
+    type: Literal["reload_modules", "shutdown"]
+    data: Any = None
+
+
+class ServerWorker(Process):
+    """
+    Worker process that runs the server and handles module reloading.
+    This isolates the server from the main process, allowing for clean restarts.
+    """
+
+    def __init__(
+        self,
+        package: str,
+        module_name: str,
+        controller_name: str,
+        host: str | None,
+        port: int,
+        live_reload_port: int | None,
+        message_queue: Queue,
+    ):
+        super().__init__()
+        self.package = package
+        self.module_name = module_name
+        self.controller_name = controller_name
+        self.host = host
+        self.port = port
+        self.live_reload_port = live_reload_port
+        self.message_queue = message_queue
+        self.webservice_thread: UvicornThread | None = None
+
+    def run(self):
+        """Main worker process loop"""
+        try:
+            # Initialize the app controller
+            module = importlib.import_module(self.module_name)
+            initial_state = {name: getattr(module, name) for name in dir(module)}
+            self.app_controller = initial_state[self.controller_name]
+
+            # Mount exceptions
+            self.exception_controller = ExceptionController()
+            self.mount_exceptions(self.app_controller)
+
+            # Start the server
+            self.start_server()
+
+            # Process messages until shutdown
+            while True:
+                message: ServerMessage = self.message_queue.get()
+                if message.type == "shutdown":
+                    break
+                elif message.type == "reload_modules":
+                    self.handle_module_reload()
+
+        except Exception as e:
+            LOGGER.error(f"Server worker failed: {e}", exc_info=True)
+        finally:
+            if self.webservice_thread:
+                self.webservice_thread.stop()
+
+    def start_server(self):
+        """Start the uvicorn server"""
+        if self.webservice_thread is not None:
+            self.webservice_thread.stop()
+
+        # Inject the live reload port
+        self.app_controller.live_reload_port = self.live_reload_port or 0
+
+        self.webservice_thread = UvicornThread(
+            name="Dev webserver",
+            emoticon="🚀",
+            app=self.app_controller.app,
+            host=self.host or "127.0.0.1",
+            port=self.port,
+        )
+        self.webservice_thread.start()
+
+    def handle_module_reload(self):
+        """Handle module reloading within the worker process"""
+        try:
+            # Re-import the module to get fresh state
+            self.module = importlib.import_module(self.module_name)
+            initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
+            self.app_controller = initial_state[self.controller_name]
+
+            # Re-mount exceptions
+            self.mount_exceptions(self.app_controller)
+
+            # Restart the server with new controller
+            self.start_server()
+        except Exception as e:
+            LOGGER.error(f"Failed to reload modules: {e}", exc_info=True)
+
+    def mount_exceptions(self, app_controller: AppController):
+        # Don't re-mount the exception controller
+        current_controllers = [
+            controller_definition.controller.__class__.__name__
+            for controller_definition in app_controller.controllers
+        ]
+
+        if self.exception_controller.__class__.__name__ not in current_controllers:
+            app_controller.register(self.exception_controller)
+            app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+
+    async def handle_dev_exception(self, request: Request, exc: Exception):
+        if request.method == "GET":
+            html = await self.exception_controller._definition.view_route(  # type: ignore
+                exception=str(exc),
+                stack="".join(format_exception(exc)),
+                parsed_exception=self.exception_controller.traceback_parser.parse_exception(
+                    exc
+                ),
+            )
+            return html
+        else:
+            raise exc
 
 
 class DevAppManager:
@@ -43,17 +167,15 @@ class DevAppManager:
         self.controller_name = controller_name
         self.app_controller = app_controller
 
-        self.webservice_thread: UvicornThread | None = None
         self.host = host
         self.port = port
-
         self.live_reload_port = live_reload_port
 
-        self.exception_controller = ExceptionController()
+        # Message queue for communicating with server worker
+        self.message_queue = Queue()
+        self.server_worker: ServerWorker | None = None
 
-        # Initial mount
-        self.mount_exceptions(app_controller)
-
+        # Initialize builders
         global_build_cache = Path(mkdtemp())
         self.js_compiler = APIBuilder(
             app_controller,
@@ -93,38 +215,43 @@ class DevAppManager:
         )
 
     def update_module(self):
-        # By the time we get to this point, our hot reloader should
-        # have already reloaded the module in global space
+        """Update the module in the main process for builders"""
         self.module = sys.modules[self.module.__name__]
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
 
-        # Re-mount the exceptions now that we have a new app controller
-        self.mount_exceptions(self.app_controller)
-
-        # We also have to update our builders
+        # Update builders with new controller
         self.js_compiler.update_controller(self.app_controller)
         self.app_compiler.update_controller(self.app_controller)
 
     def restart_server(self):
+        """Restart the server in a fresh process"""
         if not self.port:
             raise ValueError("Port not set")
 
-        if self.webservice_thread is not None:
-            self.webservice_thread.stop()
+        # Stop existing worker if running
+        if self.server_worker and self.server_worker.is_alive():
+            self.message_queue.put(ServerMessage(type="shutdown"))
+            self.server_worker.join(timeout=5)
+            if self.server_worker.is_alive():
+                self.server_worker.terminate()
 
-        # Inject the live reload port so it's picked up even
-        # when the app changes
-        self.app_controller.live_reload_port = self.live_reload_port or 0
-
-        self.webservice_thread = UvicornThread(
-            name="Dev webserver",
-            emoticon="🚀",
-            app=self.app_controller.app,
-            host=self.host or "127.0.0.1",
+        # Start new worker
+        self.server_worker = ServerWorker(
+            package=self.package,
+            module_name=self.module_name,
+            controller_name=self.controller_name,
+            host=self.host,
             port=self.port,
+            live_reload_port=self.live_reload_port,
+            message_queue=self.message_queue,
         )
-        self.webservice_thread.start()
+        self.server_worker.start()
+
+    def reload_modules(self):
+        """Signal the worker to reload modules"""
+        if self.server_worker and self.server_worker.is_alive():
+            self.message_queue.put(ServerMessage(type="reload_modules"))
 
     def is_port_open(self, host, port):
         """

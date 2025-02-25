@@ -161,12 +161,17 @@ def handle_runserver(
                 package_path_to_module(package, module_path)
                 for module_path in updated_python
             ]
-            success, reloaded = hot_reloader.reload_modules(module_names)
+            success, reloaded, needs_restart = hot_reloader.reload_modules(module_names)
 
             if reloaded:
-                app_manager.update_module()
-                await app_manager.js_compiler.build_use_server()
-                app_manager.restart_server()
+                if needs_restart:
+                    # Full server restart needed - start fresh process
+                    app_manager.restart_server()
+                else:
+                    # Normal hot reload - update module in main process and signal worker to reload
+                    app_manager.update_module()
+                    await app_manager.js_compiler.build_use_server()
+                    app_manager.reload_modules()
 
             if not success:
                 CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
