@@ -1,14 +1,12 @@
 import importlib.metadata
-import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
 from pathlib import Path
 from threading import Timer
-from typing import Any, Callable
+from typing import Callable, Iterable
 
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
+from watchfiles import Change, watch
 
 from mountaineer.console import CONSOLE
 from mountaineer.paths import resolve_package_path
@@ -39,7 +37,7 @@ class CallbackDefinition:
     callback: Callable[[CallbackMetadata], None]
 
 
-class ChangeEventHandler(FileSystemEventHandler):
+class FileWatcher:
     def __init__(
         self,
         callbacks: list[CallbackDefinition],
@@ -50,40 +48,36 @@ class ChangeEventHandler(FileSystemEventHandler):
         """
         :param debounce_interval: Seconds to wait for more events. Will only send one event per batched
         interval to avoid saturating clients with one action that results in many files.
-
         """
-        super().__init__()
         self.callbacks = callbacks
-        self.ignore_changes = False
         self.ignore_list = ignore_list
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
         self.debounce_timer: Timer | None = None
         self.pending_events: list[CallbackEvent] = []
 
-    def on_modified(self, event):
-        super().on_modified(event)
-        if self.should_ignore_path(event.src_path):
-            return
-        if not event.is_directory:
-            CONSOLE.print(f"[yellow]File modified: {event.src_path}")
-            self._debounce(CallbackType.MODIFIED, Path(event.src_path))
+    def should_ignore_path(self, path: Path | str) -> bool:
+        path_str = str(path)
+        path_components = set(path_str.split("/"))
 
-    def on_created(self, event):
-        super().on_created(event)
-        if self.should_ignore_path(event.src_path):
-            return
-        if not event.is_directory:
-            CONSOLE.print(f"[yellow]File created: {event.src_path}")
-            self._debounce(CallbackType.CREATED, Path(event.src_path))
+        # Check for any nested hidden directories and ignored directories
+        if self.ignore_hidden and any(
+            component.startswith(".") for component in path_components
+        ):
+            return True
+        elif path_components & set(self.ignore_list) != set():
+            return True
+        return False
 
-    def on_deleted(self, event):
-        super().on_deleted(event)
-        if self.should_ignore_path(event.src_path):
-            return
-        if not event.is_directory:
-            CONSOLE.print(f"[yellow]File deleted: {event.src_path}")
-            self._debounce(CallbackType.DELETED, Path(event.src_path))
+    def _map_change_to_callback_type(self, change: Change) -> CallbackType:
+        if change == Change.added:
+            return CallbackType.CREATED
+        elif change == Change.modified:
+            return CallbackType.MODIFIED
+        elif change == Change.deleted:
+            return CallbackType.DELETED
+        # Default to modified for any other changes
+        return CallbackType.MODIFIED
 
     def _debounce(self, action: CallbackType, path: Path):
         if self.debounce_timer is not None:
@@ -99,13 +93,8 @@ class ChangeEventHandler(FileSystemEventHandler):
 
     def handle_callbacks(self):
         """
-        Runs all callbacks for the given action. Since callbacks are allowed to make
-        modifications to the filesystem, we temporarily disable the event handler to avoid
-        infinite loops.
-
+        Runs all callbacks for the given action.
         """
-        self.ignore_changes = True
-
         for callback in self.callbacks:
             valid_events = [
                 event
@@ -116,22 +105,21 @@ class ChangeEventHandler(FileSystemEventHandler):
                 callback.callback(CallbackMetadata(events=valid_events))
 
         self.pending_events = []
-        self.ignore_changes = False
 
-    def should_ignore_path(self, path: Path):
-        if self.ignore_changes:
-            return True
+    def process_changes(self, changes: Iterable[tuple[Change, str]]):
+        """
+        Process a batch of changes from watchfiles.
+        """
+        for change, path_str in changes:
+            path = Path(path_str)
+            if self.should_ignore_path(path):
+                continue
 
-        path_components = set(str(path).split("/"))
-
-        # Check for any nested hidden directories and ignored directories
-        if self.ignore_hidden and any(
-            (component for component in path_components if component.startswith("."))
-        ):
-            return True
-        elif path_components & set(self.ignore_list) != set():
-            return True
-        return False
+            action = self._map_change_to_callback_type(change)
+            if not action.name:
+                continue
+            CONSOLE.print(f"[yellow]File {action.name.lower()}: {path}")
+            self._debounce(action, path)
 
 
 class WatchdogLockError(Exception):
@@ -162,9 +150,6 @@ class PackageWatchdog:
         self.callbacks: list[CallbackDefinition] = callbacks or []
         self.run_on_bootup = run_on_bootup
 
-        self.event_handler: ChangeEventHandler | None = None
-        self.observer: Any | None = None
-
         self.check_packages_installed()
         self.get_package_paths()
 
@@ -174,25 +159,16 @@ class PackageWatchdog:
                 for callback_definition in self.callbacks:
                     callback_definition.callback(CallbackMetadata(events=[]))
 
-            self.event_handler = ChangeEventHandler(callbacks=self.callbacks)
-            self.observer = Observer()
+            watcher = FileWatcher(callbacks=self.callbacks)
 
             for path in self.paths:
                 CONSOLE.print(f"[green]Watching {path}")
-                if os.path.isdir(path):
-                    self.observer.schedule(self.event_handler, path, recursive=True)
-                else:
-                    self.observer.schedule(
-                        self.event_handler, os.path.dirname(path), recursive=False
-                    )
-
-            self.observer.start()
 
             try:
-                self.observer.join()
+                for changes in watch(*self.paths, watch_filter=None):
+                    watcher.process_changes(changes)
             except KeyboardInterrupt:
-                self.observer.stop()
-                self.observer.join()
+                pass
 
     def check_packages_installed(self):
         for package in self.packages:
@@ -215,7 +191,6 @@ class PackageWatchdog:
         """
         We only want one watchdog running at a time or otherwise we risk stepping
         on each other or having infinitely looping file change notifications.
-
         """
         package_path = resolve_package_path(self.main_package)
 
@@ -235,7 +210,6 @@ class PackageWatchdog:
         """
         If one path is a subdirectory of another, we only want to watch the parent
         directory. This function merges the paths to avoid duplicate watchers.
-
         """
         paths = [Path(path).resolve() for path in raw_paths]
 

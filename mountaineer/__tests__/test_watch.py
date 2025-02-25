@@ -1,15 +1,16 @@
 from pathlib import Path
-from threading import Thread
+from threading import Event, Thread
 from time import sleep
 
 import pytest
+from watchfiles import Change
 
 from mountaineer.watch import (
     CallbackDefinition,
     CallbackEvent,
     CallbackMetadata,
     CallbackType,
-    ChangeEventHandler,
+    FileWatcher,
     PackageWatchdog,
 )
 
@@ -30,10 +31,8 @@ def test_ignore_path(
     ignore_hidden: bool,
     expected_ignore: bool,
 ):
-    handler = ChangeEventHandler(
-        [], ignore_list=ignore_list, ignore_hidden=ignore_hidden
-    )
-    assert handler.should_ignore_path(Path(path)) == expected_ignore
+    watcher = FileWatcher([], ignore_list=ignore_list, ignore_hidden=ignore_hidden)
+    assert watcher.should_ignore_path(Path(path)) == expected_ignore
 
 
 @pytest.mark.parametrize(
@@ -63,28 +62,34 @@ def test_merge_paths(paths: list[str], expected_paths: list[str]):
     }
 
 
+def test_change_mapping():
+    watcher = FileWatcher([])
+    assert watcher._map_change_to_callback_type(Change.added) == CallbackType.CREATED
+    assert (
+        watcher._map_change_to_callback_type(Change.modified) == CallbackType.MODIFIED
+    )
+    assert watcher._map_change_to_callback_type(Change.deleted) == CallbackType.DELETED
+
+
 def test_file_notification(tmp_path: Path):
     callback_events: list[CallbackEvent] = []
+    stop_event = Event()
 
     def receive_callback(metadata: CallbackMetadata):
         callback_events.extend(metadata.events)
 
-    def test_file_lifecycle():
+    def simulate_changes(watcher: FileWatcher):
         # Make sleeps longer than the debounce interval (0.1s)
         sleep(0.15)
-        (tmp_path / "test.txt").write_text("Original")
+        watcher.process_changes([(Change.added, str(tmp_path / "test.txt"))])
         sleep(0.15)
-        (tmp_path / "test.txt").write_text("Modified")
+        watcher.process_changes([(Change.modified, str(tmp_path / "test.txt"))])
         sleep(0.15)
-        (tmp_path / "test.txt").unlink()
+        watcher.process_changes([(Change.deleted, str(tmp_path / "test.txt"))])
         sleep(0.15)
+        stop_event.set()
 
-        assert handler.observer
-        handler.observer.stop()
-
-    handler = PackageWatchdog(
-        "mountaineer",
-        [],
+    watcher = FileWatcher(
         callbacks=[
             CallbackDefinition(
                 action=CallbackType.CREATED
@@ -95,14 +100,11 @@ def test_file_notification(tmp_path: Path):
         ],
     )
 
-    # Override the paths found from the package name with our temporary path
-    # where we can write additional files
-    handler.paths = [str(tmp_path)]
+    changes_thread = Thread(target=simulate_changes, args=(watcher,))
+    changes_thread.start()
 
-    lifecycle_thread = Thread(target=test_file_lifecycle)
-    lifecycle_thread.start()
-
-    handler.start_watching()
+    # Wait for all changes to be processed
+    stop_event.wait(timeout=2.0)
 
     event_actions: list[CallbackType] = []
     for event in callback_events:
