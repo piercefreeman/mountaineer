@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from mountaineer.hotreload import HotReloader, resolve_relative_import
+from mountaineer.development.hotreload import HotReloader, resolve_relative_import
 
 
 @pytest.fixture

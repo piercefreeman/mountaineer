@@ -11,14 +11,16 @@ from inflection import underscore
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.app_manager import (
-    DevAppManager,
-    find_packages_with_prefix,
-    package_path_to_module,
-)
 from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
+from mountaineer.development.manager import (
+    DevAppManager,
+)
+from mountaineer.development.packages import (
+    find_packages_with_prefix,
+    package_path_to_module,
+)
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 from mountaineer.watch import (

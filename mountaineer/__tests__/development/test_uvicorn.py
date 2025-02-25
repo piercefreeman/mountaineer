@@ -6,7 +6,7 @@ import pytest
 from rich.spinner import Spinner
 from rich.text import Text
 
-from mountaineer.webservice import (
+from mountaineer.development.uvicorn import (
     ServerStatus,
     configure_uvicorn_logging,
 )

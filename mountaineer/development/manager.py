@@ -16,10 +16,66 @@ from mountaineer.development.messages import (
 
 class DevAppManager:
     """
-    The main entrypoint for the main process to communicate with our isolated
-    app context that's spawned in its own process. We execute logic within the
-    isolated context through message passing.
+    The main entrypoint for managing an isolated development application process with hot-reloading capabilities.
 
+    DevAppManager handles the lifecycle and communication with an isolated Python web application,
+    running in a separate process for development purposes. It provides process isolation,
+    hot module reloading, and message-based communication between the main process and the
+    isolated application context.
+
+    Key features:
+    - Process isolation for development server
+    - Asynchronous message-based communication
+    - Hot module reloading support
+    - Automatic process lifecycle management
+    - JS build triggering for frontend changes
+
+    The manager operates through an async context manager pattern:
+
+    ```python
+    async with DevAppManager.from_webcontroller(
+        webcontroller="myapp.controllers:HomeController",
+        host="localhost",
+        port=8000
+    ) as manager:
+        await manager.reload_modules(["myapp.views"])
+    ```
+
+    When changes are detected, the manager can either reload specific modules or
+    restart the entire server process if necessary. Communication between the main
+    process and isolated context happens through a message broker, ensuring clean
+    separation of concerns.
+
+    """
+
+    package: str
+    """
+    The root package name of the application
+    """
+
+    module_name: str
+    """
+    The module containing the web controller
+    """
+
+    controller_name: str
+    """
+    The name of the web controller class
+    """
+
+    host: str | None
+    """
+    The host to bind the server to
+    """
+
+    port: int | None
+    """
+    The port to run the server on
+    """
+
+    live_reload_port: int | None
+    """
+    The port for live reload websocket connections
     """
 
     def __init__(

@@ -5,9 +5,9 @@ from threading import Thread
 from fastapi import FastAPI, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from mountaineer.development.uvicorn import UvicornThread
 from mountaineer.io import get_free_port
 from mountaineer.logging import LOGGER
-from mountaineer.webservice import UvicornThread
 
 
 class WatcherWebservice:
