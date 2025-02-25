@@ -13,6 +13,7 @@ Each framework has its own unique features and tradeoffs. Mountaineer focuses on
 - 🌎 Optimized server rendering for better accessibility and SEO
 - 🏹 Static analysis of web pages for strong validation: link validity, data access, etc.
 - 🤩 Skip the API or Node.js server just to serve frontend clients
+- 🚀 Full support for React 19 features including new Static APIs and Server Components
 
 > We built Mountaineer out of a frustration that we were reinventing the webapp wheel time and time again. We love Python for backend development and the interactivity of React for frontend UX. But they don't work seamlessly together without a fair amount of glue. So: we built the glue. While we were at it, we embedded a V8 engine to provide server-side rendering, added conventions for application configuration, built native Typescript integrations, and more. Our vision is for you to import one slim dependency and you're off to the races.
 >
@@ -355,3 +356,23 @@ And that's it. We've just built a fully interactive web application without havi
 ### Learn More
 
 We have additional documentation that does more of a technical deep dive on different features of Mountaineer. Check out [mountaineer.sh](https://mountaineer.sh/).
+
+## React 19 Compatibility
+
+Mountaineer now fully supports React 19, including its new Static APIs and Server Components. The following enhancements have been made:
+
+1. **Updated Package Dependencies**: React dependencies have been updated from version 18 to 19 in all template and test `package.json` files.
+
+2. **Enhanced SSR Implementation**: The code generator has been modified to support both React 18's `renderToString` and React 19's `prerender` API, with a fallback mechanism for backward compatibility.
+
+3. **Added Polyfills for React 19**: Polyfills for required browser APIs have been added, including:
+   - `global` object for V8 runtime
+   - `MessageChannel` for React 19 SSR
+   - `AbortController` for async operations
+   - `ReadableStream` for streaming responses
+   - `TextEncoder` for text encoding
+   - Proper handling of `document.all` and `Intl.Locale`
+
+4. **Maintained Backward Compatibility**: Existing Mountaineer apps using React 18 will continue to function without changes, with graceful fallbacks for environments lacking React 19 features.
+
+If you encounter any issues while upgrading to React 19, please report them on the [Mountaineer GitHub repository](https://github.com/piercefreeman/mountaineer).

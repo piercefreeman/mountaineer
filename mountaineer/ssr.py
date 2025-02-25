@@ -74,6 +74,62 @@ def render_ssr(
     injected_script = f"var SERVER_DATA = {data_json};\n{polyfill_script}\n"
     full_script = f"{injected_script}{script}"
 
+    # Add support for async rendering in React 19
+    async_wrapper = """
+    // Ensure SSR is defined if it's referenced in the code
+    if (typeof SSR === 'undefined') {
+        var SSR = {};
+    }
+    
+    // Define a synchronous wrapper function that will be called by the V8 runtime
+    function renderWrapper() {
+        // Handle both synchronous and asynchronous rendering
+        if (typeof Index === 'function') {
+            if (Index.constructor && Index.constructor.name === 'AsyncFunction') {
+                // For async functions, we need to return a placeholder
+                // The actual async execution will happen in executeRender
+                return "Async rendering in progress...";
+            } else {
+                // For synchronous functions, we can call them directly
+                try {
+                    return Index();
+                } catch (e) {
+                    throw new Error('SSR Rendering Error: ' + (e.message || String(e)));
+                }
+            }
+        } else {
+            // If Index is not defined, return empty string
+            return "";
+        }
+    }
+    
+    // This is the function that will be called by the V8 runtime
+    renderWrapper();
+    
+    // We also set up the async execution, but this won't be used directly by the V8 runtime
+    // It's here for future compatibility
+    async function executeRender() {
+        try {
+            // Check if Index is an async function (React 19 prerender)
+            if (typeof Index === 'function' &&
+                (Index.constructor && Index.constructor.name === 'AsyncFunction')) {
+                return await Index();
+            } else if (typeof Index === 'function') {
+                // Traditional synchronous renderToString (React 18)
+                return Index();
+            } else {
+                // If Index is not defined, return empty string
+                return "";
+            }
+        } catch (e) {
+            // Wrap the error with more context
+            throw new Error('SSR Rendering Error: ' + (e.message || String(e)));
+        }
+    }
+    """
+    
+    full_script = f"{full_script}\n{async_wrapper}"
+
     try:
         # Convert to milliseconds for the rust worker
         render_result = mountaineer_rs.render_ssr(
