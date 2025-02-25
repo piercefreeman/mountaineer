@@ -1,19 +1,16 @@
+import asyncio
 import importlib
 import os
 import socket
-import sys
-import asyncio
 import uuid
-from typing import Optional, Any, Dict, TypeVar, Generic
+from asyncio import Future
 from dataclasses import dataclass
 from importlib.metadata import distributions
 from multiprocessing import Process, Queue
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
-from types import ModuleType
-from typing import Any, Literal, TypedDict
-from asyncio import Future
+from typing import Any, Dict, Generic, List, Optional, TypeVar
 
 from fastapi import Request
 
@@ -23,24 +20,67 @@ from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import (
     ExceptionController,
 )
+from mountaineer.hotreload import HotReloader
 from mountaineer.logging import LOGGER
 from mountaineer.webservice import UvicornThread
-from mountaineer.hotreload import HotReloader
+
+T = TypeVar("T")
+
+# Define a type variable for the response type
+TResponse = TypeVar("TResponse")
 
 
-T = TypeVar('T')
+@dataclass
+class BaseAppMessage(Generic[TResponse]):
+    """Base class for all messages passed between main process and isolated app context"""
+
+    pass
 
 
-class AsyncMessageBroker(Generic[T]):
+@dataclass
+class ReloadResponse(BaseAppMessage[None]):
+    success: bool
+    reloaded: list[str]
+    needs_restart: bool
+    exception: Optional[str] = None
+    traceback: Optional[str] = None
+
+
+@dataclass
+class ReloadModulesMessage(BaseAppMessage[ReloadResponse]):
+    """Message to reload modules in the isolated app context"""
+
+    module_names: List[str]
+
+
+@dataclass
+class BuildJsMessage(BaseAppMessage[None]):
+    """Message to trigger JS compilation"""
+
+    pass
+
+
+@dataclass
+class ShutdownMessage(BaseAppMessage[None]):
+    """Message to shutdown the isolated app context"""
+
+    pass
+
+
+AppMessageType = TypeVar("AppMessageType", bound=BaseAppMessage[Any])
+
+
+class AsyncMessageBroker(Generic[AppMessageType]):
     """
     A thread and process-safe message broker that allows async communication between
     processes. This broker maintains a mapping between message IDs and their corresponding
     futures, allowing async code to await responses from other processes.
     """
+
     def __init__(self):
         self.message_queue: Queue = Queue()
         self.response_queue: Queue = Queue()
-        self._pending_futures: Dict[str, Future[T]] = {}
+        self._pending_futures: Dict[str, Future[Any]] = {}
         self._response_task: Optional[asyncio.Task] = None
 
     def start(self):
@@ -64,8 +104,10 @@ class AsyncMessageBroker(Generic[T]):
             try:
                 # Use run_in_executor to avoid blocking the event loop
                 loop = asyncio.get_event_loop()
-                response_id, response = await loop.run_in_executor(None, self.response_queue.get)
-                
+                response_id, response = await loop.run_in_executor(
+                    None, self.response_queue.get
+                )
+
                 if response_id in self._pending_futures:
                     future = self._pending_futures.pop(response_id)
                     if not future.done():
@@ -80,23 +122,10 @@ class AsyncMessageBroker(Generic[T]):
         message_id = str(uuid.uuid4())
         future: Future[T] = asyncio.Future()
         self._pending_futures[message_id] = future
-        
+
         # Send message with ID
         self.message_queue.put((message_id, message))
         return await future
-
-
-@dataclass
-class AppMessage:
-    """Message passed between main process and isolated app context"""
-    type: Literal["reload_modules", "build_js", "shutdown"]
-    data: Any = None
-
-
-class ReloadResponse(TypedDict):
-    success: bool
-    reloaded: list[str]
-    needs_restart: bool
 
 
 class IsolatedAppContext(Process):
@@ -113,7 +142,7 @@ class IsolatedAppContext(Process):
         host: str | None,
         port: int,
         live_reload_port: int | None,
-        message_broker: AsyncMessageBroker[Any],
+        message_broker: AsyncMessageBroker[BaseAppMessage[Any]],
     ):
         super().__init__()
         self.package = package
@@ -137,15 +166,14 @@ class IsolatedAppContext(Process):
             # Process messages until shutdown
             while True:
                 message_id, message = self.message_broker.message_queue.get()
-                message: AppMessage = message
 
-                if message.type == "shutdown":
+                if isinstance(message, ShutdownMessage):
                     break
-                elif message.type == "reload_modules":
-                    response = self.handle_module_reload()
+                elif isinstance(message, ReloadModulesMessage):
+                    response = self.handle_module_reload(message.module_names)
                     print(f"Sending response: {response}")
                     self.message_broker.response_queue.put((message_id, response))
-                elif message.type == "build_js":
+                elif isinstance(message, BuildJsMessage):
                     self.handle_js_build()
 
         except Exception as e:
@@ -159,7 +187,9 @@ class IsolatedAppContext(Process):
         try:
             # Import and initialize the module
             self.module = importlib.import_module(self.module_name)
-            initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
+            initial_state = {
+                name: getattr(self.module, name) for name in dir(self.module)
+            }
             self.app_controller = initial_state[self.controller_name]
 
             # Initialize hot reloader
@@ -204,11 +234,13 @@ class IsolatedAppContext(Process):
         )
         self.webservice_thread.start()
 
-    def handle_module_reload(self) -> ReloadResponse:
+    def handle_module_reload(self, module_names: List[str]) -> ReloadResponse:
         """Handle module reloading within the isolated context"""
         try:
             # Get the list of modules to reload from the hot reloader
-            success, reloaded, needs_restart, error = self.hot_reloader.reload_module(self.module_name)
+            success, reloaded, needs_restart, error = self.hot_reloader.reload_modules(
+                module_names
+            )
 
             # TODO: We should have another message that does this
             if success and not needs_restart:
@@ -221,22 +253,22 @@ class IsolatedAppContext(Process):
                 # Restart the server with new controller
                 self.start_server()
 
-            return {
-                "success": success,
-                "reloaded": reloaded,
-                "needs_restart": needs_restart,
-                "exception": str(error) if error else None,
-                "traceback": "".join(format_exception(error)) if error else None,
-            }
+            return ReloadResponse(
+                success=success,
+                reloaded=reloaded,
+                needs_restart=needs_restart,
+                exception=str(error) if error else None,
+                traceback="".join(format_exception(error)) if error else None,
+            )
         except Exception as e:
             LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
-            return {
-                "success": False,
-                "reloaded": [],
-                "needs_restart": True,
-                "exception": str(e),
-                "traceback": "".join(format_exception(e)),
-            }
+            return ReloadResponse(
+                success=False,
+                reloaded=[],
+                needs_restart=True,
+                exception=str(e),
+                traceback="".join(format_exception(e)),
+            )
 
     def handle_js_build(self):
         """Handle JS compilation within the isolated context"""
@@ -294,7 +326,9 @@ class DevAppManager:
         self.live_reload_port = live_reload_port
 
         # Message broker for communicating with isolated context
-        self.message_broker: AsyncMessageBroker[Any] = AsyncMessageBroker()
+        self.message_broker: AsyncMessageBroker[
+            BaseAppMessage[Any]
+        ] = AsyncMessageBroker()
         self.app_context: IsolatedAppContext | None = None
 
     @classmethod
@@ -334,7 +368,9 @@ class DevAppManager:
 
         # Stop existing context if running
         if self.app_context and self.app_context.is_alive():
-            self.message_broker.message_queue.put((str(uuid.uuid4()), AppMessage(type="shutdown")))
+            self.message_broker.message_queue.put(
+                (str(uuid.uuid4()), ShutdownMessage())
+            )
             self.app_context.join(timeout=5)
             if self.app_context.is_alive():
                 self.app_context.terminate()
@@ -357,24 +393,22 @@ class DevAppManager:
         Returns a tuple of (success, reloaded_modules, needs_restart).
         """
         if not (self.app_context and self.app_context.is_alive()):
-            return {
-                "success": False,
-                "reloaded": [],
-                "needs_restart": True,
-            }
+            return ReloadResponse(
+                success=False,
+                reloaded=[],
+                needs_restart=True,
+            )
 
-        return await self.message_broker.send_message(AppMessage(
-            type="reload_modules",
-            data=module_names,
-        ))
+        return await self.message_broker.send_message(
+            ReloadModulesMessage(
+                module_names=module_names,
+            )
+        )
 
     def build_js(self):
         """Signal the context to rebuild JS"""
         if self.app_context and self.app_context.is_alive():
-            self.message_broker.message_queue.put((
-                str(uuid.uuid4()),
-                AppMessage(type="build_js")
-            ))
+            self.message_broker.message_queue.put((str(uuid.uuid4()), BuildJsMessage()))
 
     def is_port_open(self, host, port):
         """Check if a port is open on the given host."""

@@ -984,5 +984,7 @@ def test_non_syntax_error_triggers_restart(test_package_dir: tuple[Path, str]):
     # Attempt to reload - this should fail without triggering restart
     success, reloaded, needs_restart = hot_reloader.reload_module(f"{pkg_name}.base")
     assert not success, "Reload should fail due to syntax error"
-    assert not needs_restart, "Should not indicate server restart is needed for syntax error"
+    assert (
+        not needs_restart
+    ), "Should not indicate server restart is needed for syntax error"
     assert reloaded == [], "No modules should be marked as successfully reloaded"

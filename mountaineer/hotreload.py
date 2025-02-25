@@ -385,7 +385,9 @@ class HotReloader:
                     # Non-syntax errors indicate potential corruption with the current in-memory representation (like
                     # reloading a database model that can only be mounted to a central registry once). In this case we
                     # will restart the server to get a clean state.
-                    logger.info(f"Non-syntax error reloading {mod_name}: {e}", exc_info=True)
+                    logger.info(
+                        f"Non-syntax error reloading {mod_name}: {e}", exc_info=True
+                    )
                     return False, reloaded_modules, True, e
 
             logger.info("=== Rebuilding inheritance tree ===")

@@ -127,8 +127,8 @@ def handle_runserver(
     )
 
     # Initial build
-    #asyncio.run(app_manager.js_compiler.build_all())
-    #asyncio.run(app_manager.app_compiler.run_builder_plugins())
+    # asyncio.run(app_manager.js_compiler.build_all())
+    # asyncio.run(app_manager.app_compiler.run_builder_plugins())
 
     app_manager.restart_server()
 

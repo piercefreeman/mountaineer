@@ -9,8 +9,9 @@ from typing import Callable, Iterable
 from watchfiles import Change, watch
 
 from mountaineer.console import CONSOLE
-from mountaineer.paths import resolve_package_path
 from mountaineer.logging import LOGGER, pluralize
+from mountaineer.paths import resolve_package_path
+
 
 class CallbackType(Flag):
     CREATED = auto()
@@ -161,7 +162,9 @@ class PackageWatchdog:
 
             watcher = FileWatcher(callbacks=self.callbacks)
 
-            CONSOLE.print(f"👀 Watching {len(self.paths)} {pluralize(len(self.paths), 'path', 'paths')}")
+            CONSOLE.print(
+                f"👀 Watching {len(self.paths)} {pluralize(len(self.paths), 'path', 'paths')}"
+            )
             for path in self.paths:
                 LOGGER.info(f"Watching {path}")
 
@@ -199,7 +202,7 @@ class PackageWatchdog:
         lock_path = (Path(str(package_path)) / ".watchdog.lock").absolute()
         if lock_path.exists():
             CONSOLE.print(
-                f"[yellow]Watchdog lock file exists, another process may be running and cause build conflicts."
+                "[yellow]Watchdog lock file exists, another process may be running and cause build conflicts."
             )
 
             # Remove the old lock file
