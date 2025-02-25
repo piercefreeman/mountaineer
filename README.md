@@ -13,6 +13,7 @@ Each framework has its own unique features and tradeoffs. Mountaineer focuses on
 - 🌎 Optimized server rendering for better accessibility and SEO
 - 🏹 Static analysis of web pages for strong validation: link validity, data access, etc.
 - 🤩 Skip the API or Node.js server just to serve frontend clients
+- 🚀 Full support for React 19 features including new Static APIs and Server Components
 
 > We built Mountaineer out of a frustration that we were reinventing the webapp wheel time and time again. We love Python for backend development and the interactivity of React for frontend UX. But they don't work seamlessly together without a fair amount of glue. So: we built the glue. While we were at it, we embedded a V8 engine to provide server-side rendering, added conventions for application configuration, built native Typescript integrations, and more. Our vision is for you to import one slim dependency and you're off to the races.
 >
