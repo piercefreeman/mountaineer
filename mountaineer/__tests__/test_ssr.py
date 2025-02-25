@@ -1,11 +1,9 @@
-from re import sub as re_sub
 from time import monotonic_ns
 from uuid import UUID, uuid4
 
 import pytest
 from pydantic import BaseModel
 
-from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.ssr import V8RuntimeError, render_ssr
 
 
@@ -30,17 +28,13 @@ def test_ssr_speed_baseline():
     successful_renders = 0
     for _ in range(5):  # Reduced from 50 to make tests faster
         start = monotonic_ns()
-        try:
-            render_ssr(
-                js_contents,
-                FakeModel(random_id=uuid4()).model_dump(mode="json"),
-                hard_timeout=5,  # Increased timeout to avoid issues
-            )
-            successful_renders += 1
-        except (TimeoutError, V8RuntimeError) as e:
-            # Log the error but continue with the test
-            print(f"Render error (expected in some environments): {e}")
-        
+        render_ssr(
+            js_contents,
+            FakeModel(random_id=uuid4()).model_dump(mode="json"),
+            hard_timeout=5,  # Increased timeout to avoid issues
+        )
+        successful_renders += 1
+
         all_measurements.append((monotonic_ns() - start) / 1e9)
 
     # Ensure at least one render was successful or all renders were attempted
@@ -120,4 +114,6 @@ def test_ssr_exception_context():
             hard_timeout=0,
         )
     except V8RuntimeError as e:
-        assert "custom_error_text" in str(e), f"Expected 'custom_error_text' in error message, got: {str(e)}"
+        assert "custom_error_text" in str(
+            e
+        ), f"Expected 'custom_error_text' in error message, got: {str(e)}"
