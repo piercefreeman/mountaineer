@@ -3,9 +3,6 @@ from os import environ
 from pathlib import Path
 from subprocess import PIPE
 from tempfile import TemporaryDirectory
-from time import monotonic_ns
-
-from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.exceptions import BuildProcessException

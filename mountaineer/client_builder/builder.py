@@ -1,6 +1,5 @@
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
-from time import monotonic_ns
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.aliases import AliasManager
@@ -71,7 +70,6 @@ class APIBuilder:
         self._generate_static_files()
         self._generate_global_files(parsed_controller)
         self._generate_local_files(parsed_controller)
-
 
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""

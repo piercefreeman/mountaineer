@@ -366,7 +366,9 @@ class HotReloader:
     def reload_module(self, module_name: str) -> tuple[bool, list[str], bool]:
         return self.reload_modules([module_name])
 
-    def reload_modules(self, module_names: list[str]) -> tuple[bool, list[str], bool]:
+    def reload_modules(
+        self, module_names: list[str]
+    ) -> tuple[list[str], bool, Exception | None]:
         """
         Reload a module and all its dependencies. Note that this requires the underlying bite
         length to have changed: https://bugs.python.org/issue31772
@@ -399,7 +401,7 @@ class HotReloader:
             logger.error(f"Modules {invalid_modules} are not loaded. Cannot reload.")
 
             if not valid_modules:
-                return False, reloaded_modules, False
+                return reloaded_modules, False, None
 
         try:
             affected = {
@@ -427,7 +429,7 @@ class HotReloader:
                     # Syntax errors are fatal and should stop the reload process, however they can be easily
                     # corrected when the user updates the file
                     logger.info(f"Syntax error in {mod_name}: {e}", exc_info=True)
-                    return False, reloaded_modules, False, e
+                    return reloaded_modules, False, e
                 except Exception as e:
                     # Non-syntax errors indicate potential corruption with the current in-memory representation (like
                     # reloading a database model that can only be mounted to a central registry once). In this case we
@@ -435,17 +437,17 @@ class HotReloader:
                     logger.info(
                         f"Non-syntax error reloading {mod_name}: {e}", exc_info=True
                     )
-                    return False, reloaded_modules, True, e
+                    return reloaded_modules, True, e
 
             logger.info("=== Rebuilding inheritance tree ===")
             self._build_inheritance_tree()
             self._log_dependency_state()
 
-            return True, reloaded_modules, False, None
+            return reloaded_modules, False, None
 
         except Exception as e:
             logger.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)
-            return False, reloaded_modules, False
+            return reloaded_modules, False, e
 
     def get_module_dependencies(self, module_name: str):
         """

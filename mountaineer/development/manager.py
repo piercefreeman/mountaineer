@@ -1,8 +1,7 @@
 import os
 import socket
-import uuid
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, TypeVar
 
 from mountaineer.console import CONSOLE
 from mountaineer.development.isolation import IsolatedAppContext
@@ -11,19 +10,19 @@ from mountaineer.development.messages import (
     BootupMessage,
     BuildJsMessage,
     BuildUseServerMessage,
+    ErrorResponse,
     IsolatedMessageBase,
     ReloadModulesMessage,
     ReloadResponseError,
-    SuccessResponse,
     RestartServerMessage,
-    ErrorResponse,
     ShutdownMessage,
+    SuccessResponse,
 )
 from mountaineer.logging import LOGGER
-from typing import TypeVar
 
 TSuccess = TypeVar("TSuccess", bound=SuccessResponse)
 TError = TypeVar("TError", bound=ErrorResponse)
+
 
 class BuildFailed(Exception):
     context: ErrorResponse
@@ -177,6 +176,8 @@ class DevAppManager:
                 )
                 self.app_context.terminate()
 
+                # Drain the existing queue?
+
         # Start new context
         LOGGER.debug("[DevAppManager] Starting new app context")
         self.app_context = IsolatedAppContext(
@@ -190,6 +191,11 @@ class DevAppManager:
         )
         self.app_context.start()
         LOGGER.debug("[DevAppManager] New app context started")
+
+        # TODO: Wait for a message/signal that it's started
+        import asyncio
+
+        await asyncio.sleep(1)
 
         bootstrap_response = await self.bootstrap()
         if isinstance(bootstrap_response, ErrorResponse):
@@ -205,22 +211,18 @@ class DevAppManager:
         # Send a bootup request and handle the initialization process
         # Any subsequent reload message received before we bootstrap should do a full bootup
         try:
-            response = await self.communicate(BootupMessage())
+            await self.communicate(BootupMessage())
             LOGGER.debug("[DevAppManager] App context bootstrapped successfully")
             self.successful_bootup = True
         except BuildFailed as e:
-            self.successful_bootup = False
-    
             LOGGER.debug("[DevAppManager] App context failed to bootstrap")
-            # raise Exception(response.exception)
-            CONSOLE.print(f"[bold red]Failed to reload: {response.exception}")
-            CONSOLE.print(response.traceback)
-    
+            self.successful_bootup = False
+
             return e.context
 
         # Only if successful should we build the useServer support files
         try:
-            return await self.communicate(BuildUseServerMessage())            
+            return await self.communicate(BuildUseServerMessage())
         except BuildFailed as e:
             return e.context
 
@@ -258,9 +260,11 @@ class DevAppManager:
 
         LOGGER.debug("[DevAppManager] Sending reload message")
         LOGGER.debug(f"[DevAppManager] App context process ID: {self.app_context.pid}")
-        
+
         try:
-            reload_response = await self.communicate(ReloadModulesMessage(module_names=module_names))
+            reload_response = await self.communicate(
+                ReloadModulesMessage(module_names=module_names)
+            )
             await self.communicate(BuildUseServerMessage())
             await self.communicate(RestartServerMessage())
             return reload_response
@@ -294,14 +298,21 @@ class DevAppManager:
                 LOGGER.debug(f"[DevAppManager] Port {port} is closed")
                 return False
 
-    async def communicate(self, message: IsolatedMessageBase[TSuccess | TError]) -> TSuccess:
+    async def communicate(
+        self, message: IsolatedMessageBase[TSuccess | TError]
+    ) -> TSuccess:
+        LOGGER.debug(
+            f"[DevAppManager] Host->Context: Communicating with message: {message}"
+        )
         response = await self.message_broker.send_message(message)
+        LOGGER.debug(f"[DevAppManager] Host<-Context: Got response: {response}")
+
         if isinstance(response, ErrorResponse):
-            CONSOLE.print(
-                f"[bold red]Worker failed: {response.exception}"
-            )
+            CONSOLE.print(f"[bold red]Webapp Error: {response.exception}")
             CONSOLE.print(response.traceback)
             raise BuildFailed(context=response)
+        if not isinstance(response, SuccessResponse):
+            raise ValueError(f"Invalid response type: {type(response)} {response}")
         return response
 
     def app_context_missing(self):

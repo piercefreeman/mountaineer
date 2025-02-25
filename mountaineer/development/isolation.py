@@ -58,13 +58,17 @@ class IsolatedAppContext(Process):
         self.live_reload_port = live_reload_port
         self.message_broker = message_broker
         self.webservice_thread: UvicornThread | None = None
+        self.hot_reloader: HotReloader | None = None
 
     def run(self):
         """Main worker process loop"""
         try:
+            LOGGER.debug("[IsolatedAppContext] Starting isolated context")
+
             # Process messages until shutdown
             while True:
                 message_id, message = self.message_broker.message_queue.get()
+                LOGGER.debug(f"[IsolatedAppContext] Got message: {message}")
 
                 try:
                     response: SuccessResponse | ErrorResponse
@@ -79,7 +83,10 @@ class IsolatedAppContext(Process):
                     elif isinstance(message, BuildUseServerMessage):
                         response = self.handle_build_use_server()
                     elif isinstance(message, ShutdownMessage):
-                        response = SuccessResponse()
+                        break
+                    else:
+                        LOGGER.error(f"Invalid message type: {type(message)} {message}")
+                        continue
                     self.message_broker.response_queue.put((message_id, response))
                 except Exception as e:
                     LOGGER.info(
@@ -173,8 +180,11 @@ class IsolatedAppContext(Process):
         needs_restart = True
 
         try:
+            if self.hot_reloader is None:
+                raise ValueError("Hot reloader not initialized")
+
             # Get the list of modules to reload from the hot reloader
-            success, reloaded, needs_restart, error = self.hot_reloader.reload_modules(
+            reloaded, needs_restart, error = self.hot_reloader.reload_modules(
                 module_names
             )
 
@@ -195,13 +205,10 @@ class IsolatedAppContext(Process):
 
     def handle_js_build(self, updated_js: list[str] | None = None):
         """Handle JS compilation within the isolated context"""
-        try:
-            # asyncio.run(self.js_compiler.build_use_server())
-            asyncio.run(self.app_compiler.run_builder_plugins(limit_paths=updated_js))
-            for path in (updated_js or []):
-                self.app_controller.invalidate_view(path)
-        except Exception as e:
-            LOGGER.error(f"Failed to build JS: {e}", exc_info=True)
+        asyncio.run(self.app_compiler.run_builder_plugins(limit_paths=updated_js))
+        for path in updated_js or []:
+            self.app_controller.invalidate_view(path)
+        return SuccessResponse()
 
     def mount_exceptions(self, app_controller: AppController):
         # Don't re-mount the exception controller

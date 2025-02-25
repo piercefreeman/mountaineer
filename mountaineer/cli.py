@@ -8,12 +8,8 @@ from time import time
 from typing import Any, Callable, Coroutine
 
 from inflection import underscore
-from rich.traceback import install as rich_traceback_install
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
-from rich.live import Live
-from rich.spinner import Spinner
-from rich.text import Text
-from rich.panel import Panel
+from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.client_builder.builder import APIBuilder
@@ -22,6 +18,7 @@ from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.development.manager import (
     DevAppManager,
 )
+from mountaineer.development.messages import ErrorResponse
 from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
@@ -36,7 +33,6 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
-from mountaineer.development.messages import ErrorResponse, SuccessResponse
 
 
 @async_to_sync
@@ -171,7 +167,9 @@ async def handle_runserver(
 
                 # Handle Python changes
                 if updated_python:
-                    progress.update(build_task, description="[cyan]Reloading Python modules...")
+                    progress.update(
+                        build_task, description="[cyan]Reloading Python modules..."
+                    )
                     module_names = [
                         package_path_to_module(package, module_path)
                         for module_path in updated_python
@@ -180,7 +178,9 @@ async def handle_runserver(
 
                     if isinstance(response, ErrorResponse):
                         if response.needs_restart:
-                            progress.update(build_task, description="[cyan]Restarting server...")
+                            progress.update(
+                                build_task, description="[cyan]Restarting server..."
+                            )
                             # Full server restart needed - start fresh process
                             restart_response = await app_manager.restart_server()
                             if isinstance(restart_response, ErrorResponse):
@@ -191,16 +191,19 @@ async def handle_runserver(
 
                 # Handle JS changes
                 if updated_js:
-                    progress.update(build_task, description="[cyan]Rebuilding frontend...")
+                    progress.update(
+                        build_task, description="[cyan]Rebuilding frontend..."
+                    )
                     await app_manager.reload_frontend(list(updated_js))
                     progress.update(build_task, advance=1)
 
                 # Use StatusDisplay for the indeterminate server wait
-                start_time = time()
-                while time() - start_time < 5:
-                    if app_manager.is_port_open(host, port):
-                        break
-                    await asyncio.sleep(0.1)
+                if success:
+                    start_time = time()
+                    while time() - start_time < 5:
+                        if app_manager.is_port_open(host, port):
+                            break
+                        await asyncio.sleep(0.1)
 
             watcher_webservice.notification_queue.put(True)
 

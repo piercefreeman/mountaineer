@@ -5,14 +5,13 @@ from time import sleep
 from typing import Optional
 
 from fastapi import FastAPI
-from rich.live import Live
 from rich.spinner import Spinner
 from rich.style import Style
 from rich.text import Text
 from uvicorn import Config
 from uvicorn.server import Server
 
-#from mountaineer.console import CONSOLE
+# from mountaineer.console import CONSOLE
 
 
 class ServerStatus:
@@ -55,11 +54,11 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
         logger.setLevel(log_level.upper())
 
     # Create our status tracker
-    #status = ServerStatus(name=name, emoticon=emoticon)
+    # status = ServerStatus(name=name, emoticon=emoticon)
 
     # Increase refresh rate for smoother animation
-    #live = Live(status, console=CONSOLE, refresh_per_second=30)
-    #live.start()
+    # live = Live(status, console=CONSOLE, refresh_per_second=30)
+    # live.start()
 
     def log_adapter(logger_name: str):
         def _log(msg: str, *args, **kwargs):
@@ -77,7 +76,7 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
                 )
                 url = f"{scheme}://{host}:{port}"
                 status.update("Server ready", url=url, final=True)
-                #live.stop()
+                # live.stop()
 
         return _log
 
