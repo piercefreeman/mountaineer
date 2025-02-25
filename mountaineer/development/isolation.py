@@ -150,7 +150,6 @@ class IsolatedAppContext(Process):
         self.module = importlib.import_module(self.module_name)
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
-        print("app_controller", self.app_controller)
 
     def start_server(self):
         """Start the uvicorn server"""

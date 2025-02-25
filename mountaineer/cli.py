@@ -9,6 +9,11 @@ from typing import Any, Callable, Coroutine
 
 from inflection import underscore
 from rich.traceback import install as rich_traceback_install
+from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.text import Text
+from rich.panel import Panel
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.client_builder.builder import APIBuilder
@@ -134,10 +139,6 @@ async def handle_runserver(
 
     # Start the message broker
     async with app_manager.start_broker():
-        # Initial build
-        # asyncio.run(app_manager.js_compiler.build_all())
-        # asyncio.run(app_manager.app_compiler.run_builder_plugins())
-
         await app_manager.restart_server()
 
         async def handle_file_changes(metadata: CallbackMetadata):
@@ -147,6 +148,7 @@ async def handle_runserver(
             updated_python = set()
             success = True
 
+            # First collect all the files that need updating
             for event in metadata.events:
                 if event.path.suffix in KNOWN_JS_EXTENSIONS:
                     updated_js.add(event.path)
@@ -156,38 +158,59 @@ async def handle_runserver(
             if not (updated_js or updated_python):
                 return
 
-            # Handle Python changes
-            if updated_python:
-                module_names = [
-                    package_path_to_module(package, module_path)
-                    for module_path in updated_python
-                ]
-                response = await app_manager.reload_modules(module_names)
+            # Use Progress for the countable operations
+            with Progress(
+                SpinnerColumn(),
+                *Progress.get_default_columns(),
+                TimeElapsedColumn(),
+                console=CONSOLE,
+                transient=True,
+            ) as progress:
+                total_steps = len(updated_python) + (1 if updated_js else 0)
+                build_task = progress.add_task("[cyan]Building...", total=total_steps)
 
-                if isinstance(response, ErrorResponse):
-                    if response.needs_restart:
-                        # Full server restart needed - start fresh process
-                        restart_response = await app_manager.restart_server()
-                        if isinstance(restart_response, ErrorResponse):
+                # Handle Python changes
+                if updated_python:
+                    progress.update(build_task, description="[cyan]Reloading Python modules...")
+                    module_names = [
+                        package_path_to_module(package, module_path)
+                        for module_path in updated_python
+                    ]
+                    response = await app_manager.reload_modules(module_names)
+
+                    if isinstance(response, ErrorResponse):
+                        if response.needs_restart:
+                            progress.update(build_task, description="[cyan]Restarting server...")
+                            # Full server restart needed - start fresh process
+                            restart_response = await app_manager.restart_server()
+                            if isinstance(restart_response, ErrorResponse):
+                                success = False
+                        else:
                             success = False
-                    else:
-                        success = False
-            # Handle JS changes
-            if updated_js:
-                await app_manager.reload_frontend(list(updated_js))
+                    progress.update(build_task, advance=len(updated_python))
 
-            # Wait for server to be ready
-            start_time = time()
-            while time() - start_time < 5:
-                if app_manager.is_port_open(host, port):
-                    break
-                await asyncio.sleep(0.1)
+                # Handle JS changes
+                if updated_js:
+                    progress.update(build_task, description="[cyan]Rebuilding frontend...")
+                    await app_manager.reload_frontend(list(updated_js))
+                    progress.update(build_task, advance=1)
+
+                # Use StatusDisplay for the indeterminate server wait
+                start_time = time()
+                while time() - start_time < 5:
+                    if app_manager.is_port_open(host, port):
+                        break
+                    await asyncio.sleep(0.1)
 
             watcher_webservice.notification_queue.put(True)
 
+            build_time = time() - start
             if success:
                 CONSOLE.print(
-                    f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds"
+                    f"[bold green]🚀 App relaunched in {build_time:.2f} seconds"
+                )
+                CONSOLE.print(
+                    f"🚀 Dev webserver ready at http://{host if host else '127.0.0.1'}:{port}"
                 )
             else:
                 CONSOLE.print(
