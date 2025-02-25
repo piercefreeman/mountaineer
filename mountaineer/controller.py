@@ -88,6 +88,13 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     """
 
+    use_layouts: bool = True
+    """
+    Whether to apply layouts to this controller. If set to False, the controller
+    will be rendered without any parent layouts, even if they exist in the directory
+    structure. Defaults to True.
+    """
+
     _bundled_scripts: list[str]
     """
     Client static scripts that are identified at runtime. Intended

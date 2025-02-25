@@ -542,11 +542,18 @@ class AppController:
         # wrap this controller
         direct_hierarchy: list[LayoutElement] = []
         current_node: LayoutElement | None = controller_node
-        while current_node is not None:
-            if current_node in direct_hierarchy:
-                raise ValueError(f"Recursive layout detected: {current_node.path}")
-            direct_hierarchy.append(current_node)
-            current_node = current_node.parent
+        
+        # If the controller has use_layouts=False, only include the controller itself
+        # in the hierarchy, not any parent layouts
+        if controller.use_layouts:
+            while current_node is not None:
+                if current_node in direct_hierarchy:
+                    raise ValueError(f"Recursive layout detected: {current_node.path}")
+                direct_hierarchy.append(current_node)
+                current_node = current_node.parent
+        else:
+            # Only include the controller itself in the hierarchy
+            direct_hierarchy.append(controller_node)
 
         return controller_node, direct_hierarchy
 
@@ -789,6 +796,10 @@ class AppController:
             id=uuid4(), controller=known_controller, path=full_view_path
         )
         self.hierarchy_paths[full_view_path] = view_element
+
+        # Skip layout processing if the controller has use_layouts=False
+        if known_controller is not None and not known_controller.use_layouts:
+            return view_element
 
         # Recursively parse the parent paths to find the first layout (if any)
         # We go up until the view root. We allow the update_hierarchy to capture
