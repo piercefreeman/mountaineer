@@ -542,7 +542,7 @@ class AppController:
         # wrap this controller
         direct_hierarchy: list[LayoutElement] = []
         current_node: LayoutElement | None = controller_node
-        
+
         # If the controller has use_layouts=False, only include the controller itself
         # in the hierarchy, not any parent layouts
         if controller.use_layouts:
