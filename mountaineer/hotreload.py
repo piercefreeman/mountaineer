@@ -379,20 +379,20 @@ class HotReloader:
                 except SyntaxError as e:
                     # Syntax errors are fatal and should stop the reload process, however they can be easily
                     # corrected when the user updates the file
-                    logger.error(f"Syntax error in {mod_name}: {e}", exc_info=True)
-                    return False, reloaded_modules, False
+                    logger.info(f"Syntax error in {mod_name}: {e}", exc_info=True)
+                    return False, reloaded_modules, False, e
                 except Exception as e:
                     # Non-syntax errors indicate potential corruption with the current in-memory representation (like
                     # reloading a database model that can only be mounted to a central registry once). In this case we
                     # will restart the server to get a clean state.
-                    logger.error(f"Non-syntax error reloading {mod_name}: {e}", exc_info=True)
-                    return False, reloaded_modules, True
+                    logger.info(f"Non-syntax error reloading {mod_name}: {e}", exc_info=True)
+                    return False, reloaded_modules, True, e
 
             logger.info("=== Rebuilding inheritance tree ===")
             self._build_inheritance_tree()
             self._log_dependency_state()
 
-            return True, reloaded_modules, False
+            return True, reloaded_modules, False, None
 
         except Exception as e:
             logger.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)

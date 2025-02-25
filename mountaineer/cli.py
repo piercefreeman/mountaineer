@@ -19,7 +19,6 @@ from mountaineer.app_manager import (
 from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
-from mountaineer.hotreload import HotReloader
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 from mountaineer.watch import (
@@ -127,16 +126,9 @@ def handle_runserver(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
 
-    # Initialize hot reloader with root package
-    hot_reloader = HotReloader(
-        root_package=package,
-        package_path=Path(package.replace(".", "/")),
-        entrypoint=webcontroller.rsplit(":")[0],
-    )
-
     # Initial build
-    asyncio.run(app_manager.js_compiler.build_all())
-    asyncio.run(app_manager.app_compiler.run_builder_plugins())
+    #asyncio.run(app_manager.js_compiler.build_all())
+    #asyncio.run(app_manager.app_compiler.run_builder_plugins())
 
     app_manager.restart_server()
 
@@ -161,20 +153,19 @@ def handle_runserver(
                 package_path_to_module(package, module_path)
                 for module_path in updated_python
             ]
-            success, reloaded, needs_restart = hot_reloader.reload_modules(module_names)
+            response = await app_manager.reload_modules(module_names)
 
-            if reloaded:
-                if needs_restart:
+            if response["success"]:
+                if response["needs_restart"]:
                     # Full server restart needed - start fresh process
                     app_manager.restart_server()
                 else:
                     # Normal hot reload - update module in main process and signal worker to reload
-                    app_manager.update_module()
                     await app_manager.js_compiler.build_use_server()
-                    app_manager.reload_modules()
-
-            if not success:
+            else:
                 CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
+                CONSOLE.print(response["exception"])
+                CONSOLE.print(response["traceback"])
 
         # Handle JS changes
         if updated_js:
