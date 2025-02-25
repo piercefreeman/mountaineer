@@ -35,6 +35,53 @@ class DependencyNode:
 
 
 class HotReloader:
+    """
+    A hot reloading system that tracks Python module dependencies and enables live code reloading.
+
+    The HotReloader maintains a dependency graph of Python modules and their relationships,
+    including imports and class inheritance hierarchies. When source files are modified,
+    it can intelligently reload affected modules while preserving the dependency order.
+
+    Key features:
+    - Tracks module imports and dependencies
+    - Maintains class inheritance relationships
+    - Supports relative imports resolution
+    - Handles both syntax and runtime errors appropriately
+    - Provides safe module reloading with bytecode regeneration
+
+    The reloader works by:
+    1. Building an initial dependency graph from imported modules
+    2. Tracking file modifications
+    3. Determining affected modules when changes occur
+    4. Reloading modules in dependency order
+    5. Rebuilding inheritance relationships after reloads
+
+    ```python
+    reloader = HotReloader(
+        root_package="myapp",
+        package_path=Path("./myapp"),
+        entrypoint="myapp.main"
+    )
+    success, reloaded, needs_restart = reloader.reload_module("myapp.views")
+    ```
+
+    """
+
+    root_package: str
+    """
+    The root package name that serves as the base for all tracked modules
+    """
+
+    package_path: Path
+    """
+    The filesystem path to the root package directory
+    """
+
+    entrypoint: str
+    """
+    The module path of the application entrypoint
+    """
+
     def __init__(self, root_package: str, package_path: Path, entrypoint: str):
         logger.debug(
             f"Initializing HotReloader with root_package={root_package}, path={package_path}, entrypoint={entrypoint}"
