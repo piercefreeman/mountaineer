@@ -192,11 +192,17 @@ class PackageWatchdog:
         We only want one watchdog running at a time or otherwise we risk stepping
         on each other or having infinitely looping file change notifications.
         """
+        # If there's an existing file, we log a warning and continue.
         package_path = resolve_package_path(self.main_package)
 
         lock_path = (Path(str(package_path)) / ".watchdog.lock").absolute()
         if lock_path.exists():
-            raise WatchdogLockError(lock_path=lock_path)
+            CONSOLE.print(
+                f"[yellow]Watchdog lock file exists, another process may be running and cause build conflicts."
+            )
+
+            # Remove the old lock file
+            lock_path.unlink()
 
         try:
             # Create the lock - this caller should now have exclusive access to the watchdog
