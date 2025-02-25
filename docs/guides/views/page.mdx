@@ -172,6 +172,24 @@ views/
 
 When rendering `dashboard/home/page.tsx`, the view will be wrapped in the `app/dashboard/layout.tsx` layout alongside `app/layout.tsx`. These layout files will be automatically found by Mountaineer during the build process. They don't require any explicit declaration in your Python backend if you're just using them for styling.
 
+### Disabling Layouts
+
+By default, Mountaineer applies all parent layouts to a page. However, there may be cases where you want to render a page without any layouts. For example, you might want to create a standalone page for an API response, a PDF viewer, or a specialized UI that doesn't fit within your site's layout.
+
+You can disable layouts for a specific controller by setting the `use_layouts` property to `False`:
+
+```python
+class StandaloneController(ControllerBase):
+    url = "/standalone"
+    view_path = "/app/standalone/page.tsx"
+    use_layouts = False  # This page will not use any layouts
+
+    async def render(self) -> StandaloneRender:
+        return StandaloneRender(...)
+```
+
+When `use_layouts` is set to `False`, Mountaineer will render the page without applying any parent layouts, even if they exist in the directory structure.
+
 If you need more server side power and want to define them in Python, you can add a LayoutController that backs the layout.
 
 ### Layout Controllers
