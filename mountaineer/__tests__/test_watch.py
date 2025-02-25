@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from threading import Event, Thread
 from time import sleep
@@ -71,22 +72,23 @@ def test_change_mapping():
     assert watcher._map_change_to_callback_type(Change.deleted) == CallbackType.DELETED
 
 
-def test_file_notification(tmp_path: Path):
+@pytest.mark.asyncio
+async def test_file_notification(tmp_path: Path):
     callback_events: list[CallbackEvent] = []
-    stop_event = Event()
+    stop_event = asyncio.Event()
 
-    def receive_callback(metadata: CallbackMetadata):
+    async def receive_callback(metadata: CallbackMetadata):
         callback_events.extend(metadata.events)
 
-    def simulate_changes(watcher: FileWatcher):
+    async def simulate_changes(watcher: FileWatcher):
         # Make sleeps longer than the debounce interval (0.1s)
-        sleep(0.15)
-        watcher.process_changes([(Change.added, str(tmp_path / "test.txt"))])
-        sleep(0.15)
-        watcher.process_changes([(Change.modified, str(tmp_path / "test.txt"))])
-        sleep(0.15)
-        watcher.process_changes([(Change.deleted, str(tmp_path / "test.txt"))])
-        sleep(0.15)
+        await asyncio.sleep(0.15)
+        await watcher.process_changes([(Change.added, str(tmp_path / "test.txt"))])
+        await asyncio.sleep(0.15)
+        await watcher.process_changes([(Change.modified, str(tmp_path / "test.txt"))])
+        await asyncio.sleep(0.15)
+        await watcher.process_changes([(Change.deleted, str(tmp_path / "test.txt"))])
+        await asyncio.sleep(0.15)
         stop_event.set()
 
     watcher = FileWatcher(
@@ -100,11 +102,11 @@ def test_file_notification(tmp_path: Path):
         ],
     )
 
-    changes_thread = Thread(target=simulate_changes, args=(watcher,))
-    changes_thread.start()
-
-    # Wait for all changes to be processed
-    stop_event.wait(timeout=2.0)
+    changes_task = asyncio.create_task(simulate_changes(watcher))
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=2.0)
+    finally:
+        changes_task.cancel()
 
     event_actions: list[CallbackType] = []
     for event in callback_events:

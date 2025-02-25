@@ -5,7 +5,7 @@ from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from time import time
-from typing import Callable
+from typing import Callable, Coroutine, Any
 
 from inflection import underscore
 from rich.traceback import install as rich_traceback_install
@@ -30,9 +30,11 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
+from mountaineer.io import async_to_sync
 
 
-def handle_watch(
+@async_to_sync
+async def handle_watch(
     *,
     package: str,
     webcontroller: str,
@@ -65,9 +67,9 @@ def handle_watch(
         build_cache=global_build_cache,
     )
 
-    asyncio.run(js_compiler.build_all())
+    await js_compiler.build_all()
 
-    def update_build(metadata: CallbackMetadata):
+    async def update_build(metadata: CallbackMetadata):
         updated_js: set[Path] = set()
         updated_python: set[Path] = set()
 
@@ -80,7 +82,7 @@ def handle_watch(
         # Update the use-server definitions in case modifications to the
         # python file affected the API spec
         if updated_python:
-            asyncio.run(js_compiler.build_all())
+            await js_compiler.build_all()
 
         # For now, we don't do any js analysis besides building - which
         # we don't need to do if we're just watching for changes
@@ -90,10 +92,10 @@ def handle_watch(
         update_build,
         subscribe_to_mountaineer=subscribe_to_mountaineer,
     )
-    watchdog.start_watching()
+    await watchdog.start_watching()
 
-
-def handle_runserver(
+@async_to_sync
+async def handle_runserver(
     *,
     package: str,
     webservice: str,
@@ -128,78 +130,80 @@ def handle_runserver(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
 
-    # Initial build
-    # asyncio.run(app_manager.js_compiler.build_all())
-    # asyncio.run(app_manager.app_compiler.run_builder_plugins())
+    # Start the message broker
+    async with app_manager.start_broker():
+        # Initial build
+        # asyncio.run(app_manager.js_compiler.build_all())
+        # asyncio.run(app_manager.app_compiler.run_builder_plugins())
 
-    app_manager.restart_server()
+        app_manager.restart_server()
 
-    async def handle_file_changes(metadata: CallbackMetadata):
-        LOGGER.info(f"Handling file changes: {metadata}")
-        start = time()
-        updated_js = set()
-        updated_python = set()
+        async def handle_file_changes(metadata: CallbackMetadata):
+            LOGGER.info(f"Handling file changes: {metadata}")
+            start = time()
+            updated_js = set()
+            updated_python = set()
 
-        for event in metadata.events:
-            if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                updated_js.add(event.path)
-            elif event.path.suffix == ".py":
-                updated_python.add(event.path)
+            for event in metadata.events:
+                if event.path.suffix in KNOWN_JS_EXTENSIONS:
+                    updated_js.add(event.path)
+                elif event.path.suffix == ".py":
+                    updated_python.add(event.path)
 
-        if not (updated_js or updated_python):
-            return
+            if not (updated_js or updated_python):
+                return
 
-        # Handle Python changes
-        if updated_python:
-            module_names = [
-                package_path_to_module(package, module_path)
-                for module_path in updated_python
-            ]
-            response = await app_manager.reload_modules(module_names)
+            # Handle Python changes
+            if updated_python:
+                module_names = [
+                    package_path_to_module(package, module_path)
+                    for module_path in updated_python
+                ]
+                response = await app_manager.reload_modules(module_names)
 
-            if response["success"]:
-                if response["needs_restart"]:
-                    # Full server restart needed - start fresh process
-                    app_manager.restart_server()
+                if response.success:
+                    if response.needs_restart:
+                        # Full server restart needed - start fresh process
+                        app_manager.restart_server()
+                    else:
+                        # Normal hot reload - update module in main process and signal worker to reload
+                        await app_manager.js_compiler.build_use_server()
                 else:
-                    # Normal hot reload - update module in main process and signal worker to reload
-                    await app_manager.js_compiler.build_use_server()
-            else:
-                CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
-                CONSOLE.print(response["exception"])
-                CONSOLE.print(response["traceback"])
+                    CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
+                    CONSOLE.print(response.exception)
+                    CONSOLE.print(response.traceback)
 
-        # Handle JS changes
-        if updated_js:
-            await app_manager.app_compiler.run_builder_plugins(
-                limit_paths=list(updated_js)
-            )
-            for path in updated_js:
-                app_manager.app_controller.invalidate_view(path)
+            # Handle JS changes
+            if updated_js:
+                await app_manager.app_compiler.run_builder_plugins(
+                    limit_paths=list(updated_js)
+                )
+                for path in updated_js:
+                    app_manager.app_controller.invalidate_view(path)
 
-        # Wait for server to be ready
-        start_time = time()
-        while time() - start_time < 5:
-            if app_manager.is_port_open(host, port):
-                break
-            await asyncio.sleep(0.1)
+            # Wait for server to be ready
+            start_time = time()
+            while time() - start_time < 5:
+                if app_manager.is_port_open(host, port):
+                    break
+                await asyncio.sleep(0.1)
 
-        watcher_webservice.notification_queue.put(True)
-        CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
+            watcher_webservice.notification_queue.put(True)
+            CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
 
-    def handle_shutdown(signum, frame):
-        watcher_webservice.stop()
-        CONSOLE.print("[yellow]Services shutdown, now exiting...")
-        exit(0)
+        def handle_shutdown(signum, frame):
+            watcher_webservice.stop()
+            CONSOLE.print("[yellow]Services shutdown, now exiting...")
+            exit(0)
 
-    signal(SIGINT, handle_shutdown)
+        signal(SIGINT, handle_shutdown)
 
-    watchdog = build_common_watchdog(
-        package,
-        lambda metadata: asyncio.run(handle_file_changes(metadata)),
-        subscribe_to_mountaineer=subscribe_to_mountaineer,
-    )
-    watchdog.start_watching()
+        watchdog = build_common_watchdog(
+            package,
+            lambda metadata: asyncio.run(handle_file_changes(metadata)),
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
+        )
+        watchdog.start_watching()
 
 
 def handle_build(
@@ -326,7 +330,7 @@ def update_multiprocessing_settings():
 
 def build_common_watchdog(
     client_package: str,
-    callback: Callable[[CallbackMetadata], None],
+    callback: Callable[[CallbackMetadata], Coroutine[Any, Any, None]],
     subscribe_to_mountaineer: bool,
 ):
     """

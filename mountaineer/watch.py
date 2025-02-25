@@ -1,12 +1,12 @@
 import importlib.metadata
-from contextlib import contextmanager
+import asyncio
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
 from pathlib import Path
-from threading import Timer
-from typing import Callable, Iterable
+from typing import AsyncIterator, Callable, Coroutine, Any, Iterable
 
-from watchfiles import Change, watch
+from watchfiles import Change, awatch
 
 from mountaineer.console import CONSOLE
 from mountaineer.logging import LOGGER, pluralize
@@ -35,7 +35,7 @@ class CallbackMetadata:
 @dataclass
 class CallbackDefinition:
     action: CallbackType
-    callback: Callable[[CallbackMetadata], None]
+    callback: Callable[[CallbackMetadata], Coroutine[Any, Any, None]]
 
 
 class FileWatcher:
@@ -54,7 +54,7 @@ class FileWatcher:
         self.ignore_list = ignore_list
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
-        self.debounce_timer: Timer | None = None
+        self.debounce_task: asyncio.Task | None = None
         self.pending_events: list[CallbackEvent] = []
 
     def should_ignore_path(self, path: Path | str) -> bool:
@@ -80,19 +80,19 @@ class FileWatcher:
         # Default to modified for any other changes
         return CallbackType.MODIFIED
 
-    def _debounce(self, action: CallbackType, path: Path):
-        if self.debounce_timer is not None:
-            self.debounce_timer.cancel()
+    async def _debounce(self, action: CallbackType, path: Path):
+        if self.debounce_task is not None:
+            self.debounce_task.cancel()
 
         self.pending_events.append(CallbackEvent(action=action, path=path))
 
-        self.debounce_timer = Timer(
-            self.debounce_interval,
-            self.handle_callbacks,
-        )
-        self.debounce_timer.start()
+        self.debounce_task = asyncio.create_task(self._handle_callbacks_after_delay())
 
-    def handle_callbacks(self):
+    async def _handle_callbacks_after_delay(self):
+        await asyncio.sleep(self.debounce_interval)
+        await self.handle_callbacks()
+
+    async def handle_callbacks(self):
         """
         Runs all callbacks for the given action.
         """
@@ -103,11 +103,11 @@ class FileWatcher:
                 if event.action in callback.action
             ]
             if valid_events:
-                callback.callback(CallbackMetadata(events=valid_events))
+                await callback.callback(CallbackMetadata(events=valid_events))
 
         self.pending_events = []
 
-    def process_changes(self, changes: Iterable[tuple[Change, str]]):
+    async def process_changes(self, changes: Iterable[tuple[Change, str]]):
         """
         Process a batch of changes from watchfiles.
         """
@@ -120,7 +120,7 @@ class FileWatcher:
             if not action.name:
                 continue
             CONSOLE.print(f"[yellow]File {action.name.lower()}: {path}")
-            self._debounce(action, path)
+            await self._debounce(action, path)
 
 
 class WatchdogLockError(Exception):
@@ -154,8 +154,8 @@ class PackageWatchdog:
         self.check_packages_installed()
         self.get_package_paths()
 
-    def start_watching(self):
-        with self.acquire_watchdog_lock():
+    async def start_watching(self):
+        async with self.acquire_watchdog_lock():
             if self.run_on_bootup:
                 for callback_definition in self.callbacks:
                     callback_definition.callback(CallbackMetadata(events=[]))
@@ -169,8 +169,8 @@ class PackageWatchdog:
                 LOGGER.info(f"Watching {path}")
 
             try:
-                for changes in watch(*self.paths, watch_filter=None):
-                    watcher.process_changes(changes)
+                async for changes in awatch(*self.paths, watch_filter=None):
+                    await watcher.process_changes(changes)
             except KeyboardInterrupt:
                 pass
 
@@ -190,8 +190,8 @@ class PackageWatchdog:
             paths.append(str(package_path))
         self.paths = self.merge_paths(paths)
 
-    @contextmanager
-    def acquire_watchdog_lock(self):
+    @asynccontextmanager
+    async def acquire_watchdog_lock(self) -> AsyncIterator[None]:
         """
         We only want one watchdog running at a time or otherwise we risk stepping
         on each other or having infinitely looping file change notifications.
