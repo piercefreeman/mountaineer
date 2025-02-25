@@ -1,10 +1,10 @@
-import importlib.metadata
 import asyncio
-from contextlib import asynccontextmanager, contextmanager
+import importlib.metadata
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
 from pathlib import Path
-from typing import AsyncIterator, Callable, Coroutine, Any, Iterable
+from typing import Any, AsyncIterator, Callable, Coroutine, Iterable
 
 from watchfiles import Change, awatch
 
@@ -158,7 +158,7 @@ class PackageWatchdog:
         async with self.acquire_watchdog_lock():
             if self.run_on_bootup:
                 for callback_definition in self.callbacks:
-                    callback_definition.callback(CallbackMetadata(events=[]))
+                    await callback_definition.callback(CallbackMetadata(events=[]))
 
             watcher = FileWatcher(callbacks=self.callbacks)
 

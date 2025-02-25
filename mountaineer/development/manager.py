@@ -1,8 +1,9 @@
+import os
 import socket
 import uuid
+from contextlib import asynccontextmanager
 from typing import Any
-import os
-import asyncio
+
 from mountaineer.console import CONSOLE
 from mountaineer.development.isolation import IsolatedAppContext
 from mountaineer.development.messages import (
@@ -13,7 +14,7 @@ from mountaineer.development.messages import (
     ReloadResponse,
     ShutdownMessage,
 )
-from contextlib import asynccontextmanager
+from mountaineer.logging import LOGGER
 
 
 class DevAppManager:
@@ -89,7 +90,9 @@ class DevAppManager:
         port: int | None,
         live_reload_port: int | None,
     ):
-        print(f"[DevAppManager] Initializing manager for {package}.{module_name}:{controller_name}")
+        LOGGER.debug(
+            f"[DevAppManager] Initializing manager for {package}.{module_name}:{controller_name}"
+        )
         self.package = package
         self.module_name = module_name
         self.controller_name = controller_name
@@ -98,7 +101,7 @@ class DevAppManager:
         self.live_reload_port = live_reload_port
 
         # Message broker for communicating with isolated context
-        print("[DevAppManager] Creating message broker")
+        LOGGER.debug("[DevAppManager] Creating message broker")
         self.message_broker = AsyncMessageBroker[IsolatedMessageBase[Any]]()
         self.app_context: IsolatedAppContext | None = None
 
@@ -110,7 +113,9 @@ class DevAppManager:
         port: int | None = None,
         live_reload_port: int | None = None,
     ):
-        print(f"[DevAppManager] Creating manager from webcontroller: {webcontroller}")
+        LOGGER.debug(
+            f"[DevAppManager] Creating manager from webcontroller: {webcontroller}"
+        )
         package = webcontroller.split(".")[0]
         module_name = webcontroller.split(":")[0]
         controller_name = webcontroller.split(":")[1]
@@ -128,7 +133,7 @@ class DevAppManager:
     async def start_broker(self):
         """Start the message broker when entering async context"""
         try:
-            print("[DevAppManager] Entering async context")
+            LOGGER.debug("[DevAppManager] Entering async context")
             self.message_broker.start()
             yield self
         finally:
@@ -136,27 +141,27 @@ class DevAppManager:
 
     def restart_server(self):
         """Restart the server in a fresh process"""
-        print("[DevAppManager] Restarting server")
+        LOGGER.debug("[DevAppManager] Restarting server")
         if not self.port:
-            print("[DevAppManager] Error: Port not set")
+            LOGGER.debug("[DevAppManager] Error: Port not set")
             raise ValueError("Port not set")
 
         # Stop existing context if running
         if self.app_context and self.app_context.is_alive():
-            print("[DevAppManager] Shutting down existing app context")
+            LOGGER.debug("[DevAppManager] Shutting down existing app context")
             message_id = str(uuid.uuid4())
-            print(f"[DevAppManager] Sending shutdown message {message_id}")
-            self.message_broker.message_queue.put(
-                (message_id, ShutdownMessage())
-            )
-            print("[DevAppManager] Waiting for app context to join")
+            LOGGER.debug(f"[DevAppManager] Sending shutdown message {message_id}")
+            self.message_broker.message_queue.put((message_id, ShutdownMessage()))
+            LOGGER.debug("[DevAppManager] Waiting for app context to join")
             self.app_context.join(timeout=5)
             if self.app_context.is_alive():
-                print("[DevAppManager] App context did not shut down gracefully, terminating")
+                LOGGER.debug(
+                    "[DevAppManager] App context did not shut down gracefully, terminating"
+                )
                 self.app_context.terminate()
 
         # Start new context
-        print("[DevAppManager] Starting new app context")
+        LOGGER.debug("[DevAppManager] Starting new app context")
         self.app_context = IsolatedAppContext(
             package=self.package,
             module_name=self.module_name,
@@ -167,56 +172,58 @@ class DevAppManager:
             message_broker=self.message_broker,
         )
         self.app_context.start()
-        print("[DevAppManager] New app context started")
+        LOGGER.debug("[DevAppManager] New app context started")
 
     async def reload_modules(self, module_names: list[str]) -> ReloadResponse:
         """
         Signal the context to reload modules and wait for response.
         Returns a tuple of (success, reloaded_modules, needs_restart).
         """
-        print(f"[DevAppManager] Attempting to reload modules: {module_names}")
-        print(f"[DevAppManager] Current process: {os.getpid()}")
-        
+        LOGGER.debug(f"[DevAppManager] Attempting to reload modules: {module_names}")
+        LOGGER.debug(f"[DevAppManager] Current process: {os.getpid()}")
+
         if not (self.app_context and self.app_context.is_alive()):
-            print("[DevAppManager] No active app context, returning needs_restart")
+            LOGGER.debug(
+                "[DevAppManager] No active app context, returning needs_restart"
+            )
             return ReloadResponse(
                 success=False,
                 reloaded=[],
                 needs_restart=True,
             )
 
-        print("[DevAppManager] Sending reload message")
-        print(f"[DevAppManager] App context process ID: {self.app_context.pid}")
+        LOGGER.debug("[DevAppManager] Sending reload message")
+        LOGGER.debug(f"[DevAppManager] App context process ID: {self.app_context.pid}")
         response = await self.message_broker.send_message(
             ReloadModulesMessage(
                 module_names=module_names,
             )
         )
-        print(f"[DevAppManager] Received reload response: {response}")
-        print(f"[DevAppManager] Response type: {type(response)}")
+        LOGGER.debug(f"[DevAppManager] Received reload response: {response}")
+        LOGGER.debug(f"[DevAppManager] Response type: {type(response)}")
 
         CONSOLE.print(f"Reload response: {response}")
         return response
 
     def build_js(self):
         """Signal the context to rebuild JS"""
-        print("[DevAppManager] Requesting JS build")
+        LOGGER.debug("[DevAppManager] Requesting JS build")
         if self.app_context and self.app_context.is_alive():
             message_id = str(uuid.uuid4())
-            print(f"[DevAppManager] Sending build JS message {message_id}")
+            LOGGER.debug(f"[DevAppManager] Sending build JS message {message_id}")
             self.message_broker.message_queue.put((message_id, BuildJsMessage()))
         else:
-            print("[DevAppManager] No active app context, skipping JS build")
+            LOGGER.debug("[DevAppManager] No active app context, skipping JS build")
 
     def is_port_open(self, host, port):
         """Check if a port is open on the given host."""
-        print(f"[DevAppManager] Checking if port {port} is open on {host}")
+        LOGGER.debug(f"[DevAppManager] Checking if port {port} is open on {host}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.settimeout(0.1)
                 s.connect((host, port))
-                print(f"[DevAppManager] Port {port} is open")
+                LOGGER.debug(f"[DevAppManager] Port {port} is open")
                 return True
             except (socket.timeout, ConnectionRefusedError):
-                print(f"[DevAppManager] Port {port} is closed")
+                LOGGER.debug(f"[DevAppManager] Port {port} is closed")
                 return False

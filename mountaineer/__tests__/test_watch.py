@@ -1,7 +1,5 @@
 import asyncio
 from pathlib import Path
-from threading import Event, Thread
-from time import sleep
 
 import pytest
 from watchfiles import Change

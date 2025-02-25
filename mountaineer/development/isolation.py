@@ -70,7 +70,6 @@ class IsolatedAppContext(Process):
                     break
                 elif isinstance(message, ReloadModulesMessage):
                     response = self.handle_module_reload(message.module_names)
-                    print(f"Sending response: {response}")
                     self.message_broker.response_queue.put((message_id, response))
                 elif isinstance(message, BuildJsMessage):
                     self.handle_js_build()

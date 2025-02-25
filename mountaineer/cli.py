@@ -5,7 +5,7 @@ from pathlib import Path
 from signal import SIGINT, signal
 from tempfile import mkdtemp
 from time import time
-from typing import Callable, Coroutine, Any
+from typing import Any, Callable, Coroutine
 
 from inflection import underscore
 from rich.traceback import install as rich_traceback_install
@@ -22,6 +22,7 @@ from mountaineer.development.packages import (
     package_path_to_module,
 )
 from mountaineer.development.watch_server import WatcherWebservice
+from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 from mountaineer.watch import (
@@ -30,7 +31,6 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
-from mountaineer.io import async_to_sync
 
 
 @async_to_sync
@@ -93,6 +93,7 @@ async def handle_watch(
         subscribe_to_mountaineer=subscribe_to_mountaineer,
     )
     await watchdog.start_watching()
+
 
 @async_to_sync
 async def handle_runserver(
@@ -189,7 +190,9 @@ async def handle_runserver(
                 await asyncio.sleep(0.1)
 
             watcher_webservice.notification_queue.put(True)
-            CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
+            CONSOLE.print(
+                f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds"
+            )
 
         def handle_shutdown(signum, frame):
             watcher_webservice.stop()
@@ -200,10 +203,10 @@ async def handle_runserver(
 
         watchdog = build_common_watchdog(
             package,
-            lambda metadata: asyncio.run(handle_file_changes(metadata)),
+            handle_file_changes,
             subscribe_to_mountaineer=subscribe_to_mountaineer,
         )
-        watchdog.start_watching()
+        await watchdog.start_watching()
 
 
 def handle_build(
