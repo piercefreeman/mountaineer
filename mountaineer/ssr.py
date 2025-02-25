@@ -127,7 +127,7 @@ def render_ssr(
         }
     }
     """
-    
+
     full_script = f"{full_script}\n{async_wrapper}"
 
     try:

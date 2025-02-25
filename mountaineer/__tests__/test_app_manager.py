@@ -7,7 +7,6 @@ from time import sleep
 
 import pytest
 from fastapi import Request
-from fastapi.responses import Response
 
 from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.app_manager import DevAppManager, package_path_to_module
@@ -219,26 +218,28 @@ async def test_handle_dev_exception(manager: DevAppManager):
 
     # Mount the exception controller
     manager.mount_exceptions(manager.app_controller)
-    
+
     # Import the necessary modules for the mock response
     from starlette.responses import HTMLResponse
-    
+
     # Create a simple mock response to use instead of the real exception page
-    mock_html = f"<html><body><h1>Test Exception Page</h1><p>Test exception</p></body></html>"
+    mock_html = (
+        "<html><body><h1>Test Exception Page</h1><p>Test exception</p></body></html>"
+    )
     mock_response = HTMLResponse(content=mock_html)
-    
+
     # Patch the handle_dev_exception method to return our mock response
     original_handle_exception = manager.handle_dev_exception
-    
+
     async def mock_handle_exception(request, exc):
         if request.method == "GET":
             return mock_response
         else:
             raise exc
-    
+
     # Apply the patch
     manager.handle_dev_exception = mock_handle_exception
-    
+
     try:
         # Call the exception handler
         response = await manager.handle_dev_exception(request, test_exception)
