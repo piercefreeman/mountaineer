@@ -31,6 +31,7 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
+from mountaineer.development.messages import ErrorResponse, SuccessResponse
 
 
 @async_to_sync
@@ -137,13 +138,14 @@ async def handle_runserver(
         # asyncio.run(app_manager.js_compiler.build_all())
         # asyncio.run(app_manager.app_compiler.run_builder_plugins())
 
-        app_manager.restart_server()
+        await app_manager.restart_server()
 
         async def handle_file_changes(metadata: CallbackMetadata):
             LOGGER.info(f"Handling file changes: {metadata}")
             start = time()
             updated_js = set()
             updated_python = set()
+            success = True
 
             for event in metadata.events:
                 if event.path.suffix in KNOWN_JS_EXTENSIONS:
@@ -162,25 +164,17 @@ async def handle_runserver(
                 ]
                 response = await app_manager.reload_modules(module_names)
 
-                if response.success:
+                if isinstance(response, ErrorResponse):
                     if response.needs_restart:
                         # Full server restart needed - start fresh process
-                        app_manager.restart_server()
+                        restart_response = await app_manager.restart_server()
+                        if isinstance(restart_response, ErrorResponse):
+                            success = False
                     else:
-                        # Normal hot reload - update module in main process and signal worker to reload
-                        await app_manager.js_compiler.build_use_server()
-                else:
-                    CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
-                    CONSOLE.print(response.exception)
-                    CONSOLE.print(response.traceback)
-
+                        success = False
             # Handle JS changes
             if updated_js:
-                await app_manager.app_compiler.run_builder_plugins(
-                    limit_paths=list(updated_js)
-                )
-                for path in updated_js:
-                    app_manager.app_controller.invalidate_view(path)
+                await app_manager.reload_frontend(list(updated_js))
 
             # Wait for server to be ready
             start_time = time()
@@ -190,9 +184,15 @@ async def handle_runserver(
                 await asyncio.sleep(0.1)
 
             watcher_webservice.notification_queue.put(True)
-            CONSOLE.print(
-                f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds"
-            )
+
+            if success:
+                CONSOLE.print(
+                    f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds"
+                )
+            else:
+                CONSOLE.print(
+                    "[bold red]🚨 App failed to launch, waiting for code change..."
+                )
 
         def handle_shutdown(signum, frame):
             watcher_webservice.stop()

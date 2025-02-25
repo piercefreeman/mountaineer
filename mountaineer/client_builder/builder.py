@@ -19,7 +19,6 @@ from mountaineer.client_builder.file_generators.locals import (
 from mountaineer.client_builder.parser import (
     ControllerParser,
 )
-from mountaineer.console import CONSOLE
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.paths import ManagedViewPath
 from mountaineer.static import get_static_path
@@ -64,21 +63,15 @@ class APIBuilder:
         # await self.build_fe_diff(None)
 
     async def build_use_server(self):
-        start = monotonic_ns()
+        # Parse all controllers first
+        parser, parsed_controller = self._parse_all_controllers()
+        self._assign_unique_names(parser)
 
-        with CONSOLE.status("Building useServer", spinner="dots"):
-            # Parse all controllers first
-            parser, parsed_controller = self._parse_all_controllers()
-            self._assign_unique_names(parser)
+        # Generate all the required files
+        self._generate_static_files()
+        self._generate_global_files(parsed_controller)
+        self._generate_local_files(parsed_controller)
 
-            # Generate all the required files
-            self._generate_static_files()
-            self._generate_global_files(parsed_controller)
-            self._generate_local_files(parsed_controller)
-
-        CONSOLE.print(
-            f"[bold green]🔨 Built useServer in {(monotonic_ns() - start) / 1e9:.2f}s"
-        )
 
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""

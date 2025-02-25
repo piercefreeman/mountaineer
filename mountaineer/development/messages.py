@@ -22,30 +22,79 @@ class IsolatedMessageBase(Generic[TResponse]):
 
 
 @dataclass
-class ReloadResponse(IsolatedMessageBase[None]):
-    success: bool
-    reloaded: list[str]
-    needs_restart: bool
-    exception: Optional[str] = None
-    traceback: Optional[str] = None
+class ErrorResponse:
+    """Generic error response"""
+
+    exception: str
+    traceback: str
 
 
 @dataclass
-class ReloadModulesMessage(IsolatedMessageBase[ReloadResponse]):
+class SuccessResponse:
+    """Generic success response"""
+
+    pass
+
+
+@dataclass
+class BootupMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
+    """Message to bootup the isolated app context"""
+
+    pass
+
+
+@dataclass
+class ReloadResponseSuccess(SuccessResponse):
+    reloaded: list[str]
+    needs_restart: bool
+
+
+@dataclass
+class ReloadResponseError(ErrorResponse):
+    """Error response for module reload"""
+    needs_restart: bool
+
+
+@dataclass
+class ReloadModulesMessage(
+    IsolatedMessageBase[ReloadResponseSuccess | ReloadResponseError]
+):
     """Message to reload modules in the isolated app context"""
 
     module_names: List[str]
 
 
 @dataclass
-class BuildJsMessage(IsolatedMessageBase[None]):
+class BuildJsMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
     """Message to trigger JS compilation"""
+
+    updated_js: list[str]
+
+
+@dataclass
+class BuildUseServerMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
+    """Message to build the useServer support files"""
 
     pass
 
 
 @dataclass
-class ShutdownMessage(IsolatedMessageBase[None]):
+class RestartServerMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
+    """
+    Message to restart the server
+
+    1. Load the new app controller in-memory
+    2. Launch a new server
+
+    This will not reload module files. For that, use the `ReloadModulesMessage`.
+
+    """
+
+    pass
+
+
+@dataclass
+class ShutdownMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
     """Message to shutdown the isolated app context"""
 
     pass
@@ -54,7 +103,7 @@ class ShutdownMessage(IsolatedMessageBase[None]):
 AppMessageType = TypeVar("AppMessageType", bound=IsolatedMessageBase[Any])
 
 
-class BrokerMessageFuture(Generic[TResponse], asyncio.Future):
+class BrokerMessageFuture(Generic[TResponse], asyncio.Future[TResponse]):
     pass
 
 
@@ -176,9 +225,9 @@ class AsyncMessageBroker(Generic[AppMessageType]):
                     break
 
                 try:
-                    LOGGER.debug(
-                        "[AsyncMessageBroker] About to get from response queue..."
-                    )
+                    # LOGGER.debug(
+                    #    "[AsyncMessageBroker] About to get from response queue..."
+                    # )
 
                     (
                         response_id,
@@ -221,12 +270,12 @@ class AsyncMessageBroker(Generic[AppMessageType]):
 
                 except Empty:
                     # This is expected when the queue times out
-                    LOGGER.debug(
-                        "[AsyncMessageBroker] Queue get timed out, continuing..."
-                    )
+                    # LOGGER.debug(
+                    #    "[AsyncMessageBroker] Queue get timed out, continuing..."
+                    # )
                     continue
                 except Exception as e:
-                    LOGGER.debug(
+                    LOGGER.info(
                         f"[AsyncMessageBroker] Unexpected error during queue get: {str(e)}"
                     )
                     continue

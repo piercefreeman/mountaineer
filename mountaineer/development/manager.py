@@ -8,13 +8,31 @@ from mountaineer.console import CONSOLE
 from mountaineer.development.isolation import IsolatedAppContext
 from mountaineer.development.messages import (
     AsyncMessageBroker,
+    BootupMessage,
     BuildJsMessage,
+    BuildUseServerMessage,
     IsolatedMessageBase,
     ReloadModulesMessage,
-    ReloadResponse,
+    ReloadResponseError,
+    SuccessResponse,
+    RestartServerMessage,
+    ErrorResponse,
     ShutdownMessage,
 )
 from mountaineer.logging import LOGGER
+from typing import TypeVar
+
+TSuccess = TypeVar("TSuccess", bound=SuccessResponse)
+TError = TypeVar("TError", bound=ErrorResponse)
+
+class BuildFailed(Exception):
+    context: ErrorResponse
+
+    def __init__(self, context: ErrorResponse):
+        self.context = context
+
+    def __str__(self):
+        return f"Build failed: {self.context.exception}"
 
 
 class DevAppManager:
@@ -99,6 +117,7 @@ class DevAppManager:
         self.host = host
         self.port = port
         self.live_reload_port = live_reload_port
+        self.successful_bootup = False
 
         # Message broker for communicating with isolated context
         LOGGER.debug("[DevAppManager] Creating message broker")
@@ -139,7 +158,7 @@ class DevAppManager:
         finally:
             await self.message_broker.stop()
 
-    def restart_server(self):
+    async def restart_server(self):
         """Restart the server in a fresh process"""
         LOGGER.debug("[DevAppManager] Restarting server")
         if not self.port:
@@ -149,14 +168,12 @@ class DevAppManager:
         # Stop existing context if running
         if self.app_context and self.app_context.is_alive():
             LOGGER.debug("[DevAppManager] Shutting down existing app context")
-            message_id = str(uuid.uuid4())
-            LOGGER.debug(f"[DevAppManager] Sending shutdown message {message_id}")
-            self.message_broker.message_queue.put((message_id, ShutdownMessage()))
+            self.message_broker.send_message(ShutdownMessage())
             LOGGER.debug("[DevAppManager] Waiting for app context to join")
             self.app_context.join(timeout=5)
             if self.app_context.is_alive():
                 LOGGER.debug(
-                    "[DevAppManager] App context did not shut down gracefully, terminating"
+                    "[DevAppManager] App isolated context did not shut down gracefully, terminating"
                 )
                 self.app_context.terminate()
 
@@ -174,7 +191,40 @@ class DevAppManager:
         self.app_context.start()
         LOGGER.debug("[DevAppManager] New app context started")
 
-    async def reload_modules(self, module_names: list[str]) -> ReloadResponse:
+        bootstrap_response = await self.bootstrap()
+        if isinstance(bootstrap_response, ErrorResponse):
+            return bootstrap_response
+
+        frontend_response = await self.reload_frontend()
+        if isinstance(frontend_response, ErrorResponse):
+            return frontend_response
+
+        return SuccessResponse()
+
+    async def bootstrap(self):
+        # Send a bootup request and handle the initialization process
+        # Any subsequent reload message received before we bootstrap should do a full bootup
+        try:
+            response = await self.communicate(BootupMessage())
+            LOGGER.debug("[DevAppManager] App context bootstrapped successfully")
+            self.successful_bootup = True
+        except BuildFailed as e:
+            self.successful_bootup = False
+    
+            LOGGER.debug("[DevAppManager] App context failed to bootstrap")
+            # raise Exception(response.exception)
+            CONSOLE.print(f"[bold red]Failed to reload: {response.exception}")
+            CONSOLE.print(response.traceback)
+    
+            return e.context
+
+        # Only if successful should we build the useServer support files
+        try:
+            return await self.communicate(BuildUseServerMessage())            
+        except BuildFailed as e:
+            return e.context
+
+    async def reload_modules(self, module_names: list[str]):
         """
         Signal the context to reload modules and wait for response.
         Returns a tuple of (success, reloaded_modules, needs_restart).
@@ -182,38 +232,54 @@ class DevAppManager:
         LOGGER.debug(f"[DevAppManager] Attempting to reload modules: {module_names}")
         LOGGER.debug(f"[DevAppManager] Current process: {os.getpid()}")
 
-        if not (self.app_context and self.app_context.is_alive()):
+        if self.app_context_missing():
             LOGGER.debug(
                 "[DevAppManager] No active app context, returning needs_restart"
             )
-            return ReloadResponse(
-                success=False,
-                reloaded=[],
+            return ReloadResponseError(
                 needs_restart=True,
             )
 
+        # If we haven't booted up yet, we need to do a formal boot
+        if not self.successful_bootup:
+            try:
+                await self.bootstrap()
+            except BuildFailed as e:
+                return ReloadResponseError(
+                    exception=e.context.exception,
+                    traceback=e.context.traceback,
+                    # Permanent error - we did reboot but it failed
+                    needs_restart=False,
+                )
+
+            # If we reached this point, we successfully booted up.
+            # Reloading specific modules won't hurt.
+            LOGGER.debug("[DevAppManager] Successfully booted up")
+
         LOGGER.debug("[DevAppManager] Sending reload message")
         LOGGER.debug(f"[DevAppManager] App context process ID: {self.app_context.pid}")
-        response = await self.message_broker.send_message(
-            ReloadModulesMessage(
-                module_names=module_names,
-            )
-        )
-        LOGGER.debug(f"[DevAppManager] Received reload response: {response}")
-        LOGGER.debug(f"[DevAppManager] Response type: {type(response)}")
+        
+        try:
+            reload_response = await self.communicate(ReloadModulesMessage(module_names=module_names))
+            await self.communicate(BuildUseServerMessage())
+            await self.communicate(RestartServerMessage())
+            return reload_response
+        except BuildFailed as e:
+            return e.context
 
-        CONSOLE.print(f"Reload response: {response}")
-        return response
-
-    def build_js(self):
+    async def reload_frontend(self, updated_js: list[str] | None = None):
         """Signal the context to rebuild JS"""
         LOGGER.debug("[DevAppManager] Requesting JS build")
-        if self.app_context and self.app_context.is_alive():
-            message_id = str(uuid.uuid4())
-            LOGGER.debug(f"[DevAppManager] Sending build JS message {message_id}")
-            self.message_broker.message_queue.put((message_id, BuildJsMessage()))
-        else:
-            LOGGER.debug("[DevAppManager] No active app context, skipping JS build")
+        if self.app_context_missing():
+            return ErrorResponse(
+                exception="No active app context",
+                traceback="No active app context",
+            )
+
+        try:
+            return await self.communicate(BuildJsMessage(updated_js=updated_js))
+        except BuildFailed as e:
+            return e.context
 
     def is_port_open(self, host, port):
         """Check if a port is open on the given host."""
@@ -227,3 +293,16 @@ class DevAppManager:
             except (socket.timeout, ConnectionRefusedError):
                 LOGGER.debug(f"[DevAppManager] Port {port} is closed")
                 return False
+
+    async def communicate(self, message: IsolatedMessageBase[TSuccess | TError]) -> TSuccess:
+        response = await self.message_broker.send_message(message)
+        if isinstance(response, ErrorResponse):
+            CONSOLE.print(
+                f"[bold red]Worker failed: {response.exception}"
+            )
+            CONSOLE.print(response.traceback)
+            raise BuildFailed(context=response)
+        return response
+
+    def app_context_missing(self):
+        return not (self.app_context and self.app_context.is_alive())
