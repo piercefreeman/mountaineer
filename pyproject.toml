@@ -94,7 +94,7 @@ dependencies = [
     "click>=8.1.7,<9.0.0",
     "uvicorn[standard]>=0.27.0.post1,<1.0.0",
     "packaging>=23.2",
-    "watchfiles>=0.21.0",
+    "watchfiles>=0.21.0,<1.0.0",
     "pydantic-settings>=2.1.0,<3.0.0",
     "rich>=13.7.1,<14.0.0",
     "websockets<14.0",
