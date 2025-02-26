@@ -1,9 +1,9 @@
 import asyncio
+from dataclasses import dataclass
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
 from signal import SIGINT, signal
-from tempfile import mkdtemp
 from time import time
 from typing import Any, Callable, Coroutine
 
@@ -12,13 +12,12 @@ from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.development.manager import (
     DevAppManager,
 )
-from mountaineer.development.messages import ErrorResponse
+from mountaineer.development.messages import ErrorResponse, ReloadResponseError
 from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
@@ -33,7 +32,13 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
-from mountaineer.development.messages import ReloadResponseError
+
+
+@dataclass
+class FileChangeServerConfig:
+    host: str
+    port: int
+    watcher_webservice: WatcherWebservice | None
 
 
 async def handle_file_changes_base(
@@ -41,14 +46,11 @@ async def handle_file_changes_base(
     package: str,
     metadata: CallbackMetadata,
     app_manager: DevAppManager,
-    launch_server: bool = False,
-    watcher_webservice: WatcherWebservice | None = None,
-    host: str | None = None,
-    port: int | None = None,
+    server_config: FileChangeServerConfig | None = None,
 ) -> None:
     """
     Shared file change handler that can be used by both watch and runserver modes.
-    
+
     :param metadata: The metadata about which files changed
     :param app_manager: The app manager instance
     :param js_compiler: Optional js compiler for watch mode
@@ -86,9 +88,7 @@ async def handle_file_changes_base(
 
         # Handle Python changes
         if updated_python:
-            progress.update(
-                build_task, description="[cyan]Reloading Python modules..."
-            )
+            progress.update(build_task, description="[cyan]Reloading Python modules...")
             module_names = [
                 package_path_to_module(package, module_path)
                 for module_path in updated_python
@@ -101,7 +101,7 @@ async def handle_file_changes_base(
                         build_task, description="[cyan]Restarting server..."
                     )
                     # Full server restart needed - start fresh process
-                    if launch_server:
+                    if server_config:
                         restart_response = await app_manager.reload_backend_all()
                         if isinstance(restart_response, ErrorResponse):
                             success = False
@@ -111,34 +111,29 @@ async def handle_file_changes_base(
 
         # Handle JS changes
         if updated_js:
-            progress.update(
-                build_task, description="[cyan]Rebuilding frontend..."
-            )
-            if launch_server:
+            progress.update(build_task, description="[cyan]Rebuilding frontend...")
+            if server_config:
                 await app_manager.reload_frontend(list(updated_js))
             progress.update(build_task, advance=1)
 
         # Use StatusDisplay for the indeterminate server wait
-        if launch_server and success and host is not None and port is not None:
+        if server_config and success:
             start_time = time()
             while time() - start_time < 5:
-                if app_manager.is_port_open(host, port):
+                if app_manager.is_port_open(server_config.host, server_config.port):
                     break
                 await asyncio.sleep(0.1)
 
-    if watcher_webservice:
-        watcher_webservice.notification_queue.put(True)
+    if server_config and server_config.watcher_webservice:
+        server_config.watcher_webservice.notification_queue.put(True)
 
-    if launch_server:
+    if server_config:
         build_time = time() - start
         if success:
+            CONSOLE.print(f"[bold green]🚀 App relaunched in {build_time:.2f} seconds")
             CONSOLE.print(
-                f"[bold green]🚀 App relaunched in {build_time:.2f} seconds"
+                f"🚀 Dev webserver ready at http://{server_config.host}:{server_config.port}"
             )
-            if host is not None and port is not None:
-                CONSOLE.print(
-                    f"🚀 Dev webserver ready at http://{host if host else '127.0.0.1'}:{port}"
-                )
         else:
             CONSOLE.print(
                 "[bold red]🚨 App failed to launch, waiting for code change..."
@@ -176,7 +171,7 @@ async def handle_watch(
             package=package,
             metadata=metadata,
             app_manager=app_manager,
-            launch_server=False,
+            server_config=None,
         )
 
     async with app_manager.start_broker():
@@ -229,10 +224,11 @@ async def handle_runserver(
             package=package,
             metadata=metadata,
             app_manager=app_manager,
-            launch_server=True,
-            watcher_webservice=watcher_webservice,
-            host=host,
-            port=port,
+            server_config=FileChangeServerConfig(
+                host=host,
+                port=port,
+                watcher_webservice=watcher_webservice,
+            ),
         )
 
     def handle_shutdown(signum, frame):
@@ -242,7 +238,7 @@ async def handle_runserver(
 
     # Start the message broker
     async with app_manager.start_broker():
-        await app_manager.restart_server()
+        await app_manager.reload_backend_all()
 
         signal(SIGINT, handle_shutdown)
 

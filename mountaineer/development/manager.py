@@ -307,7 +307,6 @@ class DevAppManager:
     # Helper methods
     #
 
-
     async def bootstrap(self) -> SuccessResponse | ErrorResponse:
         """
         Bootstrap the application context.

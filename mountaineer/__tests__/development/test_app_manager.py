@@ -1,4 +1,3 @@
-
 from mountaineer.__tests__.development.conftest import AppPackageType
 from mountaineer.development.manager import DevAppManager
 
