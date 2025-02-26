@@ -4,8 +4,9 @@ from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from multiprocessing import Queue
+from pathlib import Path
 from queue import Empty
-from typing import Any, Dict, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from mountaineer.logging import LOGGER
 
@@ -60,14 +61,14 @@ class ReloadModulesMessage(
 ):
     """Message to reload modules in the isolated app context"""
 
-    module_names: List[str]
+    module_names: list[str]
 
 
 @dataclass
 class BuildJsMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
     """Message to trigger JS compilation"""
 
-    updated_js: list[str]
+    updated_js: list[Path]
 
 
 @dataclass
@@ -116,24 +117,28 @@ class AsyncMessageBroker(Generic[AppMessageType]):
     def __init__(self):
         self.message_queue: Queue = Queue()
         self.response_queue: Queue = Queue()
-        self._pending_futures: Dict[str, Future[Any]] = {}
-        self._response_task: Optional[asyncio.Task] = None
-        self._executor: Optional[ThreadPoolExecutor] = None
+        self._pending_futures: dict[str, Future[Any]] = {}
+        self._response_task: asyncio.Task | None = None
+        self._executor: ThreadPoolExecutor | None = None
         self._should_stop = False
 
     def __getstate__(self):
         """
-        Custom pickling behavior to only serialize the queues.
-        Other attributes will be reinitialized in the new process.
+        Only serialize the queues when transferring from our main to isolated process.
+
+        Other attributes will be reinitialized in the new process so we don't
+        attempt to share non-thread safe objects between processes.
+
         """
         return {
             "message_queue": self.message_queue,
             "response_queue": self.response_queue,
         }
 
-    def __setstate__(self, state):
+    def __setstate__(self, state: dict[str, Any]):
         """
-        Restore the broker state from pickle, reinitializing non-picklable components
+        Restore the broker state from pickle, reinitializing non-picklable components.
+
         """
         self.message_queue = state["message_queue"]
         self.response_queue = state["response_queue"]
@@ -181,12 +186,12 @@ class AsyncMessageBroker(Generic[AppMessageType]):
             while not self.message_queue.empty():
                 try:
                     self.message_queue.get_nowait()
-                except:
+                except Empty:
                     break
             while not self.response_queue.empty():
                 try:
                     self.response_queue.get_nowait()
-                except:
+                except Empty:
                     break
         except Exception as e:
             LOGGER.error(f"Error draining queues: {e}")
@@ -232,19 +237,7 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         Send a message and return a future that will be resolved with the response
         """
         message_id = str(uuid.uuid4())
-        future = BrokerMessageFuture()
+        future = BrokerMessageFuture[TResponse]()
         self._pending_futures[message_id] = future
         self.message_queue.put((message_id, message))
         return future
-
-    def drain_queues(self):
-        try:
-            self.message_queue.get_nowait()
-        except Empty:
-            pass
-
-        # Finish all existing waiting tasks and clear the pending futures
-        for future in self._pending_futures.values():
-            if not future.done():
-                future.set_exception(ValueError("Drained"))
-        self._pending_futures.clear()

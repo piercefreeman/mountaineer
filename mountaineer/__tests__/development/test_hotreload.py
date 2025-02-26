@@ -109,8 +109,8 @@ def test_inheritance_changes(test_package_dir: tuple[Path, str]):
         )
     )
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
-    assert success
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.base"])
+    assert reload_status.error is None
 
     # Verify both inheritance relationships
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
@@ -154,8 +154,8 @@ def test_cyclic_dependencies(test_package_dir: tuple[Path, str]):
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.module_a")
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.module_a")
-    assert success
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.module_a"])
+    assert reload_status.error is None
 
 
 def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
@@ -181,8 +181,8 @@ def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
         )
     )
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.child")
-    assert not success
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.child"])
+    assert reload_status.error is not None
 
     # Verify base module is still functional
     base_module = importlib.import_module(f"{pkg_name}.base")
@@ -225,8 +225,8 @@ def test_multiple_inheritance(test_package_dir: tuple[Path, str]):
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.child")
-    assert success
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.child"])
+    assert reload_status.error is None
 
     child = importlib.import_module(f"{pkg_name}.child")
     obj = child.ChildClass()
@@ -287,8 +287,8 @@ def test_enum_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.status")
-    assert success
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.status"])
+    assert reload_status.error is None
 
     # Verify new enum value is available
     status_module = importlib.import_module(f"{pkg_name}.status")
@@ -359,9 +359,9 @@ def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
         )
     )
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models")
-    assert success
-    assert f"{pkg_name}.main" in reloaded
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.models"])
+    assert reload_status.error is None
+    assert f"{pkg_name}.main" in reload_status.reloaded_modules
 
     # Verify that the updated value is reflected
     main_module = sys.modules[f"{pkg_name}.main"]
@@ -431,11 +431,11 @@ def test_relative_import(test_package_dir: tuple[Path, str]):
     )
 
     # Reload and verify
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models.example")
-    assert success, "Reload should succeed"
-    assert f"{pkg_name}.models.example" in reloaded, "example.py should be reloaded"
-    assert f"{pkg_name}.models" in reloaded, "models/__init__.py should be reloaded"
-    assert f"{pkg_name}.main" in reloaded, "main.py should be reloaded"
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.models.example"])
+    assert reload_status.error is None
+    assert f"{pkg_name}.models.example" in reload_status.reloaded_modules
+    assert f"{pkg_name}.models" in reload_status.reloaded_modules
+    assert f"{pkg_name}.main" in reload_status.reloaded_modules
 
     # Verify the module was actually reloaded with new code
     new_value = main_module.get_model_value()
@@ -515,14 +515,12 @@ def test_ignores_irrelevant_files(test_package_dir: tuple[Path, str]):
     )
 
     # Reload and verify
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.models.example")
-    assert success, "Reload should succeed"
-    assert f"{pkg_name}.models.example" in reloaded, "example.py should be reloaded"
-    assert f"{pkg_name}.models" in reloaded, "models/__init__.py should be reloaded"
-    assert f"{pkg_name}.main" in reloaded, "main.py should be reloaded"
-    assert (
-        f"{pkg_name}.other_item" not in reloaded
-    ), "other_item.py should not be reloaded"
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.models.example"])
+    assert reload_status.error is None
+    assert f"{pkg_name}.models.example" in reload_status.reloaded_modules
+    assert f"{pkg_name}.models" in reload_status.reloaded_modules
+    assert f"{pkg_name}.main" in reload_status.reloaded_modules
+    assert f"{pkg_name}.other_item" not in reload_status.reloaded_modules
 
     # Verify the module was actually reloaded with new code
     new_value = main_module.get_model_value()
@@ -698,8 +696,8 @@ def test_inheritance_tree_module_updates(test_package_dir: tuple[Path, str]):
         )
     )
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.dynamic")
-    assert success
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.dynamic"])
+    assert reload_status.error is None
 
     # Verify inheritance is updated
     base_deps = hot_reloader.get_module_dependencies(f"{pkg_name}.base")
@@ -765,9 +763,12 @@ def test_new_file_reload(test_package_dir: tuple[Path, str]):
         )
     )
 
-    success, reloaded = hot_reloader.reload_module(f"{pkg_name}.base")
-    assert success
-    assert reloaded == [f"{pkg_name}.base", f"{pkg_name}.new_module"]
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.base"])
+    assert reload_status.error is None
+    assert reload_status.reloaded_modules == [
+        f"{pkg_name}.base",
+        f"{pkg_name}.new_module",
+    ]
 
     # Verify that the new module was reloaded
     new_module = sys.modules[f"{pkg_name}.new_module"]
@@ -965,10 +966,12 @@ def test_non_syntax_error_triggers_restart(test_package_dir: tuple[Path, str]):
     )
 
     # Attempt to reload - this should trigger a server restart
-    success, reloaded, needs_restart = hot_reloader.reload_module(f"{pkg_name}.base")
-    assert not success, "Reload should fail due to runtime error"
-    assert needs_restart, "Should indicate server restart is needed"
-    assert reloaded == [], "No modules should be marked as successfully reloaded"
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.base"])
+    assert reload_status.error is not None, "Reload should fail due to runtime error"
+    assert reload_status.needs_restart, "Should indicate server restart is needed"
+    assert (
+        reload_status.reloaded_modules == []
+    ), "No modules should be marked as successfully reloaded"
 
     # Now test a syntax error case for comparison
     (pkg_dir / "base.py").write_text(
@@ -982,9 +985,11 @@ def test_non_syntax_error_triggers_restart(test_package_dir: tuple[Path, str]):
     )
 
     # Attempt to reload - this should fail without triggering restart
-    success, reloaded, needs_restart = hot_reloader.reload_module(f"{pkg_name}.base")
-    assert not success, "Reload should fail due to syntax error"
+    reload_status = hot_reloader.reload_modules([f"{pkg_name}.base"])
+    assert reload_status.error is not None, "Reload should fail due to syntax error"
     assert (
-        not needs_restart
+        not reload_status.needs_restart
     ), "Should not indicate server restart is needed for syntax error"
-    assert reloaded == [], "No modules should be marked as successfully reloaded"
+    assert (
+        reload_status.reloaded_modules == []
+    ), "No modules should be marked as successfully reloaded"

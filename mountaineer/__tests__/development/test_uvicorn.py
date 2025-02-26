@@ -3,11 +3,8 @@ from typing import Any, Generator
 from unittest.mock import Mock, patch
 
 import pytest
-from rich.spinner import Spinner
-from rich.text import Text
 
 from mountaineer.development.uvicorn import (
-    ServerStatus,
     configure_uvicorn_logging,
 )
 
@@ -19,50 +16,12 @@ def mock_console() -> Generator[Mock, Any, None]:
 
 
 @pytest.fixture
-def server_status() -> ServerStatus:
-    return ServerStatus(name="Test Server", emoticon="🚀")
-
-
-@pytest.fixture
 def mock_live() -> Generator[Mock, Any, None]:
     # We need to patch where the Live class is used, not where it's defined
     with patch("mountaineer.webservice.Live") as mock:
         mock_instance = Mock()
         mock.return_value = mock_instance
         yield mock_instance
-
-
-class TestServerStatus:
-    def test_initial_state(self, server_status: ServerStatus) -> None:
-        """Test the initial state of ServerStatus"""
-        assert server_status.name == "Test Server"
-        assert server_status.emoticon == "🚀"
-        assert server_status.status == "Starting server..."
-        assert server_status.final_status is None
-        assert server_status.url is None
-
-    def test_update_without_url(self, server_status: ServerStatus) -> None:
-        """Test updating status without URL"""
-        # Test the spinner output
-        server_status.update("Processing...", final=False)
-        rendered = server_status.__rich__()
-
-        # We know it should be a Spinner when not final
-        assert isinstance(rendered, Spinner)
-        # Get the text from the spinner's current state
-        spinner_text = rendered.text
-        assert "Processing..." == str(spinner_text)
-
-    def test_update_with_url(self, server_status: ServerStatus) -> None:
-        """Test updating status with URL"""
-        test_url = "http://localhost:8000"
-        server_status.update("Server ready", url=test_url, final=True)
-        rendered = server_status.__rich__()
-
-        # Get the plain text and check content
-        assert isinstance(rendered, Text)
-        assert "ready at" in rendered.plain
-        assert test_url in rendered.plain
 
 
 class TestUvicornLogging:

@@ -18,7 +18,9 @@ from mountaineer.development.messages import (
     ShutdownMessage,
     SuccessResponse,
 )
-from mountaineer.logging import LOGGER
+from mountaineer.logging import setup_internal_logger
+
+LOGGER = setup_internal_logger(__name__)
 
 TSuccess = TypeVar("TSuccess", bound=SuccessResponse)
 TError = TypeVar("TError", bound=ErrorResponse)
@@ -107,9 +109,6 @@ class DevAppManager:
         port: int | None,
         live_reload_port: int | None,
     ):
-        LOGGER.debug(
-            f"[DevAppManager] Initializing manager for {package}.{module_name}:{controller_name}"
-        )
         self.package = package
         self.module_name = module_name
         self.controller_name = controller_name
@@ -119,7 +118,6 @@ class DevAppManager:
         self.successful_bootup = False
 
         # Message broker for communicating with isolated context
-        LOGGER.debug("[DevAppManager] Creating message broker")
         self.message_broker = AsyncMessageBroker[IsolatedMessageBase[Any]]()
         self.app_context: IsolatedAppContext | None = None
 
@@ -131,9 +129,6 @@ class DevAppManager:
         port: int | None = None,
         live_reload_port: int | None = None,
     ):
-        LOGGER.debug(
-            f"[DevAppManager] Creating manager from webcontroller: {webcontroller}"
-        )
         package = webcontroller.split(".")[0]
         module_name = webcontroller.split(":")[0]
         controller_name = webcontroller.split(":")[1]
@@ -151,35 +146,35 @@ class DevAppManager:
     async def start_broker(self):
         """Start the message broker when entering async context"""
         try:
-            LOGGER.debug("[DevAppManager] Entering async context")
             self.message_broker.start()
             yield self
         finally:
             await self.message_broker.stop()
 
+    #
+    # Server Management
+    #
+
     async def restart_server(self):
         """Restart the server in a fresh process"""
-        LOGGER.debug("[DevAppManager] Restarting server")
+        LOGGER.debug("Restarting server")
         if not self.port:
-            LOGGER.debug("[DevAppManager] Error: Port not set")
+            LOGGER.debug("Error: Port not set")
             raise ValueError("Port not set")
 
         # Stop existing context if running
         if self.app_context and self.app_context.is_alive():
-            LOGGER.debug("[DevAppManager] Shutting down existing app context")
-            self.message_broker.send_message(ShutdownMessage())
-            LOGGER.debug("[DevAppManager] Waiting for app context to join")
+            LOGGER.debug("Shutting down existing app context")
+            await self.communicate(ShutdownMessage())
+            LOGGER.debug("Waiting for app context to join")
+
             self.app_context.join(timeout=5)
             if self.app_context.is_alive():
-                LOGGER.debug(
-                    "[DevAppManager] App isolated context did not shut down gracefully, terminating"
-                )
+                LOGGER.debug("Context did not shut down gracefully, terminating")
                 self.app_context.terminate()
 
-                # Drain the existing queue?
-
         # Start new context
-        LOGGER.debug("[DevAppManager] Starting new app context")
+        LOGGER.debug("Starting new app context")
         self.app_context = IsolatedAppContext(
             package=self.package,
             module_name=self.module_name,
@@ -190,12 +185,7 @@ class DevAppManager:
             message_broker=self.message_broker,
         )
         self.app_context.start()
-        LOGGER.debug("[DevAppManager] New app context started")
-
-        # TODO: Wait for a message/signal that it's started
-        import asyncio
-
-        await asyncio.sleep(1)
+        LOGGER.debug("New app context started")
 
         bootstrap_response = await self.bootstrap()
         if isinstance(bootstrap_response, ErrorResponse):
@@ -212,10 +202,10 @@ class DevAppManager:
         # Any subsequent reload message received before we bootstrap should do a full bootup
         try:
             await self.communicate(BootupMessage())
-            LOGGER.debug("[DevAppManager] App context bootstrapped successfully")
+            LOGGER.debug("App context bootstrapped successfully")
             self.successful_bootup = True
         except BuildFailed as e:
-            LOGGER.debug("[DevAppManager] App context failed to bootstrap")
+            LOGGER.debug("App context failed to bootstrap")
             self.successful_bootup = False
 
             return e.context
@@ -231,12 +221,12 @@ class DevAppManager:
         Signal the context to reload modules and wait for response.
         Returns a tuple of (success, reloaded_modules, needs_restart).
         """
-        LOGGER.debug(f"[DevAppManager] Attempting to reload modules: {module_names}")
-        LOGGER.debug(f"[DevAppManager] Current process: {os.getpid()}")
+        LOGGER.debug(f"Attempting to reload modules: {module_names}")
+        LOGGER.debug(f"Current process: {os.getpid()}")
 
         if self.app_context_missing():
             LOGGER.debug(
-                "[DevAppManager] No active app context, returning needs_restart"
+                "No active app context, returning needs_restart"
             )
             return ReloadResponseError(
                 needs_restart=True,
@@ -256,10 +246,10 @@ class DevAppManager:
 
             # If we reached this point, we successfully booted up.
             # Reloading specific modules won't hurt.
-            LOGGER.debug("[DevAppManager] Successfully booted up")
+            LOGGER.debug("Successfully booted up")
 
-        LOGGER.debug("[DevAppManager] Sending reload message")
-        LOGGER.debug(f"[DevAppManager] App context process ID: {self.app_context.pid}")
+        LOGGER.debug("Sending reload message")
+        LOGGER.debug(f"App context process ID: {self.app_context.pid}")
 
         try:
             reload_response = await self.communicate(
@@ -273,7 +263,7 @@ class DevAppManager:
 
     async def reload_frontend(self, updated_js: list[str] | None = None):
         """Signal the context to rebuild JS"""
-        LOGGER.debug("[DevAppManager] Requesting JS build")
+        LOGGER.debug("Requesting JS build")
         if self.app_context_missing():
             return ErrorResponse(
                 exception="No active app context",
@@ -285,27 +275,34 @@ class DevAppManager:
         except BuildFailed as e:
             return e.context
 
+    #
+    # Helper methods
+    #
+
+    def app_context_missing(self):
+        return not (self.app_context and self.app_context.is_alive())
+
     def is_port_open(self, host, port):
         """Check if a port is open on the given host."""
-        LOGGER.debug(f"[DevAppManager] Checking if port {port} is open on {host}")
+        LOGGER.debug(f"Checking if port {port} is open on {host}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
                 s.settimeout(0.1)
                 s.connect((host, port))
-                LOGGER.debug(f"[DevAppManager] Port {port} is open")
+                LOGGER.debug(f"Port {port} is open")
                 return True
             except (socket.timeout, ConnectionRefusedError):
-                LOGGER.debug(f"[DevAppManager] Port {port} is closed")
+                LOGGER.debug(f"Port {port} is closed")
                 return False
 
     async def communicate(
         self, message: IsolatedMessageBase[TSuccess | TError]
     ) -> TSuccess:
         LOGGER.debug(
-            f"[DevAppManager] Host->Context: Communicating with message: {message}"
+            f"Host->Context: Communicating with message: {message}"
         )
         response = await self.message_broker.send_message(message)
-        LOGGER.debug(f"[DevAppManager] Host<-Context: Got response: {response}")
+        LOGGER.debug(f"Host<-Context: Got response: {response}")
 
         if isinstance(response, ErrorResponse):
             CONSOLE.print(f"[bold red]Webapp Error: {response.exception}")
@@ -314,6 +311,3 @@ class DevAppManager:
         if not isinstance(response, SuccessResponse):
             raise ValueError(f"Invalid response type: {type(response)} {response}")
         return response
-
-    def app_context_missing(self):
-        return not (self.app_context and self.app_context.is_alive())

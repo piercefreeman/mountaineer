@@ -6,10 +6,9 @@ import pytest_asyncio
 
 from mountaineer.development.messages import (
     AsyncMessageBroker,
-    BuildJsMessage,
     IsolatedMessageBase,
     ReloadModulesMessage,
-    ReloadResponse,
+    ReloadResponseSuccess,
     ShutdownMessage,
 )
 
@@ -37,19 +36,16 @@ async def test_send_and_receive_message(
     future = message_broker.send_message(test_message)
 
     # Simulate response from another process
-    response = ReloadResponse(
-        success=True, reloaded=["test_module"], needs_restart=False
-    )
+    response = ReloadResponseSuccess(reloaded=["test_module"], needs_restart=False)
     message_id = list(message_broker._pending_futures.keys())[0]
     message_broker.response_queue.put((message_id, response))
 
     # Wait for the response
     result = await asyncio.wait_for(future, timeout=1.0)
 
-    assert isinstance(result, ReloadResponse)
-    assert result.success == True
+    assert isinstance(result, ReloadResponseSuccess)
     assert result.reloaded == ["test_module"]
-    assert result.needs_restart == False
+    assert not result.needs_restart
 
 
 @pytest.mark.asyncio
@@ -59,7 +55,7 @@ async def test_multiple_messages(
     """Test handling multiple messages concurrently"""
     # Send multiple messages
     message1 = ReloadModulesMessage(module_names=["module1"])
-    message2 = BuildJsMessage()
+    message2 = ReloadModulesMessage(module_names=["module2"])
 
     future1 = message_broker.send_message(message1)
     future2 = message_broker.send_message(message2)
@@ -68,19 +64,21 @@ async def test_multiple_messages(
     message_ids = list(message_broker._pending_futures.keys())
 
     # Simulate responses
-    response1 = ReloadResponse(success=True, reloaded=["module1"], needs_restart=False)
-    message_broker.response_queue.put((message_ids[0], response1))
+    response1 = ReloadResponseSuccess(reloaded=["module1"], needs_restart=False)
+    response2 = ReloadResponseSuccess(reloaded=["module2"], needs_restart=False)
 
-    message_broker.response_queue.put((message_ids[1], None))
+    message_broker.response_queue.put((message_ids[0], response1))
+    message_broker.response_queue.put((message_ids[1], response2))
 
     # Wait for both responses
     results = await asyncio.gather(
         asyncio.wait_for(future1, timeout=1.0), asyncio.wait_for(future2, timeout=1.0)
     )
 
-    assert isinstance(results[0], ReloadResponse)
-    assert results[0].success == True
-    assert results[1] is None
+    assert isinstance(results[0], ReloadResponseSuccess)
+    assert isinstance(results[1], ReloadResponseSuccess)
+    assert results[0].reloaded == ["module1"]
+    assert results[1].reloaded == ["module2"]
 
 
 @pytest.mark.asyncio
@@ -90,7 +88,7 @@ async def test_broker_shutdown(
     """Test proper broker shutdown"""
     # Send a message before shutdown
     message = ShutdownMessage()
-    future = message_broker.send_message(message)
+    message_broker.send_message(message)
 
     # Shutdown the broker
     await message_broker.stop()

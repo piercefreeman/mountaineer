@@ -30,7 +30,9 @@ from mountaineer.development.messages import (
     SuccessResponse,
 )
 from mountaineer.development.uvicorn import UvicornThread
-from mountaineer.logging import LOGGER
+from mountaineer.logging import setup_internal_logger
+
+LOGGER = setup_internal_logger(__name__)
 
 
 class IsolatedAppContext(Process):
@@ -58,6 +60,11 @@ class IsolatedAppContext(Process):
         self.live_reload_port = live_reload_port
         self.message_broker = message_broker
         self.webservice_thread: UvicornThread | None = None
+
+        self.app_controller: AppController | None = None
+
+        self.js_compiler: APIBuilder | None = None
+        self.app_compiler: ClientCompiler | None = None
         self.hot_reloader: HotReloader | None = None
 
     def run(self):
@@ -73,16 +80,17 @@ class IsolatedAppContext(Process):
                 try:
                     response: SuccessResponse | ErrorResponse
                     if isinstance(message, BootupMessage):
-                        response = self.bootstrap()
+                        response = self.handle_bootstrap()
                     elif isinstance(message, ReloadModulesMessage):
                         response = self.handle_module_reload(message.module_names)
                     elif isinstance(message, RestartServerMessage):
-                        response = self.restart_server()
+                        response = self.handle_restart_server()
                     elif isinstance(message, BuildJsMessage):
                         response = self.handle_js_build(message.updated_js)
                     elif isinstance(message, BuildUseServerMessage):
                         response = self.handle_build_use_server()
                     elif isinstance(message, ShutdownMessage):
+                        self.message_broker.response_queue.put((message_id, SuccessResponse()))
                         break
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")
@@ -107,27 +115,80 @@ class IsolatedAppContext(Process):
             if self.webservice_thread:
                 self.webservice_thread.stop()
 
-    def bootstrap(self):
+    #
+    # Message Handlers
+    #
+
+    def handle_bootstrap(self):
         response = self.initialize_app_state()
         if isinstance(response, SuccessResponse):
             self.start_server()
 
         return response
 
-    def restart_server(self):
+    def handle_restart_server(self):
         # Restart the server with new controller
         self.load_webservice()
         self.start_server()
         return SuccessResponse()
 
     def handle_build_use_server(self):
+        if self.js_compiler is None:
+            raise ValueError("JS compiler not initialized")
+
         asyncio.run(self.js_compiler.build_use_server())
         return SuccessResponse()
+
+    def handle_module_reload(self, module_names: List[str]):
+        """Handle module reloading within the isolated context"""
+        needs_restart = True
+
+        try:
+            if self.hot_reloader is None:
+                raise ValueError("Hot reloader not initialized")
+
+            # Get the list of modules to reload from the hot reloader
+            reload_status = self.hot_reloader.reload_modules(module_names)
+
+            if reload_status.error:
+                raise reload_status.error
+
+            return ReloadResponseSuccess(
+                reloaded=reload_status.reloaded_modules,
+                needs_restart=reload_status.needs_restart,
+            )
+        except Exception as e:
+            LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
+            return ReloadResponseError(
+                needs_restart=needs_restart,
+                exception=str(e),
+                traceback="".join(format_exception(e)),
+            )
+
+    def handle_js_build(self, updated_js: list[Path] | None = None):
+        """Handle JS compilation within the isolated context"""
+        if self.app_compiler is None:
+            raise ValueError("App compiler not initialized")
+        if self.app_controller is None:
+            raise ValueError("App controller not initialized")
+
+        asyncio.run(self.app_compiler.run_builder_plugins(limit_paths=updated_js))
+        for path in updated_js or []:
+            self.app_controller.invalidate_view(path)
+
+        return SuccessResponse()
+
+    #
+    # Server Initialization
+    #
 
     def initialize_app_state(self):
         """Initialize all app state within the isolated context"""
         # Import and initialize the module
         self.load_webservice()
+
+        if self.app_controller is None:
+            raise ValueError("App controller not initialized")
 
         # Initialize hot reloader
         self.hot_reloader = HotReloader(
@@ -163,6 +224,9 @@ class IsolatedAppContext(Process):
         if self.webservice_thread is not None:
             self.webservice_thread.stop()
 
+        if self.app_controller is None:
+            raise ValueError("App controller not initialized")
+
         # Inject the live reload port
         self.app_controller.live_reload_port = self.live_reload_port or 0
 
@@ -175,40 +239,9 @@ class IsolatedAppContext(Process):
         )
         self.webservice_thread.start()
 
-    def handle_module_reload(self, module_names: List[str]):
-        """Handle module reloading within the isolated context"""
-        needs_restart = True
-
-        try:
-            if self.hot_reloader is None:
-                raise ValueError("Hot reloader not initialized")
-
-            # Get the list of modules to reload from the hot reloader
-            reloaded, needs_restart, error = self.hot_reloader.reload_modules(
-                module_names
-            )
-
-            if error:
-                raise error
-
-            return ReloadResponseSuccess(
-                reloaded=reloaded,
-                needs_restart=needs_restart,
-            )
-        except Exception as e:
-            LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
-            return ReloadResponseError(
-                needs_restart=needs_restart,
-                exception=str(e),
-                traceback="".join(format_exception(e)),
-            )
-
-    def handle_js_build(self, updated_js: list[str] | None = None):
-        """Handle JS compilation within the isolated context"""
-        asyncio.run(self.app_compiler.run_builder_plugins(limit_paths=updated_js))
-        for path in updated_js or []:
-            self.app_controller.invalidate_view(path)
-        return SuccessResponse()
+    #
+    # Dev Hooks
+    #
 
     def mount_exceptions(self, app_controller: AppController):
         # Don't re-mount the exception controller

@@ -12,7 +12,7 @@ from types import ModuleType
 
 from mountaineer.logging import setup_internal_logger
 
-logger = setup_internal_logger(__name__)
+LOGGER = setup_internal_logger(__name__)
 
 
 @dataclass
@@ -32,6 +32,13 @@ class DependencyNode:
             f"  imports: {self.imports}\n"
             f"  imported_by: {self.imported_by}\n"
         )
+
+
+@dataclass
+class ReloadModuleStatus:
+    reloaded_modules: list[str]
+    needs_restart: bool
+    error: Exception | None
 
 
 class HotReloader:
@@ -62,7 +69,7 @@ class HotReloader:
         package_path=Path("./myapp"),
         entrypoint="myapp.main"
     )
-    success, reloaded, needs_restart = reloader.reload_module("myapp.views")
+    success, reloaded, needs_restart = reloader.reload_modules(["myapp.views"])
     ```
 
     """
@@ -83,7 +90,7 @@ class HotReloader:
     """
 
     def __init__(self, root_package: str, package_path: Path, entrypoint: str):
-        logger.debug(
+        LOGGER.debug(
             f"Initializing HotReloader with root_package={root_package}, path={package_path}, entrypoint={entrypoint}"
         )
         self.root_package = root_package
@@ -99,10 +106,10 @@ class HotReloader:
 
         # Ensure the entrypoint is imported
         if entrypoint not in sys.modules:
-            logger.info(f"Importing entrypoint: {entrypoint}")
+            LOGGER.info(f"Importing entrypoint: {entrypoint}")
             importlib.import_module(entrypoint)
         else:
-            logger.info(f"Entrypoint already imported: {entrypoint}")
+            LOGGER.info(f"Entrypoint already imported: {entrypoint}")
 
         # Build the dependency graph by inspecting the already imported modules
         self._build_dependency_graph()
@@ -117,14 +124,14 @@ class HotReloader:
         Log the current state of the dependency graph
 
         """
-        logger.info("Current Dependency Graph State:")
+        LOGGER.info("Current Dependency Graph State:")
         for module_name, node in self.dependency_graph.items():
-            logger.info(str(node))
-            logger.info(
+            LOGGER.info(str(node))
+            LOGGER.info(
                 f"Module cache ID for {module_name}: {id(self.module_cache.get(module_name))}"
             )
             if module_name in sys.modules:
-                logger.info(
+                LOGGER.info(
                     f"sys.modules ID for {module_name}: {id(sys.modules[module_name])}"
                 )
 
@@ -133,7 +140,7 @@ class HotReloader:
         Build the dependency graph by inspecting the already imported modules in sys.modules.
 
         """
-        logger.debug("Building dependency graph from already imported modules.")
+        LOGGER.debug("Building dependency graph from already imported modules.")
         static_modules = [module_name for module_name in sys.modules]
         for module_name in static_modules:
             if module_name.startswith(self.root_package):
@@ -148,13 +155,13 @@ class HotReloader:
                     module = importlib.import_module(module_name)
                     sys.modules[module_name] = module
                 except Exception as e:
-                    logger.error(
+                    LOGGER.error(
                         f"Failed to import new module {module_name}: {e}", exc_info=True
                     )
                     return None
             else:
                 # Do not import modules unless they are already imported
-                logger.debug(
+                LOGGER.debug(
                     f"Module {module_name} is not loaded and manual loading is not allowed. Skipping."
                 )
                 return None
@@ -177,7 +184,7 @@ class HotReloader:
                 if module_py.exists():
                     module_path = module_py
                 else:
-                    logger.error(
+                    LOGGER.error(
                         f"Found module {module_name} path not resolved, proposed {module_py}"
                     )
                     return None
@@ -207,7 +214,7 @@ class HotReloader:
             return module
 
         except Exception as e:
-            logger.error(f"Failed to process module {module_name}: {e}", exc_info=True)
+            LOGGER.error(f"Failed to process module {module_name}: {e}", exc_info=True)
             if module_name in self.dependency_graph:
                 del self.dependency_graph[module_name]
             return None
@@ -218,7 +225,7 @@ class HotReloader:
 
         """
         try:
-            logger.debug(f"Tracking imports for {module_path}")
+            LOGGER.debug(f"Tracking imports for {module_path}")
             with open(module_path) as f:
                 content = f.read()
                 tree = ast.parse(content, filename=str(module_path))
@@ -226,7 +233,7 @@ class HotReloader:
             for ast_node in ast.walk(tree):
                 if isinstance(ast_node, ast.Import):
                     for name in ast_node.names:
-                        logger.debug(f"Found import in {node.module_name}: {name.name}")
+                        LOGGER.debug(f"Found import in {node.module_name}: {name.name}")
                         if name.name.startswith(self.root_package):
                             node.imports.add(name.name)
                             if name.name in self.dependency_graph:
@@ -235,10 +242,10 @@ class HotReloader:
                                 )
 
                 elif isinstance(ast_node, ast.ImportFrom):
-                    logger.info("Found ImportFrom:")
-                    logger.info(f"  Module: {ast_node.module}")
-                    logger.info(f"  Level: {ast_node.level}")
-                    logger.info(
+                    LOGGER.info("Found ImportFrom:")
+                    LOGGER.info(f"  Module: {ast_node.module}")
+                    LOGGER.info(f"  Level: {ast_node.level}")
+                    LOGGER.info(
                         f"  Names: {[n.name + (' as ' + n.asname if n.asname else '') for n in ast_node.names]}"
                     )
 
@@ -251,7 +258,7 @@ class HotReloader:
                             sys_modules=set(sys.modules.keys()),
                             import_name=import_element.name,
                         )
-                        logger.info(f"Resolved base module: {absolute_module}")
+                        LOGGER.info(f"Resolved base module: {absolute_module}")
 
                         if not absolute_module:
                             continue
@@ -260,19 +267,19 @@ class HotReloader:
                         node.imports.add(absolute_module)
 
                         if absolute_module in self.dependency_graph:
-                            logger.info(
+                            LOGGER.info(
                                 f"Marking {absolute_module} as imported by {node.module_name}"
                             )
                             self.dependency_graph[absolute_module].imported_by.add(
                                 node.module_name
                             )
 
-            logger.info("=== Final import state ===")
-            logger.info(f"Imports: {node.imports}")
-            logger.info(f"Imported by: {node.imported_by}")
+            LOGGER.info("=== Final import state ===")
+            LOGGER.info(f"Imports: {node.imports}")
+            LOGGER.info(f"Imported by: {node.imported_by}")
 
         except Exception as e:
-            logger.error(
+            LOGGER.error(
                 f"Failed to parse imports for {module_path}: {e}", exc_info=True
             )
             raise
@@ -363,23 +370,13 @@ class HotReloader:
 
         return result
 
-    def reload_module(self, module_name: str) -> tuple[bool, list[str], bool]:
-        return self.reload_modules([module_name])
-
-    def reload_modules(
-        self, module_names: list[str]
-    ) -> tuple[list[str], bool, Exception | None]:
+    def reload_modules(self, module_names: list[str]) -> ReloadModuleStatus:
         """
         Reload a module and all its dependencies. Note that this requires the underlying bite
         length to have changed: https://bugs.python.org/issue31772
 
-        Returns:
-            tuple[bool, list[str], bool]: (success, reloaded_modules, needs_server_restart)
-            - success: Whether the reload was successful
-            - reloaded_modules: List of modules that were successfully reloaded
-            - needs_server_restart: Whether a server restart is needed due to a non-syntax error
         """
-        logger.info(f"=== Starting reload of {module_names} ===")
+        LOGGER.info(f"=== Starting reload of {module_names} ===")
         self._log_dependency_state()
 
         # Try to import any modules that haven't been indexed yet
@@ -398,10 +395,14 @@ class HotReloader:
         # Flag an error on any errors but continue reloading the ones that we're
         # able to find
         if invalid_modules:
-            logger.error(f"Modules {invalid_modules} are not loaded. Cannot reload.")
+            LOGGER.error(f"Modules {invalid_modules} are not loaded. Cannot reload.")
 
-            if not valid_modules:
-                return reloaded_modules, False, None
+        if not valid_modules:
+            return ReloadModuleStatus(
+                reloaded_modules=reloaded_modules,
+                needs_restart=False,
+                error=None,
+            )
 
         try:
             affected = {
@@ -409,17 +410,17 @@ class HotReloader:
                 for module_name in valid_modules
                 for dependency in self._get_affected_modules(module_name)
             }
-            logger.info(f"Affected modules: {affected}")
+            LOGGER.info(f"Affected modules: {affected}")
             sorted_modules = self._sort_modules_by_dependencies(affected)
-            logger.info(f"Reload order: {sorted_modules}")
+            LOGGER.info(f"Reload order: {sorted_modules}")
 
             for mod_name in sorted_modules:
                 try:
                     old_module = sys.modules[mod_name]
-                    logger.info(f"Reloading {mod_name} (old id: {id(old_module)})")
+                    LOGGER.info(f"Reloading {mod_name} (old id: {id(old_module)})")
 
                     module = safe_reload(old_module)
-                    logger.info(f"Reloaded {mod_name} (new id: {id(module)})")
+                    LOGGER.info(f"Reloaded {mod_name} (new id: {id(module)})")
 
                     # Update cache and track reload
                     self.module_cache[mod_name] = module
@@ -428,26 +429,40 @@ class HotReloader:
                 except SyntaxError as e:
                     # Syntax errors are fatal and should stop the reload process, however they can be easily
                     # corrected when the user updates the file
-                    logger.info(f"Syntax error in {mod_name}: {e}", exc_info=True)
-                    return reloaded_modules, False, e
+                    LOGGER.info(f"Syntax error in {mod_name}: {e}", exc_info=True)
+                    return ReloadModuleStatus(
+                        reloaded_modules=reloaded_modules, needs_restart=False, error=e
+                    )
                 except Exception as e:
                     # Non-syntax errors indicate potential corruption with the current in-memory representation (like
                     # reloading a database model that can only be mounted to a central registry once). In this case we
                     # will restart the server to get a clean state.
-                    logger.info(
+                    LOGGER.info(
                         f"Non-syntax error reloading {mod_name}: {e}", exc_info=True
                     )
-                    return reloaded_modules, True, e
+                    return ReloadModuleStatus(
+                        reloaded_modules=reloaded_modules,
+                        needs_restart=True,
+                        error=e,
+                    )
 
-            logger.info("=== Rebuilding inheritance tree ===")
+            LOGGER.info("=== Rebuilding inheritance tree ===")
             self._build_inheritance_tree()
             self._log_dependency_state()
 
-            return reloaded_modules, False, None
+            return ReloadModuleStatus(
+                reloaded_modules=reloaded_modules,
+                needs_restart=False,
+                error=None,
+            )
 
         except Exception as e:
-            logger.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)
-            return reloaded_modules, False, e
+            LOGGER.error(f"Failed to reload {valid_modules}: {e}", exc_info=True)
+            return ReloadModuleStatus(
+                reloaded_modules=reloaded_modules,
+                needs_restart=False,
+                error=e,
+            )
 
     def get_module_dependencies(self, module_name: str):
         """
@@ -455,12 +470,12 @@ class HotReloader:
         DAG with no dependencies.
 
         """
-        logger.debug(f"Getting dependencies for {module_name}")
+        LOGGER.debug(f"Getting dependencies for {module_name}")
         if module_name not in self.dependency_graph:
             self._import_and_track_module(module_name)
 
         if module_name not in self.dependency_graph:
-            logger.debug(f"Module {module_name} not found in dependency graph")
+            LOGGER.debug(f"Module {module_name} not found in dependency graph")
             return None
 
         return self.dependency_graph[module_name]
@@ -521,7 +536,7 @@ def resolve_relative_import(
 
     # Handle invalid level
     if from_import_level < 0:
-        logger.warning(f"Invalid negative level {from_import_level}")
+        LOGGER.warning(f"Invalid negative level {from_import_level}")
         return None
 
     # Handle absolute imports or local path imports (level = 0)
@@ -547,7 +562,7 @@ def resolve_relative_import(
                 return absolute_path
 
         # Otherwise, we can't find the module
-        logger.warning(
+        LOGGER.warning(
             f"No matching level-0 modules found in sys.modules, tried: {proposed_paths}"
         )
         return None
@@ -556,7 +571,7 @@ def resolve_relative_import(
 
     # Handle invalid level that's too high and goes outside of the package
     if from_import_level > len(parts):
-        logger.warning(
+        LOGGER.warning(
             f"Invalid relative import: level {from_import_level} too high for module {current_module}"
         )
         return None
