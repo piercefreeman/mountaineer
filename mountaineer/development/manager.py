@@ -176,14 +176,7 @@ class DevAppManager:
 
         # Stop existing context if running
         if self.app_context and self.app_context.is_alive():
-            LOGGER.debug("Shutting down existing app context")
-            await self.communicate(ShutdownMessage())
-            LOGGER.debug("Waiting for app context to join")
-
-            self.app_context.join(timeout=5)
-            if self.app_context.is_alive():
-                LOGGER.debug("Context did not shut down gracefully, terminating")
-                self.app_context.terminate()
+            await self.shutdown()
 
         # Start new context
         LOGGER.debug("Starting new app context")
@@ -282,6 +275,27 @@ class DevAppManager:
             return await self.communicate(BuildJsMessage(updated_js=updated_js))
         except BuildFailed as e:
             return e.context
+
+    async def shutdown(self):
+        """
+        Gracefully shut down the application context.
+
+        This method sends a shutdown message to the application context and waits
+        for it to join. If the context does not join within 5 seconds, it is
+        terminated.
+
+        """
+        if self.app_context is None:
+            raise ValueError("No app context to shut down")
+
+        LOGGER.debug("Shutting down existing app context")
+        await self.communicate(ShutdownMessage())
+        LOGGER.debug("Waiting for app context to join")
+
+        self.app_context.join(timeout=5)
+        if self.app_context.is_alive():
+            LOGGER.debug("Context did not shut down gracefully, terminating")
+            self.app_context.terminate()
 
     #
     # Required contexts

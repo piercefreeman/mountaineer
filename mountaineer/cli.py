@@ -138,9 +138,6 @@ async def handle_file_changes_base(
         build_time = time() - start
         if success:
             CONSOLE.print(f"[bold green]🚀 App relaunched in {build_time:.2f} seconds")
-            CONSOLE.print(
-                f"🚀 Dev webserver ready at http://{server_config.host}:{server_config.port}"
-            )
         else:
             CONSOLE.print(
                 "[bold red]🚨 App failed to launch, waiting for code change..."
@@ -216,6 +213,8 @@ async def handle_runserver(
     update_multiprocessing_settings()
     rich_traceback_install()
 
+    CONSOLE.print("🏔️ Booting up Mountaineer")
+
     # Initialize components
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
@@ -239,13 +238,15 @@ async def handle_runserver(
         )
 
     def handle_shutdown(signum, frame):
-        watcher_webservice.stop()
         CONSOLE.print("[yellow]Services shutdown, now exiting...")
+        watcher_webservice.stop()
         exit(0)
 
     # Start the message broker
     async with app_manager.start_broker():
         await app_manager.reload_backend_all()
+
+        CONSOLE.print(f"🚀 Dev webserver ready at http://{host}:{port}")
 
         signal(SIGINT, handle_shutdown)
 

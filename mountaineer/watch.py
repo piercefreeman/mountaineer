@@ -1,10 +1,9 @@
 import asyncio
 import importlib.metadata
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import Flag, auto
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Coroutine, Iterable
+from typing import Any, Callable, Coroutine, Iterable
 
 from watchfiles import Change, awatch
 
@@ -155,24 +154,23 @@ class PackageWatchdog:
         self.get_package_paths()
 
     async def start_watching(self):
-        async with self.acquire_watchdog_lock():
-            if self.run_on_bootup:
-                for callback_definition in self.callbacks:
-                    await callback_definition.callback(CallbackMetadata(events=[]))
+        if self.run_on_bootup:
+            for callback_definition in self.callbacks:
+                await callback_definition.callback(CallbackMetadata(events=[]))
 
-            watcher = FileWatcher(callbacks=self.callbacks)
+        watcher = FileWatcher(callbacks=self.callbacks)
 
-            CONSOLE.print(
-                f"👀 Watching {len(self.paths)} {pluralize(len(self.paths), 'path', 'paths')}"
-            )
-            for path in self.paths:
-                LOGGER.info(f"Watching {path}")
+        CONSOLE.print(
+            f"👀 Watching {len(self.paths)} {pluralize(len(self.paths), 'path', 'paths')}"
+        )
+        for path in self.paths:
+            LOGGER.info(f"Watching {path}")
 
-            try:
-                async for changes in awatch(*self.paths, watch_filter=None):
-                    await watcher.process_changes(changes)
-            except KeyboardInterrupt:
-                pass
+        try:
+            async for changes in awatch(*self.paths, watch_filter=None):
+                await watcher.process_changes(changes)
+        except KeyboardInterrupt:
+            pass
 
     def check_packages_installed(self):
         for package in self.packages:
@@ -189,32 +187,6 @@ class PackageWatchdog:
             package_path = resolve_package_path(package)
             paths.append(str(package_path))
         self.paths = self.merge_paths(paths)
-
-    @asynccontextmanager
-    async def acquire_watchdog_lock(self) -> AsyncIterator[None]:
-        """
-        We only want one watchdog running at a time or otherwise we risk stepping
-        on each other or having infinitely looping file change notifications.
-        """
-        # If there's an existing file, we log a warning and continue.
-        package_path = resolve_package_path(self.main_package)
-
-        lock_path = (Path(str(package_path)) / ".watchdog.lock").absolute()
-        if lock_path.exists():
-            CONSOLE.print(
-                "[yellow]Watchdog lock file exists, another process may be running and cause build conflicts."
-            )
-
-            # Remove the old lock file
-            lock_path.unlink()
-
-        try:
-            # Create the lock - this caller should now have exclusive access to the watchdog
-            lock_path.touch()
-            yield
-        finally:
-            # Remove the lock
-            lock_path.unlink()
 
     def merge_paths(self, raw_paths: list[str]):
         """

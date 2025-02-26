@@ -17,6 +17,8 @@ KNOWN_OKAY_LOGS = [
     "Uvicorn running on",
     "Waiting for application shutdown",
     "Application shutdown complete",
+    "Finished server process",
+    "Shutting down",
 ]
 
 
