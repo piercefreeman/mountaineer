@@ -1,5 +1,6 @@
 import asyncio
 import os
+import traceback
 from dataclasses import dataclass, field
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
@@ -91,101 +92,116 @@ async def handle_file_changes_base(
 
     # Capture all the logs while our progress bar is the main object
     # This avoids application-level logging interrupting the progress bar
-    async with app_manager.capture_logs() as (stdout_capture, stderr_capture):
-        # Use Progress for the countable operations
-        with Progress(
-            SpinnerColumn(),
-            *Progress.get_default_columns(),
-            TimeElapsedColumn(),
-            console=CONSOLE,
-            transient=True,
-        ) as progress:
-            total_steps = len(file_changes_state.pending_python) + (
-                1 if file_changes_state.pending_js else 0
-            )
-            build_task = progress.add_task("[cyan]Building...", total=total_steps)
-
-            # Handle Python changes
-            if file_changes_state.pending_python:
-                progress.update(
-                    build_task, description="[cyan]Reloading Python modules..."
+    try:
+        async with app_manager.capture_logs() as (stdout_capture, stderr_capture):
+            # Use Progress for the countable operations
+            with Progress(
+                SpinnerColumn(),
+                *Progress.get_default_columns(),
+                TimeElapsedColumn(),
+                console=CONSOLE,
+                transient=True,
+            ) as progress:
+                total_steps = len(file_changes_state.pending_python) + (
+                    1 if file_changes_state.pending_js else 0
                 )
-                module_names = {
-                    package_path_to_module(package, module_path): module_path
-                    for module_path in file_changes_state.pending_python
-                }
-                response = await app_manager.reload_backend_diff(
-                    list(module_names.keys())
-                )
+                build_task = progress.add_task("[cyan]Building...", total=total_steps)
 
-                if isinstance(response, ErrorResponse):
-                    if (
-                        isinstance(response, ReloadResponseError)
-                        and response.needs_restart
-                    ):
-                        progress.update(
-                            build_task, description="[cyan]Restarting server..."
-                        )
-                        # Full server restart needed - start fresh process
-                        if server_config:
-                            restart_response = await app_manager.reload_backend_all()
-                            if isinstance(restart_response, ErrorResponse):
-                                success = False
-                    else:
-                        success = False
-
-                # Mark successful reloads as handled
-                if isinstance(response, (ReloadResponseSuccess, ReloadResponseError)):
-                    reloaded_paths = {
-                        module_names[module_name] for module_name in response.reloaded
-                    }
-                    file_changes_state.pending_python -= reloaded_paths
-
-                progress.update(
-                    build_task, advance=len(file_changes_state.pending_python)
-                )
-
-            # Handle JS changes
-            if file_changes_state.pending_js:
-                progress.update(build_task, description="[cyan]Rebuilding frontend...")
-                if server_config:
-                    await app_manager.reload_frontend(
-                        list(file_changes_state.pending_js)
+                # Handle Python changes
+                if file_changes_state.pending_python:
+                    progress.update(
+                        build_task, description="[cyan]Reloading Python modules..."
                     )
-                progress.update(build_task, advance=1)
+                    module_names = {
+                        package_path_to_module(package, module_path): module_path
+                        for module_path in file_changes_state.pending_python
+                    }
+                    response = await app_manager.reload_backend_diff(
+                        list(module_names.keys())
+                    )
 
-                file_changes_state.pending_js.clear()
+                    if isinstance(response, ErrorResponse):
+                        if (
+                            isinstance(response, ReloadResponseError)
+                            and response.needs_restart
+                        ):
+                            progress.update(
+                                build_task, description="[cyan]Restarting server..."
+                            )
+                            # Full server restart needed - start fresh process
+                            if server_config:
+                                restart_response = (
+                                    await app_manager.reload_backend_all()
+                                )
+                                if isinstance(restart_response, ErrorResponse):
+                                    success = False
+                        else:
+                            success = False
 
-        # Wait before we get the logs so we can still capture the logs
-        if server_config and success:
-            start_time = time()
-            while time() - start_time < 5:
-                if app_manager.is_port_open(server_config.host, server_config.port):
-                    break
-                await asyncio.sleep(0.1)
+                    # Mark successful reloads as handled. Note that the response includes all of the
+                    # modules that were reloaded among the DAG of dependencies, so we need to filter
+                    # down to the ones that were requested on disk.
+                    if isinstance(
+                        response, (ReloadResponseSuccess, ReloadResponseError)
+                    ):
+                        reloaded_paths = {
+                            module_names[module_name]
+                            for module_name in response.reloaded
+                            if module_name in module_names
+                        }
+                        file_changes_state.pending_python -= reloaded_paths
 
-    # Print captured logs if available
-    captured_logs = stdout_capture.getvalue()
-    captured_errors = stderr_capture.getvalue()
+                    progress.update(
+                        build_task, advance=len(file_changes_state.pending_python)
+                    )
 
-    if captured_logs.strip():
-        CONSOLE.print("\n[bold blue]App Build Logs:[/bold blue]")
-        CONSOLE.print(captured_logs)
-    if captured_errors.strip():
-        CONSOLE.print("\n[bold red]App Build Errors:[/bold red]")
-        CONSOLE.print(captured_errors)
+                # Handle JS changes
+                if file_changes_state.pending_js:
+                    progress.update(
+                        build_task, description="[cyan]Rebuilding frontend..."
+                    )
+                    if server_config:
+                        await app_manager.reload_frontend(
+                            list(file_changes_state.pending_js)
+                        )
+                    progress.update(build_task, advance=1)
 
-    if server_config and server_config.watcher_webservice:
-        server_config.watcher_webservice.notification_queue.put(True)
+                    file_changes_state.pending_js.clear()
 
-    if server_config:
-        build_time = time() - start
-        if success:
-            CONSOLE.print(f"[bold green]🚀 App relaunched in {build_time:.2f} seconds")
-        else:
-            CONSOLE.print(
-                "[bold red]🚨 App failed to launch, waiting for code change..."
-            )
+            # Wait before we get the logs so we can still capture the logs
+            if server_config and success:
+                start_time = time()
+                while time() - start_time < 5:
+                    if app_manager.is_port_open(server_config.host, server_config.port):
+                        break
+                    await asyncio.sleep(0.1)
+
+        # Print captured logs if available
+        captured_logs = stdout_capture.getvalue()
+        captured_errors = stderr_capture.getvalue()
+
+        if captured_logs.strip():
+            CONSOLE.print("\n[bold blue]App Build Logs:[/bold blue]")
+            CONSOLE.print(captured_logs)
+        if captured_errors.strip():
+            CONSOLE.print("\n[bold red]App Build Errors:[/bold red]")
+            CONSOLE.print(captured_errors)
+
+        if server_config and server_config.watcher_webservice:
+            server_config.watcher_webservice.notification_queue.put(True)
+
+        if server_config:
+            build_time = time() - start
+            if success:
+                CONSOLE.print(
+                    f"[bold green]🚀 App relaunched in {build_time:.2f} seconds"
+                )
+            else:
+                CONSOLE.print(
+                    "[bold red]🚨 App failed to launch, waiting for code change..."
+                )
+    except Exception as e:
+        CONSOLE.print(f"[red]File reload error: {e}\n{traceback.format_exc()}")
 
 
 @async_to_sync
