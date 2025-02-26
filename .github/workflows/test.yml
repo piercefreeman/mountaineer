@@ -577,6 +577,7 @@ jobs:
         run: make install-deps-lib
 
       - name: Run tests
+        timeout-minutes: 10
         run: make test-lib-integrations
         env:
           GOROOT: ${{ env.GOROOT }}
