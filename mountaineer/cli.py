@@ -31,16 +31,16 @@ from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
 )
-from mountaineer.development.watch_server import WatcherWebservice
-from mountaineer.io import async_to_sync
-from mountaineer.logging import LOGGER
-from mountaineer.static import get_static_path
-from mountaineer.watch import (
+from mountaineer.development.watch import (
     CallbackDefinition,
     CallbackMetadata,
     CallbackType,
     PackageWatchdog,
 )
+from mountaineer.development.watch_server import WatcherWebservice
+from mountaineer.io import async_to_sync
+from mountaineer.logging import LOGGER
+from mountaineer.static import get_static_path
 
 
 @dataclass

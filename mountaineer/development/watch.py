@@ -132,6 +132,42 @@ class WatchdogLockError(Exception):
 
 
 class PackageWatchdog:
+    """
+    Monitors Python packages for file changes and triggers registered callbacks when changes occur.
+
+    Manages the lifecycle of file watching across multiple packages, optimizing the watch paths
+    to avoid redundant watchers, and verifying package availability. Used as the foundation for
+    hot-reloading and development tooling in Mountaineer.
+
+    ```python {{sticky: True}}
+    import asyncio
+    from mountaineer.development.watch import PackageWatchdog, CallbackDefinition, CallbackType, CallbackMetadata
+
+    # Define a callback function to handle file changes
+    async def reload_modules(metadata: CallbackMetadata) -> None:
+        print(f"Changes detected in {len(metadata.events)} files")
+        for event in metadata.events:
+            print(f"  {event.action.name}: {event.path}")
+            # You would typically reload modules or trigger other actions here
+
+    # Create a watchdog for your main package and any dependencies
+    watchdog = PackageWatchdog(
+        main_package="my_app",
+        dependent_packages=["my_library"],
+        callbacks=[
+            CallbackDefinition(
+                action=CallbackType.MODIFIED | CallbackType.CREATED,
+                callback=reload_modules
+            )
+        ],
+        run_on_bootup=True
+    )
+
+    await watchdog.start_watching()
+    ```
+
+    """
+
     def __init__(
         self,
         main_package: str,
@@ -140,9 +176,15 @@ class PackageWatchdog:
         run_on_bootup: bool = False,
     ):
         """
+        Initialize a package watchdog to monitor file changes across multiple packages.
+
+        :param main_package: Primary package to monitor for file changes
+        :param dependent_packages: Additional packages to monitor for changes
+        :param callbacks: List of callback definitions to execute when changes occur
         :param run_on_bootup: Typically, we will only notify callback if there has been
             a change to the filesystem. If this is set to True, we will run all callbacks
             on bootup as well.
+
         """
         self.main_package = main_package
         self.packages = [main_package] + dependent_packages
@@ -156,6 +198,16 @@ class PackageWatchdog:
         self.get_package_paths()
 
     async def start_watching(self):
+        """
+        Begin asynchronously watching all package paths for file changes.
+
+        If configured with run_on_bootup=True, immediately runs all callbacks once.
+        Sets up the FileWatcher with registered callbacks and processes changes
+        as they occur on the filesystem.
+
+        :raises ValueError: If the watchdog is already running
+
+        """
         if self.run_on_bootup:
             for callback_definition in self.callbacks:
                 await callback_definition.callback(CallbackMetadata(events=[]))
@@ -178,11 +230,22 @@ class PackageWatchdog:
             await watcher.process_changes(changes)
 
     def stop_watching(self):
+        """
+        Stop watching all file paths and reset the watchdog state.
+
+        Signals the underlying watchfiles library to stop watching by setting
+        the stop event and resets internal state for potential restart.
+        """
         self.stop_event.set()
         self.stop_event = asyncio.Event()
         self.running = False
 
     def check_packages_installed(self):
+        """
+        Verify that all packages being watched are installed in the current environment.
+
+        :raises ValueError: If any package is not installed
+        """
         for package in self.packages:
             try:
                 importlib.metadata.version(package)
@@ -192,16 +255,28 @@ class PackageWatchdog:
                 )
 
     def get_package_paths(self):
+        """
+        Resolve filesystem paths for all monitored packages.
+
+        Finds each package's location on disk using importlib and optimizes
+        the path list to eliminate redundant watchers through merge_paths.
+        """
         paths: list[str] = []
         for package in self.packages:
             package_path = resolve_package_path(package)
             paths.append(str(package_path))
         self.paths = self.merge_paths(paths)
 
-    def merge_paths(self, raw_paths: list[str]):
+    def merge_paths(self, raw_paths: list[str]) -> list[str]:
         """
+        Optimize the list of paths by removing subdirectories when their parent is already watched.
+
         If one path is a subdirectory of another, we only want to watch the parent
         directory. This function merges the paths to avoid duplicate watchers.
+
+        :param raw_paths: List of directory paths to optimize
+
+        :return List of optimized directory paths with redundancies removed
         """
         paths = [Path(path).resolve() for path in raw_paths]
 
