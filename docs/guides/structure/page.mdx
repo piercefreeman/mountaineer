@@ -40,6 +40,8 @@ Every service file is nested under the `my_webapp` root package. This is just a 
 
 Nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`.
 
+Mountaineer supports advanced layout organization patterns, including the ability to isolate layouts to specific sections of your application using the `(root)` folder pattern. For more details, see the [Layout Organization](../views/layout-organization) guide.
+
 ### Suggested Conventions
 
 `controllers` - A controller is the python logic that backs your frontend view. You can define controllers however you like: a flat folder, nesting folders, or via no folders at all mixed in with other code. For simplicity we recommend starting with a single flat controllers folder and refactoring into sub-folders as distinct ownership areas of your code emerge.
