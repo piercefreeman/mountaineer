@@ -55,6 +55,7 @@ class FunctionActionType(Enum):
 class ResponseModelType(Enum):
     SINGLE_RESPONSE = "SINGLE_RESPONSE"
     ITERATOR_RESPONSE = "ITERATOR_RESPONSE"
+    SEQUENCE_RESPONSE = "SEQUENCE_RESPONSE"
 
 
 P = TypeVar("P")
@@ -398,7 +399,8 @@ def extract_model_from_decorated_types(
     type_hint: Any,
 ) -> tuple[Type[BaseModel] | None, ResponseModelType]:
     """
-    Support response_model typehints like Iterator[Type[BaseModel]] and AsyncIterator[Type[BaseModel]].
+    Support response_model typehints like Iterator[Type[BaseModel]], AsyncIterator[Type[BaseModel]],
+    and Sequence[Type[BaseModel]] (list, set, tuple, etc.).
 
     """
     origin_type = get_origin(type_hint)
@@ -419,6 +421,22 @@ def extract_model_from_decorated_types(
             return args[0], ResponseModelType.ITERATOR_RESPONSE
         raise ValueError(
             f"Invalid response_model typehint for iterator action: {type_hint} {origin_type} {args}"
+        )
+    elif origin_type in (
+        typing.Sequence,
+        typing.List,
+        typing.Set,
+        typing.Tuple,
+        collections.abc.Sequence,
+        list,
+        set,
+        tuple,
+    ):
+        args = get_args(type_hint)
+        if args and issubclass(args[0], BaseModel):
+            return args[0], ResponseModelType.SEQUENCE_RESPONSE
+        raise ValueError(
+            f"Invalid response_model typehint for sequence action: {type_hint} {origin_type} {args}"
         )
     elif isclass(type_hint) and issubclass(type_hint, starlette.responses.Response):
         # No pydantic model to include in the API schema, instead the endpoint

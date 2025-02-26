@@ -275,6 +275,90 @@ class TestErrorHandling:
         assert "400" in error_payload
 
 
+class TestSequenceResponseHandling:
+    def test_list_response_handling(self, standard_response_wrapper: ModelWrapper):
+        """Test that list responses are properly typed as arrays in TypeScript."""
+        # Create a wrapper for a list response
+        action = ActionWrapper(
+            name="list_action",
+            module_name="test_module",
+            action_type=FunctionActionType.PASSTHROUGH,
+            params=[],
+            headers=[],
+            request_body=None,
+            response_bodies={ControllerBase: standard_response_wrapper},
+            exceptions=[],
+            is_raw_response=False,
+            is_streaming_response=False,
+            controller_to_url={ControllerBase: "/api/main/list"},
+        )
+
+        interface = ActionInterface.from_action(
+            action, "/api/main/list", ControllerBase
+        )
+
+        # The response type should be a Promise of StandardResponse
+        assert "Promise<StandardResponse>" in interface.response_type
+
+    def test_sequence_response_with_params(
+        self, standard_response_wrapper: ModelWrapper
+    ):
+        """Test sequence responses with query parameters."""
+        action = ActionWrapper(
+            name="sequence_with_params",
+            module_name="test_module",
+            action_type=FunctionActionType.PASSTHROUGH,
+            params=[
+                create_field_wrapper("limit", int, True),
+                create_field_wrapper("offset", int, False),
+            ],
+            headers=[],
+            request_body=None,
+            response_bodies={ControllerBase: standard_response_wrapper},
+            exceptions=[],
+            is_raw_response=False,
+            is_streaming_response=False,
+            controller_to_url={ControllerBase: "/api/main/sequence_with_params"},
+        )
+
+        interface = ActionInterface.from_action(
+            action, "/api/main/sequence_with_params", ControllerBase
+        )
+
+        # Check that parameters are correctly included
+        assert "limit: number" in interface.typehints
+        assert "offset?: number" in interface.typehints
+        # Check that the response type is a Promise
+        assert "Promise<StandardResponse>" in interface.response_type
+
+    def test_sequence_response_with_request_body(
+        self, standard_response_wrapper: ModelWrapper, form_data_wrapper: ModelWrapper
+    ):
+        """Test sequence responses with a request body."""
+        action = ActionWrapper(
+            name="sequence_with_body",
+            module_name="test_module",
+            action_type=FunctionActionType.PASSTHROUGH,
+            params=[],
+            headers=[],
+            request_body=form_data_wrapper,
+            response_bodies={ControllerBase: standard_response_wrapper},
+            exceptions=[],
+            is_raw_response=False,
+            is_streaming_response=False,
+            controller_to_url={ControllerBase: "/api/main/sequence_with_body"},
+        )
+
+        interface = ActionInterface.from_action(
+            action, "/api/main/sequence_with_body", ControllerBase
+        )
+
+        # Check that the request body is correctly included
+        assert "FormData" in interface.typehints
+        # Check that the response type is a Promise
+        assert "Promise<StandardResponse>" in interface.response_type
+
+
 class TestTypeScriptGeneration:
     def test_complex_payload_conversion(self):
         action = ActionWrapper(
