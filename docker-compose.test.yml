@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:16
     environment:
       POSTGRES_USER: mountaineer
       POSTGRES_PASSWORD: mysecretpassword
