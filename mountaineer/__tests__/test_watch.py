@@ -1,15 +1,15 @@
+import asyncio
 from pathlib import Path
-from threading import Thread
-from time import sleep
 
 import pytest
+from watchfiles import Change
 
 from mountaineer.watch import (
     CallbackDefinition,
     CallbackEvent,
     CallbackMetadata,
     CallbackType,
-    ChangeEventHandler,
+    FileWatcher,
     PackageWatchdog,
 )
 
@@ -30,10 +30,8 @@ def test_ignore_path(
     ignore_hidden: bool,
     expected_ignore: bool,
 ):
-    handler = ChangeEventHandler(
-        [], ignore_list=ignore_list, ignore_hidden=ignore_hidden
-    )
-    assert handler.should_ignore_path(Path(path)) == expected_ignore
+    watcher = FileWatcher([], ignore_list=ignore_list, ignore_hidden=ignore_hidden)
+    assert watcher.should_ignore_path(Path(path)) == expected_ignore
 
 
 @pytest.mark.parametrize(
@@ -63,28 +61,35 @@ def test_merge_paths(paths: list[str], expected_paths: list[str]):
     }
 
 
-def test_file_notification(tmp_path: Path):
-    callback_events: list[CallbackEvent] = []
+def test_change_mapping():
+    watcher = FileWatcher([])
+    assert watcher._map_change_to_callback_type(Change.added) == CallbackType.CREATED
+    assert (
+        watcher._map_change_to_callback_type(Change.modified) == CallbackType.MODIFIED
+    )
+    assert watcher._map_change_to_callback_type(Change.deleted) == CallbackType.DELETED
 
-    def receive_callback(metadata: CallbackMetadata):
+
+@pytest.mark.asyncio
+async def test_file_notification(tmp_path: Path):
+    callback_events: list[CallbackEvent] = []
+    stop_event = asyncio.Event()
+
+    async def receive_callback(metadata: CallbackMetadata):
         callback_events.extend(metadata.events)
 
-    def test_file_lifecycle():
+    async def simulate_changes(watcher: FileWatcher):
         # Make sleeps longer than the debounce interval (0.1s)
-        sleep(0.15)
-        (tmp_path / "test.txt").write_text("Original")
-        sleep(0.15)
-        (tmp_path / "test.txt").write_text("Modified")
-        sleep(0.15)
-        (tmp_path / "test.txt").unlink()
-        sleep(0.15)
+        await asyncio.sleep(0.15)
+        await watcher.process_changes([(Change.added, str(tmp_path / "test.txt"))])
+        await asyncio.sleep(0.15)
+        await watcher.process_changes([(Change.modified, str(tmp_path / "test.txt"))])
+        await asyncio.sleep(0.15)
+        await watcher.process_changes([(Change.deleted, str(tmp_path / "test.txt"))])
+        await asyncio.sleep(0.15)
+        stop_event.set()
 
-        assert handler.observer
-        handler.observer.stop()
-
-    handler = PackageWatchdog(
-        "mountaineer",
-        [],
+    watcher = FileWatcher(
         callbacks=[
             CallbackDefinition(
                 action=CallbackType.CREATED
@@ -95,14 +100,11 @@ def test_file_notification(tmp_path: Path):
         ],
     )
 
-    # Override the paths found from the package name with our temporary path
-    # where we can write additional files
-    handler.paths = [str(tmp_path)]
-
-    lifecycle_thread = Thread(target=test_file_lifecycle)
-    lifecycle_thread.start()
-
-    handler.start_watching()
+    changes_task = asyncio.create_task(simulate_changes(watcher))
+    try:
+        await asyncio.wait_for(stop_event.wait(), timeout=2.0)
+    finally:
+        changes_task.cancel()
 
     event_actions: list[CallbackType] = []
     for event in callback_events:

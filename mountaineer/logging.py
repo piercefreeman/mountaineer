@@ -95,4 +95,8 @@ def setup_internal_logger(name: str):
     )
 
 
+def pluralize(count: int, singular: str, plural: str) -> str:
+    return singular if count == 1 else plural
+
+
 LOGGER = setup_internal_logger(__name__)

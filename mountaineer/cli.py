@@ -1,25 +1,37 @@
 import asyncio
+import os
+from dataclasses import dataclass
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
-from signal import SIGINT, signal
-from tempfile import mkdtemp
+from signal import SIGINT
 from time import time
-from typing import Callable
+from typing import Any, Callable, Coroutine
 
 from inflection import underscore
+from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.app_manager import (
+from mountaineer.console import CONSOLE
+from mountaineer.constants import KNOWN_JS_EXTENSIONS
+from mountaineer.development.isolation import IsolatedAppContext
+from mountaineer.development.manager import (
     DevAppManager,
+)
+from mountaineer.development.messages import (
+    AsyncMessageBroker,
+    ErrorResponse,
+    IsolatedMessageBase,
+    ReloadResponseError,
+    SuccessResponse,
+)
+from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
 )
-from mountaineer.client_builder.builder import APIBuilder
-from mountaineer.console import CONSOLE
-from mountaineer.constants import KNOWN_JS_EXTENSIONS
-from mountaineer.hotreload import HotReloader
+from mountaineer.development.watch_server import WatcherWebservice
+from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 from mountaineer.watch import (
@@ -28,10 +40,133 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
-from mountaineer.watch_server import WatcherWebservice
 
 
-def handle_watch(
+@dataclass
+class FileChangeServerConfig:
+    host: str
+    port: int
+    watcher_webservice: WatcherWebservice | None
+
+
+async def handle_file_changes_base(
+    *,
+    package: str,
+    metadata: CallbackMetadata,
+    app_manager: DevAppManager,
+    server_config: FileChangeServerConfig | None = None,
+) -> None:
+    """
+    Shared file change handler that can be used by both watch and runserver modes.
+
+    :param metadata: The metadata about which files changed
+    :param app_manager: The app manager instance
+    :param js_compiler: Optional js compiler for watch mode
+    :param launch_server: Whether to launch/restart the server (runserver mode)
+    :param watcher_webservice: Optional watcher webservice for runserver mode
+    :param host: Optional host for runserver mode
+    :param port: Optional port for runserver mode
+    """
+    LOGGER.info(f"Handling file changes: {metadata}")
+    start = time()
+    updated_js: set[Path] = set()
+    updated_python: set[Path] = set()
+    success = True
+
+    # First collect all the files that need updating
+    for event in metadata.events:
+        if event.path.suffix in KNOWN_JS_EXTENSIONS:
+            updated_js.add(event.path)
+        elif event.path.suffix == ".py":
+            updated_python.add(event.path)
+
+    if not (updated_js or updated_python):
+        return
+
+    # Capture all the logs while our progress bar is the main object
+    # This avoids application-level logging interrupting the progress bar
+    async with app_manager.capture_logs() as (stdout_capture, stderr_capture):
+        # Use Progress for the countable operations
+        with Progress(
+            SpinnerColumn(),
+            *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+            console=CONSOLE,
+            transient=True,
+        ) as progress:
+            total_steps = len(updated_python) + (1 if updated_js else 0)
+            build_task = progress.add_task("[cyan]Building...", total=total_steps)
+
+            # Handle Python changes
+            if updated_python:
+                progress.update(
+                    build_task, description="[cyan]Reloading Python modules..."
+                )
+                module_names = [
+                    package_path_to_module(package, module_path)
+                    for module_path in updated_python
+                ]
+                response = await app_manager.reload_backend_diff(module_names)
+
+                if isinstance(response, ErrorResponse):
+                    if (
+                        isinstance(response, ReloadResponseError)
+                        and response.needs_restart
+                    ):
+                        progress.update(
+                            build_task, description="[cyan]Restarting server..."
+                        )
+                        # Full server restart needed - start fresh process
+                        if server_config:
+                            restart_response = await app_manager.reload_backend_all()
+                            if isinstance(restart_response, ErrorResponse):
+                                success = False
+                    else:
+                        success = False
+
+                progress.update(build_task, advance=len(updated_python))
+
+            # Handle JS changes
+            if updated_js:
+                progress.update(build_task, description="[cyan]Rebuilding frontend...")
+                if server_config:
+                    await app_manager.reload_frontend(list(updated_js))
+                progress.update(build_task, advance=1)
+
+        # Wait before we get the logs so we can still capture the logs
+        if server_config and success:
+            start_time = time()
+            while time() - start_time < 5:
+                if app_manager.is_port_open(server_config.host, server_config.port):
+                    break
+                await asyncio.sleep(0.1)
+
+    # Print captured logs if available
+    captured_logs = stdout_capture.getvalue()
+    captured_errors = stderr_capture.getvalue()
+
+    if captured_logs.strip():
+        CONSOLE.print("\n[bold blue]App Build Logs:[/bold blue]")
+        CONSOLE.print(captured_logs)
+    if captured_errors.strip():
+        CONSOLE.print("\n[bold red]App Build Errors:[/bold red]")
+        CONSOLE.print(captured_errors)
+
+    if server_config and server_config.watcher_webservice:
+        server_config.watcher_webservice.notification_queue.put(True)
+
+    if server_config:
+        build_time = time() - start
+        if success:
+            CONSOLE.print(f"[bold green]🚀 App relaunched in {build_time:.2f} seconds")
+        else:
+            CONSOLE.print(
+                "[bold red]🚨 App failed to launch, waiting for code change..."
+            )
+
+
+@async_to_sync
+async def handle_watch(
     *,
     package: str,
     webcontroller: str,
@@ -52,47 +187,29 @@ def handle_watch(
 
     """
     update_multiprocessing_settings()
-
-    # The global cache will let us keep cache files warm across
-    # different builds
-    global_build_cache = Path(mkdtemp())
+    rich_traceback_install()
 
     app_manager = DevAppManager.from_webcontroller(webcontroller)
-    js_compiler = APIBuilder(
-        app_manager.app_controller,
-        live_reload_port=None,
-        build_cache=global_build_cache,
-    )
 
-    asyncio.run(js_compiler.build_all())
+    async def update_build(metadata: CallbackMetadata):
+        await handle_file_changes_base(
+            package=package,
+            metadata=metadata,
+            app_manager=app_manager,
+            server_config=None,
+        )
 
-    def update_build(metadata: CallbackMetadata):
-        updated_js: set[Path] = set()
-        updated_python: set[Path] = set()
-
-        for event in metadata.events:
-            if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                updated_js.add(event.path)
-            elif event.path.suffix in {".py"}:
-                updated_python.add(event.path)
-
-        # Update the use-server definitions in case modifications to the
-        # python file affected the API spec
-        if updated_python:
-            asyncio.run(js_compiler.build_all())
-
-        # For now, we don't do any js analysis besides building - which
-        # we don't need to do if we're just watching for changes
-
-    watchdog = build_common_watchdog(
-        package,
-        update_build,
-        subscribe_to_mountaineer=subscribe_to_mountaineer,
-    )
-    watchdog.start_watching()
+    async with app_manager.start_broker():
+        watchdog = build_common_watchdog(
+            package,
+            update_build,
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
+        )
+        await watchdog.start_watching()
 
 
-def handle_runserver(
+@async_to_sync
+async def handle_runserver(
     *,
     package: str,
     webservice: str,
@@ -117,94 +234,100 @@ def handle_runserver(
     update_multiprocessing_settings()
     rich_traceback_install()
 
-    # Initialize components
+    CONSOLE.print("🏔️ Booting up Mountaineer")
+
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
     )
-    watcher_webservice.start()
-
     app_manager = DevAppManager.from_webcontroller(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
 
-    # Initialize hot reloader with root package
-    hot_reloader = HotReloader(
-        root_package=package,
-        package_path=Path(package.replace(".", "/")),
-        entrypoint=webcontroller.rsplit(":")[0],
-    )
-
-    # Initial build
-    asyncio.run(app_manager.js_compiler.build_all())
-    asyncio.run(app_manager.app_compiler.run_builder_plugins())
-
-    app_manager.restart_server()
+    # Nonlocal vars for shutdown context
+    watchdog: PackageWatchdog
+    loop = asyncio.get_event_loop()
+    shutdown_count = 0
 
     async def handle_file_changes(metadata: CallbackMetadata):
-        LOGGER.info(f"Handling file changes: {metadata}")
-        start = time()
-        updated_js = set()
-        updated_python = set()
+        await handle_file_changes_base(
+            package=package,
+            metadata=metadata,
+            app_manager=app_manager,
+            server_config=FileChangeServerConfig(
+                host=host,
+                port=port,
+                watcher_webservice=watcher_webservice,
+            ),
+        )
 
-        for event in metadata.events:
-            if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                updated_js.add(event.path)
-            elif event.path.suffix == ".py":
-                updated_python.add(event.path)
+    async def handle_shutdown_async():
+        try:
+            nonlocal watchdog
+            nonlocal shutdown_count
 
-        if not (updated_js or updated_python):
-            return
+            shutdown_count += 1
+            if shutdown_count > 1:
+                # Hard exit if we get a second shutdown request
+                CONSOLE.print("[red]Hard shutdown requested")
+                os._exit(1)
 
-        # Handle Python changes
-        if updated_python:
-            module_names = [
-                package_path_to_module(package, module_path)
-                for module_path in updated_python
-            ]
-            success, reloaded = hot_reloader.reload_modules(module_names)
+            CONSOLE.print("[yellow]Starting shutdown")
 
-            if reloaded:
-                app_manager.update_module()
-                await app_manager.js_compiler.build_use_server()
-                app_manager.restart_server()
+            # Stop the watchdog and start the cleanup logic
+            if watchdog:
+                watchdog.stop_watching()
 
-            if not success:
-                CONSOLE.print(f"[bold red]Failed to reload {updated_python}")
+            # Yield control back to the watchfiles loop so we can
+            # fully exit
+            await asyncio.sleep(0.01)
+        except Exception as e:
+            CONSOLE.print(f"[red]Error shutting down: {e}")
+            os._exit(1)
 
-        # Handle JS changes
-        if updated_js:
-            await app_manager.app_compiler.run_builder_plugins(
-                limit_paths=list(updated_js)
-            )
-            for path in updated_js:
-                app_manager.app_controller.invalidate_view(path)
+    def handle_shutdown(*args, **kwargs):
+        nonlocal loop
+        loop.create_task(handle_shutdown_async())
 
-        # Wait for server to be ready
-        start_time = time()
-        while time() - start_time < 5:
-            if app_manager.is_port_open(host, port):
-                break
-            await asyncio.sleep(0.1)
+    # Start the message broker
+    async with app_manager.start_broker():
+        await watcher_webservice.start()
+        await app_manager.reload_backend_all()
 
-        watcher_webservice.notification_queue.put(True)
-        CONSOLE.print(f"[bold green]🚀 App relaunched in {time() - start:.2f} seconds")
+        CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
 
-    def handle_shutdown(signum, frame):
-        watcher_webservice.stop()
-        CONSOLE.print("[yellow]Services shutdown, now exiting...")
-        exit(0)
+        loop.add_signal_handler(SIGINT, handle_shutdown)
 
-    signal(SIGINT, handle_shutdown)
+        watchdog = build_common_watchdog(
+            package,
+            handle_file_changes,
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
+        )
+        await watchdog.start_watching()
 
-    watchdog = build_common_watchdog(
-        package,
-        lambda metadata: asyncio.run(handle_file_changes(metadata)),
-        subscribe_to_mountaineer=subscribe_to_mountaineer,
-    )
-    watchdog.start_watching()
+        shutdown_error = False
+
+        # First try to shutdown the app context if it exists
+        if app_manager.app_context:
+            try:
+                await app_manager.shutdown()
+            except Exception as e:
+                CONSOLE.print(f"[red]Error shutting down app context: {e}")
+                shutdown_error = True
+
+        # Then stop the watcher webservice
+        if not await watcher_webservice.stop(wait_for_completion=3):
+            CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
+            shutdown_error = True
+
+    if shutdown_error:
+        CONSOLE.print("[red]Shutdown failed, hard exiting")
+        os._exit(1)
+
+    CONSOLE.print("[green]Shutdown complete")
 
 
-def handle_build(
+@async_to_sync
+async def handle_build(
     *,
     webcontroller: str,
     minify: bool = True,
@@ -221,87 +344,126 @@ def handle_build(
     :param minify: Minify the JS bundle, strip debug symbols
 
     """
-    app_manager = DevAppManager.from_webcontroller(webcontroller)
-    app_manager.js_compiler.live_reload_port = None
-
     start = time()
 
-    # Build the latest client support files (useServer)
-    asyncio.run(app_manager.js_compiler.build_all())
-    asyncio.run(app_manager.app_compiler.run_builder_plugins())
+    # Parse the webcontroller string
+    package = webcontroller.split(".")[0]
+    module_name = webcontroller.split(":")[0]
+    controller_name = webcontroller.split(":")[1]
 
-    # Compile the final bundle
-    # This requires us to get each entrypoint, which should just be the controllers
-    # that are registered to the app
-    # We also need to inspect the hierarchy
-    all_view_paths: list[list[str]] = []
+    # Create message broker for isolated context
+    message_broker = AsyncMessageBroker[IsolatedMessageBase[Any]]()
+    message_broker.start()
 
-    for controller_definition in app_manager.app_controller.controllers:
-        _, direct_hierarchy = app_manager.app_controller._view_hierarchy_for_controller(
-            controller_definition.controller
-        )
-        direct_hierarchy.reverse()
-        all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
-
-    # Compile the final client bundle
-    client_bundle_result = mountaineer_rs.compile_production_bundle(
-        all_view_paths,
-        str(app_manager.app_controller._view_root / "node_modules"),
-        "production",
-        minify,
-        str(get_static_path("live_reload.ts").resolve().absolute()),
-        False,
+    # Initialize the isolated context directly
+    isolated_context = IsolatedAppContext(
+        package=package,
+        package_path=Path(package.replace(".", "/")),
+        module_name=module_name,
+        controller_name=controller_name,
+        host=None,
+        port=0,
+        live_reload_port=None,
+        message_broker=message_broker,
     )
 
-    static_output = app_manager.app_controller._view_root.get_managed_static_dir()
-    ssr_output = app_manager.app_controller._view_root.get_managed_ssr_dir()
+    try:
+        # Initialize app state
+        response = isolated_context.initialize_app_state()
+        if not isinstance(response, SuccessResponse):
+            raise ValueError("Failed to initialize app state")
 
-    # If we don't have the same number of entrypoints as controllers, something went wrong
-    if len(client_bundle_result["entrypoints"]) != len(
-        app_manager.app_controller.controllers
-    ):
-        raise ValueError(
-            f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
-            f"Controllers: {len(app_manager.app_controller.controllers)}\n"
-            f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
+        # Build the latest client support files
+        if isolated_context.js_compiler is None:
+            raise ValueError("JS compiler not initialized")
+        if isolated_context.app_compiler is None:
+            raise ValueError("App compiler not initialized")
+        if isolated_context.app_controller is None:
+            raise ValueError("App controller not initialized")
+
+        await isolated_context.js_compiler.build_use_server()
+        await isolated_context.app_compiler.run_builder_plugins()
+
+        # Get view paths for all controllers
+        all_view_paths: list[list[str]] = []
+        for controller_definition in isolated_context.app_controller.controllers:
+            (
+                _,
+                direct_hierarchy,
+            ) = isolated_context.app_controller._view_hierarchy_for_controller(
+                controller_definition.controller
+            )
+            direct_hierarchy.reverse()
+            all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
+
+        # Compile the final client bundle
+        client_bundle_result = mountaineer_rs.compile_production_bundle(
+            all_view_paths,
+            str(isolated_context.app_controller._view_root / "node_modules"),
+            "production",
+            minify,
+            str(get_static_path("live_reload.ts").resolve().absolute()),
+            False,
         )
 
-    # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
-    for controller_definition, content, map_content in zip(
-        app_manager.app_controller.controllers,
-        client_bundle_result["entrypoints"],
-        client_bundle_result["entrypoint_maps"],
-    ):
-        # TODO: Consolidate naming conventions for scripts into our `ManagedPath` class
-        script_root = underscore(controller_definition.controller.__class__.__name__)
-        content_hash = md5(content.encode()).hexdigest()
-        (static_output / f"{script_root}-{content_hash}.js").write_text(content)
-        (static_output / f"{script_root}-{content_hash}.map.js").write_text(map_content)
+        static_output = (
+            isolated_context.app_controller._view_root.get_managed_static_dir()
+        )
+        ssr_output = isolated_context.app_controller._view_root.get_managed_ssr_dir()
 
-    # Copy the other files 1:1 because they'll be referenced by name in the
-    # entrypoints
-    for path, content in client_bundle_result["supporting"].items():
-        (static_output / path).write_text(content)
+        # If we don't have the same number of entrypoints as controllers, something went wrong
+        if len(client_bundle_result["entrypoints"]) != len(
+            isolated_context.app_controller.controllers
+        ):
+            raise ValueError(
+                f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
+                f"Controllers: {len(isolated_context.app_controller.controllers)}\n"
+                f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
+            )
 
-    # Now we go one-by-one to provide the SSR files, which will be consolidated
-    # into a single runnable script for ease of use by the V8 engine
-    result_scripts, _ = mountaineer_rs.compile_independent_bundles(
-        all_view_paths,
-        str(app_manager.app_controller._view_root / "node_modules"),
-        "production",
-        0,
-        str(get_static_path("live_reload.ts").resolve().absolute()),
-        True,
-    )
+        # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
+        for controller_definition, content, map_content in zip(
+            isolated_context.app_controller.controllers,
+            client_bundle_result["entrypoints"],
+            client_bundle_result["entrypoint_maps"],
+        ):
+            script_root = underscore(
+                controller_definition.controller.__class__.__name__
+            )
+            content_hash = md5(content.encode()).hexdigest()
+            (static_output / f"{script_root}-{content_hash}.js").write_text(content)
+            (static_output / f"{script_root}-{content_hash}.map.js").write_text(
+                map_content
+            )
 
-    for controller, script in zip(
-        app_manager.app_controller.controllers, result_scripts
-    ):
-        script_root = underscore(controller.controller.__class__.__name__)
-        content_hash = md5(script.encode()).hexdigest()
-        (ssr_output / f"{script_root}.js").write_text(script)
+        # Copy the other files 1:1 because they'll be referenced by name in the
+        # entrypoints
+        for path, content in client_bundle_result["supporting"].items():
+            (static_output / path).write_text(content)
 
-    CONSOLE.print(f"[bold green]App built in {time() - start:.2f}s")
+        # Now we go one-by-one to provide the SSR files, which will be consolidated
+        # into a single runnable script for ease of use by the V8 engine
+        result_scripts, _ = mountaineer_rs.compile_independent_bundles(
+            all_view_paths,
+            str(isolated_context.app_controller._view_root / "node_modules"),
+            "production",
+            0,
+            str(get_static_path("live_reload.ts").resolve().absolute()),
+            True,
+        )
+
+        for controller, script in zip(
+            isolated_context.app_controller.controllers, result_scripts
+        ):
+            script_root = underscore(controller.controller.__class__.__name__)
+            content_hash = md5(script.encode()).hexdigest()
+            (ssr_output / f"{script_root}.js").write_text(script)
+
+        CONSOLE.print(f"[bold green]App built in {time() - start:.2f}s")
+
+    finally:
+        # Clean up the message broker
+        await message_broker.stop()
 
 
 def update_multiprocessing_settings():
@@ -328,7 +490,7 @@ def update_multiprocessing_settings():
 
 def build_common_watchdog(
     client_package: str,
-    callback: Callable[[CallbackMetadata], None],
+    callback: Callable[[CallbackMetadata], Coroutine[Any, Any, None]],
     subscribe_to_mountaineer: bool,
 ):
     """

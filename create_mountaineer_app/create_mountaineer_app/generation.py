@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -5,10 +6,23 @@ from jinja2 import Template
 from pydantic import BaseModel
 
 
+@dataclass
+class EditorDescription:
+    name: str
+    path: str | None
+
+
 class EditorType(Enum):
-    VSCODE = "vscode"
-    VIM = "vim"
-    ZED = "zed"
+    VSCODE = EditorDescription(name="vscode", path="vscode")
+    VIM = EditorDescription(name="vim", path="vim")
+    ZED = EditorDescription(name="zed", path=None)
+
+    @classmethod
+    def from_name(cls, name: str) -> "EditorType":
+        for editor in cls:
+            if editor.value.name == name:
+                return editor
+        raise ValueError(f"Invalid editor type: {name}")
 
 
 class ProjectMetadata(BaseModel):

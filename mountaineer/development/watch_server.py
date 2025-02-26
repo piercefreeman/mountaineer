@@ -5,9 +5,9 @@ from threading import Thread
 from fastapi import FastAPI, WebSocket
 from starlette.websockets import WebSocketDisconnect
 
+from mountaineer.development.uvicorn import UvicornThread
 from mountaineer.io import get_free_port
 from mountaineer.logging import LOGGER
-from mountaineer.webservice import UvicornThread
 
 
 class WatcherWebservice:
@@ -70,7 +70,7 @@ class WatcherWebservice:
             # Run in another thread's context
             asyncio.run(self.broadcast_listeners())
 
-    def start(self):
+    async def start(self):
         if self.has_started:
             raise Exception("WatcherWebservice has already started")
 
@@ -86,14 +86,14 @@ class WatcherWebservice:
         )
 
         LOGGER.debug("Starting WatcherWebservice on port %d", self.port)
-        self.webservice_thread.start()
+        await self.webservice_thread.astart()
 
         self.monitor_build_thread = Thread(target=self.monitor_builds, daemon=True)
         self.monitor_build_thread.start()
 
         self.has_started = True
 
-    def stop(self, wait_for_completion: int = 1) -> bool:
+    async def stop(self, wait_for_completion: int = 1) -> bool:
         """
         Attempts to stop the separate WatcherWebservice threads. We will send a termination
         signal to the threads and wait the desired interval for full completion. If the threads
@@ -103,7 +103,7 @@ class WatcherWebservice:
         """
         success: bool = True
         if self.webservice_thread is not None:
-            self.webservice_thread.stop()
+            await self.webservice_thread.astop()
             self.webservice_thread.join(wait_for_completion)
         if self.monitor_build_thread is not None:
             self.notification_queue.put(None)

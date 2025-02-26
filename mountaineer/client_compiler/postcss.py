@@ -3,13 +3,9 @@ from os import environ
 from pathlib import Path
 from subprocess import PIPE
 from tempfile import TemporaryDirectory
-from time import monotonic_ns
-
-from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.exceptions import BuildProcessException
-from mountaineer.console import CONSOLE
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 
@@ -67,30 +63,13 @@ class PostCSSBundler(APIBuilderBase):
         )
 
         # We only need to process the known css files
-        start = monotonic_ns()
-        with Progress(
-            SpinnerColumn(),
-            *Progress.get_default_columns(),
-            TimeElapsedColumn(),
-            console=CONSOLE,
-            transient=True,
-        ) as progress:
-            build_task = progress.add_task(
-                "[cyan]Building CSS...", total=len(dirty_stylesheets)
-            )
-
-            for file_path in dirty_stylesheets:
-                root_path = self.metadata.package_root_link
-                built_css = await self.process_css(file_path)
-                (
-                    root_path.get_managed_static_dir(tmp_build=True)
-                    / self.get_style_output_name(file_path)
-                ).write_text(built_css)
-                progress.update(build_task, advance=1)
-
-        CONSOLE.print(
-            f"[bold green]🎨 Compiled {len(dirty_stylesheets)} stylesheet{'s' if len(dirty_stylesheets) > 1 else ''} in {(monotonic_ns() - start) / 1e9:.2f}s"
-        )
+        for file_path in dirty_stylesheets:
+            root_path = self.metadata.package_root_link
+            built_css = await self.process_css(file_path)
+            (
+                root_path.get_managed_static_dir(tmp_build=True)
+                / self.get_style_output_name(file_path)
+            ).write_text(built_css)
 
     async def process_css(self, css_path: ManagedViewPath) -> str:
         """
