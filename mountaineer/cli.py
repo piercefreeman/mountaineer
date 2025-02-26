@@ -82,55 +82,65 @@ async def handle_file_changes_base(
     if not (updated_js or updated_python):
         return
 
-    # Use Progress for the countable operations
-    with Progress(
-        SpinnerColumn(),
-        *Progress.get_default_columns(),
-        TimeElapsedColumn(),
-        console=CONSOLE,
-        transient=True,
-    ) as progress:
-        total_steps = len(updated_python) + (1 if updated_js else 0)
-        build_task = progress.add_task("[cyan]Building...", total=total_steps)
+    # Capture all the logs while our progress bar is the main object
+    # This avoids application-level logging interrupting the progress bar
+    async with app_manager.capture_logs() as (stdout_capture, stderr_capture):
+        # Use Progress for the countable operations
+        with Progress(
+            SpinnerColumn(),
+            *Progress.get_default_columns(),
+            TimeElapsedColumn(),
+            console=CONSOLE,
+            transient=True,
+        ) as progress:
+            total_steps = len(updated_python) + (1 if updated_js else 0)
+            build_task = progress.add_task("[cyan]Building...", total=total_steps)
 
-        # Handle Python changes
-        if updated_python:
-            progress.update(build_task, description="[cyan]Reloading Python modules...")
-            module_names = [
-                package_path_to_module(package, module_path)
-                for module_path in updated_python
-            ]
-            response = await app_manager.reload_backend_diff(module_names)
+            # Handle Python changes
+            if updated_python:
+                progress.update(
+                    build_task, description="[cyan]Reloading Python modules..."
+                )
+                module_names = [
+                    package_path_to_module(package, module_path)
+                    for module_path in updated_python
+                ]
+                response = await app_manager.reload_backend_diff(module_names)
 
-            if isinstance(response, ErrorResponse):
-                if isinstance(response, ReloadResponseError) and response.needs_restart:
-                    progress.update(
-                        build_task, description="[cyan]Restarting server..."
-                    )
-                    # Full server restart needed - start fresh process
-                    if server_config:
-                        restart_response = await app_manager.reload_backend_all()
-                        if isinstance(restart_response, ErrorResponse):
-                            success = False
-                else:
-                    success = False
-            else:
-                # Print captured logs if available
-                if response.captured_logs.strip():
-                    CONSOLE.print("\n[bold blue]Module Reload Logs:[/bold blue]")
-                    CONSOLE.print(response.captured_logs)
-                if response.captured_errors.strip():
-                    CONSOLE.print("\n[bold red]Module Reload Errors:[/bold red]")
-                    CONSOLE.print(response.captured_errors)
+                if isinstance(response, ErrorResponse):
+                    if (
+                        isinstance(response, ReloadResponseError)
+                        and response.needs_restart
+                    ):
+                        progress.update(
+                            build_task, description="[cyan]Restarting server..."
+                        )
+                        # Full server restart needed - start fresh process
+                        if server_config:
+                            restart_response = await app_manager.reload_backend_all()
+                            if isinstance(restart_response, ErrorResponse):
+                                success = False
+                    else:
+                        success = False
 
-            progress.update(build_task, advance=len(updated_python))
+                progress.update(build_task, advance=len(updated_python))
 
-        # Handle JS changes
-        if updated_js:
-            progress.update(build_task, description="[cyan]Rebuilding frontend...")
-            if server_config:
-                await app_manager.reload_frontend(list(updated_js))
-            progress.update(build_task, advance=1)
+            # Handle JS changes
+            if updated_js:
+                progress.update(build_task, description="[cyan]Rebuilding frontend...")
+                if server_config:
+                    await app_manager.reload_frontend(list(updated_js))
+                progress.update(build_task, advance=1)
+
+        # Print captured logs if available
+        captured_logs = stdout_capture.read()
+        captured_errors = stderr_capture.read()
+        if captured_logs.strip():
+            CONSOLE.print("\n[bold blue]App Build Logs:[/bold blue]")
+            CONSOLE.print(captured_logs)
+        if captured_errors.strip():
+            CONSOLE.print("\n[bold red]App Build Errors:[/bold red]")
+            CONSOLE.print(captured_errors)
 
         # Use StatusDisplay for the indeterminate server wait
         if server_config and success:

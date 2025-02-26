@@ -1,6 +1,7 @@
 import os
 import socket
 from contextlib import asynccontextmanager
+from io import StringIO
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -18,6 +19,8 @@ from mountaineer.development.messages import (
     ReloadResponseSuccess,
     RestartServerMessage,
     ShutdownMessage,
+    StartCaptureLogsMessage,
+    StopCaptureLogsMessage,
     SuccessResponse,
 )
 from mountaineer.logging import setup_internal_logger
@@ -317,6 +320,31 @@ class DevAppManager:
             yield self
         finally:
             await self.message_broker.stop()
+
+    @asynccontextmanager
+    async def capture_logs(self):
+        """
+        Capture logs from the application context.
+
+        """
+        stdout_capture = StringIO()
+        stderr_capture = StringIO()
+
+        await self.communicate(StartCaptureLogsMessage())
+        try:
+            yield stdout_capture, stderr_capture
+        finally:
+            response_logs = await self.communicate(StopCaptureLogsMessage())
+
+            # Write the captured logs to the StringIO objects since our caller
+            # still will have these in local scope
+            stdout_capture.write(response_logs.captured_logs)
+            stderr_capture.write(response_logs.captured_errors)
+
+            # Now we just have to rewind to the beginning of the StringIO objects
+            # so that the caller can read them with a simple read()
+            stdout_capture.seek(0)
+            stderr_capture.seek(0)
 
     #
     # Helper methods

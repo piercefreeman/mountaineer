@@ -48,8 +48,6 @@ class ReloadResponseSuccess(SuccessResponse):
 
     reloaded: list[str]
     needs_restart: bool
-    captured_logs: str = ""
-    captured_errors: str = ""
 
 
 @dataclass
@@ -78,6 +76,30 @@ class BuildJsMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
 @dataclass
 class BuildUseServerMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
     """Message to build the useServer support files"""
+
+    pass
+
+
+@dataclass
+class StartCaptureLogsMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
+    """Message to start capturing logs"""
+
+    pass
+
+
+@dataclass
+class CaptureLogsSuccessResponse(SuccessResponse):
+    """Message to capture logs"""
+
+    captured_logs: str
+    captured_errors: str
+
+
+@dataclass
+class StopCaptureLogsMessage(
+    IsolatedMessageBase[CaptureLogsSuccessResponse | ErrorResponse]
+):
+    """Message to stop capturing logs"""
 
     pass
 

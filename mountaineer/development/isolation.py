@@ -1,12 +1,12 @@
 import asyncio
 import importlib
-from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from multiprocessing import Process
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
-from typing import Any, Iterator
+from typing import Any
 
 from fastapi import Request
 
@@ -22,6 +22,7 @@ from mountaineer.development.messages import (
     BootupMessage,
     BuildJsMessage,
     BuildUseServerMessage,
+    CaptureLogsSuccessResponse,
     ErrorResponse,
     IsolatedMessageBase,
     ReloadModulesMessage,
@@ -29,6 +30,8 @@ from mountaineer.development.messages import (
     ReloadResponseSuccess,
     RestartServerMessage,
     ShutdownMessage,
+    StartCaptureLogsMessage,
+    StopCaptureLogsMessage,
     SuccessResponse,
 )
 from mountaineer.development.uvicorn import UvicornThread
@@ -69,6 +72,12 @@ class IsolatedAppContext(Process):
         self.app_compiler: ClientCompiler | None = None
         self.hot_reloader: HotReloader | None = None
 
+        # Log capture state
+        self._stdout_capture: StringIO | None = None
+        self._stderr_capture: StringIO | None = None
+        self._stdout_redirect: redirect_stdout | None = None
+        self._stderr_redirect: redirect_stderr | None = None
+
     def run(self):
         """Main worker process loop"""
         asyncio.run(self.run_async())
@@ -94,6 +103,10 @@ class IsolatedAppContext(Process):
                         response = await self.handle_js_build(message.updated_js)
                     elif isinstance(message, BuildUseServerMessage):
                         response = await self.handle_build_use_server()
+                    elif isinstance(message, StartCaptureLogsMessage):
+                        response = await self.handle_start_capture_logs()
+                    elif isinstance(message, StopCaptureLogsMessage):
+                        response = await self.handle_stop_capture_logs()
                     elif isinstance(message, ShutdownMessage):
                         self.message_broker.response_queue.put(
                             (message_id, SuccessResponse())
@@ -154,19 +167,16 @@ class IsolatedAppContext(Process):
             if self.hot_reloader is None:
                 raise ValueError("Hot reloader not initialized")
 
-            with self.capture_logs() as (stdout_logs, stderr_logs):
-                # Get the list of modules to reload from the hot reloader
-                reload_status = self.hot_reloader.reload_modules(module_names)
+            # Get the list of modules to reload from the hot reloader
+            reload_status = self.hot_reloader.reload_modules(module_names)
 
-                if reload_status.error:
-                    raise reload_status.error
+            if reload_status.error:
+                raise reload_status.error
 
-                return ReloadResponseSuccess(
-                    reloaded=reload_status.reloaded_modules,
-                    needs_restart=reload_status.needs_restart,
-                    captured_logs=stdout_logs.getvalue(),
-                    captured_errors=stderr_logs.getvalue(),
-                )
+            return ReloadResponseSuccess(
+                reloaded=reload_status.reloaded_modules,
+                needs_restart=reload_status.needs_restart,
+            )
         except Exception as e:
             LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
             return ReloadResponseError(
@@ -187,6 +197,50 @@ class IsolatedAppContext(Process):
             self.app_controller.invalidate_view(path)
 
         return SuccessResponse()
+
+    async def handle_start_capture_logs(self) -> SuccessResponse:
+        """
+        Start capturing stdout and stderr during module reload.
+        This method activates the context managers and saves the captures to the instance.
+        """
+        self._stdout_capture = StringIO()
+        self._stderr_capture = StringIO()
+        self._stdout_redirect = redirect_stdout(self._stdout_capture)
+        self._stderr_redirect = redirect_stderr(self._stderr_capture)
+        self._stdout_redirect.__enter__()
+        self._stderr_redirect.__enter__()
+
+        return SuccessResponse()
+
+    async def handle_stop_capture_logs(self) -> CaptureLogsSuccessResponse:
+        """
+        End capturing stdout and stderr, restore standard streams, and return the captured content.
+        Returns a tuple of (stdout_capture, stderr_capture) containing the captured output.
+        """
+        if (
+            not self._stdout_capture
+            or not self._stderr_capture
+            or not self._stdout_redirect
+            or not self._stderr_redirect
+        ):
+            raise RuntimeError("Cannot end capture logs before starting")
+
+        self._stdout_redirect.__exit__(None, None, None)
+        self._stderr_redirect.__exit__(None, None, None)
+
+        stdout_capture = self._stdout_capture
+        stderr_capture = self._stderr_capture
+
+        # Clear the state
+        self._stdout_capture = None
+        self._stderr_capture = None
+        self._stdout_redirect = None
+        self._stderr_redirect = None
+
+        return CaptureLogsSuccessResponse(
+            captured_logs=stdout_capture.getvalue(),
+            captured_errors=stderr_capture.getvalue(),
+        )
 
     #
     # Server Initialization
@@ -276,15 +330,3 @@ class IsolatedAppContext(Process):
             return html
         else:
             raise exc
-
-    @contextmanager
-    def capture_logs(self) -> Iterator[tuple[StringIO, StringIO]]:
-        """
-        Context manager to capture stdout and stderr during module reload.
-        Returns a StringIO object containing the captured output.
-        """
-        stdout_capture = StringIO()
-        stderr_capture = StringIO()
-
-        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-            yield stdout_capture, stderr_capture
