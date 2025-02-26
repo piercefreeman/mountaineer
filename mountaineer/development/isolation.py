@@ -80,7 +80,12 @@ class IsolatedAppContext(Process):
 
     def run(self):
         """Main worker process loop"""
-        asyncio.run(self.run_async())
+        try:
+            asyncio.run(self.run_async())
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            pass
+        except Exception as e:
+            LOGGER.error(f"Isolated app context failed: {e}", exc_info=True)
 
     async def run_async(self):
         try:

@@ -245,6 +245,9 @@ async def handle_runserver(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
 
+    # Create a variable to hold the watchdog for access during shutdown
+    watchdog = None
+
     async def handle_file_changes(metadata: CallbackMetadata):
         await handle_file_changes_base(
             package=package,
@@ -257,10 +260,39 @@ async def handle_runserver(
             ),
         )
 
-    def handle_shutdown(signum, frame):
-        CONSOLE.print("[yellow]Services shutdown, now exiting...")
-        watcher_webservice.stop()
-        exit(0)
+    async def handle_shutdown_async():
+        CONSOLE.print("[yellow]Starting shutdown")
+
+        shutdown_error = False
+
+        # Cancel the watchfiles task
+        if watchdog:
+            await watchdog.stop_watching()
+
+        # First try to shutdown the app context if it exists
+        if app_manager.app_context and app_manager.app_context.is_alive():
+            try:
+                await app_manager.shutdown()
+            except Exception as e:
+                CONSOLE.print(f"[red]Error shutting down app context: {e}")
+                shutdown_error = True
+
+        # Then stop the watcher webservice
+        if not watcher_webservice.stop(wait_for_completion=3):
+            CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
+            shutdown_error = True
+
+        if shutdown_error:
+            CONSOLE.print("[red]Shutdown failed, hard exiting")
+            exit(1)
+
+        CONSOLE.print("[green]Shutdown complete")
+
+    def handle_shutdown(*args, **kwargs):
+        loop = asyncio.get_event_loop()
+
+        # Schedule the shutdown coroutine and create a future for it
+        asyncio.ensure_future(handle_shutdown_async(), loop=loop)
 
     # Start the message broker
     async with app_manager.start_broker():

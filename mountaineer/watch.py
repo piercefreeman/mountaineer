@@ -149,6 +149,8 @@ class PackageWatchdog:
         self.paths: list[str] = []
         self.callbacks: list[CallbackDefinition] = callbacks or []
         self.run_on_bootup = run_on_bootup
+        self.stop_event = asyncio.Event()
+        self.running = False
 
         self.check_packages_installed()
         self.get_package_paths()
@@ -158,6 +160,10 @@ class PackageWatchdog:
             for callback_definition in self.callbacks:
                 await callback_definition.callback(CallbackMetadata(events=[]))
 
+        if self.running:
+            raise ValueError("Watchdog is already running")
+        self.running = True
+
         watcher = FileWatcher(callbacks=self.callbacks)
 
         CONSOLE.print(
@@ -166,11 +172,15 @@ class PackageWatchdog:
         for path in self.paths:
             LOGGER.info(f"Watching {path}")
 
-        try:
-            async for changes in awatch(*self.paths, watch_filter=None):
-                await watcher.process_changes(changes)
-        except KeyboardInterrupt:
-            pass
+        async for changes in awatch(
+            *self.paths, stop_event=self.stop_event, watch_filter=None
+        ):
+            await watcher.process_changes(changes)
+
+    async def stop_watching(self):
+        self.stop_event.set()
+        self.stop_event = asyncio.Event()
+        self.running = False
 
     def check_packages_installed(self):
         for package in self.packages:
