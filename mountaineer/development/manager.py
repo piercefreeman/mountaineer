@@ -247,6 +247,7 @@ class DevAppManager:
             reload_response = await self.communicate(
                 ReloadModulesMessage(module_names=module_names)
             )
+
             await self.communicate(BuildUseServerMessage())
             await self.communicate(RestartServerMessage())
             return reload_response

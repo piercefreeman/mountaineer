@@ -114,6 +114,15 @@ async def handle_file_changes_base(
                             success = False
                 else:
                     success = False
+            else:
+                # Print captured logs if available
+                if response.captured_logs.strip():
+                    CONSOLE.print("\n[bold blue]Module Reload Logs:[/bold blue]")
+                    CONSOLE.print(response.captured_logs)
+                if response.captured_errors.strip():
+                    CONSOLE.print("\n[bold red]Module Reload Errors:[/bold red]")
+                    CONSOLE.print(response.captured_errors)
+
             progress.update(build_task, advance=len(updated_python))
 
         # Handle JS changes

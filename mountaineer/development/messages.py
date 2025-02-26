@@ -44,8 +44,12 @@ class BootupMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
 
 @dataclass
 class ReloadResponseSuccess(SuccessResponse):
+    """Message indicating successful module reload"""
+
     reloaded: list[str]
     needs_restart: bool
+    captured_logs: str = ""
+    captured_errors: str = ""
 
 
 @dataclass

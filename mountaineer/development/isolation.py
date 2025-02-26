@@ -1,10 +1,12 @@
 import asyncio
 import importlib
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from io import StringIO
 from multiprocessing import Process
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import Request
 
@@ -152,16 +154,19 @@ class IsolatedAppContext(Process):
             if self.hot_reloader is None:
                 raise ValueError("Hot reloader not initialized")
 
-            # Get the list of modules to reload from the hot reloader
-            reload_status = self.hot_reloader.reload_modules(module_names)
+            with self.capture_logs() as (stdout_logs, stderr_logs):
+                # Get the list of modules to reload from the hot reloader
+                reload_status = self.hot_reloader.reload_modules(module_names)
 
-            if reload_status.error:
-                raise reload_status.error
+                if reload_status.error:
+                    raise reload_status.error
 
-            return ReloadResponseSuccess(
-                reloaded=reload_status.reloaded_modules,
-                needs_restart=reload_status.needs_restart,
-            )
+                return ReloadResponseSuccess(
+                    reloaded=reload_status.reloaded_modules,
+                    needs_restart=reload_status.needs_restart,
+                    captured_logs=stdout_logs.getvalue(),
+                    captured_errors=stderr_logs.getvalue(),
+                )
         except Exception as e:
             LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
             return ReloadResponseError(
@@ -271,3 +276,15 @@ class IsolatedAppContext(Process):
             return html
         else:
             raise exc
+
+    @contextmanager
+    def capture_logs(self) -> Iterator[tuple[StringIO, StringIO]]:
+        """
+        Context manager to capture stdout and stderr during module reload.
+        Returns a StringIO object containing the captured output.
+        """
+        stdout_capture = StringIO()
+        stderr_capture = StringIO()
+
+        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+            yield stdout_capture, stderr_capture
