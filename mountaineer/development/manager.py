@@ -158,7 +158,7 @@ class DevAppManager:
     # Server Management
     #
 
-    async def restart_server(self) -> SuccessResponse | ErrorResponse:
+    async def reload_backend_all(self) -> SuccessResponse | ErrorResponse:
         """
         Restart the server in a fresh process.
 
@@ -209,35 +209,7 @@ class DevAppManager:
 
         return SuccessResponse()
 
-    async def bootstrap(self) -> SuccessResponse | ErrorResponse:
-        """
-        Bootstrap the application context.
-
-        Performs initial setup of the application including bootup sequence
-        and useServer support file generation.
-
-        :return: Success if bootstrap completes, Error if any step fails
-
-        """
-        # Send a bootup request and handle the initialization process
-        # Any subsequent reload message received before we bootstrap should do a full bootup
-        try:
-            await self.communicate(BootupMessage())
-            LOGGER.debug("App context bootstrapped successfully")
-            self.successful_bootup = True
-        except BuildFailed as e:
-            LOGGER.debug("App context failed to bootstrap")
-            self.successful_bootup = False
-
-            return e.context
-
-        # Only if successful should we build the useServer support files
-        try:
-            return await self.communicate(BuildUseServerMessage())
-        except BuildFailed as e:
-            return e.context
-
-    async def reload_modules(
+    async def reload_backend_diff(
         self, module_names: list[str]
     ) -> ReloadResponseSuccess | ReloadResponseError | ErrorResponse:
         """
@@ -334,6 +306,35 @@ class DevAppManager:
     #
     # Helper methods
     #
+
+
+    async def bootstrap(self) -> SuccessResponse | ErrorResponse:
+        """
+        Bootstrap the application context.
+
+        Performs initial setup of the application including bootup sequence
+        and useServer support file generation.
+
+        :return: Success if bootstrap completes, Error if any step fails
+
+        """
+        # Send a bootup request and handle the initialization process
+        # Any subsequent reload message received before we bootstrap should do a full bootup
+        try:
+            await self.communicate(BootupMessage())
+            LOGGER.debug("App context bootstrapped successfully")
+            self.successful_bootup = True
+        except BuildFailed as e:
+            LOGGER.debug("App context failed to bootstrap")
+            self.successful_bootup = False
+
+            return e.context
+
+        # Only if successful should we build the useServer support files
+        try:
+            return await self.communicate(BuildUseServerMessage())
+        except BuildFailed as e:
+            return e.context
 
     def app_context_missing(self):
         """

@@ -18,7 +18,7 @@ from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.development.manager import (
     DevAppManager,
 )
-from mountaineer.development.messages import ErrorResponse, ReloadResponseError
+from mountaineer.development.messages import ErrorResponse
 from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
@@ -33,6 +33,116 @@ from mountaineer.watch import (
     CallbackType,
     PackageWatchdog,
 )
+from mountaineer.development.messages import ReloadResponseError
+
+
+async def handle_file_changes_base(
+    *,
+    package: str,
+    metadata: CallbackMetadata,
+    app_manager: DevAppManager,
+    launch_server: bool = False,
+    watcher_webservice: WatcherWebservice | None = None,
+    host: str | None = None,
+    port: int | None = None,
+) -> None:
+    """
+    Shared file change handler that can be used by both watch and runserver modes.
+    
+    :param metadata: The metadata about which files changed
+    :param app_manager: The app manager instance
+    :param js_compiler: Optional js compiler for watch mode
+    :param launch_server: Whether to launch/restart the server (runserver mode)
+    :param watcher_webservice: Optional watcher webservice for runserver mode
+    :param host: Optional host for runserver mode
+    :param port: Optional port for runserver mode
+    """
+    LOGGER.info(f"Handling file changes: {metadata}")
+    start = time()
+    updated_js: set[Path] = set()
+    updated_python: set[Path] = set()
+    success = True
+
+    # First collect all the files that need updating
+    for event in metadata.events:
+        if event.path.suffix in KNOWN_JS_EXTENSIONS:
+            updated_js.add(event.path)
+        elif event.path.suffix == ".py":
+            updated_python.add(event.path)
+
+    if not (updated_js or updated_python):
+        return
+
+    # Use Progress for the countable operations
+    with Progress(
+        SpinnerColumn(),
+        *Progress.get_default_columns(),
+        TimeElapsedColumn(),
+        console=CONSOLE,
+        transient=True,
+    ) as progress:
+        total_steps = len(updated_python) + (1 if updated_js else 0)
+        build_task = progress.add_task("[cyan]Building...", total=total_steps)
+
+        # Handle Python changes
+        if updated_python:
+            progress.update(
+                build_task, description="[cyan]Reloading Python modules..."
+            )
+            module_names = [
+                package_path_to_module(package, module_path)
+                for module_path in updated_python
+            ]
+            response = await app_manager.reload_backend_diff(module_names)
+
+            if isinstance(response, ErrorResponse):
+                if isinstance(response, ReloadResponseError) and response.needs_restart:
+                    progress.update(
+                        build_task, description="[cyan]Restarting server..."
+                    )
+                    # Full server restart needed - start fresh process
+                    if launch_server:
+                        restart_response = await app_manager.reload_backend_all()
+                        if isinstance(restart_response, ErrorResponse):
+                            success = False
+                else:
+                    success = False
+            progress.update(build_task, advance=len(updated_python))
+
+        # Handle JS changes
+        if updated_js:
+            progress.update(
+                build_task, description="[cyan]Rebuilding frontend..."
+            )
+            if launch_server:
+                await app_manager.reload_frontend(list(updated_js))
+            progress.update(build_task, advance=1)
+
+        # Use StatusDisplay for the indeterminate server wait
+        if launch_server and success and host is not None and port is not None:
+            start_time = time()
+            while time() - start_time < 5:
+                if app_manager.is_port_open(host, port):
+                    break
+                await asyncio.sleep(0.1)
+
+    if watcher_webservice:
+        watcher_webservice.notification_queue.put(True)
+
+    if launch_server:
+        build_time = time() - start
+        if success:
+            CONSOLE.print(
+                f"[bold green]🚀 App relaunched in {build_time:.2f} seconds"
+            )
+            if host is not None and port is not None:
+                CONSOLE.print(
+                    f"🚀 Dev webserver ready at http://{host if host else '127.0.0.1'}:{port}"
+                )
+        else:
+            CONSOLE.print(
+                "[bold red]🚨 App failed to launch, waiting for code change..."
+            )
 
 
 @async_to_sync
@@ -57,44 +167,25 @@ async def handle_watch(
 
     """
     update_multiprocessing_settings()
-
-    # The global cache will let us keep cache files warm across
-    # different builds
-    global_build_cache = Path(mkdtemp())
+    rich_traceback_install()
 
     app_manager = DevAppManager.from_webcontroller(webcontroller)
-    js_compiler = APIBuilder(
-        app_manager.app_controller,
-        live_reload_port=None,
-        build_cache=global_build_cache,
-    )
-
-    await js_compiler.build_all()
 
     async def update_build(metadata: CallbackMetadata):
-        updated_js: set[Path] = set()
-        updated_python: set[Path] = set()
+        await handle_file_changes_base(
+            package=package,
+            metadata=metadata,
+            app_manager=app_manager,
+            launch_server=False,
+        )
 
-        for event in metadata.events:
-            if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                updated_js.add(event.path)
-            elif event.path.suffix in {".py"}:
-                updated_python.add(event.path)
-
-        # Update the use-server definitions in case modifications to the
-        # python file affected the API spec
-        if updated_python:
-            await js_compiler.build_all()
-
-        # For now, we don't do any js analysis besides building - which
-        # we don't need to do if we're just watching for changes
-
-    watchdog = build_common_watchdog(
-        package,
-        update_build,
-        subscribe_to_mountaineer=subscribe_to_mountaineer,
-    )
-    await watchdog.start_watching()
+    async with app_manager.start_broker():
+        watchdog = build_common_watchdog(
+            package,
+            update_build,
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
+        )
+        await watchdog.start_watching()
 
 
 @async_to_sync
@@ -133,100 +224,25 @@ async def handle_runserver(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
 
+    async def handle_file_changes(metadata: CallbackMetadata):
+        await handle_file_changes_base(
+            package=package,
+            metadata=metadata,
+            app_manager=app_manager,
+            launch_server=True,
+            watcher_webservice=watcher_webservice,
+            host=host,
+            port=port,
+        )
+
+    def handle_shutdown(signum, frame):
+        watcher_webservice.stop()
+        CONSOLE.print("[yellow]Services shutdown, now exiting...")
+        exit(0)
+
     # Start the message broker
     async with app_manager.start_broker():
         await app_manager.restart_server()
-
-        async def handle_file_changes(metadata: CallbackMetadata):
-            LOGGER.info(f"Handling file changes: {metadata}")
-            start = time()
-            updated_js = set()
-            updated_python = set()
-            success = True
-
-            # First collect all the files that need updating
-            for event in metadata.events:
-                if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                    updated_js.add(event.path)
-                elif event.path.suffix == ".py":
-                    updated_python.add(event.path)
-
-            if not (updated_js or updated_python):
-                return
-
-            # Use Progress for the countable operations
-            with Progress(
-                SpinnerColumn(),
-                *Progress.get_default_columns(),
-                TimeElapsedColumn(),
-                console=CONSOLE,
-                transient=True,
-            ) as progress:
-                total_steps = len(updated_python) + (1 if updated_js else 0)
-                build_task = progress.add_task("[cyan]Building...", total=total_steps)
-
-                # Handle Python changes
-                if updated_python:
-                    progress.update(
-                        build_task, description="[cyan]Reloading Python modules..."
-                    )
-                    module_names = [
-                        package_path_to_module(package, module_path)
-                        for module_path in updated_python
-                    ]
-                    response = await app_manager.reload_modules(module_names)
-
-                    if isinstance(response, ErrorResponse):
-                        if (
-                            isinstance(response, ReloadResponseError)
-                            and response.needs_restart
-                        ):
-                            progress.update(
-                                build_task, description="[cyan]Restarting server..."
-                            )
-                            # Full server restart needed - start fresh process
-                            restart_response = await app_manager.restart_server()
-                            if isinstance(restart_response, ErrorResponse):
-                                success = False
-                        else:
-                            success = False
-                    progress.update(build_task, advance=len(updated_python))
-
-                # Handle JS changes
-                if updated_js:
-                    progress.update(
-                        build_task, description="[cyan]Rebuilding frontend..."
-                    )
-                    await app_manager.reload_frontend(list(updated_js))
-                    progress.update(build_task, advance=1)
-
-                # Use StatusDisplay for the indeterminate server wait
-                if success:
-                    start_time = time()
-                    while time() - start_time < 5:
-                        if app_manager.is_port_open(host, port):
-                            break
-                        await asyncio.sleep(0.1)
-
-            watcher_webservice.notification_queue.put(True)
-
-            build_time = time() - start
-            if success:
-                CONSOLE.print(
-                    f"[bold green]🚀 App relaunched in {build_time:.2f} seconds"
-                )
-                CONSOLE.print(
-                    f"🚀 Dev webserver ready at http://{host if host else '127.0.0.1'}:{port}"
-                )
-            else:
-                CONSOLE.print(
-                    "[bold red]🚨 App failed to launch, waiting for code change..."
-                )
-
-        def handle_shutdown(signum, frame):
-            watcher_webservice.stop()
-            CONSOLE.print("[yellow]Services shutdown, now exiting...")
-            exit(0)
 
         signal(SIGINT, handle_shutdown)
 
