@@ -113,9 +113,10 @@ class IsolatedAppContext(Process):
                     elif isinstance(message, StopCaptureLogsMessage):
                         response = await self.handle_stop_capture_logs()
                     elif isinstance(message, ShutdownMessage):
-                        self.message_broker.response_queue.put(
-                            (message_id, SuccessResponse())
-                        )
+                        # Send immediately before breaking out of the loop, which should
+                        # trigger a shutdown of this process
+                        response = await self.handle_shutdown()
+                        self.message_broker.response_queue.put((message_id, response))
                         break
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")
@@ -246,6 +247,12 @@ class IsolatedAppContext(Process):
             captured_logs=stdout_capture.getvalue(),
             captured_errors=stderr_capture.getvalue(),
         )
+
+    async def handle_shutdown(self):
+        """Handle shutdown of the isolated context"""
+        if self.webservice_thread:
+            self.webservice_thread.stop()
+        return SuccessResponse()
 
     #
     # Server Initialization

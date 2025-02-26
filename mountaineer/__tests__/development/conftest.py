@@ -1,6 +1,7 @@
-import json
+import shutil
 import subprocess
 import sys
+from json import dump as json_dump
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -12,7 +13,7 @@ from mountaineer.development.manager import DevAppManager
 AppPackageType = tuple[str, Path, Path]
 
 
-def create_package_json(package_path: Path) -> None:
+def create_package_json(views_path: Path) -> None:
     """
     Create a package.json file with necessary React dependencies.
 
@@ -31,8 +32,8 @@ def create_package_json(package_path: Path) -> None:
         },
     }
 
-    with open(package_path / "package.json", "w") as f:
-        json.dump(package_json, f, indent=2)
+    with open(views_path / "package.json", "w") as f:
+        json_dump(package_json, f, indent=2)
 
 
 def setup_npm_environment(package_path: Path) -> None:
@@ -50,24 +51,74 @@ def setup_npm_environment(package_path: Path) -> None:
 
 
 @pytest.fixture(scope="module")
-def tmp_app_package_dir():
-    # The pytest bundled tmp_path only works for function
-    # scoped fixtures
+def simple_package_dependencies():
+    """
+    Cache the results of create_package_json() system-wide so we don't have to
+    re-install node modules for each test that needs to execute against our
+    Javascript environment.
+
+    """
+    # The tmp_path fixture is scoped to the individual test function level, so we need
+    # a manual cache for module scoped fixtures
     with TemporaryDirectory() as tmp_path_raw:
         tmp_path = Path(tmp_path_raw)
-        yield tmp_path
+
+        # Create our standard package.json in this path
+        create_package_json(tmp_path)
+
+        # Install dependencies
+        setup_npm_environment(tmp_path)
+
+        yield tmp_path / "node_modules"
 
 
-@pytest.fixture(scope="module")
-def app_package(tmp_app_package_dir: Path):
+@pytest.fixture
+def isolated_package_dir(
+    tmp_path: Path,
+    simple_package_dependencies: Path,
+    request,
+):
+    """
+    Create test package structure with unique name per test so we allow
+    client functions to modify their files without adverse affects on other tests.
+
+    Provides:
+    - An isolated python package directory
+    - A views directory with node_modules copied in
+    - A package.json in the views directory
+
+    """
+    test_name = request.node.name.replace("test_", "")
+    pkg_name = f"test_package_{test_name}".replace("[", "_").replace("]", "_")
+
+    # Create the python code directory
+    pkg_dir = tmp_path / pkg_name
+    pkg_dir.mkdir()
+
+    # Create a views directory
+    views_dir = pkg_dir / "views"
+    views_dir.mkdir()
+
+    # Create a package.json in the views directory
+    create_package_json(views_dir)
+    shutil.copytree(simple_package_dependencies, views_dir / "node_modules")
+
+    # Make the path reachable only within this test scope
+    sys.path.insert(0, str(tmp_path))
+    try:
+        yield pkg_dir, pkg_name
+    finally:
+        sys.path.pop(0)
+
+
+@pytest.fixture
+def app_package(isolated_package_dir: tuple[Path, str]) -> AppPackageType:
     """
     A simple AppController, with a single component controller. Sets up a complete
     React environment with necessary dependencies.
 
     """
-    package_name = "test_package"
-    package_path = Path(tmp_app_package_dir) / package_name
-    package_path.mkdir()
+    package_path, package_name = isolated_package_dir
 
     # Package init
     (package_path / "__init__.py").touch()
@@ -89,10 +140,7 @@ def app_package(tmp_app_package_dir: Path):
     (views_dir / "test_controller").mkdir()
     (views_dir / "test_controller" / "page.tsx").write_text("")
 
-    # Make the path reachable only within this test scope
-    sys.path.insert(0, str(tmp_app_package_dir))
-    yield package_name, tmp_app_package_dir, controller_file
-    sys.path.pop(0)
+    return package_name, package_path, controller_file
 
 
 @pytest.fixture

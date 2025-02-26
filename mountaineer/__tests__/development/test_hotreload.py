@@ -9,17 +9,13 @@ from mountaineer.development.hotreload import HotReloader, resolve_relative_impo
 
 
 @pytest.fixture
-def test_package_dir(tmp_path: Path, request):
+def simple_webapp(isolated_package_dir: tuple[Path, str]):
     """
     Create test package structure with unique name per test so we allow
     client functions to modify their files without adverse affects on other tests.
 
     """
-    test_name = request.node.name.replace("test_", "")
-    pkg_name = f"test_package_{test_name}".replace("[", "_").replace("]", "_")
-
-    pkg_dir = tmp_path / pkg_name
-    pkg_dir.mkdir()
+    pkg_dir, pkg_name = isolated_package_dir
 
     (pkg_dir / "__init__.py").write_text("")
     (pkg_dir / "base.py").write_text(
@@ -49,19 +45,15 @@ def test_package_dir(tmp_path: Path, request):
         )
     )
 
-    # Make it immediately importable
-    sys.path.insert(0, str(pkg_dir.parent))
-    sys.path.insert(0, str(pkg_dir))
-
     return pkg_dir, pkg_name
 
 
-def test_initial_dependency_tracking(test_package_dir: tuple[Path, str]):
+def test_initial_dependency_tracking(simple_webapp: tuple[Path, str]):
     """
     Test initial dependency tracking on load.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Initialize the HotReloader with entrypoint, this should take
     # care of loading the child+base files
@@ -78,12 +70,12 @@ def test_initial_dependency_tracking(test_package_dir: tuple[Path, str]):
     assert base_deps.subclasses == {"BaseClass": {"ChildClass"}}
 
 
-def test_inheritance_changes(test_package_dir: tuple[Path, str]):
+def test_inheritance_changes(simple_webapp: tuple[Path, str]):
     """
     Test inheritance changes if the base model is changed.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Verify initial class logic
     child_module = importlib.import_module(f"{pkg_name}.child")
@@ -123,12 +115,12 @@ def test_inheritance_changes(test_package_dir: tuple[Path, str]):
     assert new_child.get_value() == 10
 
 
-def test_cyclic_dependencies(test_package_dir: tuple[Path, str]):
+def test_cyclic_dependencies(simple_webapp: tuple[Path, str]):
     """
     Test cyclic dependencies.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Write module files
     (pkg_dir / "module_b.py").write_text(
@@ -158,12 +150,12 @@ def test_cyclic_dependencies(test_package_dir: tuple[Path, str]):
     assert reload_status.error is None
 
 
-def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
+def test_partial_reload_failure(simple_webapp: tuple[Path, str]):
     """
     Test partial reload failure.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Initialize HotReloader
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.child")
@@ -190,12 +182,12 @@ def test_partial_reload_failure(test_package_dir: tuple[Path, str]):
     assert obj.get_value() == 10
 
 
-def test_multiple_inheritance(test_package_dir: tuple[Path, str]):
+def test_multiple_inheritance(simple_webapp: tuple[Path, str]):
     """
     Test multiple inheritance.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Write mixin.py
     (pkg_dir / "mixin.py").write_text(
@@ -234,12 +226,12 @@ def test_multiple_inheritance(test_package_dir: tuple[Path, str]):
     assert obj.log() == "logged"
 
 
-def test_enum_reload(test_package_dir: tuple[Path, str]):
+def test_enum_reload(simple_webapp: tuple[Path, str]):
     """
     Test that enums are properly handled during reload.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create initial enum file
     (pkg_dir / "status.py").write_text(
@@ -295,12 +287,12 @@ def test_enum_reload(test_package_dir: tuple[Path, str]):
     assert hasattr(status_module.Status, "ARCHIVED")
 
 
-def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
+def test_import_alias_dependency_graph(simple_webapp: tuple[Path, str]):
     """
     Test that the dependency graph correctly tracks imports with aliases.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create models.py with initial class
     (pkg_dir / "models.py").write_text(
@@ -368,12 +360,12 @@ def test_import_alias_dependency_graph(test_package_dir: tuple[Path, str]):
     assert main_module.get_model_value() == 20
 
 
-def test_relative_import(test_package_dir: tuple[Path, str]):
+def test_relative_import(simple_webapp: tuple[Path, str]):
     """
     Test that the dependency graph correctly tracks imports with aliases.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create the package structure
     (pkg_dir / "models").mkdir()
@@ -442,12 +434,12 @@ def test_relative_import(test_package_dir: tuple[Path, str]):
     assert new_value == 200, f"Expected 200, got {new_value}"
 
 
-def test_ignores_irrelevant_files(test_package_dir: tuple[Path, str]):
+def test_ignores_irrelevant_files(simple_webapp: tuple[Path, str]):
     """
     Ignores files that aren't directly in the DAG path of the original file
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create the package structure
     (pkg_dir / "models").mkdir()
@@ -527,12 +519,12 @@ def test_ignores_irrelevant_files(test_package_dir: tuple[Path, str]):
     assert new_value == 200, f"Expected 200, got {new_value}"
 
 
-def test_package_structure_scanning(test_package_dir: tuple[Path, str]):
+def test_package_structure_scanning(simple_webapp: tuple[Path, str]):
     """
     Test package structure scanning with nested directories.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create nested package structure
     nested_dir = pkg_dir / "nested"
@@ -571,12 +563,12 @@ def test_package_structure_scanning(test_package_dir: tuple[Path, str]):
     assert f"{pkg_name}.nested.subnested" in hot_reloader.dependency_graph
 
 
-def test_inheritance_tree_building(test_package_dir: tuple[Path, str]):
+def test_inheritance_tree_building(simple_webapp: tuple[Path, str]):
     """
     Test inheritance tree building with complex inheritance.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create a hierarchy of classes
     (pkg_dir / "base.py").write_text(
@@ -635,12 +627,12 @@ def test_inheritance_tree_building(test_package_dir: tuple[Path, str]):
     assert leaf_deps.superclasses["LeafClass"] == {"MiddleClass"}
 
 
-def test_package_structure_excluded_dirs(test_package_dir: tuple[Path, str]):
+def test_package_structure_excluded_dirs(simple_webapp: tuple[Path, str]):
     """
     Test that certain directories are excluded from scanning.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create directories that should be excluded
     hidden_dir = pkg_dir / ".hidden"
@@ -663,9 +655,9 @@ def test_package_structure_excluded_dirs(test_package_dir: tuple[Path, str]):
         assert not module.endswith("Cached")
 
 
-def test_inheritance_tree_module_updates(test_package_dir: tuple[Path, str]):
+def test_inheritance_tree_module_updates(simple_webapp: tuple[Path, str]):
     """Test inheritance tree updates when modules change."""
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Initial class structure
     (pkg_dir / "dynamic.py").write_text(
@@ -706,14 +698,14 @@ def test_inheritance_tree_module_updates(test_package_dir: tuple[Path, str]):
 
 
 @pytest.mark.xfail(strict=False)
-def test_new_file_reload(test_package_dir: tuple[Path, str]):
+def test_new_file_reload(simple_webapp: tuple[Path, str]):
     """
     Test adding and reloading a new file that imports other modules.
 
     TODO: We need to investigate why this is unreliable in remote CI but reliable locally.
 
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Import initial modules
     hot_reloader = HotReloader(pkg_name, pkg_dir, entrypoint=f"{pkg_name}.base")
@@ -935,11 +927,11 @@ def test_resolve_relative_import(
     )
 
 
-def test_non_syntax_error_triggers_restart(test_package_dir: tuple[Path, str]):
+def test_non_syntax_error_triggers_restart(simple_webapp: tuple[Path, str]):
     """
     Test that non-syntax errors during module reload trigger a server restart flag.
     """
-    pkg_dir, pkg_name = test_package_dir
+    pkg_dir, pkg_name = simple_webapp
 
     # Create initial module with a class that will be imported
     (pkg_dir / "base.py").write_text(
