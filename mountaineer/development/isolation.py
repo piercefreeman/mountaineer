@@ -172,6 +172,7 @@ class IsolatedAppContext(Process):
     async def handle_module_reload(self, module_names: list[str]):
         """Handle module reloading within the isolated context"""
         needs_restart = True
+        reloaded: list[str] = []
 
         try:
             if self.hot_reloader is None:
@@ -181,6 +182,7 @@ class IsolatedAppContext(Process):
             reload_status = self.hot_reloader.reload_modules(module_names)
 
             if reload_status.error:
+                reloaded = reload_status.reloaded_modules
                 raise reload_status.error
 
             return ReloadResponseSuccess(
@@ -190,6 +192,7 @@ class IsolatedAppContext(Process):
         except Exception as e:
             LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
             return ReloadResponseError(
+                reloaded=reloaded,
                 needs_restart=needs_restart,
                 exception=str(e),
                 traceback="".join(format_exception(e)),

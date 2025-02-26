@@ -226,6 +226,7 @@ class DevAppManager:
         if self.app_context_missing():
             LOGGER.debug("No active app context, returning needs_restart")
             return ReloadResponseError(
+                reloaded=[],
                 exception="No active app context",
                 traceback="No active app context",
                 needs_restart=True,
@@ -237,6 +238,7 @@ class DevAppManager:
                 await self.bootstrap()
             except BuildFailed as e:
                 return ReloadResponseError(
+                    reloaded=[],
                     exception=e.context.exception,
                     traceback=e.context.traceback,
                     # Permanent error - we did reboot but it failed

@@ -54,6 +54,7 @@ class ReloadResponseSuccess(SuccessResponse):
 class ReloadResponseError(ErrorResponse):
     """Error response for module reload"""
 
+    reloaded: list[str]
     needs_restart: bool
 
 
