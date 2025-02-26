@@ -4,7 +4,7 @@ from multiprocessing import Process
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
-from typing import Any, List
+from typing import Any
 
 from fastapi import Request
 
@@ -69,6 +69,9 @@ class IsolatedAppContext(Process):
 
     def run(self):
         """Main worker process loop"""
+        asyncio.run(self.run_async())
+
+    async def run_async(self):
         try:
             LOGGER.debug("[IsolatedAppContext] Starting isolated context")
 
@@ -80,15 +83,15 @@ class IsolatedAppContext(Process):
                 try:
                     response: SuccessResponse | ErrorResponse
                     if isinstance(message, BootupMessage):
-                        response = self.handle_bootstrap()
+                        response = await self.handle_bootstrap()
                     elif isinstance(message, ReloadModulesMessage):
-                        response = self.handle_module_reload(message.module_names)
+                        response = await self.handle_module_reload(message.module_names)
                     elif isinstance(message, RestartServerMessage):
-                        response = self.handle_restart_server()
+                        response = await self.handle_restart_server()
                     elif isinstance(message, BuildJsMessage):
-                        response = self.handle_js_build(message.updated_js)
+                        response = await self.handle_js_build(message.updated_js)
                     elif isinstance(message, BuildUseServerMessage):
-                        response = self.handle_build_use_server()
+                        response = await self.handle_build_use_server()
                     elif isinstance(message, ShutdownMessage):
                         self.message_broker.response_queue.put(
                             (message_id, SuccessResponse())
@@ -121,27 +124,27 @@ class IsolatedAppContext(Process):
     # Message Handlers
     #
 
-    def handle_bootstrap(self):
+    async def handle_bootstrap(self):
         response = self.initialize_app_state()
         if isinstance(response, SuccessResponse):
             self.start_server()
 
         return response
 
-    def handle_restart_server(self):
+    async def handle_restart_server(self):
         # Restart the server with new controller
         self.load_webservice()
         self.start_server()
         return SuccessResponse()
 
-    def handle_build_use_server(self):
+    async def handle_build_use_server(self):
         if self.js_compiler is None:
             raise ValueError("JS compiler not initialized")
 
-        asyncio.run(self.js_compiler.build_use_server())
+        await self.js_compiler.build_use_server()
         return SuccessResponse()
 
-    def handle_module_reload(self, module_names: List[str]):
+    async def handle_module_reload(self, module_names: list[str]):
         """Handle module reloading within the isolated context"""
         needs_restart = True
 
@@ -167,14 +170,14 @@ class IsolatedAppContext(Process):
                 traceback="".join(format_exception(e)),
             )
 
-    def handle_js_build(self, updated_js: list[Path] | None = None):
+    async def handle_js_build(self, updated_js: list[Path] | None = None):
         """Handle JS compilation within the isolated context"""
         if self.app_compiler is None:
             raise ValueError("App compiler not initialized")
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
 
-        asyncio.run(self.app_compiler.run_builder_plugins(limit_paths=updated_js))
+        await self.app_compiler.run_builder_plugins(limit_paths=updated_js)
         for path in updated_js or []:
             self.app_controller.invalidate_view(path)
 

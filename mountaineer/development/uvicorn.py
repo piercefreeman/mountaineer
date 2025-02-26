@@ -10,10 +10,24 @@ from uvicorn.server import Server
 
 from mountaineer.logging import LOGGER
 
+KNOWN_OKAY_LOGS = [
+    "Started server process",
+    "Waiting for application startup",
+    "Application startup complete",
+    "Uvicorn running on",
+    "Waiting for application shutdown",
+    "Application shutdown complete",
+]
+
 
 def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
     """
-    Replace Uvicorn's default logging with an updating status display.
+    Uvicorn's default logging is too verbose for our development restart logic, so we
+    replace it with a more concise logging system that only logs certain messages.
+
+    KNOWN_OKAY_LOGS are logs that we expect to see and are not indicative of a problem.
+    Otherwise we pass through error logs so users are still alerted of issues.
+
     """
     # Remove all existing handlers
     for logger_name in ["uvicorn", "uvicorn.error"]:
@@ -24,7 +38,8 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
 
     def log_adapter(logger_name: str):
         def _log(msg: str, *args, **kwargs):
-            if logger_name == "uvicorn.error":
+            is_okay = any(token in msg for token in KNOWN_OKAY_LOGS)
+            if logger_name == "uvicorn.error" and not is_okay:
                 LOGGER.error(msg, *args, **kwargs)
                 return
 
