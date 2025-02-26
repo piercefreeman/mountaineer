@@ -172,6 +172,8 @@ views/
 
 When rendering `dashboard/home/page.tsx`, the view will be wrapped in the `app/dashboard/layout.tsx` layout alongside `app/layout.tsx`. These layout files will be automatically found by Mountaineer during the build process. They don't require any explicit declaration in your Python backend if you're just using them for styling.
 
+For more advanced layout organization, including isolating layouts to specific sections of your application using the `(root)` folder pattern, see the [Layout Organization](./layout-organization) guide.
+
 If you need more server side power and want to define them in Python, you can add a LayoutController that backs the layout.
 
 ### Layout Controllers
