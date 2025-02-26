@@ -1,15 +1,15 @@
 from time import sleep
 
-import psycopg2
+import psycopg
 from click import secho
-from psycopg2 import OperationalError
+from psycopg.errors import OperationalError
 
 from create_mountaineer_app.generation import ProjectMetadata
 
 
 def is_database_ready(metadata: ProjectMetadata):
     try:
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             # Default parameters specified in the templated .env
             dbname=f"{metadata.project_name}_db",
             user=f"{metadata.project_name}",

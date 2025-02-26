@@ -43,7 +43,9 @@ class BuildFailed(Exception):
 
 class DevAppManager:
     """
-    The main entrypoint for managing an isolated development application process with hot-reloading capabilities.
+    The main entrypoint for managing an isolated development application process with hot-reloading
+    capabilities. It acts as the main process's control interface for the isolated app context using
+    higher level instructive functions versus the underlying commands issued by the message broker.
 
     DevAppManager handles the lifecycle and communication with an isolated Python web application,
     running in a separate process for development purposes. It provides process isolation,
@@ -57,21 +59,20 @@ class DevAppManager:
     - Automatic process lifecycle management
     - JS build triggering for frontend changes
 
-    The manager operates through an async context manager pattern:
-
-    ```python
-    async with DevAppManager.from_webcontroller(
-        webcontroller="myapp.controllers:HomeController",
-        host="localhost",
-        port=8000
-    ) as manager:
-        await manager.reload_modules(["myapp.views"])
-    ```
-
     When changes are detected, the manager can either reload specific modules or
     restart the entire server process if necessary. Communication between the main
     process and isolated context happens through a message broker, ensuring clean
     separation of concerns.
+
+    ```python {{sticky: True}}
+    manager = DevAppManager.from_webcontroller(
+        webcontroller="myapp.controllers:HomeController",
+        host="localhost",
+        port=8000
+    )
+    await manager.reload_backend_all()
+    await manager.reload_backend_diff(["myapp.views"])
+    ```
 
     """
 
@@ -226,6 +227,7 @@ class DevAppManager:
         if self.app_context_missing():
             LOGGER.debug("No active app context, returning needs_restart")
             return ReloadResponseError(
+                reloaded=[],
                 exception="No active app context",
                 traceback="No active app context",
                 needs_restart=True,
@@ -237,6 +239,7 @@ class DevAppManager:
                 await self.bootstrap()
             except BuildFailed as e:
                 return ReloadResponseError(
+                    reloaded=[],
                     exception=e.context.exception,
                     traceback=e.context.traceback,
                     # Permanent error - we did reboot but it failed

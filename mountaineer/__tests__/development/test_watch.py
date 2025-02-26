@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from watchfiles import Change
 
-from mountaineer.watch import (
+from mountaineer.development.watch import (
     CallbackDefinition,
     CallbackEvent,
     CallbackMetadata,

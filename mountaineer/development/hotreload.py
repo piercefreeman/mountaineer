@@ -63,13 +63,13 @@ class HotReloader:
     4. Reloading modules in dependency order
     5. Rebuilding inheritance relationships after reloads
 
-    ```python
+    ```python {{sticky: True}}
     reloader = HotReloader(
         root_package="myapp",
         package_path=Path("./myapp"),
         entrypoint="myapp.main"
     )
-    success, reloaded, needs_restart = reloader.reload_modules(["myapp.views"])
+    reloader.reload_modules(["myapp.views"])
     ```
 
     """

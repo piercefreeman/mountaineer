@@ -1,6 +1,6 @@
 import asyncio
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
@@ -24,22 +24,23 @@ from mountaineer.development.messages import (
     ErrorResponse,
     IsolatedMessageBase,
     ReloadResponseError,
+    ReloadResponseSuccess,
     SuccessResponse,
 )
 from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
 )
-from mountaineer.development.watch_server import WatcherWebservice
-from mountaineer.io import async_to_sync
-from mountaineer.logging import LOGGER
-from mountaineer.static import get_static_path
-from mountaineer.watch import (
+from mountaineer.development.watch import (
     CallbackDefinition,
     CallbackMetadata,
     CallbackType,
     PackageWatchdog,
 )
+from mountaineer.development.watch_server import WatcherWebservice
+from mountaineer.io import async_to_sync
+from mountaineer.logging import LOGGER
+from mountaineer.static import get_static_path
 
 
 @dataclass
@@ -49,11 +50,18 @@ class FileChangeServerConfig:
     watcher_webservice: WatcherWebservice | None
 
 
+@dataclass
+class FileChangesState:
+    pending_js: set[Path] = field(default_factory=set)
+    pending_python: set[Path] = field(default_factory=set)
+
+
 async def handle_file_changes_base(
     *,
     package: str,
     metadata: CallbackMetadata,
     app_manager: DevAppManager,
+    file_changes_state: FileChangesState,
     server_config: FileChangeServerConfig | None = None,
 ) -> None:
     """
@@ -69,18 +77,16 @@ async def handle_file_changes_base(
     """
     LOGGER.info(f"Handling file changes: {metadata}")
     start = time()
-    updated_js: set[Path] = set()
-    updated_python: set[Path] = set()
     success = True
 
     # First collect all the files that need updating
     for event in metadata.events:
         if event.path.suffix in KNOWN_JS_EXTENSIONS:
-            updated_js.add(event.path)
+            file_changes_state.pending_js.add(event.path)
         elif event.path.suffix == ".py":
-            updated_python.add(event.path)
+            file_changes_state.pending_python.add(event.path)
 
-    if not (updated_js or updated_python):
+    if not (file_changes_state.pending_js or file_changes_state.pending_python):
         return
 
     # Capture all the logs while our progress bar is the main object
@@ -94,19 +100,23 @@ async def handle_file_changes_base(
             console=CONSOLE,
             transient=True,
         ) as progress:
-            total_steps = len(updated_python) + (1 if updated_js else 0)
+            total_steps = len(file_changes_state.pending_python) + (
+                1 if file_changes_state.pending_js else 0
+            )
             build_task = progress.add_task("[cyan]Building...", total=total_steps)
 
             # Handle Python changes
-            if updated_python:
+            if file_changes_state.pending_python:
                 progress.update(
                     build_task, description="[cyan]Reloading Python modules..."
                 )
-                module_names = [
-                    package_path_to_module(package, module_path)
-                    for module_path in updated_python
-                ]
-                response = await app_manager.reload_backend_diff(module_names)
+                module_names = {
+                    package_path_to_module(package, module_path): module_path
+                    for module_path in file_changes_state.pending_python
+                }
+                response = await app_manager.reload_backend_diff(
+                    list(module_names.keys())
+                )
 
                 if isinstance(response, ErrorResponse):
                     if (
@@ -124,14 +134,27 @@ async def handle_file_changes_base(
                     else:
                         success = False
 
-                progress.update(build_task, advance=len(updated_python))
+                # Mark successful reloads as handled
+                if isinstance(response, (ReloadResponseSuccess, ReloadResponseError)):
+                    reloaded_paths = {
+                        module_names[module_name] for module_name in response.reloaded
+                    }
+                    file_changes_state.pending_python -= reloaded_paths
+
+                progress.update(
+                    build_task, advance=len(file_changes_state.pending_python)
+                )
 
             # Handle JS changes
-            if updated_js:
+            if file_changes_state.pending_js:
                 progress.update(build_task, description="[cyan]Rebuilding frontend...")
                 if server_config:
-                    await app_manager.reload_frontend(list(updated_js))
+                    await app_manager.reload_frontend(
+                        list(file_changes_state.pending_js)
+                    )
                 progress.update(build_task, advance=1)
+
+                file_changes_state.pending_js.clear()
 
         # Wait before we get the logs so we can still capture the logs
         if server_config and success:
@@ -190,12 +213,14 @@ async def handle_watch(
     rich_traceback_install()
 
     app_manager = DevAppManager.from_webcontroller(webcontroller)
+    file_changes_state = FileChangesState()
 
     async def update_build(metadata: CallbackMetadata):
         await handle_file_changes_base(
             package=package,
             metadata=metadata,
             app_manager=app_manager,
+            file_changes_state=file_changes_state,
             server_config=None,
         )
 
@@ -242,6 +267,7 @@ async def handle_runserver(
     app_manager = DevAppManager.from_webcontroller(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
+    file_changes_state = FileChangesState()
 
     # Nonlocal vars for shutdown context
     watchdog: PackageWatchdog
@@ -253,6 +279,7 @@ async def handle_runserver(
             package=package,
             metadata=metadata,
             app_manager=app_manager,
+            file_changes_state=file_changes_state,
             server_config=FileChangeServerConfig(
                 host=host,
                 port=port,

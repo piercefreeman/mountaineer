@@ -1,0 +1,98 @@
+# Build Process
+
+Our "client builder" collection of classes manages generating the Typescript definitions from
+the defined Python controllers. While this component doesn't affect the actual value of the parsed
+values retrieved from the `fetched()` API at runtime, it's critical for development (IDE typehints
+and CI static typechecking). Working with type interfaces that are always in sync with the backend
+is one of the core benefits of using Mountaineer.
+
+Note that this documentation is mostly intended for core maintainers who are working on the
+Mountaineer codebase, versus on projects that use Mountaineer.
+
+## Evolution
+
+In our 0.1-0.8 releases, the client builder operated on the OpenAPI schema that was generated from
+the API server. This ensured that definitions always matched the JS-like typing of the OpenAPI.
+There were some limitations to this approach:
+
+- Loss of inheritance tree: Each controller provided flat functions into the OpenAPI schema,
+  without any of their class inheritance structure. This made it impossible to define function
+  signatures in TS that relied on a common ancessor without specifying all of the downstream
+  client subclasses.
+- Formatting of enum: Enums only define their values within OpenAPI, not their Python names.
+  We would build up a synthetic enum key/value pair based on the string value but in cases
+  where key/value in Python were meaningfully different (e.g. `Enum("foo", "bar")`), we would
+  lose that information.
+
+In 0.9 we moved to a new approach that uses the Python controllers directly to generate the
+TypeScript definitions. This corrects all of the drawbacks of the OpenAPI approach in addition
+to cleaning up the code to more easily make extensions in the future.
+
+Our new architecture is structured like so:
+
+**In-Memory Controllers**: Controllers are loaded into memory from their disk files so we have full
+access to their code signatures and runtime state.
+
+**Parser**: Extracts all metadata of the controllers/models necessary to generate TypeScript definitions. These
+  are stored in intermediate data classes.
+
+  - ControllerWrapper
+  - FieldWrapper
+  - ActionWrapper
+  - ModelWrapper
+  - EnumWrapper
+
+**InterfaceBuilder**: Takes the metadata and generates isolated TypeScript definitions. These are separated by output
+type (interface vs. enum for instance) so we can compartmentalize the string construction of frontend files.
+
+  - ControllerInterface
+  - ModelInterface
+  - EnumInterface
+  - ActionInterface
+
+**FileGenerators**: Write the full TypeScript files to disk, which often requires collecting
+  multiple interfaces, tracking their imports, and assembling into a single file
+
+## App Isolation
+
+When you run our development server via `runserver`, we spawn your app in a new process. This
+process is isolated from the main runserver process by a message broker. This allows us to send messages
+to the app to reload code, restart the server, or shutdown the app.
+
+For small projects, performing a full process restart can be sufficient to update code files. But as projects
+grow larger, the bootup time for Python to read all your modules into memory can become meaningful. Mountaineer works
+around this limitation by implementing a hot-reloader. Our hot reloader waits for changes to files
+on disk and then reloads the changed modules in-memory without a full server restart. We do a best-effort
+approach to build up a DAG of dependencies between modules so we can reload them in the correct order.
+
+There are some cases, however, where we can't naively reload a module. One common case is in SQLAlchemy where Table
+definitions can only be added once to the global registry. If we were to reload a module that added a table to the
+registry, it raises a runtime exception. In these cases our dev app manager will perform a full server restart by shutting down
+the old process and starting a new one.
+
+Regardless of the approach, the main process will wait for the new server to boot up and then send a notification
+to the frontend via our websocket server `WatcherWebservice`.
+
+---
+
+::: mountaineer.development.manager.DevAppManager
+
+---
+
+::: mountaineer.development.isolation.IsolatedAppContext
+
+---
+
+::: mountaineer.development.hotreload.HotReloader
+
+---
+
+::: mountaineer.development.watch.PackageWatchdog
+
+---
+
+::: mountaineer.development.watch_server.WatcherWebservice
+
+---
+
+::: mountaineer.development.messages.AsyncMessageBroker

@@ -43,7 +43,61 @@ LOGGER = setup_internal_logger(__name__)
 class IsolatedAppContext(Process):
     """
     Isolated process that manages the app controller, server, and compilation.
-    This provides a clean slate for module reloading and compilation.
+
+    This class runs the application in a separate process, providing a clean
+    environment for module reloading and compilation without affecting the main process.
+
+    It communicates with the main process through a message broker, handling various
+    operations like module reloading, server restarts, and JS compilation. This isolation
+    enables Mountaineer's hot-reloading capabilities by allowing code to be reloaded
+    without restarting the entire application.
+
+    ```python {{sticky: True}}
+    import asyncio
+    from pathlib import Path
+    from mountaineer.development.messages import AsyncMessageBroker, BootupMessage, ShutdownMessage
+    from mountaineer.development.isolation import IsolatedAppContext
+
+    # Create a message broker for communication
+    broker = AsyncMessageBroker()
+    broker.start()
+
+    # Initialize the isolated context
+    isolated_app = IsolatedAppContext(
+        package="my_app",
+        package_path=Path("./my_app"),
+        module_name="my_app.main",
+        controller_name="app",
+        host="127.0.0.1",
+        port=8000,
+        live_reload_port=3001,
+        message_broker=broker
+    )
+
+    # Start the isolated process
+    isolated_app.start()
+
+    try:
+        # Send bootup message to initialize the app
+        await broker.send_message(BootupMessage())
+
+        print("App started successfully in isolated process!")
+
+        # Wait for some time (in a real app, this would be until shutdown is needed)
+        await asyncio.sleep(5)
+
+    finally:
+        # Send shutdown message and wait for it to complete
+        await broker.send_message(ShutdownMessage())
+
+        # Wait for the process to terminate
+        isolated_app.join(timeout=2)
+        if isolated_app.is_alive():
+            isolated_app.terminate()
+
+        # Clean up the broker
+        await broker.stop()
+    ```
     """
 
     def __init__(
@@ -57,6 +111,18 @@ class IsolatedAppContext(Process):
         live_reload_port: int | None,
         message_broker: AsyncMessageBroker[IsolatedMessageBase[Any]],
     ):
+        """
+        Initialize an isolated application context in a separate process.
+
+        :param package: Name of the main package
+        :param package_path: Path to the package on disk
+        :param module_name: Module name containing the app controller
+        :param controller_name: Variable name of the app controller within the module
+        :param host: Host address to bind the server to
+        :param port: Port number for the web server
+        :param live_reload_port: Port number for the live reload watcher service
+        :param message_broker: Broker for communication between main and isolated processes
+        """
         super().__init__()
         self.package = package
         self.package_path = package_path
@@ -81,7 +147,12 @@ class IsolatedAppContext(Process):
         self._stderr_redirect: redirect_stderr | None = None
 
     def run(self):
-        """Main worker process loop"""
+        """
+        Main process entry point that runs when the process starts.
+
+        This method is called automatically when the process is started with start().
+        It runs the async event loop and handles exceptions gracefully.
+        """
         try:
             asyncio.run(self.run_async())
         except (KeyboardInterrupt, asyncio.CancelledError):
@@ -92,6 +163,16 @@ class IsolatedAppContext(Process):
         LOGGER.debug("Isolated app shutdown complete")
 
     async def run_async(self):
+        """
+        Asynchronous main loop that processes messages from the broker.
+
+        This is the core message handling loop that:
+        1. Retrieves messages from the queue
+        2. Dispatches them to appropriate handlers
+        3. Sends responses back through the broker
+
+        The loop continues until a ShutdownMessage is received.
+        """
         try:
             LOGGER.debug("[IsolatedAppContext] Starting isolated context")
 
@@ -150,6 +231,14 @@ class IsolatedAppContext(Process):
     #
 
     async def handle_bootstrap(self):
+        """
+        Initialize the application state and start the server.
+
+        This is called in response to a BootupMessage and performs the initial setup
+        of the application in the isolated process.
+
+        :return: Success or error response
+        """
         response = self.initialize_app_state()
         if isinstance(response, SuccessResponse):
             await self.start_server()
@@ -157,12 +246,26 @@ class IsolatedAppContext(Process):
         return response
 
     async def handle_restart_server(self):
+        """
+        Restart the web server with the current app controller.
+
+        This reloads the web service and starts a new server instance.
+        Used when the application structure has changed but doesn't need full reinitialization.
+
+        :return: Success response on successful restart
+        """
         # Restart the server with new controller
         self.load_webservice()
         await self.start_server()
         return SuccessResponse()
 
     async def handle_build_use_server(self):
+        """
+        Build the useServer support files for client-side React Server Components.
+
+        :return: Success response on successful build
+        :raises ValueError: If JS compiler is not initialized
+        """
         if self.js_compiler is None:
             raise ValueError("JS compiler not initialized")
 
@@ -170,8 +273,16 @@ class IsolatedAppContext(Process):
         return SuccessResponse()
 
     async def handle_module_reload(self, module_names: list[str]):
-        """Handle module reloading within the isolated context"""
+        """
+        Reload specified Python modules in the isolated context.
+
+        Uses the HotReloader to safely reload modules and their dependencies.
+
+        :param module_names: List of module names to reload
+        :return: Success or error response with details about reloaded modules and restart needs
+        """
         needs_restart = True
+        reloaded: list[str] = []
 
         try:
             if self.hot_reloader is None:
@@ -181,6 +292,7 @@ class IsolatedAppContext(Process):
             reload_status = self.hot_reloader.reload_modules(module_names)
 
             if reload_status.error:
+                reloaded = reload_status.reloaded_modules
                 raise reload_status.error
 
             return ReloadResponseSuccess(
@@ -190,13 +302,22 @@ class IsolatedAppContext(Process):
         except Exception as e:
             LOGGER.debug(f"Failed to reload modules: {e}", exc_info=True)
             return ReloadResponseError(
+                reloaded=reloaded,
                 needs_restart=needs_restart,
                 exception=str(e),
                 traceback="".join(format_exception(e)),
             )
 
     async def handle_js_build(self, updated_js: list[Path] | None = None):
-        """Handle JS compilation within the isolated context"""
+        """
+        Compile JavaScript files based on updated paths.
+
+        Runs the builder plugins and invalidates any affected views in the app controller.
+
+        :param updated_js: Optional list of specific JS files that were updated
+        :return: Success response on successful build
+        :raises ValueError: If app compiler or controller is not initialized
+        """
         if self.app_compiler is None:
             raise ValueError("App compiler not initialized")
         if self.app_controller is None:
@@ -211,7 +332,10 @@ class IsolatedAppContext(Process):
     async def handle_start_capture_logs(self) -> SuccessResponse:
         """
         Start capturing stdout and stderr during module reload.
+
         This method activates the context managers and saves the captures to the instance.
+
+        :return: Success response when capture is started
         """
         self._stdout_capture = StringIO()
         self._stderr_capture = StringIO()
@@ -225,7 +349,9 @@ class IsolatedAppContext(Process):
     async def handle_stop_capture_logs(self) -> CaptureLogsSuccessResponse:
         """
         End capturing stdout and stderr, restore standard streams, and return the captured content.
-        Returns a tuple of (stdout_capture, stderr_capture) containing the captured output.
+
+        :return: Success response containing the captured stdout and stderr
+        :raises RuntimeError: If capturing was not started before stopping
         """
         if (
             not self._stdout_capture
@@ -253,7 +379,11 @@ class IsolatedAppContext(Process):
         )
 
     async def handle_shutdown(self):
-        """Handle shutdown of the isolated context"""
+        """
+        Handle shutdown of the isolated context by stopping the web server.
+
+        :return: Success response when shutdown is complete
+        """
         if self.webservice_thread:
             await self.webservice_thread.astop()
         return SuccessResponse()
@@ -263,7 +393,18 @@ class IsolatedAppContext(Process):
     #
 
     def initialize_app_state(self):
-        """Initialize all app state within the isolated context"""
+        """
+        Initialize all application state components within the isolated context.
+
+        This method:
+        1. Loads the web service and app controller
+        2. Initializes the hot reloader
+        3. Mounts the exception controller for development error pages
+        4. Sets up JS and app compilers
+
+        :return: Success response on successful initialization
+        :raises ValueError: If app controller fails to initialize
+        """
         # Import and initialize the module
         self.load_webservice()
 
@@ -295,12 +436,25 @@ class IsolatedAppContext(Process):
         return SuccessResponse()
 
     def load_webservice(self):
+        """
+        Import the specified module and extract the app controller.
+
+        Dynamically loads the module containing the app controller and
+        retrieves the controller instance from it.
+        """
         self.module = importlib.import_module(self.module_name)
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
 
     async def start_server(self):
-        """Start the uvicorn server"""
+        """
+        Start the Uvicorn server for the web application.
+
+        Configures and launches a UvicornThread to serve the application.
+        If a server is already running, it will be stopped first.
+
+        :raises ValueError: If app controller is not initialized
+        """
         if self.webservice_thread is not None:
             await self.webservice_thread.astop()
 
@@ -324,6 +478,14 @@ class IsolatedAppContext(Process):
     #
 
     def mount_exceptions(self, app_controller: AppController):
+        """
+        Mount the exception controller to the app controller for custom error pages.
+
+        This adds development-friendly error pages with stack traces and debugging information.
+        It ensures the exception controller is only mounted once.
+
+        :param app_controller: The app controller to mount the exception controller on
+        """
         # Don't re-mount the exception controller
         current_controllers = [
             controller_definition.controller.__class__.__name__
@@ -335,6 +497,17 @@ class IsolatedAppContext(Process):
             app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
+        """
+        Handle exceptions in development mode with enhanced error pages.
+
+        For GET requests, renders a detailed error page with stack traces and debugging info.
+        For other request types, re-raises the exception to be handled by the framework.
+
+        :param request: The FastAPI request object
+        :param exc: The exception that was raised
+        :return: HTML response for GET requests
+        :raises: The original exception for non-GET requests
+        """
         if request.method == "GET":
             html = await self.exception_controller._definition.view_route(  # type: ignore
                 exception=str(exc),

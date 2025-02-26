@@ -44,9 +44,48 @@ class ColorHandler(StreamHandler):
 
 def setup_logger(name, log_level=logging.DEBUG):
     """
-    Constructor for the main logger used by Mountaineer. Provided
-    convenient defaults for log level and formatting, alongside coloring
-    of stdout/stderr messages and JSON fields for structured parsing.
+    Constructor for the main logger used by Mountaineer and optionally for client
+    applications as well. Provided convenient defaults for log level and formatting,
+    alongside coloring of stdout/stderr messages and JSON fields for structured parsing.
+
+    Logs are formatted one per line:
+    ```json
+    {"level": "INFO", "name": "myapp.logging", "timestamp": "2025-02-25 20:40:35,896", "message": "Application started"}
+    ```
+
+    To grep over these logs and filter for level, do:
+
+    ```bash
+    # Filter for specific log level
+    grep '"level": "ERROR"' logfile.txt
+
+    # Filter logs by service name
+    grep '"name": "myapp.logging"' logfile.txt
+
+    # With jq for more advanced JSON parsing
+    cat logfile.txt | jq 'select(.level=="ERROR" or .level=="WARNING")'
+
+    # Filter by message content
+    grep -E '"message": ".*database.*"' logfile.txt
+    ```
+
+    ```python {{sticky: True}}
+    from mountaineer.logging import setup_logger
+    import logging
+
+    # Create a logger for your module
+    logger = setup_logger(__name__, log_level=logging.INFO)
+
+    # Use the logger
+    logger.info("Application started")
+    logger.warning("Configuration incomplete")
+    logger.error("Failed to connect to database")
+    ```
+
+    :param name: The name of the logger, typically the module name
+    :param log_level: The logging level. Defaults to logging.DEBUG to log everything.
+
+    :return: A configured logger instance
 
     """
     logger = getLogger(name)
