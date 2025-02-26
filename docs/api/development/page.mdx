@@ -67,7 +67,7 @@ approach to build up a DAG of dependencies between modules so we can reload them
 
 There are some cases, however, where we can't naively reload a module. One common case is in SQLAlchemy where Table
 definitions can only be added once to the global registry. If we were to reload a module that added a table to the
-registry, we would see an error. In these cases our dev app manager will perform a full server restart by shutting down
+registry, it raises a runtime exception. In these cases our dev app manager will perform a full server restart by shutting down
 the old process and starting a new one.
 
 Regardless of the approach, the main process will wait for the new server to boot up and then send a notification

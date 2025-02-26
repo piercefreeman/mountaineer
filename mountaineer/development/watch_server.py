@@ -22,7 +22,6 @@ class WatcherWebservice:
     enabling backend changes to trigger frontend refreshes without manual intervention.
     It runs as a lightweight FastAPI application in a separate thread.
 
-    ```
     """
 
     def __init__(self, webservice_host: str, webservice_port: int | None = None):

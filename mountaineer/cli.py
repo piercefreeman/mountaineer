@@ -154,6 +154,8 @@ async def handle_file_changes_base(
                     )
                 progress.update(build_task, advance=1)
 
+                file_changes_state.pending_js.clear()
+
         # Wait before we get the logs so we can still capture the logs
         if server_config and success:
             start_time = time()
