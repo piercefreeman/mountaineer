@@ -18,7 +18,7 @@ from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.development.manager import (
     DevAppManager,
 )
-from mountaineer.development.messages import ErrorResponse
+from mountaineer.development.messages import ErrorResponse, ReloadResponseError
 from mountaineer.development.packages import (
     find_packages_with_prefix,
     package_path_to_module,
@@ -177,7 +177,10 @@ async def handle_runserver(
                     response = await app_manager.reload_modules(module_names)
 
                     if isinstance(response, ErrorResponse):
-                        if response.needs_restart:
+                        if (
+                            isinstance(response, ReloadResponseError)
+                            and response.needs_restart
+                        ):
                             progress.update(
                                 build_task, description="[cyan]Restarting server..."
                             )

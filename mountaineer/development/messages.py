@@ -68,7 +68,7 @@ class ReloadModulesMessage(
 class BuildJsMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
     """Message to trigger JS compilation"""
 
-    updated_js: list[Path]
+    updated_js: list[Path] | None
 
 
 @dataclass

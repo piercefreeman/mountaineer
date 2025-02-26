@@ -90,7 +90,9 @@ class IsolatedAppContext(Process):
                     elif isinstance(message, BuildUseServerMessage):
                         response = self.handle_build_use_server()
                     elif isinstance(message, ShutdownMessage):
-                        self.message_broker.response_queue.put((message_id, SuccessResponse()))
+                        self.message_broker.response_queue.put(
+                            (message_id, SuccessResponse())
+                        )
                         break
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")

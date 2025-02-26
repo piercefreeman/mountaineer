@@ -1,6 +1,7 @@
 import os
 import socket
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, TypeVar
 
 from mountaineer.console import CONSOLE
@@ -14,6 +15,7 @@ from mountaineer.development.messages import (
     IsolatedMessageBase,
     ReloadModulesMessage,
     ReloadResponseError,
+    ReloadResponseSuccess,
     RestartServerMessage,
     ShutdownMessage,
     SuccessResponse,
@@ -129,6 +131,16 @@ class DevAppManager:
         port: int | None = None,
         live_reload_port: int | None = None,
     ):
+        """
+        Create a DevAppManager instance from a webcontroller string.
+
+        :param webcontroller: String in format "module.path:ControllerClass"
+        :param host: Optional host address to bind the server to
+        :param port: Optional port number to run the server on
+        :param live_reload_port: Optional port for live reload websocket connections
+        :return: A new DevAppManager instance configured with the parsed controller information
+
+        """
         package = webcontroller.split(".")[0]
         module_name = webcontroller.split(":")[0]
         controller_name = webcontroller.split(":")[1]
@@ -142,21 +154,21 @@ class DevAppManager:
             live_reload_port=live_reload_port,
         )
 
-    @asynccontextmanager
-    async def start_broker(self):
-        """Start the message broker when entering async context"""
-        try:
-            self.message_broker.start()
-            yield self
-        finally:
-            await self.message_broker.stop()
-
     #
     # Server Management
     #
 
-    async def restart_server(self):
-        """Restart the server in a fresh process"""
+    async def restart_server(self) -> SuccessResponse | ErrorResponse:
+        """
+        Restart the server in a fresh process.
+
+        This method handles the graceful shutdown of any existing server process
+        and starts a new one. It also performs initial bootstrap and frontend setup.
+
+        :return: Success if the server restarts properly, Error if any step fails
+        :raises ValueError: If the port is not set
+
+        """
         LOGGER.debug("Restarting server")
         if not self.port:
             LOGGER.debug("Error: Port not set")
@@ -197,7 +209,16 @@ class DevAppManager:
 
         return SuccessResponse()
 
-    async def bootstrap(self):
+    async def bootstrap(self) -> SuccessResponse | ErrorResponse:
+        """
+        Bootstrap the application context.
+
+        Performs initial setup of the application including bootup sequence
+        and useServer support file generation.
+
+        :return: Success if bootstrap completes, Error if any step fails
+
+        """
         # Send a bootup request and handle the initialization process
         # Any subsequent reload message received before we bootstrap should do a full bootup
         try:
@@ -216,19 +237,28 @@ class DevAppManager:
         except BuildFailed as e:
             return e.context
 
-    async def reload_modules(self, module_names: list[str]):
+    async def reload_modules(
+        self, module_names: list[str]
+    ) -> ReloadResponseSuccess | ReloadResponseError | ErrorResponse:
         """
-        Signal the context to reload modules and wait for response.
-        Returns a tuple of (success, reloaded_modules, needs_restart).
+        Reload specified Python modules in the application context.
+
+        This method handles both hot-reloading of modules and full server restarts
+        when necessary. If the application hasn't been bootstrapped, it will
+        perform a full bootstrap before attempting to reload.
+
+        :param module_names: List of module names to reload
+        :return: Success if modules reload properly, Error with needs_restart flag if server needs to be restarted
+
         """
         LOGGER.debug(f"Attempting to reload modules: {module_names}")
         LOGGER.debug(f"Current process: {os.getpid()}")
 
         if self.app_context_missing():
-            LOGGER.debug(
-                "No active app context, returning needs_restart"
-            )
+            LOGGER.debug("No active app context, returning needs_restart")
             return ReloadResponseError(
+                exception="No active app context",
+                traceback="No active app context",
                 needs_restart=True,
             )
 
@@ -248,9 +278,6 @@ class DevAppManager:
             # Reloading specific modules won't hurt.
             LOGGER.debug("Successfully booted up")
 
-        LOGGER.debug("Sending reload message")
-        LOGGER.debug(f"App context process ID: {self.app_context.pid}")
-
         try:
             reload_response = await self.communicate(
                 ReloadModulesMessage(module_names=module_names)
@@ -261,8 +288,17 @@ class DevAppManager:
         except BuildFailed as e:
             return e.context
 
-    async def reload_frontend(self, updated_js: list[str] | None = None):
-        """Signal the context to rebuild JS"""
+    async def reload_frontend(
+        self, updated_js: list[Path] | None = None
+    ) -> SuccessResponse | ErrorResponse:
+        """
+        Trigger a rebuild of the frontend JavaScript.
+
+        :param updated_js: Optional list of JavaScript files that were updated
+        :return: Success if frontend rebuilds properly, Error if build fails or no context exists
+        :rtype: SuccessResponse | ErrorResponse
+
+        """
         LOGGER.debug("Requesting JS build")
         if self.app_context_missing():
             return ErrorResponse(
@@ -276,14 +312,47 @@ class DevAppManager:
             return e.context
 
     #
+    # Required contexts
+    #
+
+    @asynccontextmanager
+    async def start_broker(self):
+        """
+        Start the message broker in an async context.
+
+        This context manager ensures proper startup and cleanup of the message broker.
+
+        :yields: The current instance with an active message broker
+
+        """
+        try:
+            self.message_broker.start()
+            yield self
+        finally:
+            await self.message_broker.stop()
+
+    #
     # Helper methods
     #
 
     def app_context_missing(self):
+        """
+        Check if the application context is missing or inactive.
+
+        :return: True if there is no active app context, False otherwise
+
+        """
         return not (self.app_context and self.app_context.is_alive())
 
     def is_port_open(self, host, port):
-        """Check if a port is open on the given host."""
+        """
+        Check if a specific port is open on the given host.
+
+        :param host: The host address to check
+        :param port: The port number to check
+        :return: True if the port is open, False otherwise
+
+        """
         LOGGER.debug(f"Checking if port {port} is open on {host}")
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -298,9 +367,16 @@ class DevAppManager:
     async def communicate(
         self, message: IsolatedMessageBase[TSuccess | TError]
     ) -> TSuccess:
-        LOGGER.debug(
-            f"Host->Context: Communicating with message: {message}"
-        )
+        """
+        Send a message to the isolated context and await its response.
+
+        :param message: The message to send to the isolated context
+        :return: The successful response from the isolated context
+        :raises BuildFailed: If the context returns an error response
+        :raises ValueError: If the response type is invalid
+
+        """
+        LOGGER.debug(f"Host->Context: Communicating with message: {message}")
         response = await self.message_broker.send_message(message)
         LOGGER.debug(f"Host<-Context: Got response: {response}")
 
