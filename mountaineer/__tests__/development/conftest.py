@@ -125,7 +125,6 @@ def app_package(isolated_package_dir: tuple[Path, str]) -> AppPackageType:
 
     # Views directory with TypeScript React component
     views_dir = package_path / "views"
-    views_dir.mkdir()
 
     # Set up package.json and install dependencies
     create_package_json(views_dir)

@@ -14,8 +14,7 @@ def test_from_webcontroller(manager: DevAppManager, app_package: AppPackageType)
 
 def test_npm_setup(app_package: AppPackageType):
     """Test that npm dependencies were installed correctly."""
-    _, tmp_dir, _ = app_package
-    package_path = tmp_dir / "test_package"
+    _, package_path, _ = app_package
 
     # Check that node_modules exists
     assert (package_path / "views" / "node_modules").exists()
