@@ -79,6 +79,11 @@ jobs:
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
           echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
 
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
@@ -202,6 +207,11 @@ jobs:
           echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
           echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
           echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
+
+      - name: Set up Python 3.10 (min supported version)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
       # Before we start building, validate that the Rust code compiles
       # This helps to detect errors on different underlying architectures, since
