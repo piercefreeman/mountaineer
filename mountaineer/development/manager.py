@@ -185,6 +185,7 @@ class DevAppManager:
         LOGGER.debug("Starting new app context")
         self.app_context = IsolatedAppContext(
             package=self.package,
+            package_path=Path(self.package.replace(".", "/")),
             module_name=self.module_name,
             controller_name=self.controller_name,
             host=self.host,

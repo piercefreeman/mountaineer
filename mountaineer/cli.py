@@ -239,7 +239,7 @@ async def handle_runserver(
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
     )
-    watcher_webservice.start()
+    await watcher_webservice.start()
 
     app_manager = DevAppManager.from_webcontroller(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
@@ -342,6 +342,7 @@ async def handle_build(
     # Initialize the isolated context directly
     isolated_context = IsolatedAppContext(
         package=package,
+        package_path=Path(package.replace(".", "/")),
         module_name=module_name,
         controller_name=controller_name,
         host=None,

@@ -49,6 +49,7 @@ class IsolatedAppContext(Process):
     def __init__(
         self,
         package: str,
+        package_path: Path,
         module_name: str,
         controller_name: str,
         host: str | None,
@@ -58,6 +59,7 @@ class IsolatedAppContext(Process):
     ):
         super().__init__()
         self.package = package
+        self.package_path = package_path
         self.module_name = module_name
         self.controller_name = controller_name
         self.host = host
@@ -148,14 +150,14 @@ class IsolatedAppContext(Process):
     async def handle_bootstrap(self):
         response = self.initialize_app_state()
         if isinstance(response, SuccessResponse):
-            self.start_server()
+            await self.start_server()
 
         return response
 
     async def handle_restart_server(self):
         # Restart the server with new controller
         self.load_webservice()
-        self.start_server()
+        await self.start_server()
         return SuccessResponse()
 
     async def handle_build_use_server(self):
@@ -251,7 +253,7 @@ class IsolatedAppContext(Process):
     async def handle_shutdown(self):
         """Handle shutdown of the isolated context"""
         if self.webservice_thread:
-            self.webservice_thread.stop()
+            await self.webservice_thread.astop()
         return SuccessResponse()
 
     #
@@ -269,7 +271,7 @@ class IsolatedAppContext(Process):
         # Initialize hot reloader
         self.hot_reloader = HotReloader(
             root_package=self.package,
-            package_path=Path(self.package.replace(".", "/")),
+            package_path=self.package_path,
             entrypoint=self.module_name,
         )
 
@@ -295,10 +297,10 @@ class IsolatedAppContext(Process):
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
         self.app_controller = initial_state[self.controller_name]
 
-    def start_server(self):
+    async def start_server(self):
         """Start the uvicorn server"""
         if self.webservice_thread is not None:
-            self.webservice_thread.stop()
+            await self.webservice_thread.astop()
 
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
@@ -313,7 +315,7 @@ class IsolatedAppContext(Process):
             host=self.host or "127.0.0.1",
             port=self.port,
         )
-        self.webservice_thread.start()
+        await self.webservice_thread.astart()
 
     #
     # Dev Hooks

@@ -178,6 +178,8 @@ class HotReloader:
             package_init = self.package_path / relative_path / "__init__.py"
             if package_init.exists():
                 module_path = package_init
+            elif str(relative_path) == ".":
+                return None
             else:
                 # Else, assume it's a module (.py file)
                 module_py = self.package_path / relative_path.with_suffix(".py")

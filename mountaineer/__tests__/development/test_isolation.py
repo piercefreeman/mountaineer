@@ -74,6 +74,7 @@ async def isolated_context(
     pkg_dir, pkg_name = simple_webapp
     context = IsolatedAppContext(
         package=pkg_name,
+        package_path=pkg_dir,
         module_name=f"{pkg_name}.app",
         controller_name="app",
         host="127.0.0.1",
@@ -119,10 +120,9 @@ async def test_handle_restart_server(isolated_context: IsolatedAppContext):
 @pytest.mark.asyncio
 async def test_handle_build_use_server(isolated_context: IsolatedAppContext):
     """Test use_server build handling"""
-    assert isolated_context.js_compiler is not None
-
     # First bootstrap to initialize
     await isolated_context.handle_bootstrap()
+    assert isolated_context.js_compiler is not None
 
     # Mock the build_use_server method
     async def mock_build():
@@ -136,10 +136,9 @@ async def test_handle_build_use_server(isolated_context: IsolatedAppContext):
 @pytest.mark.asyncio
 async def test_handle_js_build(isolated_context: IsolatedAppContext):
     """Test JS build handling"""
-    assert isolated_context.app_compiler is not None
-
     # First bootstrap to initialize
     await isolated_context.handle_bootstrap()
+    assert isolated_context.app_compiler is not None
 
     # Mock the run_builder_plugins method
     async def mock_build(*args, **kwargs):

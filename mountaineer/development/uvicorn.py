@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import socket
 from threading import Thread
-from time import sleep
+from time import time
 from typing import Optional
 
 from fastapi import FastAPI
@@ -43,7 +44,8 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
             is_okay = any(token in msg for token in KNOWN_OKAY_LOGS)
             if logger_name == "uvicorn.error" and not is_okay:
                 LOGGER.error(msg, *args, **kwargs)
-                return
+            else:
+                LOGGER.debug(msg, *args, **kwargs)
 
         return _log
 
@@ -76,6 +78,8 @@ class UvicornThread(Thread):
         self.server: Optional[Server] = None
         self.use_logs = use_logs
 
+        self.shutdown = False
+
     def run(self) -> None:
         # Configure logging before creating the server
         if self.use_logs:
@@ -97,19 +101,69 @@ class UvicornThread(Thread):
 
         loop.run_until_complete(server.serve())
 
-    def stop(self) -> None:
+    async def astart(self, timeout: int = 5) -> None:
+        super().start()
+
+        # Wait until the server has self-flagged server.started and it's bound to the
+        # desired port. If we we timeout waiting for either signal, then raise an error.
+        did_start = False
+        start = time()
+        while time() - start < timeout:
+            is_mounted = (
+                self.server and self.server.started and not self._is_port_free()
+            )
+            if is_mounted:
+                did_start = True
+                break
+
+            await asyncio.sleep(0.1)
+
+        if not did_start:
+            raise TimeoutError(f"Server did not start in {timeout}s")
+
+    async def astop(self, timeout: int = 1) -> None:
+        """
+        Attempts to stop the server gracefully. If the server does not stop
+        within the given timeout, then we forcefully kill the server.
+
+        """
         if self.server is not None:
             self.server.should_exit = True
 
-        # Wait until the server is stopped
-        total_wait = 10
-        remaining_wait = total_wait
-        wait_interval = 0.1
+        # Check if the port is still bound
+        did_stop = False
+        start = time()
+        while time() - start < timeout:
+            if self._is_port_free():
+                did_stop = True
+                break
 
-        while self.is_alive():
-            remaining_wait -= 1
-            if remaining_wait <= 0:
-                raise TimeoutError(
-                    f"Server did not stop in {total_wait * wait_interval}s"
-                )
-            sleep(wait_interval)
+            await asyncio.sleep(0.1)
+
+        # If we get here, the port is still bound after all our checks
+        if not did_stop:
+            raise TimeoutError(
+                f"Server stopped but port {self.port} is still bound after {timeout}s"
+            )
+
+    def start(self) -> None:
+        raise NotImplementedError("Use astart() instead")
+
+    def stop(self) -> None:
+        raise NotImplementedError("Use astop() instead")
+
+    def _is_port_free(self) -> bool:
+        """
+        Check if the port is free by attempting to bind to it.
+        Returns True if the port is free, False if it's still in use.
+        """
+        try:
+            # Create a socket and try to bind to the port
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.1)  # Set a short timeout
+                s.bind((self.host, self.port))
+                # If we get here, binding succeeded, port is free
+                return True
+        except (socket.error, OSError):
+            # Port is still in use
+            return False
