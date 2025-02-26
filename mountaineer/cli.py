@@ -132,23 +132,24 @@ async def handle_file_changes_base(
                     await app_manager.reload_frontend(list(updated_js))
                 progress.update(build_task, advance=1)
 
-        # Print captured logs if available
-        captured_logs = stdout_capture.read()
-        captured_errors = stderr_capture.read()
-        if captured_logs.strip():
-            CONSOLE.print("\n[bold blue]App Build Logs:[/bold blue]")
-            CONSOLE.print(captured_logs)
-        if captured_errors.strip():
-            CONSOLE.print("\n[bold red]App Build Errors:[/bold red]")
-            CONSOLE.print(captured_errors)
-
-        # Use StatusDisplay for the indeterminate server wait
+        # Wait before we get the logs so we can still capture the logs
         if server_config and success:
             start_time = time()
             while time() - start_time < 5:
                 if app_manager.is_port_open(server_config.host, server_config.port):
                     break
                 await asyncio.sleep(0.1)
+
+    # Print captured logs if available
+    captured_logs = stdout_capture.getvalue()
+    captured_errors = stderr_capture.getvalue()
+
+    if captured_logs.strip():
+        CONSOLE.print("\n[bold blue]App Build Logs:[/bold blue]")
+        CONSOLE.print(captured_logs)
+    if captured_errors.strip():
+        CONSOLE.print("\n[bold red]App Build Errors:[/bold red]")
+        CONSOLE.print(captured_errors)
 
     if server_config and server_config.watcher_webservice:
         server_config.watcher_webservice.notification_queue.put(True)
@@ -265,7 +266,7 @@ async def handle_runserver(
     async with app_manager.start_broker():
         await app_manager.reload_backend_all()
 
-        CONSOLE.print(f"🚀 Dev webserver ready at http://{host}:{port}")
+        CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
 
         signal(SIGINT, handle_shutdown)
 

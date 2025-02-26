@@ -341,11 +341,6 @@ class DevAppManager:
             stdout_capture.write(response_logs.captured_logs)
             stderr_capture.write(response_logs.captured_errors)
 
-            # Now we just have to rewind to the beginning of the StringIO objects
-            # so that the caller can read them with a simple read()
-            stdout_capture.seek(0)
-            stderr_capture.seek(0)
-
     #
     # Helper methods
     #
