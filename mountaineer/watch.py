@@ -177,7 +177,7 @@ class PackageWatchdog:
         ):
             await watcher.process_changes(changes)
 
-    async def stop_watching(self):
+    def stop_watching(self):
         self.stop_event.set()
         self.stop_event = asyncio.Event()
         self.running = False

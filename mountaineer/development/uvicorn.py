@@ -142,9 +142,7 @@ class UvicornThread(Thread):
 
         # If we get here, the port is still bound after all our checks
         if not did_stop:
-            raise TimeoutError(
-                f"Server stopped but port {self.port} is still bound after {timeout}s"
-            )
+            raise TimeoutError(f"Server did not stop after {timeout}s")
 
     def start(self) -> None:
         raise NotImplementedError("Use astart() instead")

@@ -293,8 +293,14 @@ class DevAppManager:
         if self.app_context is None:
             raise ValueError("No app context to shut down")
 
+        # If it's not running, we don't have anything to do
+        if not self.app_context.is_alive():
+            return
+
+        # One way message signal to the app context to shutdown, since once
+        # the process fully shuts down it might also terminate the message pipe
         LOGGER.debug("Shutting down existing app context")
-        await self.communicate(ShutdownMessage())
+        self.message_broker.send_message(ShutdownMessage())
         LOGGER.debug("Waiting for app context to join")
 
         self.app_context.join(timeout=5)

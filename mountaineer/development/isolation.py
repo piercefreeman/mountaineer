@@ -89,6 +89,8 @@ class IsolatedAppContext(Process):
         except Exception as e:
             LOGGER.error(f"Isolated app context failed: {e}", exc_info=True)
 
+        LOGGER.debug("Isolated app shutdown complete")
+
     async def run_async(self):
         try:
             LOGGER.debug("[IsolatedAppContext] Starting isolated context")
@@ -141,7 +143,7 @@ class IsolatedAppContext(Process):
             LOGGER.error(f"Isolated app context failed: {e}", exc_info=True)
         finally:
             if self.webservice_thread:
-                self.webservice_thread.stop()
+                await self.webservice_thread.astop()
 
     #
     # Message Handlers

@@ -1,9 +1,10 @@
 import asyncio
+import os
 from dataclasses import dataclass
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
-from signal import SIGINT, signal
+from signal import SIGINT
 from time import time
 from typing import Any, Callable, Coroutine
 
@@ -235,18 +236,17 @@ async def handle_runserver(
 
     CONSOLE.print("🏔️ Booting up Mountaineer")
 
-    # Initialize components
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
     )
-    await watcher_webservice.start()
-
     app_manager = DevAppManager.from_webcontroller(
         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
 
-    # Create a variable to hold the watchdog for access during shutdown
-    watchdog = None
+    # Nonlocal vars for shutdown context
+    watchdog: PackageWatchdog
+    loop = asyncio.get_event_loop()
+    shutdown_count = 0
 
     async def handle_file_changes(metadata: CallbackMetadata):
         await handle_file_changes_base(
@@ -261,46 +261,41 @@ async def handle_runserver(
         )
 
     async def handle_shutdown_async():
-        CONSOLE.print("[yellow]Starting shutdown")
+        try:
+            nonlocal watchdog
+            nonlocal shutdown_count
 
-        shutdown_error = False
+            shutdown_count += 1
+            if shutdown_count > 1:
+                # Hard exit if we get a second shutdown request
+                CONSOLE.print("[red]Hard shutdown requested")
+                os._exit(1)
 
-        # Cancel the watchfiles task
-        if watchdog:
-            await watchdog.stop_watching()
+            CONSOLE.print("[yellow]Starting shutdown")
 
-        # First try to shutdown the app context if it exists
-        if app_manager.app_context and app_manager.app_context.is_alive():
-            try:
-                await app_manager.shutdown()
-            except Exception as e:
-                CONSOLE.print(f"[red]Error shutting down app context: {e}")
-                shutdown_error = True
+            # Stop the watchdog and start the cleanup logic
+            if watchdog:
+                watchdog.stop_watching()
 
-        # Then stop the watcher webservice
-        if not watcher_webservice.stop(wait_for_completion=3):
-            CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
-            shutdown_error = True
-
-        if shutdown_error:
-            CONSOLE.print("[red]Shutdown failed, hard exiting")
-            exit(1)
-
-        CONSOLE.print("[green]Shutdown complete")
+            # Yield control back to the watchfiles loop so we can
+            # fully exit
+            await asyncio.sleep(0.01)
+        except Exception as e:
+            CONSOLE.print(f"[red]Error shutting down: {e}")
+            os._exit(1)
 
     def handle_shutdown(*args, **kwargs):
-        loop = asyncio.get_event_loop()
-
-        # Schedule the shutdown coroutine and create a future for it
-        asyncio.ensure_future(handle_shutdown_async(), loop=loop)
+        nonlocal loop
+        loop.create_task(handle_shutdown_async())
 
     # Start the message broker
     async with app_manager.start_broker():
+        await watcher_webservice.start()
         await app_manager.reload_backend_all()
 
         CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
 
-        signal(SIGINT, handle_shutdown)
+        loop.add_signal_handler(SIGINT, handle_shutdown)
 
         watchdog = build_common_watchdog(
             package,
@@ -308,6 +303,27 @@ async def handle_runserver(
             subscribe_to_mountaineer=subscribe_to_mountaineer,
         )
         await watchdog.start_watching()
+
+        shutdown_error = False
+
+        # First try to shutdown the app context if it exists
+        if app_manager.app_context:
+            try:
+                await app_manager.shutdown()
+            except Exception as e:
+                CONSOLE.print(f"[red]Error shutting down app context: {e}")
+                shutdown_error = True
+
+        # Then stop the watcher webservice
+        if not await watcher_webservice.stop(wait_for_completion=3):
+            CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
+            shutdown_error = True
+
+    if shutdown_error:
+        CONSOLE.print("[red]Shutdown failed, hard exiting")
+        os._exit(1)
+
+    CONSOLE.print("[green]Shutdown complete")
 
 
 @async_to_sync
