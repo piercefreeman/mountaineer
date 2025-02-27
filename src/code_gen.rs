@@ -42,7 +42,7 @@ pub fn build_entrypoint(
         entrypoint_content += "const container = document.getElementById('root');\n";
         entrypoint_content += "hydrateRoot(container, <Entrypoint />);\n";
     } else {
-        entrypoint_content += "import { renderToString } from 'react-dom/server';\n";
+        entrypoint_content += "import { renderToString } from 'react-dom/server.node';\n";
         entrypoint_content += "export const Index = () => renderToString(<Entrypoint />);\n";
     }
 
