@@ -1,3 +1,19 @@
+# Logging
+
+Mountaineer bundles a `mountaineer.logging` module for service-level logs. To adjust
+the verbosity of Mountaineer's logs, set the `MOUNTAINEER_LOG_LEVEL` environment
+variable.
+
+```bash
+MOUNTAINEER_LOG_LEVEL=WARN mountaineer runserver
+```
+
+We also provide some helper functions to use our same logging convention in your
+own code. We optimize for structured logging, where your logs are outputted as a
+stream of JSON-line formatted logs so they can be quickly parsed by bash pipes or
+by logging aggregation tools.
+
+---
 
 ::: mountaineer.logging.setup_logger
 
