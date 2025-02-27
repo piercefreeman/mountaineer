@@ -336,8 +336,19 @@ pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError>
 mod tests {
     use super::*;
 
+    // Initialize V8 platform once before running any tests
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+
+    fn initialize() {
+        INIT.call_once(|| {
+            init_v8_platform();
+        });
+    }
+
     #[test]
     fn render_no_timeout() {
+        initialize();
         let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
         let hard_timeout = 0;
 
@@ -347,6 +358,7 @@ mod tests {
 
     #[test]
     fn render_with_timeout() {
+        initialize();
         let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
         let hard_timeout = 2000;
 
@@ -356,6 +368,7 @@ mod tests {
 
     #[test]
     fn check_ssr_struct_instance() {
+        initialize();
         let js = Ssr::new(
             r##"var SSR = {x: () => "<html></html>"};"##.to_string(),
             "SSR",
@@ -372,6 +385,7 @@ mod tests {
 
     #[test]
     fn check_exception() {
+        initialize();
         let js = Ssr::new(
             r##"
                 var SSR = {
@@ -392,6 +406,7 @@ mod tests {
 
     #[test]
     fn test_render_to_string() {
+        initialize();
         let js = Ssr::new(
             r##"
                 var SSR = {
@@ -407,10 +422,10 @@ mod tests {
 
     #[test]
     fn test_log_to_stdout() {
+        initialize();
         // Create a synthetic stdout that we can inspect
         let stdout = Arc::new(Mutex::new(Vec::new()));
 
-        init_v8_platform();
         let result = Ssr::render(
             r##"
                 var SSR = {
@@ -436,6 +451,7 @@ mod tests {
 
     #[test]
     fn test_timezone_succeeds() {
+        initialize();
         // More context:
         // https://github.com/denoland/rusty_v8/issues/1444
         // https://github.com/denoland/rusty_v8/pull/603
