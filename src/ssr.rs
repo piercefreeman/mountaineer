@@ -49,32 +49,30 @@ struct LoggerData {
 // Ensure that LoggerData can be sent safely across threads.
 unsafe impl Send for LoggerData {}
 
+fn init_v8_platform() {
+    lazy_static! {
+      static ref INIT_PLATFORM: () = {
+          // Include ICU data file.
+          // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
+          v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
+
+          //Initialize a new V8 platform
+          let platform = v8::new_default_platform(0, false).make_shared();
+          v8::V8::initialize_platform(platform);
+          v8::V8::initialize();
+      };
+    }
+
+    lazy_static::initialize(&INIT_PLATFORM);
+}
+
 impl<'a> Ssr<'a> {
     /// Create an instance of the Ssr struct instanciate the v8 platform as well.
     pub fn new(source: String, entry_point: &'a str) -> Self {
-        Self::init_platform();
-
         Ssr {
             source,
             entry_point,
         }
-    }
-
-    fn init_platform() {
-        lazy_static! {
-          static ref INIT_PLATFORM: () = {
-              // Include ICU data file.
-              // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
-              v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
-
-              //Initialize a new V8 platform
-              let platform = v8::new_default_platform(0, false).make_shared();
-              v8::V8::initialize_platform(platform);
-              v8::V8::initialize();
-          };
-        }
-
-        lazy_static::initialize(&INIT_PLATFORM);
     }
 
     /// Evaluates the JS source code instanciate in the Ssr struct
@@ -313,6 +311,12 @@ impl<'a> Ssr<'a> {
 }
 
 pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
+    // init_platform must always be called from the main thread. CPU chipsets that have
+    // the PKU flag (like Skylake) will sometimes cause a crash if it's initialized on
+    // a non-main thread and the isolate tries to allocate memory.
+    // Context: https://github.com/denoland/rusty_v8/issues/1381
+    init_v8_platform();
+
     if hard_timeout > 0 {
         timeout::run_thread_with_timeout(
             || {
@@ -332,8 +336,19 @@ pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError>
 mod tests {
     use super::*;
 
+    // Initialize V8 platform once before running any tests
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+
+    fn initialize() {
+        INIT.call_once(|| {
+            init_v8_platform();
+        });
+    }
+
     #[test]
     fn render_no_timeout() {
+        initialize();
         let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
         let hard_timeout = 0;
 
@@ -343,6 +358,7 @@ mod tests {
 
     #[test]
     fn render_with_timeout() {
+        initialize();
         let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
         let hard_timeout = 2000;
 
@@ -352,6 +368,7 @@ mod tests {
 
     #[test]
     fn check_ssr_struct_instance() {
+        initialize();
         let js = Ssr::new(
             r##"var SSR = {x: () => "<html></html>"};"##.to_string(),
             "SSR",
@@ -368,6 +385,7 @@ mod tests {
 
     #[test]
     fn check_exception() {
+        initialize();
         let js = Ssr::new(
             r##"
                 var SSR = {
@@ -388,6 +406,7 @@ mod tests {
 
     #[test]
     fn test_render_to_string() {
+        initialize();
         let js = Ssr::new(
             r##"
                 var SSR = {
@@ -403,10 +422,10 @@ mod tests {
 
     #[test]
     fn test_log_to_stdout() {
+        initialize();
         // Create a synthetic stdout that we can inspect
         let stdout = Arc::new(Mutex::new(Vec::new()));
 
-        Ssr::init_platform();
         let result = Ssr::render(
             r##"
                 var SSR = {
@@ -432,6 +451,7 @@ mod tests {
 
     #[test]
     fn test_timezone_succeeds() {
+        initialize();
         // More context:
         // https://github.com/denoland/rusty_v8/issues/1444
         // https://github.com/denoland/rusty_v8/pull/603

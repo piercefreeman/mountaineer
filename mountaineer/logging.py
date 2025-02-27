@@ -121,7 +121,7 @@ def log_time_duration(message: str):
 
 
 def setup_internal_logger(name: str):
-    """ "
+    """
     Our global logger should only surface warnings and above by default.
 
     To adjust Mountaineer logging, set the MOUNTAINEER_LOG_LEVEL environment
