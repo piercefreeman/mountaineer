@@ -1,4 +1,4 @@
-from typing import Any, Annotated, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, Optional, Union
 
 import pytest
 
@@ -285,27 +285,24 @@ class TestAnnotatedTypes:
     def test_annotated_types(self, parser, type_compare, input_type, expected_type):
         """Test that Annotated types are correctly parsed"""
         result = parser.parse_type(input_type)
-        
+
         # For simple types like str, int, the result will be wrapped in Or
         if not isinstance(expected_type, TypeDefinition):
             expected_type = Or(expected_type)
-            
+
         assert type_compare.are_types_equivalent(result, expected_type)
 
     def test_nested_annotated_types(self, parser, type_compare):
         """Test nested Annotated types"""
         # Complex nested type with Annotated
-        complex_type = List[Annotated[Dict[str, Annotated[int | str, "metadata"]], "outer"]]
+        complex_type = List[
+            Annotated[Dict[str, Annotated[int | str, "metadata"]], "outer"]
+        ]
         result = parser.parse_type(complex_type)
-        
+
         # Expected structure after parsing
-        expected = ListOf(
-            DictOf(
-                key=str,
-                value=Or(int, str)
-            )
-        )
-        
+        expected = ListOf(DictOf(key=str, value=Or(int, str)))
+
         assert type_compare.are_types_equivalent(result, expected)
 
     def test_annotated_with_no_args(self, parser):
