@@ -15,6 +15,7 @@ from typing import (
     Coroutine,
     Literal,
     ParamSpec,
+    Sequence,
     Type,
     TypeVar,
     overload,
@@ -41,7 +42,14 @@ if TYPE_CHECKING:
     from mountaineer.controller import ControllerBase
 
 P = ParamSpec("P")
-R = TypeVar("R", bound=BaseModel | AsyncIterator[BaseModel] | JSONResponse | None)
+R = TypeVar(
+    "R",
+    bound=BaseModel
+    | AsyncIterator[BaseModel]
+    | Sequence[BaseModel]
+    | JSONResponse
+    | None,
+)
 C = TypeVar("C")
 
 RawResponseR = TypeVar("RawResponseR", bound=Response)
@@ -164,6 +172,16 @@ def passthrough(*args, **kwargs):  # type: ignore
 
                 if isasyncgen(response):
                     return wrap_passthrough_generator(response)
+
+                if response_type == ResponseModelType.SEQUENCE_RESPONSE and isinstance(
+                    response, (list, set, tuple)
+                ):
+                    response = [
+                        item.model_dump(mode="json")
+                        if isinstance(item, BaseModel)
+                        else item
+                        for item in response
+                    ]
 
                 # Following types ignored to support 3.10
                 final_payload: SideeffectResponseBase[Any] = {  # type: ignore
