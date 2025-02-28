@@ -309,8 +309,10 @@ class TestAnnotatedTypes:
         """Test that Annotated with no args raises ValueError"""
         # We can't directly create an Annotated with no args in a type-safe way
         # So we'll test the error handling by mocking the situation
+
+        # Create a mock field_type and origin_type for _parse_origin_type
+        parser._parse_origin_type(Annotated[str, "metadata"], Annotated)
+
         with pytest.raises(ValueError):
-            # Create a mock field_type and origin_type for _parse_origin_type
-            parser._parse_origin_type(Annotated[str, "metadata"], Annotated)
             # Modify args to be empty to trigger the error
             parser._parse_origin_type(object(), Annotated)
