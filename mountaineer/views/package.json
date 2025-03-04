@@ -9,6 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@types/react": "^18.2.56"
+    "@types/react": "^19.0.10"
   }
 }
