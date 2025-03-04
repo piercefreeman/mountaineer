@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod, abstractproperty
 from types import UnionType
 from typing import (
+    Annotated,
     Any,
     Dict,
     List,
@@ -197,6 +198,19 @@ class TypeParser:
     def _parse_origin_type(self, field_type: Any, origin_type: Any) -> TypeDefinition:
         """Parse types with origin (e.g., List[int], Dict[str, int])"""
         args = get_args(field_type)
+
+        # Handle Annotated types by extracting the first argument (the actual type)
+        # and ignoring the metadata (the second and subsequent arguments)
+        if origin_type is Annotated:
+            if not args:
+                raise ValueError(f"Annotated type {field_type} has no arguments")
+            # Parse only the first argument (the actual type)
+            parsed_type = self.parse_type(args[0])
+            # If the parsed type is not a TypeDefinition, wrap it in Or with a single type
+            if not isinstance(parsed_type, TypeDefinition):
+                return Or(parsed_type)
+            return parsed_type
+
         args = tuple(self.parse_type(arg) for arg in args)
 
         if origin_type in (list, List):
