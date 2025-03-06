@@ -342,6 +342,54 @@ class TestInheritanceHandling:
         superclass_models = {s.model for s in wrapper.superclasses}
         assert LeftInheritanceModel in superclass_models
         assert RightInheritanceModel in superclass_models
+        
+    def test_multiple_inheritance_fields(self, parser: ControllerParser):
+        """Test that fields from all parent models are correctly included in the TypeScript interface"""
+        # Parse the model with multiple inheritance
+        wrapper = parser._parse_model(DiamondInheritanceModel)
+        
+        # Verify that the superclasses are correctly identified
+        assert len(wrapper.superclasses) == 2
+        
+        # Get the superclass wrappers
+        left_wrapper = next(sc for sc in wrapper.superclasses if sc.model == LeftInheritanceModel)
+        right_wrapper = next(sc for sc in wrapper.superclasses if sc.model == RightInheritanceModel)
+        
+        # Verify that the left superclass has its fields
+        left_fields = {field.name for field in left_wrapper.value_models}
+        assert "left_field" in left_fields
+        
+        # Verify that the right superclass has its fields
+        right_fields = {field.name for field in right_wrapper.value_models}
+        assert "right_field" in right_fields
+        
+        # Verify that the model itself has its own fields
+        model_fields = {field.name for field in wrapper.value_models}
+        assert "final_field" in model_fields
+        
+    def test_typescript_generation_for_multiple_inheritance(self, parser: ControllerParser):
+        """Test that TypeScript generation works correctly for models with multiple inheritance"""
+        from mountaineer.client_builder.interface_builders.model import ModelInterface
+        
+        # Parse the model with multiple inheritance
+        wrapper = parser._parse_model(DiamondInheritanceModel)
+        
+        # Generate TypeScript interface
+        interface = ModelInterface.from_model(wrapper)
+        ts_code = interface.to_js()
+        
+        # Check that the interface extends both parent interfaces
+        assert f"interface {DiamondInheritanceModel.__name__} extends {LeftInheritanceModel.__name__}, {RightInheritanceModel.__name__}" in ts_code
+        
+        # Check that the model's fields are included
+        assert "final_field: boolean" in ts_code
+        
+        # Fields from parent models should not be included directly in the child interface
+        # They will be available through inheritance
+        assert "left_field" not in ts_code
+        assert "right_field" not in ts_code
+        assert "base_field" not in ts_code
+        assert "string_field" not in ts_code
 
 
 class TestGenericHandling:
