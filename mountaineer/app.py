@@ -331,6 +331,8 @@ class AppController:
                 # Caching the build files saves about 0.3 on every load
                 # during development
                 start = monotonic_ns()
+                from os import environ
+                print("COMPILING", environ, flush=True)
                 if not controller_node.cached_server_script:
                     (
                         script_payloads,
@@ -358,7 +360,7 @@ class AppController:
                 LOGGER.debug(
                     f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
                 )
-
+                print("COMPILED", flush=True)
                 html = self.compile_html(
                     cast(str, controller_node.cached_server_script),
                     controller_output,

@@ -8,6 +8,7 @@ from typing import Optional
 from fastapi import FastAPI
 from uvicorn import Config
 from uvicorn.server import Server
+import uvicorn
 
 from mountaineer.logging import LOGGER
 
@@ -41,6 +42,7 @@ def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
 
     def log_adapter(logger_name: str):
         def _log(msg: str, *args, **kwargs):
+            print("LOGGING", msg, args, kwargs, flush=True)
             is_okay = any(token in msg for token in KNOWN_OKAY_LOGS)
             if logger_name == "uvicorn.error" and not is_okay:
                 LOGGER.error(msg, *args, **kwargs)
@@ -81,6 +83,12 @@ class UvicornThread(Thread):
         self.shutdown = False
 
     def run(self) -> None:
+
+        uvicorn.run(self.app, host=self.host, port=self.port)
+        return
+
+
+
         # Configure logging before creating the server
         if self.use_logs:
             configure_uvicorn_logging(self.name, self.emoticon, self.log_level)
@@ -93,16 +101,19 @@ class UvicornThread(Thread):
             reload=False,
             access_log=False,
             loop="asyncio",
-            log_level=self.log_level,
+            #log_level=self.log_level,
+            log_level="debug",
         )
 
         server = Server(config)
         self.server = server
 
+        print("RUNNING SERVER", flush=True)
         loop.run_until_complete(server.serve())
 
     async def astart(self, timeout: int = 5) -> None:
         super().start()
+        return
 
         # Wait until the server has self-flagged server.started and it's bound to the
         # desired port. If we we timeout waiting for either signal, then raise an error.
@@ -112,6 +123,7 @@ class UvicornThread(Thread):
             is_mounted = (
                 self.server and self.server.started and not self._is_port_free()
             )
+            print("is_mounted", is_mounted, flush=True)
             if is_mounted:
                 did_start = True
                 break

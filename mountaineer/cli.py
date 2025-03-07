@@ -1,5 +1,6 @@
 import asyncio
 import os
+from time import sleep
 import traceback
 from dataclasses import dataclass, field
 from hashlib import md5
@@ -254,7 +255,13 @@ async def handle_watch(
         await watchdog.start_watching()
 
 
-def run_isolated(address: tuple[str, int], authkey: bytes):
+def run_isolated(
+    address: tuple[str, int],
+    authkey: bytes,
+    package: str,
+    webservice: str,
+    webcontroller: str,
+):
     print("DID BOOT CHILD")
     # Connect to the manager server as a client
     class QueueManager(BaseManager): pass
@@ -266,10 +273,74 @@ def run_isolated(address: tuple[str, int], authkey: bytes):
     
     print(f"Child process connected to queue manager at {address}", flush=True)
     
-    while True:
-        metadata = queue.get()
-        with open("test.txt", "a") as f:
-            f.write(f"SUBPROCESS {metadata}\n")
+    # Boot up the webcontroller by importing the modules
+    # TODO: Most of our logic now is just owned by the isolation context, we probably
+    # don't need the app manager
+    # We still need message passing from the client in order to build the js files given
+    # the scope of imported modules
+    app_manager = DevAppManager.from_webcontroller(webcontroller, host="localhost", port=5008, live_reload_port=None)
+
+    print("INPUT VARS", flush=True)
+    print(f"package: {app_manager.package}", flush=True)
+    print(f"module_name: {app_manager.module_name}", flush=True)
+    print(f"controller_name: {app_manager.controller_name}", flush=True)
+    print(f"host: {app_manager.host}", flush=True)
+    print(f"port: {app_manager.port}", flush=True)
+
+    #
+    # The stall occurs when we try to load pages that call the render() functions
+    # in Mountaineer
+    # If we call a fastapi /test endpoint first, it works
+    # Points to a stall potentially in the rust layer?
+    #
+    import importlib
+    import uvicorn
+
+    module = importlib.import_module(app_manager.module_name)
+    initial_state = {name: getattr(module, name) for name in dir(module)}
+    app_controller = initial_state[app_manager.controller_name]
+
+    print("APP CONTROLLER", app_controller, flush=True)
+
+    # Run a uvicorn server on port 5008
+    print("RUN PORT 5016")
+    uvicorn.run(app_controller.app, host="localhost", port=5016)
+    
+    #
+    # Confirmed to work
+    #
+    #from fastapi import FastAPI
+    #app = FastAPI()
+    #@app.get("/")
+    #async def root():
+    #    return {"message": "Hello World"}
+    
+    #uvicorn.run(app, host="localhost", port=5008)
+
+   
+    # app_context = IsolatedAppContext(
+    #     package=app_manager.package,
+    #     package_path=Path(app_manager.package.replace(".", "/")),
+    #     module_name=app_manager.module_name,
+    #     controller_name=app_manager.controller_name,
+    #     host=app_manager.host,
+    #     port=app_manager.port,
+    #     live_reload_port=app_manager.live_reload_port,
+    #     message_broker=app_manager.message_broker,
+    # )
+    # asyncio.run(app_context.handle_bootstrap())
+   
+
+
+
+    # print("NOW BLOCKING", flush=True)
+    # while True:
+    #     sleep(1)
+    #     print("SLEEPING", flush=True)
+    #     continue
+    #     metadata = queue.get()
+    #     with open("test.txt", "a") as f:
+    #         f.write(f"SUBPROCESS {metadata}\n")
 
 @async_to_sync
 async def handle_runserver(
@@ -294,8 +365,8 @@ async def handle_runserver(
     :param subscribe_to_mountaineer: See `handle_watch` for more details.
 
     """
-    update_multiprocessing_settings()
-    rich_traceback_install()
+    #update_multiprocessing_settings()
+    #rich_traceback_install()
 
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
@@ -346,6 +417,9 @@ async def handle_runserver(
                 run_isolated,
                 manager_address,
                 auth_key,
+                package,
+                webservice,
+                webcontroller,
             )
 
             print("LAUNCHED!")
@@ -355,13 +429,13 @@ async def handle_runserver(
             print("SENT MESSAGE")
             i += 1
 
-            #from time import sleep
-            #sleep(1)
+            from time import sleep
+            sleep(5)
 
-            #print("COMMUNICATING")
+            print("COMMUNICATING")
             # TODO: Allow timeout parameter
-            #environment.communicate_isolated(runner)
-            #print("DONE COMMUNICATING")
+            environment.communicate_isolated(runner)
+            print("DONE COMMUNICATING")
 
         CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
 

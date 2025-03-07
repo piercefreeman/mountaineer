@@ -239,9 +239,12 @@ class IsolatedAppContext(Process):
 
         :return: Success or error response
         """
+        print("bootstrapping...", flush=True)
         response = self.initialize_app_state()
+        print("bootstrapped", response, flush=True)
         if isinstance(response, SuccessResponse):
             await self.start_server()
+        print("started server", flush=True)
 
         return response
 
