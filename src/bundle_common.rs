@@ -108,12 +108,10 @@ pub fn bundle_common(
         format!("\"{}\"", environment),
     );
 
-    if let Some(port) = live_reload_port {
-        define.insert(
-            "process.env.LIVE_RELOAD_PORT".to_string(),
-            format!("{}", port),
-        );
-    }
+    define.insert(
+        "process.env.LIVE_RELOAD_PORT".to_string(),
+        format!("{}", live_reload_port.unwrap_or(0)),
+    );
 
     if is_ssr {
         define.insert("process.env.SSR_RENDERING".to_string(), "true".to_string());
