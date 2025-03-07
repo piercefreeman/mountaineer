@@ -52,74 +52,7 @@ pub fn compile_independent_bundles(
         let entrypoint_path =
             create_entrypoint(&temp_dir, path_group, is_ssr, &live_reload_import)?;
 
-            // Unlike esbuild, this only affects variables defined in the main entrypoint
-            // file that we pass - not dependencies that are imported.
-    let mut define : IndexMap<String, String, BuildHasherDefault<FxHasher>> = IndexMap::with_hasher(BuildHasherDefault::default());
-    define.insert("process.env.NODE_ENV".to_string(), format!("\"{}\"", environment));
-    define.insert("process.env.LIVE_RELOAD_PORT".to_string(), format!("{}", live_reload_port));
-    if is_ssr {
-        define.insert("process.env.SSR_RENDERING".to_string(), "true".to_string());
-        define.insert("global".to_string(), "window".to_string());
-    } else {
-        define.insert("process.env.SSR_RENDERING".to_string(), "false".to_string());
-    }
-
-    define.insert("process.env.MY_VAR".to_string(), "\"production\"".to_string());
-
-    println!("DEFINE: {:?}", define);
-
-    // Set up resolve options to let Rolldown know where to find node_modules.
-    let resolve = Some(ResolveOptions {
-        modules: Some(vec![node_modules_path.clone()]),
-        ..Default::default()
-    });
-
-
-        // Configure Rolldown bundler options.
-        // Here we set the input to our entrypoint and use the temp_dir as working directory.
-        // Close alignment with: https://rollupjs.org/configuration-options/
-        // Defined: https://github.com/rolldown/rolldown/blob/4666fd5b036992ee73354a0a8ea674fce2bb206c/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
-        let bundler_options = BundlerOptions {
-            input: Some(vec![InputItem {
-                name: None, // You can set a name if required.
-                import: entrypoint_path.to_str().unwrap().to_string(),
-            }]),
-            cwd: Some(temp_dir.path().to_path_buf()),
-            sourcemap: Some(SourceMapType::File),
-            define: Some(define),
-            resolve,
-            // Only the "Index" will be exported in SSR, which is a bit different
-            // than the previous esbuild pipeline.
-            //
-            // const Entrypoint = () => {
-            //     live_reload_default({});
-            //     return (0, import_jsx_runtime.jsx)(page_default, {});
-            // };
-            // const Index = () => (0, import_server_browser.renderToString)((0, import_jsx_runtime.jsx)(Entrypoint, {}));
-            //
-            // Maybe just for is_ssr?
-            //exports: Some(OutputExports::Named),
-            // Choose the output format and global name based on SSR flag.
-            format: if is_ssr { Some(OutputFormat::Iife) } else { Some(OutputFormat::Esm) },
-            //name: if is_ssr { Some("SSR".to_string()) } else { None },
-            // Add additional options as needed (e.g. experimental options, plugin hooks, etc.)
-            ..Default::default()
-        };
-
-        // Create the bundler instance.
-        let mut bundler = Bundler::new(bundler_options);
-
-        // Run the bundler asynchronously
-        // TODO: Concurrent support with different runtimes
-        println!("RUNNING BUNDLER");
-
-        let rt = Runtime::new()
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
-        rt.block_on(async {
-            bundler.write().await.map_err(|err| {
-                PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Bundling error: {:?}", err))
-            })
-        })?;
+            bundle_common()
 
         println!("BUNDLER DONE WITH BLOCK");
 
