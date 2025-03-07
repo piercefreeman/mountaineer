@@ -28,14 +28,15 @@ pub fn compile_production_bundle(
     let entrypoint_paths =
         create_synthetic_entrypoints(temp_dir_path, &paths, is_server, &live_reload_import)?;
 
-    src_go::bundle_all(
+        // TODO: Restore bundle
+    /*src_go::bundle_all(
         entrypoint_paths.clone(),
         node_modules_path,
         environment,
         minify,
         output_dir.to_str().unwrap().to_string(),
     )
-    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;
+    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;*/
 
     let result = PyDict::new(py);
     let (entrypoints, entrypoint_maps, supporting) =

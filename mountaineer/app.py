@@ -708,6 +708,14 @@ class AppController:
             sourcemap=sourcemap,
         )
 
+        with open("inline_client.js", "w") as file:
+            file.write(inline_client_script)
+
+        # TODO: We need to escape these inline. The old esbuild version potentially
+        # took care of this through minimization, so it might not have been affected
+        inline_client_script = inline_client_script.replace("<script>", "<script2>")
+        inline_client_script = inline_client_script.replace("</script>", "</script2>")
+
         client_import: str
         if inline_client_script:
             # When we're running in debug mode, we just import

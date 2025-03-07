@@ -443,11 +443,12 @@ async def handle_runserver(
             i += 1
 
             from time import sleep
-            sleep(5)
+            #sleep(5)
 
             print("COMMUNICATING")
             # TODO: Allow timeout parameter
-            environment.communicate_isolated(runner)
+            if i == 2:
+                environment.communicate_isolated(runner)
             print("DONE COMMUNICATING")
 
         CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
