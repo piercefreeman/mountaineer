@@ -8,6 +8,7 @@ from pathlib import Path
 from signal import SIGINT
 from time import time
 from typing import Any, Callable, Coroutine
+import threading
 
 from inflection import underscore
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
@@ -43,6 +44,9 @@ from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 from firehot import isolate_imports
+from multiprocessing import Manager, Queue
+from multiprocessing.managers import BaseManager
+import secrets
 
 
 @dataclass
@@ -250,132 +254,22 @@ async def handle_watch(
         await watchdog.start_watching()
 
 
-# @async_to_sync
-# async def handle_runserver(
-#     *,
-#     package: str,
-#     webservice: str,
-#     webcontroller: str,
-#     host: str = "127.0.0.1",
-#     port: int,
-#     hotreload_host: str | None = None,
-#     hotreload_port: int | None = None,
-#     subscribe_to_mountaineer: bool = False,
-# ):
-#     """
-#     Start a local development server. This will hot-reload your browser any time
-#     your frontend or backend code changes.
-
-#     :param package: Ex. "ci_webapp"
-#     :param webservice: Ex. "ci_webapp.app:app"
-#     :param webcontroller: Ex. "ci_webapp.app:controller"
-#     :param port: Desired port for the webapp while running locally
-#     :param subscribe_to_mountaineer: See `handle_watch` for more details.
-
-#     """
-#     update_multiprocessing_settings()
-#     rich_traceback_install()
-
-#     CONSOLE.print("🏔️ Booting up Mountaineer")
-
-#     watcher_webservice = WatcherWebservice(
-#         webservice_host=hotreload_host or host, webservice_port=hotreload_port
-#     )
-#     app_manager = DevAppManager.from_webcontroller(
-#         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
-#     )
-#     file_changes_state = FileChangesState()
-
-#     # Nonlocal vars for shutdown context
-#     watchdog: PackageWatchdog
-#     loop = asyncio.get_event_loop()
-#     shutdown_count = 0
-
-#     async def handle_file_changes(metadata: CallbackMetadata):
-#         await handle_file_changes_base(
-#             package=package,
-#             metadata=metadata,
-#             app_manager=app_manager,
-#             file_changes_state=file_changes_state,
-#             server_config=FileChangeServerConfig(
-#                 host=host,
-#                 port=port,
-#                 watcher_webservice=watcher_webservice,
-#             ),
-#         )
-
-#     async def handle_shutdown_async():
-#         try:
-#             nonlocal watchdog
-#             nonlocal shutdown_count
-
-#             shutdown_count += 1
-#             if shutdown_count > 1:
-#                 # Hard exit if we get a second shutdown request
-#                 CONSOLE.print("[red]Hard shutdown requested")
-#                 os._exit(1)
-
-#             CONSOLE.print("[yellow]Starting shutdown")
-
-#             # Stop the watchdog and start the cleanup logic
-#             if watchdog:
-#                 watchdog.stop_watching()
-
-#             # Yield control back to the watchfiles loop so we can
-#             # fully exit
-#             await asyncio.sleep(0.01)
-#         except Exception as e:
-#             CONSOLE.print(f"[red]Error shutting down: {e}")
-#             os._exit(1)
-
-#     def handle_shutdown(*args, **kwargs):
-#         nonlocal loop
-#         loop.create_task(handle_shutdown_async())
-
-#     # Start the message broker
-#     async with app_manager.start_broker():
-#         await watcher_webservice.start()
-#         await app_manager.reload_backend_all()
-
-#         CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
-
-#         loop.add_signal_handler(SIGINT, handle_shutdown)
-
-#         watchdog = build_common_watchdog(
-#             package,
-#             handle_file_changes,
-#             subscribe_to_mountaineer=subscribe_to_mountaineer,
-#         )
-#         await watchdog.start_watching()
-
-#         shutdown_error = False
-
-#         # First try to shutdown the app context if it exists
-#         if app_manager.app_context:
-#             try:
-#                 await app_manager.shutdown()
-#             except Exception as e:
-#                 CONSOLE.print(f"[red]Error shutting down app context: {e}")
-#                 shutdown_error = True
-
-#         # Then stop the watcher webservice
-#         if not await watcher_webservice.stop(wait_for_completion=3):
-#             CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
-#             shutdown_error = True
-
-#     if shutdown_error:
-#         CONSOLE.print("[red]Shutdown failed, hard exiting")
-#         os._exit(1)
-
-#     CONSOLE.print("[green]Shutdown complete")
-
-from multiprocessing import Manager, Queue
-
-def run_isolated(queue: Queue):
+def run_isolated(address: tuple[str, int], authkey: bytes):
     print("DID BOOT CHILD")
+    # Connect to the manager server as a client
+    class QueueManager(BaseManager): pass
+    QueueManager.register('get_queue')
+
+    manager = QueueManager(address=address, authkey=authkey)
+    manager.connect()
+    queue = manager.get_queue()
+    
+    print(f"Child process connected to queue manager at {address}", flush=True)
+    
     while True:
         metadata = queue.get()
-        print("SUBPROCESS", metadata)
+        with open("test.txt", "a") as f:
+            f.write(f"SUBPROCESS {metadata}\n")
 
 @async_to_sync
 async def handle_runserver(
@@ -415,46 +309,72 @@ async def handle_runserver(
 
     await watcher_webservice.start()
 
-    # Start the message broker
-    with Manager() as manager:
-        queue = manager.Queue()
+    # Use a random port for the manager and a secure random auth key
+    manager_port = port + 1000  # Use a different port than the webserver
+    manager_host = host
+    manager_address = (manager_host, manager_port)
+    auth_key = secrets.token_bytes(32)  # Secure random authentication key
     
-        with isolate_imports(package) as environment:
-            async def handle_file_changes(metadata: CallbackMetadata):
-                print("DID CHANGE", metadata)
+    # Set up the manager server with a shared queue
+    queue = Queue()
+    class QueueManager(BaseManager): pass
+    QueueManager.register('get_queue', callable=lambda: queue)
+    
+    # Create and start the manager server in a separate thread
+    manager_server = QueueManager(address=manager_address, authkey=auth_key)
+    server = manager_server.get_server()
+    server_thread = threading.Thread(target=server.serve_forever)
+    server_thread.daemon = True
+    server_thread.start()
+    
+    CONSOLE.print(f"[bold blue]Process manager started at {manager_host}:{manager_port}")
 
-                # We might have updated imports, so pass to the env to optionally update
-                environment.update_environment()
+    i = 0
 
-                print("DONE!")
+    with isolate_imports(package) as environment:
+        async def handle_file_changes(metadata: CallbackMetadata):
+            nonlocal i
+            print("DID CHANGE", metadata)
 
-                # Either way we need to reload the user project
-                runner = environment.exec(
-                    run_isolated,
-                    queue,
-                    # 1,
-                )
+            # We might have updated imports, so pass to the env to optionally update
+            environment.update_environment()
 
-                print("LAUNCHED!")
+            print("UPDATE DONE!")
 
-                # Send a message to the subprocess
-                queue.put("test message from main")
-                print("SENT MESSAGE")
-
-                environment.communicate_isolated(runner)
-
-            CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
-
-            watchdog = build_common_watchdog(
-                package,
-                handle_file_changes,
-                subscribe_to_mountaineer=subscribe_to_mountaineer,
+            # Launch the subprocess with the manager connection details
+            runner = environment.exec(
+                run_isolated,
+                manager_address,
+                auth_key,
             )
-            await watchdog.start_watching()
 
-            print("SHUTDOWN")
+            print("LAUNCHED!")
 
-        CONSOLE.print("[green]Shutdown complete")
+            # Send a message to the subprocess through the queue
+            queue.put(f"test message from main {i}")
+            print("SENT MESSAGE")
+            i += 1
+
+            #from time import sleep
+            #sleep(1)
+
+            #print("COMMUNICATING")
+            # TODO: Allow timeout parameter
+            #environment.communicate_isolated(runner)
+            #print("DONE COMMUNICATING")
+
+        CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
+
+        watchdog = build_common_watchdog(
+            package,
+            handle_file_changes,
+            subscribe_to_mountaineer=subscribe_to_mountaineer,
+        )
+        await watchdog.start_watching()
+
+        print("SHUTDOWN")
+
+    CONSOLE.print("[green]Shutdown complete")
 
 @async_to_sync
 async def handle_build(
