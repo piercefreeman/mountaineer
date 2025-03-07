@@ -108,12 +108,10 @@ pub fn bundle_common(
         format!("\"{}\"", environment),
     );
 
-    if let Some(port) = live_reload_port {
-        define.insert(
-            "process.env.LIVE_RELOAD_PORT".to_string(),
-            format!("{}", port),
-        );
-    }
+    define.insert(
+        "process.env.LIVE_RELOAD_PORT".to_string(),
+        format!("{}", live_reload_port.unwrap_or(0)),
+    );
 
     if is_ssr {
         define.insert("process.env.SSR_RENDERING".to_string(), "true".to_string());
@@ -222,3 +220,163 @@ pub fn bundle_common(
     // Return the map of bundle results
     Ok(results)
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+
+    fn create_test_js_file(dir: &Path, filename: &str, content: &str) -> Result<String, std::io::Error> {
+        let file_path = dir.join(filename);
+        let mut file = File::create(&file_path)?;
+        file.write_all(content.as_bytes())?;
+        Ok(file_path.to_string_lossy().to_string())
+    }
+
+    #[test]
+    fn test_single_client_bundle() {
+        // Create a temporary directory for test files
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+        
+        // Create a simple JavaScript file
+        let js_content = r#"
+            export function greet(name) {
+                return `Hello, ${name}!`;
+            }
+            
+            console.log(greet('World'));
+        "#;
+        
+        let entry_path = create_test_js_file(temp_path, "entry.js", js_content)
+            .expect("Failed to create test JS file");
+        
+        // Create a mock node_modules path
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
+        
+        // Bundle the JavaScript
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::SINGLE_CLIENT,
+            "development".to_string(),
+            node_modules_path,
+            None,
+        );
+        
+        // Verify the result
+        assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
+        let bundles = result.unwrap();
+        assert_eq!(bundles.len(), 1, "Expected 1 bundle result");
+        
+        // Check that the output contains our greet function
+        let (_, bundle_result) = bundles.iter().next().unwrap();
+        assert!(bundle_result.script.contains("greet"), "Bundle should contain the greet function");
+        assert!(bundle_result.script.contains("Hello"), "Bundle should contain the greeting text");
+    }
+
+    #[test]
+    fn test_multi_client_bundle() {
+        // Create a temporary directory for test files
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+        
+        // Create a module to import
+        let utils_js = r#"
+            export function formatName(firstName, lastName) {
+                return `${firstName} ${lastName}`;
+            }
+        "#;
+        
+        let utils_path = create_test_js_file(temp_path, "utils.js", utils_js)
+            .expect("Failed to create utils.js file");
+        
+        // Create a main entry file that imports the module
+        let entry_js = r#"
+            import { formatName } from './utils.js';
+            
+            export function greet(firstName, lastName) {
+                const fullName = formatName(firstName, lastName);
+                return `Hello, ${fullName}!`;
+            }
+            
+            console.log(greet('John', 'Doe'));
+        "#;
+        
+        let entry_path = create_test_js_file(temp_path, "main.js", entry_js)
+            .expect("Failed to create main.js file");
+        
+        // Create a mock node_modules path
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
+        
+        // Bundle the JavaScript
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::MULTI_CLIENT,
+            "development".to_string(),
+            node_modules_path,
+            None,
+        );
+        
+        // Verify the result
+        assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
+        let bundles = result.unwrap();
+        assert!(!bundles.is_empty(), "Expected at least one bundle result");
+        
+        // Check that at least one of the outputs contains our greet function
+        let has_greet = bundles.iter().any(|(_, bundle)| bundle.script.contains("greet"));
+        assert!(has_greet, "At least one bundle should contain the greet function");
+        
+        // Check that at least one of the outputs contains our formatName function
+        let has_format_name = bundles.iter().any(|(_, bundle)| bundle.script.contains("formatName"));
+        assert!(has_format_name, "At least one bundle should contain the formatName function");
+    }
+
+    #[test]
+    fn test_single_server_bundle() {
+        // Create a temporary directory for test files
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+        
+        // Create a simple server-side JavaScript file
+        let server_js = r#"
+            function processRequest(req) {
+                return {
+                    status: 200,
+                    body: `Processed request from ${req.ip}`
+                };
+            }
+            
+            module.exports = { processRequest };
+        "#;
+        
+        let entry_path = create_test_js_file(temp_path, "server.js", server_js)
+            .expect("Failed to create server.js file");
+        
+        // Create a mock node_modules path
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
+        
+        // Bundle the JavaScript
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::SINGLE_SERVER,
+            "production".to_string(),
+            node_modules_path,
+            None,
+        );
+        
+        // Verify the result
+        assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
+        let bundles = result.unwrap();
+        assert_eq!(bundles.len(), 1, "Expected 1 bundle result for server-side bundle");
+        
+        // Check that the output contains our processRequest function
+        let (_, bundle_result) = bundles.iter().next().unwrap();
+        assert!(bundle_result.script.contains("processRequest"), "Bundle should contain the processRequest function");
+        assert!(bundle_result.script.contains("module.exports"), "Bundle should have CommonJS exports");
+    }
+} 
