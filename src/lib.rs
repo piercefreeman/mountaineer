@@ -3,6 +3,7 @@ use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
+mod bundle_common;
 mod bundle_independent;
 mod bundle_prod;
 mod code_gen;
@@ -70,7 +71,11 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
-    fn render_ssr(py: Python, js_string: String, hard_timeout: u64) -> PyResult<Bound<'_, PyString>> {
+    fn render_ssr(
+        py: Python,
+        js_string: String,
+        hard_timeout: u64,
+    ) -> PyResult<Bound<'_, PyString>> {
         /*
          * :param js_string: the full ssr compiled .js script to execute in V8
          * :param hard_timeout: after this many milliseconds, the V8 engine will be forcibly

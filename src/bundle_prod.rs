@@ -1,11 +1,11 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tempfile::TempDir;
 
+use crate::bundle_common::{self, BundleError, BundleMode};
 use crate::code_gen;
 
 #[pyfunction]
@@ -21,30 +21,53 @@ pub fn compile_production_bundle(
     let temp_dir =
         TempDir::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
     let temp_dir_path = temp_dir.path();
-    let output_dir = temp_dir_path.join("bundled");
-    fs::create_dir_all(&output_dir)
-        .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
 
     let entrypoint_paths =
         create_synthetic_entrypoints(temp_dir_path, &paths, is_server, &live_reload_import)?;
 
-        // TODO: Restore bundle
-    /*src_go::bundle_all(
-        entrypoint_paths.clone(),
-        node_modules_path,
-        environment,
-        minify,
-        output_dir.to_str().unwrap().to_string(),
-    )
-    .map_err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>)?;*/
+    // Use bundle_common instead of the commented-out bundling code
+    let bundle_mode = if is_server {
+        BundleMode::SINGLE_SERVER
+    } else {
+        BundleMode::MULTI_CLIENT
+    };
 
+    // Call bundle_common with the appropriate parameters
+    let bundle_results = bundle_common::bundle_common(
+        entrypoint_paths.clone(),
+        bundle_mode,
+        environment,
+        node_modules_path,
+        None, // No live reload port for production
+    )
+    .map_err(|e| match e {
+        BundleError::IoError(err) => PyErr::new::<pyo3::exceptions::PyIOError, _>(err.to_string()),
+        BundleError::BundlingError(msg) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(msg),
+        BundleError::OutputError(msg) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(msg),
+        BundleError::FileNotFound(path) => PyErr::new::<pyo3::exceptions::PyFileNotFoundError, _>(
+            format!("File not found: {}", path),
+        ),
+        BundleError::InvalidInput(msg) => PyErr::new::<pyo3::exceptions::PyValueError, _>(msg),
+    })?;
+
+    // Directly populate the result dictionary using bundle_results
     let result = PyDict::new(py);
-    let (entrypoints, entrypoint_maps, supporting) =
-        process_output_files(py, &output_dir, &entrypoint_paths)?;
+    let entrypoints = PyList::empty(py);
+    let entrypoint_maps = PyList::empty(py);
+    let supporting = PyDict::new(py);
+
+    // Since we have the bundle results in memory, add them to the respective lists
+    for (_, bundle_result) in bundle_results {
+        entrypoints.append(&bundle_result.script)?;
+
+        if let Some(map) = bundle_result.map {
+            entrypoint_maps.append(&map)?;
+        }
+    }
 
     result.set_item("entrypoints", entrypoints)?;
     result.set_item("entrypoint_maps", entrypoint_maps)?;
-    result.set_item("supporting", supporting)?;
+    result.set_item("supporting", supporting)?; // Empty dict since all content is in the main files
 
     Ok(result.into())
 }
@@ -70,76 +93,4 @@ fn create_synthetic_entrypoints(
             Ok(temp_file_path.to_str().unwrap().to_string())
         })
         .collect()
-}
-
-fn process_output_files(
-    py: Python,
-    output_dir: &PathBuf,
-    entrypoint_paths: &[String],
-) -> PyResult<(Py<PyList>, Py<PyList>, Py<PyDict>)> {
-    let entrypoints = PyList::empty(py);
-    let entrypoint_maps = PyList::empty(py);
-    let supporting = PyDict::new(py);
-    let mut processed_files = HashSet::new();
-
-    for path in entrypoint_paths {
-        let file_name = Path::new(path).file_name().unwrap().to_str().unwrap();
-        let js_path = output_dir.join(file_name).with_extension("js");
-        let map_path = output_dir.join(file_name).with_extension("js.map");
-
-        process_file(&js_path, &mut processed_files, |content| {
-            entrypoints.append(content)
-        })?;
-
-        process_file(&map_path, &mut processed_files, |content| {
-            entrypoint_maps.append(content)
-        })?;
-    }
-
-    // Everything that's left is a supporting file that is imported from one
-    // of the entrypoints
-    process_supporting_files(output_dir, &mut processed_files, &supporting)?;
-
-    Ok((
-        entrypoints.into(),
-        entrypoint_maps.into(),
-        supporting.into(),
-    ))
-}
-
-fn process_file<F>(
-    path: &PathBuf,
-    processed_files: &mut HashSet<String>,
-    mut action: F,
-) -> PyResult<()>
-where
-    F: FnMut(&str) -> PyResult<()>,
-{
-    if let Ok(content) = fs::read_to_string(path) {
-        let filename = path.file_name().unwrap().to_str().unwrap().to_string();
-        action(&content)?;
-        processed_files.insert(filename);
-    }
-    Ok(())
-}
-
-fn process_supporting_files(
-    output_dir: &PathBuf,
-    processed_files: &mut HashSet<String>,
-    supporting: &Bound<'_, PyDict>,
-) -> PyResult<()> {
-    for entry in fs::read_dir(output_dir)? {
-        let entry =
-            entry.map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-        let path = entry.path();
-        if path.is_file() {
-            let filename = path.file_name().unwrap().to_str().unwrap().to_string();
-            if !processed_files.contains(&filename) {
-                let content = fs::read_to_string(&path)
-                    .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-                supporting.set_item(filename, content)?;
-            }
-        }
-    }
-    Ok(())
 }

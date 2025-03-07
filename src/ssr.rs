@@ -317,12 +317,10 @@ pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError>
     init_v8_platform();
 
     println!("Hard timeout: {}", hard_timeout);
-   
+
     // Call inline, no timeout
     let js = Ssr::new(js_string, "SSR");
     return js.render_to_string(None);
-
-
 
     if hard_timeout > 0 {
         // Seems to return a timeout error even if it was some other type of error
