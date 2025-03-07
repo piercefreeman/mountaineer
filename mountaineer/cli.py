@@ -42,6 +42,7 @@ from mountaineer.development.watch_server import WatcherWebservice
 from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
+from firehot import isolate_imports
 
 
 @dataclass
@@ -249,6 +250,133 @@ async def handle_watch(
         await watchdog.start_watching()
 
 
+# @async_to_sync
+# async def handle_runserver(
+#     *,
+#     package: str,
+#     webservice: str,
+#     webcontroller: str,
+#     host: str = "127.0.0.1",
+#     port: int,
+#     hotreload_host: str | None = None,
+#     hotreload_port: int | None = None,
+#     subscribe_to_mountaineer: bool = False,
+# ):
+#     """
+#     Start a local development server. This will hot-reload your browser any time
+#     your frontend or backend code changes.
+
+#     :param package: Ex. "ci_webapp"
+#     :param webservice: Ex. "ci_webapp.app:app"
+#     :param webcontroller: Ex. "ci_webapp.app:controller"
+#     :param port: Desired port for the webapp while running locally
+#     :param subscribe_to_mountaineer: See `handle_watch` for more details.
+
+#     """
+#     update_multiprocessing_settings()
+#     rich_traceback_install()
+
+#     CONSOLE.print("🏔️ Booting up Mountaineer")
+
+#     watcher_webservice = WatcherWebservice(
+#         webservice_host=hotreload_host or host, webservice_port=hotreload_port
+#     )
+#     app_manager = DevAppManager.from_webcontroller(
+#         webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
+#     )
+#     file_changes_state = FileChangesState()
+
+#     # Nonlocal vars for shutdown context
+#     watchdog: PackageWatchdog
+#     loop = asyncio.get_event_loop()
+#     shutdown_count = 0
+
+#     async def handle_file_changes(metadata: CallbackMetadata):
+#         await handle_file_changes_base(
+#             package=package,
+#             metadata=metadata,
+#             app_manager=app_manager,
+#             file_changes_state=file_changes_state,
+#             server_config=FileChangeServerConfig(
+#                 host=host,
+#                 port=port,
+#                 watcher_webservice=watcher_webservice,
+#             ),
+#         )
+
+#     async def handle_shutdown_async():
+#         try:
+#             nonlocal watchdog
+#             nonlocal shutdown_count
+
+#             shutdown_count += 1
+#             if shutdown_count > 1:
+#                 # Hard exit if we get a second shutdown request
+#                 CONSOLE.print("[red]Hard shutdown requested")
+#                 os._exit(1)
+
+#             CONSOLE.print("[yellow]Starting shutdown")
+
+#             # Stop the watchdog and start the cleanup logic
+#             if watchdog:
+#                 watchdog.stop_watching()
+
+#             # Yield control back to the watchfiles loop so we can
+#             # fully exit
+#             await asyncio.sleep(0.01)
+#         except Exception as e:
+#             CONSOLE.print(f"[red]Error shutting down: {e}")
+#             os._exit(1)
+
+#     def handle_shutdown(*args, **kwargs):
+#         nonlocal loop
+#         loop.create_task(handle_shutdown_async())
+
+#     # Start the message broker
+#     async with app_manager.start_broker():
+#         await watcher_webservice.start()
+#         await app_manager.reload_backend_all()
+
+#         CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
+
+#         loop.add_signal_handler(SIGINT, handle_shutdown)
+
+#         watchdog = build_common_watchdog(
+#             package,
+#             handle_file_changes,
+#             subscribe_to_mountaineer=subscribe_to_mountaineer,
+#         )
+#         await watchdog.start_watching()
+
+#         shutdown_error = False
+
+#         # First try to shutdown the app context if it exists
+#         if app_manager.app_context:
+#             try:
+#                 await app_manager.shutdown()
+#             except Exception as e:
+#                 CONSOLE.print(f"[red]Error shutting down app context: {e}")
+#                 shutdown_error = True
+
+#         # Then stop the watcher webservice
+#         if not await watcher_webservice.stop(wait_for_completion=3):
+#             CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
+#             shutdown_error = True
+
+#     if shutdown_error:
+#         CONSOLE.print("[red]Shutdown failed, hard exiting")
+#         os._exit(1)
+
+#     CONSOLE.print("[green]Shutdown complete")
+
+from multiprocessing import Manager, Queue
+
+def run_isolated(queue: Queue):
+    print("DID BOOT CHILD")
+    while True:
+        metadata = queue.get()
+        print("SUBPROCESS", metadata)
+
 @async_to_sync
 async def handle_runserver(
     *,
@@ -275,13 +403,8 @@ async def handle_runserver(
     update_multiprocessing_settings()
     rich_traceback_install()
 
-    CONSOLE.print("🏔️ Booting up Mountaineer")
-
     watcher_webservice = WatcherWebservice(
         webservice_host=hotreload_host or host, webservice_port=hotreload_port
-    )
-    app_manager = DevAppManager.from_webcontroller(
-        webcontroller, host=host, port=port, live_reload_port=watcher_webservice.port
     )
     file_changes_state = FileChangesState()
 
@@ -290,84 +413,48 @@ async def handle_runserver(
     loop = asyncio.get_event_loop()
     shutdown_count = 0
 
-    async def handle_file_changes(metadata: CallbackMetadata):
-        await handle_file_changes_base(
-            package=package,
-            metadata=metadata,
-            app_manager=app_manager,
-            file_changes_state=file_changes_state,
-            server_config=FileChangeServerConfig(
-                host=host,
-                port=port,
-                watcher_webservice=watcher_webservice,
-            ),
-        )
-
-    async def handle_shutdown_async():
-        try:
-            nonlocal watchdog
-            nonlocal shutdown_count
-
-            shutdown_count += 1
-            if shutdown_count > 1:
-                # Hard exit if we get a second shutdown request
-                CONSOLE.print("[red]Hard shutdown requested")
-                os._exit(1)
-
-            CONSOLE.print("[yellow]Starting shutdown")
-
-            # Stop the watchdog and start the cleanup logic
-            if watchdog:
-                watchdog.stop_watching()
-
-            # Yield control back to the watchfiles loop so we can
-            # fully exit
-            await asyncio.sleep(0.01)
-        except Exception as e:
-            CONSOLE.print(f"[red]Error shutting down: {e}")
-            os._exit(1)
-
-    def handle_shutdown(*args, **kwargs):
-        nonlocal loop
-        loop.create_task(handle_shutdown_async())
+    await watcher_webservice.start()
 
     # Start the message broker
-    async with app_manager.start_broker():
-        await watcher_webservice.start()
-        await app_manager.reload_backend_all()
+    with Manager() as manager:
+        queue = manager.Queue()
+    
+        with isolate_imports(package) as environment:
+            async def handle_file_changes(metadata: CallbackMetadata):
+                print("DID CHANGE", metadata)
 
-        CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
+                # We might have updated imports, so pass to the env to optionally update
+                environment.update_environment()
 
-        loop.add_signal_handler(SIGINT, handle_shutdown)
+                print("DONE!")
 
-        watchdog = build_common_watchdog(
-            package,
-            handle_file_changes,
-            subscribe_to_mountaineer=subscribe_to_mountaineer,
-        )
-        await watchdog.start_watching()
+                # Either way we need to reload the user project
+                runner = environment.exec(
+                    run_isolated,
+                    queue,
+                    # 1,
+                )
 
-        shutdown_error = False
+                print("LAUNCHED!")
 
-        # First try to shutdown the app context if it exists
-        if app_manager.app_context:
-            try:
-                await app_manager.shutdown()
-            except Exception as e:
-                CONSOLE.print(f"[red]Error shutting down app context: {e}")
-                shutdown_error = True
+                # Send a message to the subprocess
+                queue.put("test message from main")
+                print("SENT MESSAGE")
 
-        # Then stop the watcher webservice
-        if not await watcher_webservice.stop(wait_for_completion=3):
-            CONSOLE.print("[red]WatcherWebservice threads did not exit cleanly")
-            shutdown_error = True
+                environment.communicate_isolated(runner)
 
-    if shutdown_error:
-        CONSOLE.print("[red]Shutdown failed, hard exiting")
-        os._exit(1)
+            CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
 
-    CONSOLE.print("[green]Shutdown complete")
+            watchdog = build_common_watchdog(
+                package,
+                handle_file_changes,
+                subscribe_to_mountaineer=subscribe_to_mountaineer,
+            )
+            await watchdog.start_watching()
 
+            print("SHUTDOWN")
+
+        CONSOLE.print("[green]Shutdown complete")
 
 @async_to_sync
 async def handle_build(

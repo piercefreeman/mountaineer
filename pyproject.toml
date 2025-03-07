@@ -22,6 +22,7 @@ websockets = "<14.0"
 # will not need these.
 watchfiles = "^0.21.0"
 rich = "^13.7.1"
+firehot = "^0.1.0"
 
 [tool.poetry.group.dev.dependencies]
 mypy = "^1.8.0"
@@ -98,6 +99,7 @@ dependencies = [
     "pydantic-settings>=2.1.0,<3.0.0",
     "rich>=13.7.1,<14.0.0",
     "websockets<14.0",
+    "firehot>=0.1.0,<1.0.0",
 ]
 
 # Excluded in sdist packaging
