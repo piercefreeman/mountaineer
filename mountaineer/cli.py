@@ -302,9 +302,22 @@ def run_isolated(
 
     print("APP CONTROLLER", app_controller, flush=True)
 
+    from fastapi import Request
+
+    async def catch_exceptions_middleware(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as e:
+            print(traceback.format_exc())
+            raise e
+
+
+    app_controller.app.middleware('http')(catch_exceptions_middleware)
+
+
     # Run a uvicorn server on port 5008
-    print("RUN PORT 5016")
-    uvicorn.run(app_controller.app, host="localhost", port=5016)
+    print("RUN PORT 5018")
+    uvicorn.run(app_controller.app, host="localhost", port=5018)
     
     #
     # Confirmed to work

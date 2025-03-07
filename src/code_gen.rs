@@ -17,8 +17,11 @@ pub fn build_entrypoint(
         entrypoint_content += &format!("import Layout{} from '{}';\n", j, path);
     }
 
+    // TODO: REMOVE
+    entrypoint_content += "console.log('Hello', process.env.MY_VAR);\n";
+
     entrypoint_content += "\nconst Entrypoint = () => {\n";
-    entrypoint_content += "    mountLiveReload({});\n";
+    entrypoint_content += "    mountLiveReload({SSR_RENDERING: process.env.SSR_RENDERING, NODE_ENV: process.env.NODE_ENV, LIVE_RELOAD_PORT: process.env.LIVE_RELOAD_PORT});\n";
     entrypoint_content += "    return (\n";
 
     // Nest the layouts

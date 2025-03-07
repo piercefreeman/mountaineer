@@ -74,6 +74,10 @@ def render_ssr(
     injected_script = f"var SERVER_DATA = {data_json};\n{polyfill_script}\n"
     full_script = f"{injected_script}{script}"
 
+    # TODO: REMOVE
+    with open("full_server_script.js", "w") as f:
+        f.write(full_script)
+
     try:
         # Convert to milliseconds for the rust worker
         render_result = mountaineer_rs.render_ssr(

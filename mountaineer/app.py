@@ -371,6 +371,7 @@ class AppController:
                     external_client_imports=None,
                     sourcemap=controller_node.cached_server_sourcemap,
                 )
+                print("DONE WITH COMPILE")
             else:
                 # Production payload
                 html = self.compile_html(

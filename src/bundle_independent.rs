@@ -3,9 +3,16 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
-use rolldown::{Bundler, BundlerOptions, InputItem, SourceMapType};
+use rolldown::{Bundler, BundlerOptions, InputItem, SourceMapType, OutputExports, OutputFormat, ResolveOptions};
 use tokio::runtime::Runtime;
 use walkdir::WalkDir;
+use indexmap::IndexMap;
+use rustc_hash::FxHasher;
+use std::hash::BuildHasherDefault;
+use pyo3::exceptions::PyValueError;
+use std::fmt::format;
+
+use crate::code_gen;
 
 /// Compile independent bundles using Rolldown.
 ///
@@ -29,7 +36,7 @@ pub fn compile_independent_bundles(
     environment: String,
     live_reload_port: i32,
     live_reload_import: String,
-    is_server: bool,
+    is_ssr: bool,
 ) -> PyResult<(Vec<String>, Vec<String>)> {
     let mut output_files = Vec::new();
     let mut sourcemap_files = Vec::new();
@@ -43,10 +50,35 @@ pub fn compile_independent_bundles(
 
         // Create the entrypoint file using your custom logic.
         let entrypoint_path =
-            create_entrypoint(&temp_dir, path_group, is_server, &live_reload_import)?;
+            create_entrypoint(&temp_dir, path_group, is_ssr, &live_reload_import)?;
+
+            // Unlike esbuild, this only affects variables defined in the main entrypoint
+            // file that we pass - not dependencies that are imported.
+    let mut define : IndexMap<String, String, BuildHasherDefault<FxHasher>> = IndexMap::with_hasher(BuildHasherDefault::default());
+    define.insert("process.env.NODE_ENV".to_string(), format!("\"{}\"", environment));
+    define.insert("process.env.LIVE_RELOAD_PORT".to_string(), format!("{}", live_reload_port));
+    if is_ssr {
+        define.insert("process.env.SSR_RENDERING".to_string(), "true".to_string());
+        define.insert("global".to_string(), "window".to_string());
+    } else {
+        define.insert("process.env.SSR_RENDERING".to_string(), "false".to_string());
+    }
+
+    define.insert("process.env.MY_VAR".to_string(), "\"production\"".to_string());
+
+    println!("DEFINE: {:?}", define);
+
+    // Set up resolve options to let Rolldown know where to find node_modules.
+    let resolve = Some(ResolveOptions {
+        modules: Some(vec![node_modules_path.clone()]),
+        ..Default::default()
+    });
+
 
         // Configure Rolldown bundler options.
         // Here we set the input to our entrypoint and use the temp_dir as working directory.
+        // Close alignment with: https://rollupjs.org/configuration-options/
+        // Defined: https://github.com/rolldown/rolldown/blob/4666fd5b036992ee73354a0a8ea674fce2bb206c/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
         let bundler_options = BundlerOptions {
             input: Some(vec![InputItem {
                 name: None, // You can set a name if required.
@@ -54,6 +86,22 @@ pub fn compile_independent_bundles(
             }]),
             cwd: Some(temp_dir.path().to_path_buf()),
             sourcemap: Some(SourceMapType::File),
+            define: Some(define),
+            resolve,
+            // Only the "Index" will be exported in SSR, which is a bit different
+            // than the previous esbuild pipeline.
+            //
+            // const Entrypoint = () => {
+            //     live_reload_default({});
+            //     return (0, import_jsx_runtime.jsx)(page_default, {});
+            // };
+            // const Index = () => (0, import_server_browser.renderToString)((0, import_jsx_runtime.jsx)(Entrypoint, {}));
+            //
+            // Maybe just for is_ssr?
+            //exports: Some(OutputExports::Named),
+            // Choose the output format and global name based on SSR flag.
+            format: if is_ssr { Some(OutputFormat::Iife) } else { Some(OutputFormat::Esm) },
+            //name: if is_ssr { Some("SSR".to_string()) } else { None },
             // Add additional options as needed (e.g. experimental options, plugin hooks, etc.)
             ..Default::default()
         };
@@ -99,10 +147,42 @@ pub fn compile_independent_bundles(
         println!("Looking for sourcemap at: {}", sourcemap_file_path.display());
         
         // Read the compiled files from the dist directory
-        let compiled_file = read_file(&compiled_file_path)?;
+        let mut compiled_file = read_file(&compiled_file_path)?;
         let sourcemap_file = read_file(&sourcemap_file_path)?;
         println!("READ FILES");
 
+        //println!("COMPILED FILE: {}", compiled_file);
+        //println!("SOURCEMAP FILE: {}", sourcemap_file);
+
+        // Tmp: Write the compiled file to a local file
+        if is_ssr {
+            // We expect the format of the iife file will be (function() { ... })()
+            // Unlike esbuild, which supports a global-name (https://esbuild.github.io/api/#global-name) to set
+            // the entrypoint, rolldown does not currently support this.
+
+            // First validate the format of the compiled file matches our expectations
+            if !compiled_file.starts_with("(function(") {
+                // Log the beginning and ending of the compiled file for debugging
+                let start_chars: String = compiled_file.chars().take(50).collect();
+                let end_chars: String = compiled_file.chars().rev().take(50).collect::<String>().chars().rev().collect();
+                
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    format!(
+                        "Compiled file does not match expected IIFE format: (function() {{ ... }})()\n\nBeginning 50 chars: {}\nEnding 50 chars: {}",
+                        start_chars, end_chars
+                    )
+                ));
+            }
+
+            // Then we add a manual var assignment prefix
+            // Replace the opening part with our SSR variable assignment
+            // Newlines required to clear out any trailing comments
+            compiled_file = format!(
+                "var SSR = (() => {{\nreturn {}\n}})();",
+                compiled_file
+            )
+        }
+        
         output_files.push(compiled_file);
         sourcemap_files.push(sourcemap_file);
     }
@@ -122,28 +202,10 @@ fn create_entrypoint(
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
 
     // Replace this with your actual code generation logic.
-    let entrypoint_content = build_entrypoint(path_group, is_server, live_reload_import);
+    let entrypoint_content = code_gen::build_entrypoint(path_group, is_server, live_reload_import);
     file.write_all(entrypoint_content.as_bytes())
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
     Ok(entrypoint_path)
-}
-
-/// Example function that generates entrypoint content.
-/// In your real code, replace this with a call to your `code_gen::build_entrypoint`.
-fn build_entrypoint(paths: &[String], is_server: bool, live_reload_import: &str) -> String {
-    let mut content = String::new();
-    for path in paths {
-        content.push_str(&format!("import '{}';\n", path));
-    }
-    content.push_str(if is_server {
-        "// Server bundle entrypoint\n"
-    } else {
-        "// Client bundle entrypoint\n"
-    });
-    if !live_reload_import.is_empty() {
-        content.push_str(&format!("import '{}';\n", live_reload_import));
-    }
-    content
 }
 
 /// Utility function to read a file into a String.
