@@ -339,5 +339,7 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         message_id = str(uuid.uuid4())
         future = BrokerMessageFuture[TResponse]()
         self._pending_futures[message_id] = future
+        print(f"PUTTING MESSAGE: {message_id}, {message}", flush=True)
         self.message_queue.put((message_id, message))
+        print("PUT MESSAGE DONE", flush=True)
         return future

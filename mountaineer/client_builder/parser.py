@@ -318,6 +318,7 @@ class ControllerParser:
 
         # Get all valid superclasses in MRO order. Include any controller that is either explicitly a subclass
         # of ControllerBase or has client functions defined on it.
+        print("GETTING VALID CLASSES")
         controller_classes = self._get_valid_parent_classes(
             controller,
             base_require_predicate=lambda base: (
@@ -327,10 +328,12 @@ class ControllerParser:
             base_exclude_classes=(ControllerBase, LayoutControllerBase),
         )
 
+        print("PARSING RENDER")
         # Get render model from the concrete controller
         render, render_path, render_query, entrypoint_url = self._parse_render(
             controller
         )
+        print("PARSING ACTIONS")
         actions = self._parse_actions(controller)
 
         # Parse superclasses
@@ -338,6 +341,7 @@ class ControllerParser:
         for superclass in controller_classes:
             superclass_controllers.append(self.parse_controller(superclass))
 
+        print("CREATING CONTROLLER WRAPPER")
         wrapper = ControllerWrapper(
             name=WrapperName(controller.__name__),
             module_name=controller.__module__,

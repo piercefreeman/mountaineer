@@ -1,4 +1,5 @@
 import asyncio
+import os
 import traceback
 from dataclasses import dataclass, field
 from hashlib import md5
@@ -261,17 +262,14 @@ async def run_isolated(
         port=port,
     )
 
-    import uvicorn
-    print(f"RUNNING SERVER {app_context.host} {app_context.port}")
-    app_context.initialize_app_state()
-    print("self.app_controller", app_context.app_controller)
-    uvicorn.run(app_context.app_controller, host=app_context.host, port=app_context.port)
-    print("AFTER RUN")
-    return
-
-    async with AsyncMessageBroker.connect_server(message_config) as broker:
-        await app_context.run_async(broker)
-
+    try:
+        async with AsyncMessageBroker.connect_server(message_config) as broker:
+            await app_context.run_async(broker)
+    except Exception as e:
+        # This logging should happen automatically
+        CONSOLE.print(f"[red]Error: {e}")
+        CONSOLE.print(traceback.format_exc())
+        raise e
 
 @async_to_sync
 async def handle_runserver(
@@ -309,10 +307,12 @@ async def handle_runserver(
     # Nonlocal vars for shutdown context
     watchdog: PackageWatchdog
     current_context = None
+    first_run: bool = True
 
     async with AsyncMessageBroker.start_server(host) as (broker, config):
         with isolate_imports(package) as environment:
             CONSOLE.print("[bold blue]Process manager started")
+            print("ROOT PID", os.getpid())
 
             async def restart_backend():
                 CONSOLE.print("Restarting backend")
@@ -337,16 +337,26 @@ async def handle_runserver(
                 CONSOLE.print("Done with backend build")
 
             async def rebuild_frontend():
+                nonlocal file_changes_state
+
                 CONSOLE.print("Rebuilding frontend")
 
-                await broker.reload_frontend(
-                    BuildJsMessage(updated_js=list(file_changes_state.pending_js))
+                print("VALUES", BuildJsMessage(updated_js=list(file_changes_state.pending_js) if file_changes_state.pending_js else None))
+
+                await broker.send_message(
+                    # None will rebuild everything - we want this in cases where we are called
+                    # without a list provided
+                    BuildJsMessage(updated_js=list(file_changes_state.pending_js) if file_changes_state.pending_js else None)
                 )
+                
+                CONSOLE.print("Done with frontend build")
+
 
             async def handle_file_changes(metadata: CallbackMetadata):
                 try:
                     print("Should handle", metadata)
-                    nonlocal current_context
+                    nonlocal first_run
+                    nonlocal file_changes_state
 
                     # First collect all the files that need updating
                     for event in metadata.events:
@@ -355,17 +365,19 @@ async def handle_runserver(
                         elif event.path.suffix == ".py":
                             file_changes_state.pending_python.add(event.path)
 
-                    if current_context is not None and not (
+                    if not first_run and not (
                         file_changes_state.pending_js
                         or file_changes_state.pending_python
                     ):
                         return
 
-                    if file_changes_state.pending_python or current_context is None:
+                    if file_changes_state.pending_python or first_run:
                         await restart_backend()
 
-                    if file_changes_state.pending_js:
+                    if file_changes_state.pending_js or first_run:
                         await rebuild_frontend()
+                    
+                    first_run = False
 
                 except Exception as e:
                     # Otherwise silently caught by our watchfiles command

@@ -8,6 +8,7 @@ from mountaineer.client_builder.file_generators.globals import (
     GlobalControllerGenerator,
     GlobalLinkGenerator,
 )
+from mountaineer.logging import LOGGER
 from mountaineer.client_builder.file_generators.locals import (
     LocalActionGenerator,
     LocalIndexGenerator,
@@ -64,12 +65,18 @@ class APIBuilder:
     async def build_use_server(self):
         # Parse all controllers first
         parser, parsed_controller = self._parse_all_controllers()
+        print(f"PARSED CONTROLLERS", flush=True)
         self._assign_unique_names(parser)
+        print(f"ASSIGNED UNIQUE NAMES", flush=True)
 
         # Generate all the required files
+        print(f"GENERATING STATIC FILES", flush=True)
         self._generate_static_files()
+        print(f"GENERATED STATIC FILES", flush=True)
         self._generate_global_files(parsed_controller)
+        print(f"GENERATED GLOBAL FILES", flush=True)
         self._generate_local_files(parsed_controller)
+        print(f"GENERATED LOCAL FILES", flush=True)
 
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""
@@ -77,15 +84,20 @@ class APIBuilder:
         parsed_controllers: list[ParsedController] = []
 
         for controller_def in self.app.controllers:
+            LOGGER.debug(f"PARSING CONTROLLER: {controller_def.controller.__class__}")
+            print(f"GOT CONTROLLER: {controller_def.controller.__class__}", flush=True)
             controller = controller_def.controller
 
             # Parse the controller
+            print(f"PARSING CONTROLLER: {controller.__class__}", flush=True)
             parsed_wrapper = parser.parse_controller(controller.__class__)
 
             # Get view path
+            print(f"GETTING VIEW PATH", flush=True)
             view_path = self.view_root.get_controller_view_path(controller)
 
             # Create ParsedController instance
+            print(f"CREATING PARSED CONTROLLER INSTANCE", flush=True)
             parsed_controllers.append(
                 ParsedController(
                     wrapper=parsed_wrapper,
@@ -94,7 +106,9 @@ class APIBuilder:
                     is_layout=isinstance(controller, LayoutControllerBase),
                 )
             )
+            print("ADDED PARSED CONTROLLER INSTANCE", flush=True)
 
+        print(f"RETURNING PARSER AND PARSED CONTROLLERS", flush=True)
         return parser, parsed_controllers
 
     def _assign_unique_names(self, parser: ControllerParser):
