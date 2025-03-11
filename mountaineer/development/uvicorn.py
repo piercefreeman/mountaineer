@@ -8,7 +8,6 @@ from typing import Optional
 from fastapi import FastAPI
 from uvicorn import Config
 from uvicorn.server import Server
-import uvicorn
 
 from mountaineer.logging import LOGGER
 
@@ -83,11 +82,8 @@ class UvicornThread(Thread):
         self.shutdown = False
 
     def run(self) -> None:
-
-        uvicorn.run(self.app, host=self.host, port=self.port)
-        return
-
-
+        # uvicorn.run(self.app, host=self.host, port=self.port)
+        # return
 
         # Configure logging before creating the server
         if self.use_logs:
@@ -101,7 +97,7 @@ class UvicornThread(Thread):
             reload=False,
             access_log=False,
             loop="asyncio",
-            #log_level=self.log_level,
+            # log_level=self.log_level,
             log_level="debug",
         )
 

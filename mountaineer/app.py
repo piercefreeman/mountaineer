@@ -332,6 +332,7 @@ class AppController:
                 # during development
                 start = monotonic_ns()
                 from os import environ
+
                 print("COMPILING", environ, flush=True)
                 if not controller_node.cached_server_script:
                     (

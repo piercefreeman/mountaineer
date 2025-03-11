@@ -1,16 +1,16 @@
 import asyncio
-import os
-from time import sleep
+import secrets
+import threading
 import traceback
 from dataclasses import dataclass, field
 from hashlib import md5
-from multiprocessing import get_start_method, set_start_method
+from multiprocessing import Queue, get_start_method, set_start_method
+from multiprocessing.managers import BaseManager
 from pathlib import Path
-from signal import SIGINT
 from time import time
 from typing import Any, Callable, Coroutine
-import threading
 
+from firehot import isolate_imports
 from inflection import underscore
 from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
 from rich.traceback import install as rich_traceback_install
@@ -23,12 +23,16 @@ from mountaineer.development.manager import (
     DevAppManager,
 )
 from mountaineer.development.messages import (
-    AsyncMessageBroker,
     ErrorResponse,
+    BootupMessage,
     IsolatedMessageBase,
-    ReloadResponseError,
-    ReloadResponseSuccess,
+    BuildJsMessage,
     SuccessResponse,
+    BuildUseServerMessage,
+)
+from mountaineer.development.messages_broker import (
+    BrokerServerConfig,
+    AsyncMessageBroker,
 )
 from mountaineer.development.packages import (
     find_packages_with_prefix,
@@ -44,10 +48,6 @@ from mountaineer.development.watch_server import WatcherWebservice
 from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
-from firehot import isolate_imports
-from multiprocessing import Manager, Queue
-from multiprocessing.managers import BaseManager
-import secrets
 
 
 @dataclass
@@ -255,105 +255,21 @@ async def handle_watch(
         await watchdog.start_watching()
 
 
-def run_isolated(
-    address: tuple[str, int],
-    authkey: bytes,
-    package: str,
-    webservice: str,
+@async_to_sync
+async def run_isolated(
     webcontroller: str,
+    host: str,
+    port: int,
+    message_config: BrokerServerConfig,
 ):
-    print("DID BOOT CHILD")
-    # Connect to the manager server as a client
-    class QueueManager(BaseManager): pass
-    QueueManager.register('get_queue')
+    app_context = IsolatedAppContext.from_webcontroller(
+        webcontroller=webcontroller,
+        host=host,
+        port=port,
+    )
 
-    manager = QueueManager(address=address, authkey=authkey)
-    manager.connect()
-    queue = manager.get_queue()
-    
-    print(f"Child process connected to queue manager at {address}", flush=True)
-    
-    # Boot up the webcontroller by importing the modules
-    # TODO: Most of our logic now is just owned by the isolation context, we probably
-    # don't need the app manager
-    # We still need message passing from the client in order to build the js files given
-    # the scope of imported modules
-    app_manager = DevAppManager.from_webcontroller(webcontroller, host="localhost", port=5008, live_reload_port=None)
-
-    print("INPUT VARS", flush=True)
-    print(f"package: {app_manager.package}", flush=True)
-    print(f"module_name: {app_manager.module_name}", flush=True)
-    print(f"controller_name: {app_manager.controller_name}", flush=True)
-    print(f"host: {app_manager.host}", flush=True)
-    print(f"port: {app_manager.port}", flush=True)
-
-    #
-    # The stall occurs when we try to load pages that call the render() functions
-    # in Mountaineer
-    # If we call a fastapi /test endpoint first, it works
-    # Points to a stall potentially in the rust layer?
-    #
-    import importlib
-    import uvicorn
-
-    module = importlib.import_module(app_manager.module_name)
-    initial_state = {name: getattr(module, name) for name in dir(module)}
-    app_controller = initial_state[app_manager.controller_name]
-
-    print("APP CONTROLLER", app_controller, flush=True)
-
-    from fastapi import Request
-
-    async def catch_exceptions_middleware(request: Request, call_next):
-        try:
-            return await call_next(request)
-        except Exception as e:
-            print(traceback.format_exc())
-            raise e
-
-
-    app_controller.app.middleware('http')(catch_exceptions_middleware)
-
-
-    # Run a uvicorn server on port 5008
-    print("RUN PORT 5018")
-    uvicorn.run(app_controller.app, host="localhost", port=5018)
-    
-    #
-    # Confirmed to work
-    #
-    #from fastapi import FastAPI
-    #app = FastAPI()
-    #@app.get("/")
-    #async def root():
-    #    return {"message": "Hello World"}
-    
-    #uvicorn.run(app, host="localhost", port=5008)
-
-   
-    # app_context = IsolatedAppContext(
-    #     package=app_manager.package,
-    #     package_path=Path(app_manager.package.replace(".", "/")),
-    #     module_name=app_manager.module_name,
-    #     controller_name=app_manager.controller_name,
-    #     host=app_manager.host,
-    #     port=app_manager.port,
-    #     live_reload_port=app_manager.live_reload_port,
-    #     message_broker=app_manager.message_broker,
-    # )
-    # asyncio.run(app_context.handle_bootstrap())
-   
-
-
-
-    # print("NOW BLOCKING", flush=True)
-    # while True:
-    #     sleep(1)
-    #     print("SLEEPING", flush=True)
-    #     continue
-    #     metadata = queue.get()
-    #     with open("test.txt", "a") as f:
-    #         f.write(f"SUBPROCESS {metadata}\n")
+    broker = AsyncMessageBroker.connect_server(message_config)
+    await app_context.run_async(broker)
 
 @async_to_sync
 async def handle_runserver(
@@ -378,80 +294,85 @@ async def handle_runserver(
     :param subscribe_to_mountaineer: See `handle_watch` for more details.
 
     """
-    #update_multiprocessing_settings()
-    #rich_traceback_install()
+    update_multiprocessing_settings()
+    rich_traceback_install()
 
     watcher_webservice = WatcherWebservice(
-        webservice_host=hotreload_host or host, webservice_port=hotreload_port
+        webservice_host=hotreload_host or host,
+        webservice_port=hotreload_port
     )
+    await watcher_webservice.start()
+
     file_changes_state = FileChangesState()
 
     # Nonlocal vars for shutdown context
     watchdog: PackageWatchdog
-    loop = asyncio.get_event_loop()
-    shutdown_count = 0
+    current_context = None
 
-    await watcher_webservice.start()
+    with (
+        AsyncMessageBroker.start_server() as (broker, config),
+        isolate_imports(package) as environment
+    ):
+        CONSOLE.print(
+            f"[bold blue]Process manager started"
+        )
 
-    # Use a random port for the manager and a secure random auth key
-    manager_port = port + 1000  # Use a different port than the webserver
-    manager_host = host
-    manager_address = (manager_host, manager_port)
-    auth_key = secrets.token_bytes(32)  # Secure random authentication key
-    
-    # Set up the manager server with a shared queue
-    queue = Queue()
-    class QueueManager(BaseManager): pass
-    QueueManager.register('get_queue', callable=lambda: queue)
-    
-    # Create and start the manager server in a separate thread
-    manager_server = QueueManager(address=manager_address, authkey=auth_key)
-    server = manager_server.get_server()
-    server_thread = threading.Thread(target=server.serve_forever)
-    server_thread.daemon = True
-    server_thread.start()
-    
-    CONSOLE.print(f"[bold blue]Process manager started at {manager_host}:{manager_port}")
+        async def restart_backend():
+            nonlocal current_context
 
-    i = 0
-
-    with isolate_imports(package) as environment:
-        async def handle_file_changes(metadata: CallbackMetadata):
-            nonlocal i
-            print("DID CHANGE", metadata)
+            if current_context is not None:
+                environment.stop_isolated(current_context)
 
             # We might have updated imports, so pass to the env to optionally update
+            # No-op if no dependencies have changed, so the subsequent exec should be instantaneous
             environment.update_environment()
 
-            print("UPDATE DONE!")
-
-            # Launch the subprocess with the manager connection details
-            runner = environment.exec(
+            current_context = environment.exec(
                 run_isolated,
-                manager_address,
-                auth_key,
-                package,
-                webservice,
                 webcontroller,
+                host,
+                port,
+                config
             )
 
-            print("LAUNCHED!")
+            # Bootstrap the process and rebuild the server files
+            await broker.send_message(BootupMessage())
+            await broker.send_message(BuildUseServerMessage())
 
-            # Send a message to the subprocess through the queue
-            queue.put(f"test message from main {i}")
-            print("SENT MESSAGE")
-            i += 1
+        async def rebuild_frontend():
+            # Send a message to rebuild these files
+            await broker.reload_frontend(
+                BuildJsMessage(
+                    updated_js=list(file_changes_state.pending_js)
+                )
+                
+            )
 
-            from time import sleep
-            sleep(5)
+        async def handle_file_changes(metadata: CallbackMetadata):
+            try:
+                nonlocal current_context
 
-            print("COMMUNICATING")
-            # TODO: Allow timeout parameter
-            #if i == 2:
-            environment.communicate_isolated(runner)
-            print("DONE COMMUNICATING")
+                # First collect all the files that need updating
+                for event in metadata.events:
+                    if event.path.suffix in KNOWN_JS_EXTENSIONS:
+                        file_changes_state.pending_js.add(event.path)
+                    elif event.path.suffix == ".py":
+                        file_changes_state.pending_python.add(event.path)
 
-        CONSOLE.print(f"[bold green]🚀 Dev webserver ready at http://{host}:{port}")
+                if current_context is not None and not (file_changes_state.pending_js or file_changes_state.pending_python):
+                    return
+
+                if file_changes_state.pending_python or current_context is None:
+                    await restart_backend()
+                    
+                if file_changes_state.pending_js:
+                    await rebuild_frontend()
+                    
+            except Exception as e:
+                # Otherwise silently caught by our watchfiles command
+                CONSOLE.print(f"[red]Error: {e}")
+                CONSOLE.print(traceback.format_exc())
+                raise e
 
         watchdog = build_common_watchdog(
             package,
@@ -460,9 +381,8 @@ async def handle_runserver(
         )
         await watchdog.start_watching()
 
-        print("SHUTDOWN")
-
     CONSOLE.print("[green]Shutdown complete")
+
 
 @async_to_sync
 async def handle_build(
