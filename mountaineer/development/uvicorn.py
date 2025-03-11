@@ -5,6 +5,7 @@ from threading import Thread
 from time import time
 from typing import Optional
 
+import uvicorn
 from fastapi import FastAPI
 from uvicorn import Config
 from uvicorn.server import Server
@@ -82,12 +83,12 @@ class UvicornThread(Thread):
         self.shutdown = False
 
     def run(self) -> None:
-        # uvicorn.run(self.app, host=self.host, port=self.port)
-        # return
+        uvicorn.run(self.app, host=self.host, port=self.port)
+        return
 
         # Configure logging before creating the server
-        if self.use_logs:
-            configure_uvicorn_logging(self.name, self.emoticon, self.log_level)
+        # if self.use_logs:
+        #    configure_uvicorn_logging(self.name, self.emoticon, self.log_level)
 
         loop = asyncio.new_event_loop()
         config = Config(

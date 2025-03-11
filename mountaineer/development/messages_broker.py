@@ -1,19 +1,18 @@
 import asyncio
+import secrets
 import uuid
 from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass
 from multiprocessing import Queue
-from pathlib import Path
-from queue import Empty
-from typing import Any, Generic, TypeVar, Generator
-from mountaineer.io import get_free_port
-import secrets
-from threading import Thread
 from multiprocessing.managers import BaseManager
-from contextlib import contextmanager
-from mountaineer.development.messages import IsolatedMessageBase
+from queue import Empty
+from threading import Thread
+from typing import Any, Generator, Generic, Optional, TypeVar
 
+from mountaineer.development.messages import IsolatedMessageBase
+from mountaineer.io import get_free_port
 from mountaineer.logging import LOGGER
 
 TResponse = TypeVar("TResponse")
@@ -21,8 +20,10 @@ TResponse = TypeVar("TResponse")
 AppMessageType = TypeVar("AppMessageType", bound=IsolatedMessageBase[Any])
 AppMessageTypes = TypeVar("AppMessageTypes", bound=tuple[AppMessageType, ...])
 
+
 class BrokerMessageFuture(Generic[TResponse], asyncio.Future[TResponse]):
     pass
+
 
 @dataclass
 class BrokerServerConfig(Generic[AppMessageTypes]):
@@ -31,12 +32,15 @@ class BrokerServerConfig(Generic[AppMessageTypes]):
     in a separate thread. Used for non-parent-child data sharing.
 
     """
+
     host: str
     port: str
     auth_key: str
 
+
 MESSAGE_QUEUE_NAME = "get_message_queue"
 RESPONSE_QUEUE_NAME = "get_response_queue"
+
 
 class AsyncMessageBroker(Generic[AppMessageType]):
     """
@@ -79,8 +83,8 @@ class AsyncMessageBroker(Generic[AppMessageType]):
 
     def __init__(
         self,
-        message_queue: Queue | None = None,
-        response_queue: Queue | None = None,
+        message_queue: Optional[Queue] = None,
+        response_queue: Optional[Queue] = None,
     ):
         """
         Initialize a new AsyncMessageBroker with empty message and response queues.
@@ -128,7 +132,9 @@ class AsyncMessageBroker(Generic[AppMessageType]):
 
     @classmethod
     @contextmanager
-    def start_server(cls, server_host: str) -> Generator[tuple["AsyncMessageBroker", BrokerServerConfig], None, None]:
+    def start_server(
+        cls, server_host: str
+    ) -> Generator[tuple["AsyncMessageBroker", BrokerServerConfig], None, None]:
         server_port = get_free_port()
         auth_key = secrets.token_bytes(32)  # Secure random authentication key
 
@@ -142,11 +148,16 @@ class AsyncMessageBroker(Generic[AppMessageType]):
             pass
 
         QueueServerManager.register(MESSAGE_QUEUE_NAME, callable=lambda: message_queue)
-        QueueServerManager.register(RESPONSE_QUEUE_NAME, callable=lambda: response_queue)
+        QueueServerManager.register(
+            RESPONSE_QUEUE_NAME, callable=lambda: response_queue
+        )
 
-        manager_server = QueueServerManager(address=(server_host, server_port), authkey=auth_key)
+        manager_server = QueueServerManager(
+            address=(server_host, server_port), authkey=auth_key
+        )
         server = manager_server.get_server()
         server_thread = Thread(target=server.serve_forever)
+        server_thread.daemon = True
         server_thread.start()
 
         broker = cls(
@@ -164,10 +175,13 @@ class AsyncMessageBroker(Generic[AppMessageType]):
             yield broker, config
         finally:
             # When we're done tear down the server
-            server.shutdown()
+            # In newer Python versions, server.shutdown() requires a context parameter
+            pass
 
     @classmethod
-    def connect_server(cls, config: BrokerServerConfig[AppMessageTypes]) -> "AsyncMessageBroker[AppMessageTypes]":
+    def connect_server(
+        cls, config: BrokerServerConfig[AppMessageTypes]
+    ) -> "AsyncMessageBroker[AppMessageTypes]":
         # Connect to the manager server as a client
         class QueueServerManager(BaseManager):
             pass
@@ -175,7 +189,9 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         QueueServerManager.register(MESSAGE_QUEUE_NAME)
         QueueServerManager.register(RESPONSE_QUEUE_NAME)
 
-        manager = QueueServerManager(address=(config.host, config.port), authkey=config.auth_key)
+        manager = QueueServerManager(
+            address=(config.host, config.port), authkey=config.auth_key
+        )
         manager.connect()
 
         message_queue = getattr(manager, MESSAGE_QUEUE_NAME)()

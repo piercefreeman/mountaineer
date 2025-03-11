@@ -1,7 +1,7 @@
 import asyncio
 import socket
 from functools import lru_cache, wraps
-from typing import Any, Callable, Coroutine, TypeVar, ParamSpec
+from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 
 
 async def gather_with_concurrency(

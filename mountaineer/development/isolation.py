@@ -1,12 +1,7 @@
-import asyncio
 import importlib
-from contextlib import redirect_stderr, redirect_stdout
-from io import StringIO
-from multiprocessing import Process
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
-from typing import Any
 
 from fastapi import Request
 
@@ -16,13 +11,11 @@ from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.controllers.exception_controller import (
     ExceptionController,
 )
-from mountaineer.development.hotreload import HotReloader
 from mountaineer.development.messages import (
     BootupMessage,
     BuildJsMessage,
     BuildUseServerMessage,
     ErrorResponse,
-    IsolatedMessageBase,
     SuccessResponse,
 )
 from mountaineer.development.messages_broker import AsyncMessageBroker
@@ -113,6 +106,7 @@ class IsolatedAppContext:
 
             # Process messages until shutdown
             while True:
+                print("broker.message_queue", broker.message_queue, flush=True)
                 message_id, message = broker.message_queue.get()
                 LOGGER.debug(f"[IsolatedAppContext] Got message: {message}")
 
@@ -127,6 +121,7 @@ class IsolatedAppContext:
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")
                         continue
+                    print("broker.response_queue", broker.response_queue, flush=True)
                     broker.response_queue.put((message_id, response))
                 except Exception as e:
                     LOGGER.info(

@@ -1,11 +1,8 @@
 import asyncio
-import secrets
-import threading
 import traceback
 from dataclasses import dataclass, field
 from hashlib import md5
-from multiprocessing import Queue, get_start_method, set_start_method
-from multiprocessing.managers import BaseManager
+from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
 from time import time
 from typing import Any, Callable, Coroutine
@@ -19,20 +16,17 @@ from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.console import CONSOLE
 from mountaineer.constants import KNOWN_JS_EXTENSIONS
 from mountaineer.development.isolation import IsolatedAppContext
-from mountaineer.development.manager import (
-    DevAppManager,
-)
 from mountaineer.development.messages import (
-    ErrorResponse,
     BootupMessage,
-    IsolatedMessageBase,
     BuildJsMessage,
-    SuccessResponse,
     BuildUseServerMessage,
+    ErrorResponse,
+    IsolatedMessageBase,
+    SuccessResponse,
 )
 from mountaineer.development.messages_broker import (
-    BrokerServerConfig,
     AsyncMessageBroker,
+    BrokerServerConfig,
 )
 from mountaineer.development.packages import (
     find_packages_with_prefix,
@@ -67,7 +61,6 @@ async def handle_file_changes_base(
     *,
     package: str,
     metadata: CallbackMetadata,
-    app_manager: DevAppManager,
     file_changes_state: FileChangesState,
     server_config: FileChangeServerConfig | None = None,
 ) -> None:
@@ -271,6 +264,7 @@ async def run_isolated(
     broker = AsyncMessageBroker.connect_server(message_config)
     await app_context.run_async(broker)
 
+
 @async_to_sync
 async def handle_runserver(
     *,
@@ -298,8 +292,7 @@ async def handle_runserver(
     rich_traceback_install()
 
     watcher_webservice = WatcherWebservice(
-        webservice_host=hotreload_host or host,
-        webservice_port=hotreload_port
+        webservice_host=hotreload_host or host, webservice_port=hotreload_port
     )
     await watcher_webservice.start()
 
@@ -310,14 +303,13 @@ async def handle_runserver(
     current_context = None
 
     with (
-        AsyncMessageBroker.start_server() as (broker, config),
-        isolate_imports(package) as environment
+        AsyncMessageBroker.start_server(host) as (broker, config),
+        isolate_imports(package) as environment,
     ):
-        CONSOLE.print(
-            f"[bold blue]Process manager started"
-        )
+        CONSOLE.print("[bold blue]Process manager started")
 
         async def restart_backend():
+            CONSOLE.print("Restarting backend")
             nonlocal current_context
 
             if current_context is not None:
@@ -328,28 +320,26 @@ async def handle_runserver(
             environment.update_environment()
 
             current_context = environment.exec(
-                run_isolated,
-                webcontroller,
-                host,
-                port,
-                config
+                run_isolated, webcontroller, host, port, config
             )
 
             # Bootstrap the process and rebuild the server files
+            CONSOLE.print("Booting server")
             await broker.send_message(BootupMessage())
+            CONSOLE.print("Building useServer")
             await broker.send_message(BuildUseServerMessage())
+            CONSOLE.print("Done with backend build")
 
         async def rebuild_frontend():
-            # Send a message to rebuild these files
+            CONSOLE.print("Rebuilding frontend")
+
             await broker.reload_frontend(
-                BuildJsMessage(
-                    updated_js=list(file_changes_state.pending_js)
-                )
-                
+                BuildJsMessage(updated_js=list(file_changes_state.pending_js))
             )
 
         async def handle_file_changes(metadata: CallbackMetadata):
             try:
+                print("Should handle", metadata)
                 nonlocal current_context
 
                 # First collect all the files that need updating
@@ -359,15 +349,17 @@ async def handle_runserver(
                     elif event.path.suffix == ".py":
                         file_changes_state.pending_python.add(event.path)
 
-                if current_context is not None and not (file_changes_state.pending_js or file_changes_state.pending_python):
+                if current_context is not None and not (
+                    file_changes_state.pending_js or file_changes_state.pending_python
+                ):
                     return
 
                 if file_changes_state.pending_python or current_context is None:
                     await restart_backend()
-                    
+
                 if file_changes_state.pending_js:
                     await rebuild_frontend()
-                    
+
             except Exception as e:
                 # Otherwise silently caught by our watchfiles command
                 CONSOLE.print(f"[red]Error: {e}")
