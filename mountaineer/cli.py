@@ -261,8 +261,16 @@ async def run_isolated(
         port=port,
     )
 
-    broker = AsyncMessageBroker.connect_server(message_config)
-    await app_context.run_async(broker)
+    import uvicorn
+    print(f"RUNNING SERVER {app_context.host} {app_context.port}")
+    app_context.initialize_app_state()
+    print("self.app_controller", app_context.app_controller)
+    uvicorn.run(app_context.app_controller, host=app_context.host, port=app_context.port)
+    print("AFTER RUN")
+    return
+
+    async with AsyncMessageBroker.connect_server(message_config) as broker:
+        await app_context.run_async(broker)
 
 
 @async_to_sync
@@ -302,76 +310,75 @@ async def handle_runserver(
     watchdog: PackageWatchdog
     current_context = None
 
-    with (
-        AsyncMessageBroker.start_server(host) as (broker, config),
-        isolate_imports(package) as environment,
-    ):
-        CONSOLE.print("[bold blue]Process manager started")
+    async with AsyncMessageBroker.start_server(host) as (broker, config):
+        with isolate_imports(package) as environment:
+            CONSOLE.print("[bold blue]Process manager started")
 
-        async def restart_backend():
-            CONSOLE.print("Restarting backend")
-            nonlocal current_context
-
-            if current_context is not None:
-                environment.stop_isolated(current_context)
-
-            # We might have updated imports, so pass to the env to optionally update
-            # No-op if no dependencies have changed, so the subsequent exec should be instantaneous
-            environment.update_environment()
-
-            current_context = environment.exec(
-                run_isolated, webcontroller, host, port, config
-            )
-
-            # Bootstrap the process and rebuild the server files
-            CONSOLE.print("Booting server")
-            await broker.send_message(BootupMessage())
-            CONSOLE.print("Building useServer")
-            await broker.send_message(BuildUseServerMessage())
-            CONSOLE.print("Done with backend build")
-
-        async def rebuild_frontend():
-            CONSOLE.print("Rebuilding frontend")
-
-            await broker.reload_frontend(
-                BuildJsMessage(updated_js=list(file_changes_state.pending_js))
-            )
-
-        async def handle_file_changes(metadata: CallbackMetadata):
-            try:
-                print("Should handle", metadata)
+            async def restart_backend():
+                CONSOLE.print("Restarting backend")
                 nonlocal current_context
 
-                # First collect all the files that need updating
-                for event in metadata.events:
-                    if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                        file_changes_state.pending_js.add(event.path)
-                    elif event.path.suffix == ".py":
-                        file_changes_state.pending_python.add(event.path)
+                if current_context is not None:
+                    environment.stop_isolated(current_context)
 
-                if current_context is not None and not (
-                    file_changes_state.pending_js or file_changes_state.pending_python
-                ):
-                    return
+                # We might have updated imports, so pass to the env to optionally update
+                # No-op if no dependencies have changed, so the subsequent exec should be instantaneous
+                environment.update_environment()
 
-                if file_changes_state.pending_python or current_context is None:
-                    await restart_backend()
+                current_context = environment.exec(
+                    run_isolated, webcontroller, host, port, config
+                )
 
-                if file_changes_state.pending_js:
-                    await rebuild_frontend()
+                # Bootstrap the process and rebuild the server files
+                CONSOLE.print("Booting server")
+                await broker.send_message(BootupMessage())
+                CONSOLE.print("Building useServer")
+                await broker.send_message(BuildUseServerMessage())
+                CONSOLE.print("Done with backend build")
 
-            except Exception as e:
-                # Otherwise silently caught by our watchfiles command
-                CONSOLE.print(f"[red]Error: {e}")
-                CONSOLE.print(traceback.format_exc())
-                raise e
+            async def rebuild_frontend():
+                CONSOLE.print("Rebuilding frontend")
 
-        watchdog = build_common_watchdog(
-            package,
-            handle_file_changes,
-            subscribe_to_mountaineer=subscribe_to_mountaineer,
-        )
-        await watchdog.start_watching()
+                await broker.reload_frontend(
+                    BuildJsMessage(updated_js=list(file_changes_state.pending_js))
+                )
+
+            async def handle_file_changes(metadata: CallbackMetadata):
+                try:
+                    print("Should handle", metadata)
+                    nonlocal current_context
+
+                    # First collect all the files that need updating
+                    for event in metadata.events:
+                        if event.path.suffix in KNOWN_JS_EXTENSIONS:
+                            file_changes_state.pending_js.add(event.path)
+                        elif event.path.suffix == ".py":
+                            file_changes_state.pending_python.add(event.path)
+
+                    if current_context is not None and not (
+                        file_changes_state.pending_js
+                        or file_changes_state.pending_python
+                    ):
+                        return
+
+                    if file_changes_state.pending_python or current_context is None:
+                        await restart_backend()
+
+                    if file_changes_state.pending_js:
+                        await rebuild_frontend()
+
+                except Exception as e:
+                    # Otherwise silently caught by our watchfiles command
+                    CONSOLE.print(f"[red]Error: {e}")
+                    CONSOLE.print(traceback.format_exc())
+                    raise e
+
+            watchdog = build_common_watchdog(
+                package,
+                handle_file_changes,
+                subscribe_to_mountaineer=subscribe_to_mountaineer,
+            )
+            await watchdog.start_watching()
 
     CONSOLE.print("[green]Shutdown complete")
 

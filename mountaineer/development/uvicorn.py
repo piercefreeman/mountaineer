@@ -83,6 +83,7 @@ class UvicornThread(Thread):
         self.shutdown = False
 
     def run(self) -> None:
+        print("RUNNING SERVER", self.host, self.port, flush=True)
         uvicorn.run(self.app, host=self.host, port=self.port)
         return
 

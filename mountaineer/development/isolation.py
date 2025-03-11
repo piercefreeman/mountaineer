@@ -106,7 +106,6 @@ class IsolatedAppContext:
 
             # Process messages until shutdown
             while True:
-                print("broker.message_queue", broker.message_queue, flush=True)
                 message_id, message = broker.message_queue.get()
                 LOGGER.debug(f"[IsolatedAppContext] Got message: {message}")
 
@@ -121,7 +120,6 @@ class IsolatedAppContext:
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")
                         continue
-                    print("broker.response_queue", broker.response_queue, flush=True)
                     broker.response_queue.put((message_id, response))
                 except Exception as e:
                     LOGGER.info(
@@ -155,12 +153,9 @@ class IsolatedAppContext:
 
         :return: Success or error response
         """
-        print("bootstrapping...", flush=True)
         response = self.initialize_app_state()
-        print("bootstrapped", response, flush=True)
         if isinstance(response, SuccessResponse):
             await self.start_server()
-        print("started server", flush=True)
 
         return response
 

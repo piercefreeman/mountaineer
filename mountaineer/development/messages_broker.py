@@ -3,13 +3,13 @@ import secrets
 import uuid
 from asyncio import Future
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from multiprocessing import Queue
 from multiprocessing.managers import BaseManager
 from queue import Empty
 from threading import Thread
-from typing import Any, Generator, Generic, Optional, TypeVar
+from typing import Any, AsyncGenerator, Generic, Optional, TypeVar
 
 from mountaineer.development.messages import IsolatedMessageBase
 from mountaineer.io import get_free_port
@@ -131,10 +131,13 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         self._should_stop = False
 
     @classmethod
-    @contextmanager
-    def start_server(
+    @asynccontextmanager
+    async def start_server(
         cls, server_host: str
-    ) -> Generator[tuple["AsyncMessageBroker", BrokerServerConfig], None, None]:
+    ) -> AsyncGenerator[
+        tuple["AsyncMessageBroker[AppMessageType]", BrokerServerConfig[AppMessageType]],
+        None,
+    ]:
         server_port = get_free_port()
         auth_key = secrets.token_bytes(32)  # Secure random authentication key
 
@@ -172,16 +175,18 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         )
 
         try:
-            yield broker, config
+            async with broker.launch():
+                yield broker, config
         finally:
             # When we're done tear down the server
             # In newer Python versions, server.shutdown() requires a context parameter
             pass
 
     @classmethod
-    def connect_server(
+    @asynccontextmanager
+    async def connect_server(
         cls, config: BrokerServerConfig[AppMessageTypes]
-    ) -> "AsyncMessageBroker[AppMessageTypes]":
+    ) -> AsyncGenerator["AsyncMessageBroker[AppMessageTypes]", None]:
         # Connect to the manager server as a client
         class QueueServerManager(BaseManager):
             pass
@@ -197,12 +202,23 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         message_queue = getattr(manager, MESSAGE_QUEUE_NAME)()
         response_queue = getattr(manager, RESPONSE_QUEUE_NAME)()
 
-        return cls(
+        broker = cls(
             message_queue=message_queue,
             response_queue=response_queue,
         )
 
-    def start(self):
+        async with broker.launch():
+            yield broker
+
+    @asynccontextmanager
+    async def launch(self):
+        try:
+            await self._start()
+            yield
+        finally:
+            await self._stop()
+
+    async def _start(self):
         """
         Start the response consumer task.
 
@@ -215,7 +231,7 @@ class AsyncMessageBroker(Generic[AppMessageType]):
             self._should_stop = False
             self._response_task = asyncio.create_task(self._consume_responses())
 
-    async def stop(self):
+    async def _stop(self):
         """
         Stop the response consumer task and clean up resources.
 
@@ -242,7 +258,7 @@ class AsyncMessageBroker(Generic[AppMessageType]):
             self._executor = None
 
         # Clean up any remaining futures
-        for message_id, future in self._pending_futures.items():
+        for future in self._pending_futures.values():
             if not future.done():
                 future.cancel()
 
@@ -284,7 +300,7 @@ class AsyncMessageBroker(Generic[AppMessageType]):
                         self._executor,
                         self.response_queue.get,
                         True,
-                        0.1,  # timeout of 0.1s
+                        2,
                     )
 
                     if response_id in self._pending_futures:
@@ -317,6 +333,9 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         :param message: The message to send, which must be a subclass of IsolatedMessageBase
         :return: A future that will be resolved with the response
         """
+        if not self._response_task:
+            raise ValueError("MessageBroker requires launching with .launch")
+
         message_id = str(uuid.uuid4())
         future = BrokerMessageFuture[TResponse]()
         self._pending_futures[message_id] = future
