@@ -264,7 +264,7 @@ async def run_isolated(
 
     try:
         print(f"SUBPROCESS WILL CONNECT TO BROKER: {message_config}", flush=True)
-        async with AsyncMessageBroker.connect_server(message_config) as broker:
+        async with AsyncMessageBroker.new_client(message_config) as broker:
             await app_context.run_async(broker)
     except Exception as e:
         # This logging should happen automatically

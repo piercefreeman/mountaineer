@@ -11,6 +11,7 @@ from mountaineer.development.messages_broker import (
     AsyncMessageBroker,
     BrokerAuthenticationError,
     BrokerServerConfig,
+    OKResponse,
 )
 
 
@@ -35,7 +36,9 @@ async def broker_pair():
 
 
 @pytest.mark.asyncio
-async def test_basic_job_flow(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+async def test_basic_job_flow(
+    broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker],
+):
     """Test the basic job flow between server and client brokers."""
     server_broker, client_broker = broker_pair
 
@@ -43,7 +46,7 @@ async def test_basic_job_flow(broker_pair: tuple[AsyncMessageBroker, AsyncMessag
     job_data = {"message": "test content"}
     job_id = "test-job-1"
     response = await server_broker.send_job(job_id, job_data)
-    assert response.status == "ok"
+    assert isinstance(response, OKResponse)
 
     # Client gets the job and sends response
     response_data = {"processed": True}
@@ -55,15 +58,15 @@ async def test_basic_job_flow(broker_pair: tuple[AsyncMessageBroker, AsyncMessag
 
 
 @pytest.mark.asyncio
-async def test_auth_validation(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+async def test_auth_validation(
+    broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker],
+):
     """Test that authentication is properly enforced."""
     server_broker, _ = broker_pair
 
     # Create client with invalid auth
     invalid_config = BrokerServerConfig(
-        host=server_broker.host,
-        port=server_broker.port,
-        auth_key="invalid_key"
+        host=server_broker.host, port=server_broker.port, auth_key="invalid_key"
     )
 
     async with AsyncMessageBroker.new_client(invalid_config) as invalid_client:
@@ -81,19 +84,18 @@ async def test_auth_validation(broker_pair: tuple[AsyncMessageBroker, AsyncMessa
 
 
 @pytest.mark.asyncio
-async def test_complex_object_serialization(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+async def test_complex_object_serialization(
+    broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker],
+):
     """Test that complex Python objects can be sent through the broker."""
     server_broker, client_broker = broker_pair
 
-    complex_data = {
-        "numbers": [1, 2, 3],
-        "nested": {"key": ["value1", "value2"]}
-    }
+    complex_data = {"numbers": [1, 2, 3], "nested": {"key": ["value1", "value2"]}}
     job_id = "complex-job"
 
     # Send complex job
     response = await server_broker.send_job(job_id, complex_data)
-    assert response.status == "ok"
+    assert isinstance(response, OKResponse)
 
     # Send complex response
     complex_response = {"processed": True, "data": [1, 2, 3]}
@@ -105,7 +107,9 @@ async def test_complex_object_serialization(broker_pair: tuple[AsyncMessageBroke
 
 
 @pytest.mark.asyncio
-async def test_multiple_jobs(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+async def test_multiple_jobs(
+    broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker],
+):
     """Test handling multiple jobs in sequence."""
     server_broker, client_broker = broker_pair
 
@@ -116,16 +120,16 @@ async def test_multiple_jobs(broker_pair: tuple[AsyncMessageBroker, AsyncMessage
     # Send all jobs
     for job_id, data in zip(job_ids, job_data):
         response = await server_broker.send_job(job_id, data)
-        assert response.status == "ok"
+        assert isinstance(response, OKResponse)
 
     # Process all jobs
     for i, job_id in enumerate(job_ids):
         await client_broker.send_response(job_id, f"response{i}")
 
     # Verify all responses
-    results = await asyncio.gather(*[
-        server_broker.get_response(job_id) for job_id in job_ids
-    ])
+    results = await asyncio.gather(
+        *[server_broker.get_response(job_id) for job_id in job_ids]
+    )
     assert results == ["response0", "response1", "response2"]
 
 
@@ -139,10 +143,10 @@ async def test_nonexistent_job():
             get_response_task = asyncio.create_task(
                 server_broker.get_response("nonexistent-job")
             )
-            
+
             # Send response for the job
             await client_broker.send_response("nonexistent-job", "late response")
-            
+
             # Now the get_response should complete
             result = await get_response_task
             assert result == "late response"
@@ -152,23 +156,25 @@ async def test_nonexistent_job():
 async def test_concurrent_clients():
     """Test multiple clients can interact with the same server."""
     async with AsyncMessageBroker.start_server() as (server_broker, config):
-        async with AsyncMessageBroker.new_client(config) as client1, \
-             AsyncMessageBroker.new_client(config) as client2:
-            
+        async with AsyncMessageBroker.new_client(
+            config
+        ) as client1, AsyncMessageBroker.new_client(config) as client2:
             # Client 1 handles job1
             await server_broker.send_job("job1", "data1")
             await client1.send_response("job1", "response1")
-            
+
             # Client 2 handles job2
             await server_broker.send_job("job2", "data2")
             await client2.send_response("job2", "response2")
-            
+
             # Verify responses
             assert await server_broker.get_response("job1") == "response1"
             assert await server_broker.get_response("job2") == "response2"
 
 
-async def run_client_process(config: BrokerServerConfig, job_id: str, response_data: Any):
+async def run_client_process(
+    config: BrokerServerConfig, job_id: str, response_data: Any
+):
     """
     Async function to run inside a client process.
     """
@@ -198,13 +204,13 @@ async def test_real_process_communication():
         # Create and start client process
         process = multiprocessing.Process(
             target=client_process_entrypoint,
-            args=(config_dict, "test-job", "process-response")
+            args=(config_dict, "test-job", "process-response"),
         )
         process.start()
 
         # Send job from server
         response = await server_broker.send_job("test-job", {"data": "test"})
-        assert response.status == "ok"
+        assert isinstance(response, OKResponse)
 
         # Wait for response from client process
         result = await server_broker.get_response("test-job")
@@ -232,8 +238,7 @@ async def test_multiple_process_clients():
 
         for job_id, response in zip(job_ids, responses):
             process = multiprocessing.Process(
-                target=client_process_entrypoint,
-                args=(config_dict, job_id, response)
+                target=client_process_entrypoint, args=(config_dict, job_id, response)
             )
             process.start()
             processes.append(process)
@@ -241,12 +246,12 @@ async def test_multiple_process_clients():
         # Send jobs from server
         for job_id in job_ids:
             response = await server_broker.send_job(job_id, {"data": job_id})
-            assert response.status == "ok"
+            assert isinstance(response, OKResponse)
 
         # Get all responses
-        results = await asyncio.gather(*[
-            server_broker.get_response(job_id) for job_id in job_ids
-        ])
+        results = await asyncio.gather(
+            *[server_broker.get_response(job_id) for job_id in job_ids]
+        )
         assert results == responses
 
         # Clean up processes
@@ -272,8 +277,7 @@ async def test_process_reconnection():
 
         # First client process
         process1 = multiprocessing.Process(
-            target=client_process_entrypoint,
-            args=(config_dict, "job1", "response1")
+            target=client_process_entrypoint, args=(config_dict, "job1", "response1")
         )
         process1.start()
 
@@ -286,8 +290,7 @@ async def test_process_reconnection():
 
         # Second client process
         process2 = multiprocessing.Process(
-            target=client_process_entrypoint,
-            args=(config_dict, "job2", "response2")
+            target=client_process_entrypoint, args=(config_dict, "job2", "response2")
         )
         process2.start()
 
@@ -298,19 +301,21 @@ async def test_process_reconnection():
         process2.join()
         assert process2.exitcode == 0
 
+
 def error_client_entrypoint(config_dict: dict):
     async def main():
         config = BrokerServerConfig(**config_dict)
         async with AsyncMessageBroker.new_client(config) as client:
             # Simulate an error by trying to send response for non-existent job
             await client.send_response("nonexistent", "error")
+
     asyncio.run(main())
-        
+
 
 @pytest.mark.asyncio
 async def test_process_error_handling():
     """Test handling of client process errors."""
-  
+
     async with AsyncMessageBroker.start_server() as (server_broker, config):
         config_dict = {
             "host": config.host,
@@ -320,11 +325,118 @@ async def test_process_error_handling():
 
         # Start error process
         process = multiprocessing.Process(
-            target=error_client_entrypoint,
-            args=(config_dict,)
+            target=error_client_entrypoint, args=(config_dict,)
         )
         process.start()
         process.join()
 
         # Process should exit cleanly even after error
+        assert process.exitcode == 0
+
+
+@pytest.mark.asyncio
+async def test_get_job_queue():
+    """Test that jobs are retrieved in FIFO order."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(config) as client_broker:
+            # Send multiple jobs
+            job_data = [
+                {"task": "task1", "data": 1},
+                {"task": "task2", "data": 2},
+                {"task": "task3", "data": 3},
+            ]
+
+            for i, data in enumerate(job_data):
+                await server_broker.send_job(f"job-{i}", data)
+
+            # Get jobs one by one and verify FIFO order
+            for i, expected_data in enumerate(job_data):
+                job = await client_broker.get_job()
+                assert job["job_id"] == f"job-{i}"
+                assert job["job_data"] == expected_data
+
+
+@pytest.mark.asyncio
+async def test_get_job_wait():
+    """Test that get_job waits for a job when none are available."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(config) as client_broker:
+            # Start get_job operation that will wait
+            get_job_task = asyncio.create_task(client_broker.get_job())
+
+            # Small delay to ensure get_job is waiting
+            await asyncio.sleep(0.1)
+
+            # Send a job
+            test_data = {"task": "delayed_task"}
+            await server_broker.send_job("delayed-job", test_data)
+
+            # Now get_job should complete
+            job = await get_job_task
+            assert job["job_id"] == "delayed-job"
+            assert job["job_data"] == test_data
+
+
+@pytest.mark.asyncio
+async def test_multiple_waiting_clients():
+    """Test multiple clients waiting for jobs."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(
+            config
+        ) as client1, AsyncMessageBroker.new_client(config) as client2:
+            # Start both clients waiting for jobs
+            task1 = asyncio.create_task(client1.get_job())
+            task2 = asyncio.create_task(client2.get_job())
+
+            # Small delay to ensure both clients are waiting
+            await asyncio.sleep(0.1)
+
+            # Send two jobs
+            await server_broker.send_job("job1", {"task": "task1"})
+            await server_broker.send_job("job2", {"task": "task2"})
+
+            # Get results from both clients
+            results = await asyncio.gather(task1, task2)
+
+            # Verify each job was received exactly once
+            job_ids = {result["job_id"] for result in results}
+            assert job_ids == {"job1", "job2"}
+
+
+def worker_process(config_dict: dict):
+    async def main():
+        config = BrokerServerConfig(**config_dict)
+        async with AsyncMessageBroker.new_client(config) as client:
+            # Get a job and send a response
+            job = await client.get_job()
+            await client.send_response(
+                job["job_id"], f"processed-{job['job_data']['task']}"
+            )
+
+    asyncio.run(main())
+
+
+@pytest.mark.asyncio
+async def test_get_job_process():
+    """Test get_job functionality with real processes."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        config_dict = {
+            "host": config.host,
+            "port": config.port,
+            "auth_key": config.auth_key,
+        }
+
+        # Start worker process
+        process = multiprocessing.Process(target=worker_process, args=(config_dict,))
+        process.start()
+
+        # Send a job
+        await server_broker.send_job("test-job", {"task": "test-task"})
+
+        # Wait for response
+        response = await server_broker.get_response("test-job")
+        assert response == "processed-test-task"
+
+        # Clean up process
+        process.join()
         assert process.exitcode == 0
