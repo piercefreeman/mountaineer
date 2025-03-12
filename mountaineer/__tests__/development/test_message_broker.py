@@ -351,9 +351,9 @@ async def test_get_job_queue():
 
             # Get jobs one by one and verify FIFO order
             for i, expected_data in enumerate(job_data):
-                job = await client_broker.get_job()
-                assert job["job_id"] == f"job-{i}"
-                assert job["job_data"] == expected_data
+                job_id, job_data = await client_broker.get_job()
+                assert job_id == f"job-{i}"
+                assert job_data == expected_data
 
 
 @pytest.mark.asyncio
@@ -372,9 +372,9 @@ async def test_get_job_wait():
             await server_broker.send_job("delayed-job", test_data)
 
             # Now get_job should complete
-            job = await get_job_task
-            assert job["job_id"] == "delayed-job"
-            assert job["job_data"] == test_data
+            job_id, job_data = await get_job_task
+            assert job_id == "delayed-job"
+            assert job_data == test_data
 
 
 @pytest.mark.asyncio
@@ -399,7 +399,7 @@ async def test_multiple_waiting_clients():
             results = await asyncio.gather(task1, task2)
 
             # Verify each job was received exactly once
-            job_ids = {result["job_id"] for result in results}
+            job_ids = {result[0] for result in results}
             assert job_ids == {"job1", "job2"}
 
 
@@ -408,10 +408,8 @@ def worker_process(config_dict: dict):
         config = BrokerServerConfig(**config_dict)
         async with AsyncMessageBroker.new_client(config) as client:
             # Get a job and send a response
-            job = await client.get_job()
-            await client.send_response(
-                job["job_id"], f"processed-{job['job_data']['task']}"
-            )
+            job_id, job_data = await client.get_job()
+            await client.send_response(job_id, f"processed-{job_data['task']}")
 
     asyncio.run(main())
 

@@ -21,6 +21,7 @@ from mountaineer.development.messages import (
 )
 from mountaineer.development.messages_broker import AsyncMessageBroker
 from mountaineer.development.uvicorn import UvicornThread
+from mountaineer.development.messages import MessageTypes
 from mountaineer.logging import setup_internal_logger
 
 LOGGER = setup_internal_logger(__name__)
@@ -91,7 +92,7 @@ class IsolatedAppContext:
             live_reload_port=live_reload_port,
         )
 
-    async def run_async(self, broker: AsyncMessageBroker):
+    async def run_async(self, broker: AsyncMessageBroker[MessageTypes]):
         """
         Asynchronous main loop that processes messages from the broker.
 
@@ -109,7 +110,7 @@ class IsolatedAppContext:
             # Process messages until shutdown
             while True:
                 print("WILL BLOCK ON NEXT MESSAGE", flush=True)
-                message_id, message = broker.message_queue.get()
+                message_id, message = await broker.get_job()
                 print(f"GOT MESSAGE RAW: {message}", flush=True)
                 # LOGGER.debug(f"[IsolatedAppContext] Got message: {message}")
                 print(f"MESSAGE: {isinstance(message, BuildJsMessage)}", flush=True)
@@ -125,9 +126,10 @@ class IsolatedAppContext:
                         response = await self.handle_build_use_server()
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")
-                        continue
+                        raise ValueError(f"Invalid message type: {type(message)} {message}")
                     print(f"WILL WRITE RESPONSE: {response}", flush=True)
-                    broker.response_queue.put((message_id, response))
+                    print(f"MESSAGE ID: {message_id}", flush=True)
+                    await broker.send_response(message_id, response)
                     print(f"DID WRITE RESPONSE: {response}", flush=True)
                 except Exception as e:
                     # The only location where we log errors that occur in the build lifecycle
@@ -140,13 +142,10 @@ class IsolatedAppContext:
                         f"Isolated app context failed to process message: {e}, continuing...",
                         flush=True,
                     )
-                    broker.response_queue.put(
-                        (
-                            message_id,
-                            ErrorResponse(
+                    print(f"WILL WRITE ERROR RESPONSE: {e}", flush=True)
+                    await broker.send_response(message_id, ErrorResponse(
                                 exception=str(e), traceback="".join(format_exception(e))
-                            ),
-                        )
+                        ),
                     )
         except Exception as e:
             LOGGER.error(f"Isolated app context failed: {e}", exc_info=True)

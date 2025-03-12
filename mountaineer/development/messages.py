@@ -1,16 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Generic, TypeVar
-
-TResponse = TypeVar("TResponse")
-
-
-@dataclass
-class IsolatedMessageBase(Generic[TResponse]):
-    """Base class for all messages passed between main process and isolated app context"""
-
-    pass
-
+from mountaineer.development.messages_broker import IsolatedMessageBase
 
 @dataclass
 class ErrorResponse:
@@ -46,3 +37,6 @@ class BuildUseServerMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]
     """Message to build the useServer support files"""
 
     pass
+
+
+MessageTypes = BootupMessage | BuildJsMessage | BuildUseServerMessage

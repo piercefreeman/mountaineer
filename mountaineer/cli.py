@@ -311,7 +311,7 @@ async def handle_runserver(
     current_context = None
     first_run: bool = True
 
-    async with AsyncMessageBroker.start_server(host) as (broker, config):
+    async with AsyncMessageBroker.start_server() as (broker, config):
         print("BROKER CONFIG", config)
         with isolate_imports(package) as environment:
             CONSOLE.print("[bold blue]Process manager started")
@@ -329,7 +329,7 @@ async def handle_runserver(
                 environment.update_environment()
 
                 # Make sure no messages are destined for the old context
-                broker.drain_all()
+                #broker.drain_all()
 
                 current_context = environment.exec(
                     run_isolated, webcontroller, host, port, config
@@ -337,9 +337,9 @@ async def handle_runserver(
 
                 # Bootstrap the process and rebuild the server files
                 CONSOLE.print("Booting server")
-                await broker.send_message(BootupMessage())
+                await broker.send_and_get_response(BootupMessage())
                 CONSOLE.print("Building useServer")
-                await broker.send_message(BuildUseServerMessage())
+                await broker.send_and_get_response(BuildUseServerMessage())
                 CONSOLE.print("Done with backend build")
 
             async def rebuild_frontend():
@@ -356,7 +356,7 @@ async def handle_runserver(
                     ),
                 )
 
-                await broker.send_message(
+                await broker.send_and_get_response(
                     # None will rebuild everything - we want this in cases where we are called
                     # without a list provided
                     BuildJsMessage(

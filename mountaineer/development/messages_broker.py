@@ -1,20 +1,29 @@
 import asyncio
 import json
+import pickle
 import secrets
+from uuid import uuid4
 import socket
 from asyncio import Future
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from threading import Thread
 from typing import Annotated, Any, Generic, Literal, TypeVar
+from base64 import b64encode, b64decode
 
 from pydantic import BaseModel, Field, TypeAdapter
 
-from mountaineer.development.messages import IsolatedMessageBase
 
 TResponse = TypeVar("TResponse")
-AppMessageType = TypeVar("AppMessageType", bound=IsolatedMessageBase[Any])
-AppMessageTypes = TypeVar("AppMessageTypes", bound=tuple[AppMessageType, ...])
+AppMessageTypes = TypeVar("AppMessageType")
+
+
+@dataclass
+class IsolatedMessageBase(Generic[TResponse]):
+    """Base class for all messages passed between main process and isolated app context"""
+
+    pass
+
 
 
 class BrokerMessageFuture(Generic[TResponse], asyncio.Future[TResponse]):
@@ -107,7 +116,7 @@ response_type_adapter = TypeAdapter(
 )
 
 
-class AsyncMessageBroker(Thread):
+class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
     """
     A simple process-independent message broker server. This works around limitations
     with `multiprocessing.Queue` that require all processes to be related to the central
@@ -147,35 +156,6 @@ class AsyncMessageBroker(Thread):
         self.is_running = False
         self.should_stop = False
 
-    async def stop(self):
-        """Stop the broker server and clean up resources."""
-        if not self.is_running:
-            return
-
-        self.should_stop = True
-
-        # Cancel all pending futures
-        for futures in self.pending_futures.values():
-            for future in futures:
-                if not future.done():
-                    future.cancel()
-        self.pending_futures.clear()
-
-        # Cancel pending job futures
-        for future in self.pending_job_futures:
-            if not future.done():
-                future.cancel()
-        self.pending_job_futures.clear()
-
-        if self.server:
-            self.server.close()
-            # Schedule wait_closed on the broker's loop
-            fut = asyncio.run_coroutine_threadsafe(self.server.wait_closed(), self.loop)
-            await asyncio.wrap_future(fut)
-
-        if self.loop and self.loop.is_running():
-            self.loop.call_soon_threadsafe(self.loop.stop)
-
     def run(self):
         # Create and set the event loop for this thread.
         self.loop = asyncio.new_event_loop()
@@ -213,6 +193,35 @@ class AsyncMessageBroker(Thread):
 
             self.loop.close()
             self.is_running = False
+
+    async def stop(self):
+        """Stop the broker server and clean up resources."""
+        if not self.is_running:
+            return
+
+        self.should_stop = True
+
+        # Cancel all pending futures
+        for futures in self.pending_futures.values():
+            for future in futures:
+                if not future.done():
+                    future.cancel()
+        self.pending_futures.clear()
+
+        # Cancel pending job futures
+        for future in self.pending_job_futures:
+            if not future.done():
+                future.cancel()
+        self.pending_job_futures.clear()
+
+        if self.server:
+            self.server.close()
+            # Schedule wait_closed on the broker's loop
+            fut = asyncio.run_coroutine_threadsafe(self.server.wait_closed(), self.loop)
+            await asyncio.wrap_future(fut)
+
+        if self.loop and self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)
 
     async def handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -326,29 +335,29 @@ class AsyncMessageBroker(Thread):
     # These are callable from other threads/processes to communicate with the central server.
     #
 
-    async def send_job(self, job_id: str, job_data: Any) -> OKResponse:
+    async def send_job(self, job_id: str, job_data: AppMessageTypes) -> OKResponse:
         """
         Send a job to the broker server and wait for acknowledgement.
         """
-        cmd = SendJobCommand(job_id=job_id, job_data=job_data, auth_key=self.auth_key)
+        cmd = SendJobCommand(job_id=job_id, job_data=b64encode(pickle.dumps(job_data)).decode(), auth_key=self.auth_key)
         response = await self._send_message(self.host, self.port, cmd)
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)
         return response
 
-    async def send_response(self, job_id: str, response_data: Any) -> OKResponse:
+    async def send_response(self, job_id: str, response_data: TResponse) -> OKResponse:
         """
         Send a response for a job to the broker server.
         """
         cmd = SendResponseCommand(
-            job_id=job_id, response_data=response_data, auth_key=self.auth_key
+            job_id=job_id, response_data=b64encode(pickle.dumps(response_data)).decode(), auth_key=self.auth_key
         )
         response = await self._send_message(self.host, self.port, cmd)
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)
         return response
 
-    async def get_response(self, job_id: str) -> Any:
+    async def get_response(self, job_id: str) -> TResponse:
         """
         Get a response for a job from the broker server.
         If the response is not available, wait for it.
@@ -359,9 +368,9 @@ class AsyncMessageBroker(Thread):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
             raise ValueError(f"Failed to get response: {response.message}")
-        return response.response_data
+        return pickle.loads(b64decode(response.response_data))
 
-    async def get_job(self) -> dict[str, Any]:
+    async def get_job(self) -> tuple[str, AppMessageTypes]:
         """
         Get the next available job from the broker server.
         If no jobs are available, wait for one.
@@ -375,7 +384,15 @@ class AsyncMessageBroker(Thread):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
             raise ValueError(f"Failed to get job: {response.message}")
-        return response.response_data
+        return response.response_data["job_id"], pickle.loads(b64decode(response.response_data["job_data"]))
+
+    async def send_and_get_response(self, job_data: AppMessageTypes) -> TResponse:
+        """
+        Send a job to the broker server and wait for a response.
+        """
+        job_id = str(uuid4())
+        await self.send_job(job_id, job_data)
+        return await self.get_response(job_id)
 
     async def _send_message(
         self, host: str, port: int, message_obj: BaseCommand
@@ -386,10 +403,12 @@ class AsyncMessageBroker(Thread):
         reader, writer = await asyncio.open_connection(host, port)
         try:
             json_msg = json.dumps(message_obj.model_dump()) + "\n"
+            print(f"SENDING MESSAGE: {json_msg}", flush=True)
             writer.write(json_msg.encode())
             await writer.drain()
 
             response_line = await reader.readline()
+            print(f"RECEIVED RESPONSE: {response_line}", flush=True)
             response_dict = json.loads(response_line.decode())
             return response_type_adapter.validate_python(response_dict)
         finally:
