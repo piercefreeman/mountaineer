@@ -40,7 +40,7 @@ from mountaineer.exceptions import (
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
-from mountaineer.ssr import render_ssr
+from mountaineer.ssr import render_ssr, find_tsconfig
 from mountaineer.static import get_static_path
 
 
@@ -332,6 +332,9 @@ class AppController:
                 # during development
                 start = monotonic_ns()
 
+                # Find tsconfig.json in the parent directories of the view paths
+                tsconfig_path = find_tsconfig(view_paths)
+
                 if not controller_node.cached_server_script:
                     (
                         script_payloads,
@@ -343,6 +346,7 @@ class AppController:
                         0,
                         str(get_static_path("live_reload.ts").resolve().absolute()),
                         True,
+                        tsconfig_path,
                     )
                     controller_node.cached_server_script = script_payloads[0]
                     controller_node.cached_server_sourcemap = sourcemap_payloads[0]
@@ -354,6 +358,7 @@ class AppController:
                         self.live_reload_port,
                         str(get_static_path("live_reload.ts").resolve().absolute()),
                         False,
+                        tsconfig_path,
                     )
                     controller_node.cached_client_script = script_payloads[0]
                 LOGGER.debug(
@@ -705,7 +710,7 @@ class AppController:
             sourcemap=sourcemap,
         )
 
-        with open("inline_client.js", "w") as file:
+        with open(f"inline_client-{uuid4()}.js", "w") as file:
             file.write(inline_client_script)
 
         # TODO: We need to escape these inline. The old esbuild version potentially

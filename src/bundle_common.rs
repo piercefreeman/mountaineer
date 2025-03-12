@@ -67,6 +67,7 @@ pub fn bundle_common(
     environment: String,
     node_modules_path: String,
     live_reload_port: Option<u16>,
+    tsconfig_path: Option<String>,
 ) -> Result<std::collections::HashMap<String, BundleResult>, BundleError> {
     // Validate inputs
     if entrypoint_paths.is_empty() {
@@ -123,6 +124,7 @@ pub fn bundle_common(
     // Set up resolve options to let Rolldown know where to find node_modules.
     let resolve = Some(ResolveOptions {
         modules: Some(vec![node_modules_path.clone()]),
+        tsconfig_filename: tsconfig_path,
         ..Default::default()
     });
 

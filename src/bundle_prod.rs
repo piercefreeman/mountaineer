@@ -17,6 +17,7 @@ pub fn compile_production_bundle(
     minify: bool,
     live_reload_import: String,
     is_server: bool,
+    tsconfig_path: Option<String>,
 ) -> PyResult<Py<PyDict>> {
     println!("COMPILING PROD BUNDLE");
 
@@ -34,6 +35,10 @@ pub fn compile_production_bundle(
         BundleMode::MULTI_CLIENT
     };
 
+    if let Some(tsconfig) = &tsconfig_path {
+        println!("USING TSCONFIG: {}", tsconfig);
+    }
+
     // Call bundle_common with the appropriate parameters
     let bundle_results = bundle_common::bundle_common(
         entrypoint_paths.clone(),
@@ -41,6 +46,7 @@ pub fn compile_production_bundle(
         environment,
         node_modules_path,
         None, // No live reload port for production
+        tsconfig_path,
     )
     .map_err(|e| match e {
         BundleError::IoError(err) => PyErr::new::<pyo3::exceptions::PyIOError, _>(err.to_string()),

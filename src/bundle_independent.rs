@@ -23,6 +23,7 @@ use crate::code_gen;
 ///   - `live_reload_port`: Port for live reload server if enabled, or -1 if disabled.
 ///   - `live_reload_import`: An extra import string (if needed) for live reload.
 ///   - `is_ssr`: Whether the bundle is for server-side (affects entrypoint generation).
+///   - `tsconfig_path`: Path to tsconfig file for bundling.
 #[pyfunction]
 pub fn compile_independent_bundles(
     py: Python,
@@ -32,6 +33,7 @@ pub fn compile_independent_bundles(
     live_reload_port: i32,
     live_reload_import: String,
     is_ssr: bool,
+    tsconfig_path: Option<String>,
 ) -> PyResult<(Vec<String>, Vec<String>)> {
     let mut output_files = Vec::new();
     let mut sourcemap_files = Vec::new();
@@ -63,6 +65,9 @@ pub fn compile_independent_bundles(
 
         println!("BUNDLE MODE: {:?}", bundle_mode);
         println!("LIVE RELOAD PORT: {:?}", live_reload_port_option);
+        if let Some(tsconfig) = &tsconfig_path {
+            println!("USING TSCONFIG: {}", tsconfig);
+        }
 
         // Use bundle_common to bundle the entrypoint
         let bundle_results = bundle_common::bundle_common(
@@ -71,6 +76,7 @@ pub fn compile_independent_bundles(
             environment.clone(),
             node_modules_path.clone(),
             live_reload_port_option,
+            tsconfig_path.clone(),
         )
         .map_err(|e| match e {
             BundleError::IoError(err) => {

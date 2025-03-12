@@ -137,6 +137,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         live_reload_port: i32,
         live_reload_import: String,
         is_server: bool,
+        tsconfig_path: Option<String>,
     ) -> PyResult<(Vec<String>, Vec<String>)> {
         /*
          * Accepts a list of page definitions and creates fully isolated bundles
@@ -158,6 +159,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             live_reload_port,
             live_reload_import,
             is_server,
+            tsconfig_path,
         )
     }
 
@@ -171,6 +173,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         minify: bool,
         live_reload_import: String,
         is_server: bool,
+        tsconfig_path: Option<String>,
     ) -> PyResult<Py<PyDict>> {
         /*
          * Builds a full production bundle from multiple JavaScript files. Uses
@@ -189,6 +192,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             minify,
             live_reload_import,
             is_server,
+            tsconfig_path,
         )
     }
 

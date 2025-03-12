@@ -7,6 +7,7 @@ from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
 from time import time
 from typing import Any, Callable, Coroutine
+from mountaineer.ssr import find_tsconfig
 
 from firehot import isolate_imports
 from inflection import underscore
@@ -486,6 +487,9 @@ async def handle_build(
             direct_hierarchy.reverse()
             all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
 
+        # Find tsconfig.json in the parent directories of the view paths
+        tsconfig_path = find_tsconfig(all_view_paths)
+
         # Compile the final client bundle
         client_bundle_result = mountaineer_rs.compile_production_bundle(
             all_view_paths,
@@ -494,6 +498,7 @@ async def handle_build(
             minify,
             str(get_static_path("live_reload.ts").resolve().absolute()),
             False,
+            tsconfig_path,
         )
 
         static_output = (
@@ -540,20 +545,21 @@ async def handle_build(
             0,
             str(get_static_path("live_reload.ts").resolve().absolute()),
             True,
+            tsconfig_path,
         )
 
-        for controller, script in zip(
+        # Write each script to disk
+        for controller_definition, script in zip(
             isolated_context.app_controller.controllers, result_scripts
         ):
-            script_root = underscore(controller.controller.__class__.__name__)
-            content_hash = md5(script.encode()).hexdigest()
+            script_root = underscore(
+                controller_definition.controller.__class__.__name__
+            )
             (ssr_output / f"{script_root}.js").write_text(script)
 
-        CONSOLE.print(f"[bold green]App built in {time() - start:.2f}s")
-
+        LOGGER.info(f"Build completed in {(time() - start):.2f}s")
     finally:
-        # Clean up the message broker
-        await message_broker.stop()
+        message_broker.stop()
 
 
 def update_multiprocessing_settings():
