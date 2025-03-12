@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, TypeVar
+
 from mountaineer.development.messages_broker import IsolatedMessageBase
+
 
 @dataclass
 class ErrorResponse:

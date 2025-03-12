@@ -7,7 +7,6 @@ from multiprocessing import get_start_method, set_start_method
 from pathlib import Path
 from time import time
 from typing import Any, Callable, Coroutine
-from mountaineer.ssr import find_tsconfig
 
 from firehot import isolate_imports
 from inflection import underscore
@@ -43,6 +42,7 @@ from mountaineer.development.watch import (
 from mountaineer.development.watch_server import WatcherWebservice
 from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
+from mountaineer.ssr import find_tsconfig
 from mountaineer.static import get_static_path
 
 
@@ -332,10 +332,15 @@ async def handle_runserver(
                 environment.update_environment()
 
                 # Make sure no messages are destined for the old context
-                #broker.drain_all()
+                # broker.drain_all()
 
                 current_context = environment.exec(
-                    run_isolated, webcontroller, host, port, watcher_webservice.port, config
+                    run_isolated,
+                    webcontroller,
+                    host,
+                    port,
+                    watcher_webservice.port,
+                    config,
                 )
 
                 # Bootstrap the process and rebuild the server files

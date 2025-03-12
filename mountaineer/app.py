@@ -37,10 +37,10 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
-from mountaineer.logging import LOGGER
+from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
-from mountaineer.ssr import render_ssr, find_tsconfig
+from mountaineer.ssr import find_tsconfig, render_ssr
 from mountaineer.static import get_static_path
 
 
@@ -710,8 +710,10 @@ class AppController:
             sourcemap=sourcemap,
         )
 
-        with open(f"inline_client-{uuid4()}.js", "w") as file:
-            file.write(inline_client_script)
+        # Before building up the inline client script, log it to the temp directory
+        # so we can inspect it in the debugger
+        if inline_client_script is not None:
+            debug_log_artifact("inline_client", "js", inline_client_script)
 
         # TODO: We need to escape these inline. The old esbuild version potentially
         # took care of this through minimization, so it might not have been affected

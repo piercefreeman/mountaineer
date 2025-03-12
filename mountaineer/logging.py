@@ -3,7 +3,9 @@ from contextlib import contextmanager
 from json import dumps as json_dumps
 from logging import Formatter, StreamHandler, getLogger
 from os import environ
-from time import monotonic_ns
+from pathlib import Path
+from tempfile import mkdtemp
+from time import monotonic_ns, time
 
 from click import secho
 
@@ -136,6 +138,36 @@ def setup_internal_logger(name: str):
 
 def pluralize(count: int, singular: str, plural: str) -> str:
     return singular if count == 1 else plural
+
+
+RUNTIME_ARITFACT_TMP_DIR: Path | None = None
+
+
+def debug_log_artifact(artifact_prefix: str, extension: str, content: str):
+    global RUNTIME_ARITFACT_TMP_DIR
+
+    # Only log during highest level of verbosity
+    if (
+        VERBOSITY_MAPPING[environ.get("MOUNTAINEER_LOG_LEVEL", "WARNING")]
+        > logging.DEBUG
+    ):
+        return
+
+    if RUNTIME_ARITFACT_TMP_DIR is None:
+        RUNTIME_ARITFACT_TMP_DIR = Path(mkdtemp())
+        LOGGER.warning(
+            f"Created temporary directory for runtime artifacts: {RUNTIME_ARITFACT_TMP_DIR}"
+        )
+
+    path = RUNTIME_ARITFACT_TMP_DIR / f"{artifact_prefix}-{time()}.{extension}"
+    path.write_text(content)
+
+    return path
+
+
+def reset_artifact_dir():
+    global RUNTIME_ARITFACT_TMP_DIR
+    RUNTIME_ARITFACT_TMP_DIR = None
 
 
 LOGGER = setup_internal_logger(__name__)

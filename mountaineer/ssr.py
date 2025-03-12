@@ -1,13 +1,13 @@
+import logging
 from json import dumps as json_dumps
+from pathlib import Path
 from re import finditer as re_finditer
 from typing import Any, cast
-from uuid import uuid4
-from pathlib import Path
-import logging
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
 from mountaineer.client_compiler.source_maps import SourceMapParser
+from mountaineer.logging import debug_log_artifact
 from mountaineer.static import get_static_path
 
 
@@ -70,7 +70,9 @@ def find_tsconfig(paths: list[list[str]]) -> str | None:
                 current = current.parent
 
     if not tsconfig_paths:
-        logging.warning("No tsconfig.json found in any parent directory of the provided paths")
+        logging.warning(
+            "No tsconfig.json found in any parent directory of the provided paths"
+        )
         return None
 
     # Return the tsconfig.json closest to the original file
@@ -107,6 +109,8 @@ def render_ssr(
 
     injected_script = f"var SERVER_DATA = {data_json};\n{polyfill_script}\n"
     full_script = f"{injected_script}{script}"
+
+    debug_log_artifact("ssr_script", "js", full_script)
 
     try:
         # Convert to milliseconds for the rust worker

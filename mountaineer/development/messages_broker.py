@@ -2,17 +2,16 @@ import asyncio
 import json
 import pickle
 import secrets
-from uuid import uuid4
 import socket
 from asyncio import Future
+from base64 import b64decode, b64encode
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from threading import Thread
 from typing import Annotated, Any, Generic, Literal, TypeVar
-from base64 import b64encode, b64decode
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
-
 
 TResponse = TypeVar("TResponse")
 AppMessageTypes = TypeVar("AppMessageType")
@@ -23,7 +22,6 @@ class IsolatedMessageBase(Generic[TResponse]):
     """Base class for all messages passed between main process and isolated app context"""
 
     pass
-
 
 
 class BrokerMessageFuture(Generic[TResponse], asyncio.Future[TResponse]):
@@ -339,7 +337,11 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         """
         Send a job to the broker server and wait for acknowledgement.
         """
-        cmd = SendJobCommand(job_id=job_id, job_data=b64encode(pickle.dumps(job_data)).decode(), auth_key=self.auth_key)
+        cmd = SendJobCommand(
+            job_id=job_id,
+            job_data=b64encode(pickle.dumps(job_data)).decode(),
+            auth_key=self.auth_key,
+        )
         response = await self._send_message(self.host, self.port, cmd)
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)
@@ -350,7 +352,9 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         Send a response for a job to the broker server.
         """
         cmd = SendResponseCommand(
-            job_id=job_id, response_data=b64encode(pickle.dumps(response_data)).decode(), auth_key=self.auth_key
+            job_id=job_id,
+            response_data=b64encode(pickle.dumps(response_data)).decode(),
+            auth_key=self.auth_key,
         )
         response = await self._send_message(self.host, self.port, cmd)
         if isinstance(response, UnauthorizedResponse):
@@ -384,7 +388,9 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
             raise ValueError(f"Failed to get job: {response.message}")
-        return response.response_data["job_id"], pickle.loads(b64decode(response.response_data["job_data"]))
+        return response.response_data["job_id"], pickle.loads(
+            b64decode(response.response_data["job_data"])
+        )
 
     async def send_and_get_response(self, job_data: AppMessageTypes) -> TResponse:
         """

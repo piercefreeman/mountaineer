@@ -17,11 +17,11 @@ from mountaineer.development.messages import (
     BuildJsMessage,
     BuildUseServerMessage,
     ErrorResponse,
+    MessageTypes,
     SuccessResponse,
 )
 from mountaineer.development.messages_broker import AsyncMessageBroker
 from mountaineer.development.uvicorn import UvicornThread
-from mountaineer.development.messages import MessageTypes
 from mountaineer.logging import setup_internal_logger
 
 LOGGER = setup_internal_logger(__name__)
@@ -126,7 +126,9 @@ class IsolatedAppContext:
                         response = await self.handle_build_use_server()
                     else:
                         LOGGER.error(f"Invalid message type: {type(message)} {message}")
-                        raise ValueError(f"Invalid message type: {type(message)} {message}")
+                        raise ValueError(
+                            f"Invalid message type: {type(message)} {message}"
+                        )
                     print(f"WILL WRITE RESPONSE: {response}", flush=True)
                     print(f"MESSAGE ID: {message_id}", flush=True)
                     await broker.send_response(message_id, response)
@@ -143,8 +145,10 @@ class IsolatedAppContext:
                         flush=True,
                     )
                     print(f"WILL WRITE ERROR RESPONSE: {e}", flush=True)
-                    await broker.send_response(message_id, ErrorResponse(
-                                exception=str(e), traceback="".join(format_exception(e))
+                    await broker.send_response(
+                        message_id,
+                        ErrorResponse(
+                            exception=str(e), traceback="".join(format_exception(e))
                         ),
                     )
         except Exception as e:
