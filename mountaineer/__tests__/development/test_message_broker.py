@@ -1,5 +1,7 @@
 import asyncio
-from queue import Empty
+import multiprocessing
+from dataclasses import dataclass
+from typing import Any
 
 import pytest
 import pytest_asyncio
@@ -7,13 +9,14 @@ import pytest_asyncio
 from mountaineer.development.messages import IsolatedMessageBase
 from mountaineer.development.messages_broker import (
     AsyncMessageBroker,
-    BrokerMessageFuture,
+    BrokerAuthenticationError,
+    BrokerServerConfig,
 )
 
 
+@dataclass
 class DummyMessage(IsolatedMessageBase):
-    def __init__(self, content):
-        self.content = content
+    content: str
 
     def __eq__(self, other):
         # Allow equality checks in tests.
@@ -21,131 +24,307 @@ class DummyMessage(IsolatedMessageBase):
 
 
 @pytest_asyncio.fixture
-async def broker_instance():
-    """Provides a new, launched AsyncMessageBroker instance for each test."""
-    broker = AsyncMessageBroker()
-    async with broker.launch():
-        yield broker
-
-
-def test_initialization_default():
-    """Test that a new broker has valid default queues."""
-    broker = AsyncMessageBroker()
-    assert broker.message_queue is not None
-    assert broker.response_queue is not None
-
-
-def test_getstate_and_setstate():
-    """Test __getstate__ and __setstate__ for pickling support."""
-    broker = AsyncMessageBroker()
-    state = broker.__getstate__()
-    new_broker = AsyncMessageBroker()
-    new_broker.__setstate__(state)
-    # The queues should be identical.
-    assert new_broker.message_queue is state["message_queue"]
-    assert new_broker.response_queue is state["response_queue"]
+async def broker_pair():
+    """
+    Provides a connected pair of brokers - a server broker and client broker.
+    This simulates the typical usage pattern of the broker system.
+    """
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(config) as client_broker:
+            yield server_broker, client_broker
 
 
 @pytest.mark.asyncio
-async def test_send_message_puts_message_on_queue(broker_instance: AsyncMessageBroker):
-    """Test that send_message registers a pending future and places a message on the queue."""
-    dummy_msg = DummyMessage("test content")
-    # The broker is already launched via the fixture.
-    future = broker_instance.send_message(dummy_msg)
-    # Check that the returned future is an instance of BrokerMessageFuture.
-    assert isinstance(future, BrokerMessageFuture)
-    # There should be exactly one pending future.
-    assert len(broker_instance._pending_futures) == 1
+async def test_basic_job_flow(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+    """Test the basic job flow between server and client brokers."""
+    server_broker, client_broker = broker_pair
 
-    # Retrieve the message tuple from the message queue with a short timeout.
-    message_id, message = broker_instance.message_queue.get(timeout=0.1)
-    # Verify that the message_id is a string and the message is our dummy message.
-    assert isinstance(message_id, str)
-    assert message == dummy_msg
+    # Send a job from server
+    job_data = {"message": "test content"}
+    job_id = "test-job-1"
+    response = await server_broker.send_job(job_id, job_data)
+    assert response.status == "ok"
 
+    # Client gets the job and sends response
+    response_data = {"processed": True}
+    await client_broker.send_response(job_id, response_data)
 
-@pytest.mark.asyncio
-async def test_start_and_stop():
-    """Test that launch() creates a response task and its exit cleans up properly."""
-    broker = AsyncMessageBroker()
-    # Start the broker via the async context manager.
-    async with broker.launch():
-        # Ensure that the response consumer task is running.
-        assert broker._response_task is not None
-
-        # Add a dummy future to pending futures.
-        dummy_future = asyncio.Future()
-        broker._pending_futures["dummy"] = dummy_future
-    # After exiting the context, the broker should be cleaned up.
-    assert broker._response_task is None
-    assert broker._executor is None
-    # Pending futures should be cleared and the dummy future cancelled.
-    assert len(broker._pending_futures) == 0
-    assert dummy_future.cancelled()
+    # Server gets the response
+    result = await server_broker.get_response(job_id)
+    assert result == response_data
 
 
 @pytest.mark.asyncio
-async def test_consume_responses():
-    """Test that a response placed in the response queue resolves the corresponding future."""
-    broker = AsyncMessageBroker()
-    async with broker.launch():
-        test_id = "test-id"
-        future = asyncio.Future()
-        broker._pending_futures[test_id] = future
+async def test_auth_validation(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+    """Test that authentication is properly enforced."""
+    server_broker, _ = broker_pair
 
-        # Simulate a response arriving in the response queue.
-        broker.response_queue.put((test_id, "response_value"))
+    # Create client with invalid auth
+    invalid_config = BrokerServerConfig(
+        host=server_broker.host,
+        port=server_broker.port,
+        auth_key="invalid_key"
+    )
 
-        # Allow some time for the background task to process the response.
-        await asyncio.sleep(0.2)
+    async with AsyncMessageBroker.new_client(invalid_config) as invalid_client:
+        # Try to send a job with invalid auth
+        with pytest.raises(BrokerAuthenticationError):
+            await invalid_client.send_job("test-job", {"data": "test"})
 
-        assert future.done()
-        assert future.result() == "response_value"
+        # Try to send a response with invalid auth
+        with pytest.raises(BrokerAuthenticationError):
+            await invalid_client.send_response("test-job", {"data": "test"})
 
-
-@pytest.mark.asyncio
-async def test_stop_drains_queues():
-    """Test that launch() (and its exit) drains both the message and response queues."""
-    broker = AsyncMessageBroker()
-    # Preload queues with dummy items.
-    broker.message_queue.put(("id1", "dummy_message"))
-    broker.response_queue.put(("id2", "dummy_response"))
-
-    async with broker.launch():
-        # Inside the context, the broker is running.
-        pass
-    # After the context manager exits, the broker has been stopped, so queues should be drained.
-
-    # Drain message_queue manually.
-    drained_message_items = []
-    while True:
-        try:
-            drained_message_items.append(broker.message_queue.get_nowait())
-        except Empty:
-            break
-    assert drained_message_items == []
-
-    # Drain response_queue manually.
-    drained_response_items = []
-    while True:
-        try:
-            drained_response_items.append(broker.response_queue.get_nowait())
-        except Empty:
-            break
-    assert drained_response_items == []
+        # Try to get a response with invalid auth
+        with pytest.raises(BrokerAuthenticationError):
+            await invalid_client.get_response("test-job")
 
 
 @pytest.mark.asyncio
-async def test_start_and_connect_server():
-    """Test that start_server creates a broker and that connect_server can connect to it."""
-    # Start the manager server using the async context manager.
-    async with AsyncMessageBroker.start_server("localhost") as (broker, config):
-        # The broker created by start_server should have valid queues.
-        assert broker.message_queue is not None
-        assert broker.response_queue is not None
+async def test_complex_object_serialization(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+    """Test that complex Python objects can be sent through the broker."""
+    server_broker, client_broker = broker_pair
 
-        # Connect as a client using the provided config.
-        async with AsyncMessageBroker.connect_server(config) as connected_broker:
-            assert connected_broker.message_queue is not None
-            # Confirm that the connected broker is an instance of AsyncMessageBroker.
-            assert isinstance(connected_broker, AsyncMessageBroker)
+    complex_data = {
+        "numbers": [1, 2, 3],
+        "nested": {"key": ["value1", "value2"]}
+    }
+    job_id = "complex-job"
+
+    # Send complex job
+    response = await server_broker.send_job(job_id, complex_data)
+    assert response.status == "ok"
+
+    # Send complex response
+    complex_response = {"processed": True, "data": [1, 2, 3]}
+    await client_broker.send_response(job_id, complex_response)
+
+    # Verify response
+    result = await server_broker.get_response(job_id)
+    assert result == complex_response
+
+
+@pytest.mark.asyncio
+async def test_multiple_jobs(broker_pair: tuple[AsyncMessageBroker, AsyncMessageBroker]):
+    """Test handling multiple jobs in sequence."""
+    server_broker, client_broker = broker_pair
+
+    # Send multiple jobs
+    job_ids = [f"job-{i}" for i in range(3)]
+    job_data = [{"message": f"message{i}"} for i in range(3)]
+
+    # Send all jobs
+    for job_id, data in zip(job_ids, job_data):
+        response = await server_broker.send_job(job_id, data)
+        assert response.status == "ok"
+
+    # Process all jobs
+    for i, job_id in enumerate(job_ids):
+        await client_broker.send_response(job_id, f"response{i}")
+
+    # Verify all responses
+    results = await asyncio.gather(*[
+        server_broker.get_response(job_id) for job_id in job_ids
+    ])
+    assert results == ["response0", "response1", "response2"]
+
+
+@pytest.mark.asyncio
+async def test_nonexistent_job():
+    """Test getting response for a nonexistent job."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(config) as client_broker:
+            # Try to get response for non-existent job
+            # This should create a future that waits for the response
+            get_response_task = asyncio.create_task(
+                server_broker.get_response("nonexistent-job")
+            )
+            
+            # Send response for the job
+            await client_broker.send_response("nonexistent-job", "late response")
+            
+            # Now the get_response should complete
+            result = await get_response_task
+            assert result == "late response"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_clients():
+    """Test multiple clients can interact with the same server."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(config) as client1, \
+             AsyncMessageBroker.new_client(config) as client2:
+            
+            # Client 1 handles job1
+            await server_broker.send_job("job1", "data1")
+            await client1.send_response("job1", "response1")
+            
+            # Client 2 handles job2
+            await server_broker.send_job("job2", "data2")
+            await client2.send_response("job2", "response2")
+            
+            # Verify responses
+            assert await server_broker.get_response("job1") == "response1"
+            assert await server_broker.get_response("job2") == "response2"
+
+
+async def run_client_process(config: BrokerServerConfig, job_id: str, response_data: Any):
+    """
+    Async function to run inside a client process.
+    """
+    async with AsyncMessageBroker.new_client(config) as client:
+        await client.send_response(job_id, response_data)
+
+
+def client_process_entrypoint(config_dict: dict, job_id: str, response_data: Any):
+    """
+    Synchronous entry point for client process.
+    """
+    config = BrokerServerConfig(**config_dict)
+    asyncio.run(run_client_process(config, job_id, response_data))
+
+
+@pytest.mark.asyncio
+async def test_real_process_communication():
+    """Test communication between real separate processes."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        # Convert config to dict for pickling
+        config_dict = {
+            "host": config.host,
+            "port": config.port,
+            "auth_key": config.auth_key,
+        }
+
+        # Create and start client process
+        process = multiprocessing.Process(
+            target=client_process_entrypoint,
+            args=(config_dict, "test-job", "process-response")
+        )
+        process.start()
+
+        # Send job from server
+        response = await server_broker.send_job("test-job", {"data": "test"})
+        assert response.status == "ok"
+
+        # Wait for response from client process
+        result = await server_broker.get_response("test-job")
+        assert result == "process-response"
+
+        # Clean up process
+        process.join()
+        assert process.exitcode == 0
+
+
+@pytest.mark.asyncio
+async def test_multiple_process_clients():
+    """Test multiple client processes interacting with the server."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        config_dict = {
+            "host": config.host,
+            "port": config.port,
+            "auth_key": config.auth_key,
+        }
+
+        # Create multiple client processes
+        processes = []
+        job_ids = [f"job-{i}" for i in range(3)]
+        responses = [f"process-response-{i}" for i in range(3)]
+
+        for job_id, response in zip(job_ids, responses):
+            process = multiprocessing.Process(
+                target=client_process_entrypoint,
+                args=(config_dict, job_id, response)
+            )
+            process.start()
+            processes.append(process)
+
+        # Send jobs from server
+        for job_id in job_ids:
+            response = await server_broker.send_job(job_id, {"data": job_id})
+            assert response.status == "ok"
+
+        # Get all responses
+        results = await asyncio.gather(*[
+            server_broker.get_response(job_id) for job_id in job_ids
+        ])
+        assert results == responses
+
+        # Clean up processes
+        for process in processes:
+            process.join()
+            assert process.exitcode == 0
+
+
+@pytest.mark.asyncio
+async def test_process_reconnection():
+    """
+    Test the edge case where:
+    - A job is processed by one client process
+    - That process exits
+    - A new job is processed by a new client process
+    """
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        config_dict = {
+            "host": config.host,
+            "port": config.port,
+            "auth_key": config.auth_key,
+        }
+
+        # First client process
+        process1 = multiprocessing.Process(
+            target=client_process_entrypoint,
+            args=(config_dict, "job1", "response1")
+        )
+        process1.start()
+
+        # Send first job
+        await server_broker.send_job("job1", "data1")
+        result1 = await server_broker.get_response("job1")
+        assert result1 == "response1"
+        process1.join()
+        assert process1.exitcode == 0
+
+        # Second client process
+        process2 = multiprocessing.Process(
+            target=client_process_entrypoint,
+            args=(config_dict, "job2", "response2")
+        )
+        process2.start()
+
+        # Send second job
+        await server_broker.send_job("job2", "data2")
+        result2 = await server_broker.get_response("job2")
+        assert result2 == "response2"
+        process2.join()
+        assert process2.exitcode == 0
+
+def error_client_entrypoint(config_dict: dict):
+    async def main():
+        config = BrokerServerConfig(**config_dict)
+        async with AsyncMessageBroker.new_client(config) as client:
+            # Simulate an error by trying to send response for non-existent job
+            await client.send_response("nonexistent", "error")
+    asyncio.run(main())
+        
+
+@pytest.mark.asyncio
+async def test_process_error_handling():
+    """Test handling of client process errors."""
+  
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        config_dict = {
+            "host": config.host,
+            "port": config.port,
+            "auth_key": config.auth_key,
+        }
+
+        # Start error process
+        process = multiprocessing.Process(
+            target=error_client_entrypoint,
+            args=(config_dict,)
+        )
+        process.start()
+        process.join()
+
+        # Process should exit cleanly even after error
+        assert process.exitcode == 0

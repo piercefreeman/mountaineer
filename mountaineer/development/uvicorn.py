@@ -5,7 +5,6 @@ from threading import Thread
 from time import time
 from typing import Optional
 
-import uvicorn
 from fastapi import FastAPI
 from uvicorn import Config
 from uvicorn.server import Server
@@ -84,12 +83,12 @@ class UvicornThread(Thread):
 
     def run(self) -> None:
         print(f"WILL RUN: {self.host}:{self.port}", flush=True)
-        #try:
+        # try:
         #    uvicorn.run(self.app, host=self.host, port=self.port)
-        #except Exception as e:
+        # except Exception as e:
         #    print("ERROR RUNNING SERVER", e, flush=True)
         #    raise e
-        #return
+        # return
 
         # Configure logging before creating the server
         # if self.use_logs:
@@ -126,7 +125,7 @@ class UvicornThread(Thread):
             is_mounted = (
                 self.server and self.server.started and not self._is_port_free()
             )
-            #print("is_mounted", is_mounted, self.host, self.port, flush=True)
+            # print("is_mounted", is_mounted, self.host, self.port, flush=True)
             if is_mounted:
                 did_start = True
                 break
@@ -135,7 +134,9 @@ class UvicornThread(Thread):
 
         if not did_start:
             print("Will raise...", flush=True)
-            raise TimeoutError(f"Server did not start in {timeout}s (checked {self.host}:{self.port})")
+            raise TimeoutError(
+                f"Server did not start in {timeout}s (checked {self.host}:{self.port})"
+            )
 
         print("DID START, WILL YIELD", flush=True)
 

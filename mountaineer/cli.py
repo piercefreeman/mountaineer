@@ -263,6 +263,7 @@ async def run_isolated(
     )
 
     try:
+        print(f"SUBPROCESS WILL CONNECT TO BROKER: {message_config}", flush=True)
         async with AsyncMessageBroker.connect_server(message_config) as broker:
             await app_context.run_async(broker)
     except Exception as e:
@@ -270,6 +271,7 @@ async def run_isolated(
         CONSOLE.print(f"[red]Error: {e}")
         CONSOLE.print(traceback.format_exc())
         raise e
+
 
 @async_to_sync
 async def handle_runserver(
@@ -310,6 +312,7 @@ async def handle_runserver(
     first_run: bool = True
 
     async with AsyncMessageBroker.start_server(host) as (broker, config):
+        print("BROKER CONFIG", config)
         with isolate_imports(package) as environment:
             CONSOLE.print("[bold blue]Process manager started")
             print("ROOT PID", os.getpid())
@@ -344,16 +347,26 @@ async def handle_runserver(
 
                 CONSOLE.print("Rebuilding frontend")
 
-                print("VALUES", BuildJsMessage(updated_js=list(file_changes_state.pending_js) if file_changes_state.pending_js else None))
+                print(
+                    "VALUES",
+                    BuildJsMessage(
+                        updated_js=list(file_changes_state.pending_js)
+                        if file_changes_state.pending_js
+                        else None
+                    ),
+                )
 
                 await broker.send_message(
                     # None will rebuild everything - we want this in cases where we are called
                     # without a list provided
-                    BuildJsMessage(updated_js=list(file_changes_state.pending_js) if file_changes_state.pending_js else None)
+                    BuildJsMessage(
+                        updated_js=list(file_changes_state.pending_js)
+                        if file_changes_state.pending_js
+                        else None
+                    )
                 )
-                
-                CONSOLE.print("Done with frontend build")
 
+                CONSOLE.print("Done with frontend build")
 
             async def handle_file_changes(metadata: CallbackMetadata):
                 try:
@@ -379,7 +392,7 @@ async def handle_runserver(
 
                     if file_changes_state.pending_js or first_run:
                         await rebuild_frontend()
-                    
+
                     first_run = False
 
                 except Exception as e:

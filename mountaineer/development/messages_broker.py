@@ -1,22 +1,16 @@
 import asyncio
+import json
 import secrets
-import uuid
+import socket
 from asyncio import Future
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
-from dataclasses import dataclass
-from multiprocessing import Queue
-from multiprocessing.managers import BaseManager
-from queue import Empty
+from contextlib import contextmanager, asynccontextmanager
+from dataclasses import asdict, dataclass
 from threading import Thread
-from typing import Any, AsyncGenerator, Generic, Optional, TypeVar
+from typing import Any, Generic, Optional, TypeVar
 
 from mountaineer.development.messages import IsolatedMessageBase
-from mountaineer.io import get_free_port
-from mountaineer.logging import LOGGER
 
 TResponse = TypeVar("TResponse")
-
 AppMessageType = TypeVar("AppMessageType", bound=IsolatedMessageBase[Any])
 AppMessageTypes = TypeVar("AppMessageTypes", bound=tuple[AppMessageType, ...])
 
@@ -28,335 +22,315 @@ class BrokerMessageFuture(Generic[TResponse], asyncio.Future[TResponse]):
 @dataclass
 class BrokerServerConfig(Generic[AppMessageTypes]):
     """
-    Config required to access a multiprocessing server that controls queues
-    in a separate thread. Used for non-parent-child data sharing.
-
+    Config required to access a server that controls queues
+    in a separate thread.
     """
 
     host: str
-    port: str
+    port: int
     auth_key: str
 
 
-MESSAGE_QUEUE_NAME = "get_message_queue"
-RESPONSE_QUEUE_NAME = "get_response_queue"
+@dataclass
+class BaseCommand:
+    command: str
+    auth_key: str
 
 
-class AsyncMessageBroker(Generic[AppMessageType]):
+@dataclass
+class SendJobCommand(BaseCommand):
+    job_id: str
+    job_data: Any
+
+
+@dataclass
+class SendResponseCommand(BaseCommand):
+    job_id: str
+    response_data: Any
+
+
+@dataclass
+class GetResponseCommand(BaseCommand):
+    job_id: str
+
+
+@dataclass
+class BaseResponse:
+    status: str
+    message: Optional[str] = None
+
+
+@dataclass
+class OKResponse(BaseResponse):
+    response_data: Any = None
+
+
+@dataclass
+class UnauthorizedResponse(BaseResponse):
+    pass
+
+
+# Mapping from command name to its corresponding dataclass.
+COMMAND_MAP = {
+    "send_job": SendJobCommand,
+    "send_response": SendResponseCommand,
+    "get_response": GetResponseCommand,
+}
+
+
+class BrokerAuthenticationError(Exception):
+    """Raised when the broker authentication fails."""
+    pass
+
+
+class AsyncMessageBroker(Thread):
     """
-    A thread and process-safe message broker that allows async communication between
-    processes. This broker maintains a mapping between message IDs and their corresponding
-    futures, allowing async code to await responses from other processes.
+    A simple process-independent message broker server. This works around limitations
+    with `multiprocessing.Queue` that require all processes to be related to the central
+    running parent process (for sharing of file descriptors). Since exec processes are
+    launched separately by firehot this inheritance isn't possible.
 
-    The broker uses two multiprocessing queues to facilitate bidirectional communication:
-    - message_queue: Sends messages from the main process to the isolated process
-    - response_queue: Sends responses from the isolated process back to the main process
+    On Linux we could work around this by using `mkfifo` but since there's no Windows
+    equivalent for it, we use a simple port-based server to keep things multi-platform.
 
-    This is a core component of Mountaineer's process isolation architecture, enabling
-    hot-reloading and development tooling while maintaining process separation.
-
-    ```python {{sticky: True}}
-    import asyncio
-    from mountaineer.development.messages import (
-        AsyncMessageBroker,
-        ReloadModulesMessage,
-        RestartServerMessage
-    )
-
-    # Create a broker in the main process
-    broker = AsyncMessageBroker()
-    broker.start()
-
-    try:
-        # Send a message to reload modules and await the response
-        reload_future = broker.send_message(
-            ReloadModulesMessage(module_names=["app.controllers", "app.models"])
-        )
-        reload_response = await reload_future
-
-    finally:
-        # Always stop the broker when done
-        await broker.stop()
-
-    ```
     """
 
-    def __init__(
-        self,
-        message_queue: Optional[Queue] = None,
-        response_queue: Optional[Queue] = None,
+    def __init__(self, *, host: str = "127.0.0.1", port: int = 0, auth_key: str | None = None):
+        """
+        :param port: If set to 0, the server will choose a free port.
+        :param auth_key: If provided, the server will check that the client's auth key matches.
+        """
+        super().__init__()
+        self.host = host
+        self.port = port
+        self.auth_key = auth_key or secrets.token_hex(16)
+        self.jobs: dict[str, Any] = {}  # job_id -> job_data (if needed)
+        self.responses: dict[str, Any] = {}  # job_id -> response_data
+        self.pending_futures: dict[
+            str, list[Future]
+        ] = {}  # job_id -> list of asyncio.Future waiting for a response
+
+        self.loop = None
+        self.server = None
+
+        # Thread control.
+        self.is_running = False
+        self.should_stop = False
+
+    async def stop(self):
+        if not self.is_running:
+            return
+
+        self.should_stop = True
+
+        # Cancel all pending futures
+        for futures in self.pending_futures.values():
+            for future in futures:
+                if not future.done():
+                    future.cancel()
+        self.pending_futures.clear()
+
+        if self.server:
+            self.server.close()
+            # Schedule wait_closed on the broker's loop
+            fut = asyncio.run_coroutine_threadsafe(self.server.wait_closed(), self.loop)
+            await asyncio.wrap_future(fut)
+
+        if self.loop and self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)
+
+    def run(self):
+        # Create and set the event loop for this thread.
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
+        # Determine a free port if needed.
+        if self.port == 0:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind((self.host, 0))
+                self.port = s.getsockname()[1]
+
+        # Start the asyncio TCP server.
+        coro = asyncio.start_server(self.handle_client, self.host, self.port)
+        self.server = self.loop.run_until_complete(coro)
+        print(f"JobBrokerServer started on {self.host}:{self.port}")
+
+        self.is_running = True
+
+        try:
+            self.loop.run_forever()
+        finally:
+            # Clean up
+            if self.server:
+                self.server.close()
+                self.loop.run_until_complete(self.server.wait_closed())
+            
+            # Cancel all pending tasks
+            pending = asyncio.all_tasks(self.loop)
+            for task in pending:
+                task.cancel()
+            
+            # Wait for all tasks to complete with a timeout
+            if pending:
+                self.loop.run_until_complete(
+                    asyncio.wait(pending, timeout=5.0)
+                )
+            
+            self.loop.close()
+            self.is_running = False
+
+    async def handle_client(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ):
         """
-        Initialize a new AsyncMessageBroker with empty message and response queues.
-
-        Creates the necessary multiprocessing queues and initializes the internal state
-        for tracking pending message futures. The broker must be explicitly started
-        with the start() method before it can process messages.
+        Handle incoming client connections using a JSON-over-TCP protocol.
+        Each JSON message corresponds to one of our command dataclasses.
         """
-        self.message_queue: Queue = message_queue or Queue()
-        self.response_queue: Queue = response_queue or Queue()
-        self._pending_futures: dict[str, Future[Any]] = {}
-        self._response_task: asyncio.Task | None = None
-        self._executor: ThreadPoolExecutor | None = None
-        self._should_stop = False
-
-    def __getstate__(self):
-        """
-        Only serialize the queues when transferring from our main to isolated process.
-
-        Other attributes will be reinitialized in the new process so we don't
-        attempt to share non-thread safe objects between processes.
-
-        :return: Dictionary containing only the serializable state (message and response queues)
-        """
-        return {
-            "message_queue": self.message_queue,
-            "response_queue": self.response_queue,
-        }
-
-    def __setstate__(self, state: dict[str, Any]):
-        """
-        Restore the broker state from pickle, reinitializing non-picklable components.
-
-        This is called when the broker is unpickled in the isolated process. It restores
-        the queues and reinitializes the other attributes to their default values.
-
-        :param state: Dictionary containing the serialized state
-        """
-        self.message_queue = state["message_queue"]
-        self.response_queue = state["response_queue"]
-        self._pending_futures = {}
-        self._response_task = None
-        self._executor = None
-        self._should_stop = False
-
-    @classmethod
-    @asynccontextmanager
-    async def start_server(
-        cls, server_host: str
-    ) -> AsyncGenerator[
-        tuple["AsyncMessageBroker[AppMessageType]", BrokerServerConfig[AppMessageType]],
-        None,
-    ]:
-        server_port = get_free_port()
-        auth_key = secrets.token_bytes(32)  # Secure random authentication key
-
-        # Set up the manager server with a shared queue
-        message_queue = Queue()
-        response_queue = Queue()
-
-        # Defined inline to allow for unique registration at the class level
-        # to be separate for each start_server call
-        class QueueServerManager(BaseManager):
-            pass
-
-        QueueServerManager.register(MESSAGE_QUEUE_NAME, callable=lambda: message_queue)
-        QueueServerManager.register(
-            RESPONSE_QUEUE_NAME, callable=lambda: response_queue
-        )
-
-        manager_server = QueueServerManager(
-            address=(server_host, server_port), authkey=auth_key
-        )
-        server = manager_server.get_server()
-        server_thread = Thread(target=server.serve_forever)
-        server_thread.daemon = True
-        server_thread.start()
-
-        broker = cls(
-            message_queue=message_queue,
-            response_queue=response_queue,
-        )
-
-        config = BrokerServerConfig(
-            host=server_host,
-            port=server_port,
-            auth_key=auth_key,
-        )
-
         try:
-            async with broker.launch():
-                yield broker, config
-        finally:
-            # When we're done tear down the server
-            # In newer Python versions, server.shutdown() requires a context parameter
-            pass
-
-    @classmethod
-    @asynccontextmanager
-    async def connect_server(
-        cls, config: BrokerServerConfig[AppMessageTypes]
-    ) -> AsyncGenerator["AsyncMessageBroker[AppMessageTypes]", None]:
-        # Connect to the manager server as a client
-        class QueueServerManager(BaseManager):
-            pass
-
-        QueueServerManager.register(MESSAGE_QUEUE_NAME)
-        QueueServerManager.register(RESPONSE_QUEUE_NAME)
-
-        manager = QueueServerManager(
-            address=(config.host, config.port), authkey=config.auth_key
-        )
-        manager.connect()
-
-        message_queue = getattr(manager, MESSAGE_QUEUE_NAME)()
-        response_queue = getattr(manager, RESPONSE_QUEUE_NAME)()
-
-        broker = cls(
-            message_queue=message_queue,
-            response_queue=response_queue,
-        )
-
-        async with broker.launch():
-            yield broker
-
-    @asynccontextmanager
-    async def launch(self):
-        try:
-            await self._start()
-            yield
-        finally:
-            await self._stop()
-
-    def drain_all(self):
-        """
-        Drain all current messages in the queue so they can be repurposed
-        for another job without having dangling requests/responses hanging around.
-
-        """
-        while not self.message_queue.empty():
-            try:
-                self.message_queue.get_nowait()
-            except Empty:
-                break
-        while not self.response_queue.empty():
-            try:
-                self.response_queue.get_nowait()
-            except Empty:
-                break
-
-    async def _start(self):
-        """
-        Start the response consumer task.
-
-        Initializes a ThreadPoolExecutor for consuming responses and creates an asyncio
-        task to process responses from the response queue. This method must be called
-        before sending any messages through the broker.
-        """
-        if self._response_task is None:
-            self._executor = ThreadPoolExecutor(max_workers=1)
-            self._should_stop = False
-            self._response_task = asyncio.create_task(self._consume_responses())
-
-    async def _stop(self):
-        """
-        Stop the response consumer task and clean up resources.
-
-        Cancels the response consumer task, shuts down the executor, cancels any pending
-        futures, and drains the message and response queues. This method should be called
-        when the broker is no longer needed to ensure proper cleanup of resources.
-        """
-        self._should_stop = True
-
-        if self._response_task is not None:
-            self._response_task.cancel()
-            try:
-                await self._response_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as e:
-                LOGGER.error(f"Error during task cancellation: {e}")
-
-            self._response_task = None
-
-        # Clean up executor
-        if self._executor:
-            self._executor.shutdown(wait=False)
-            self._executor = None
-
-        # Clean up any remaining futures
-        for future in self._pending_futures.values():
-            if not future.done():
-                future.cancel()
-
-        self._pending_futures.clear()
-
-        # Drain queues
-        try:
-            while not self.message_queue.empty():
+            while not self.should_stop:
                 try:
-                    self.message_queue.get_nowait()
-                except Empty:
+                    data = await reader.readline()
+                    if not data:
+                        break  # connection closed
+                except (ConnectionError, asyncio.CancelledError):
                     break
-            while not self.response_queue.empty():
+
                 try:
-                    self.response_queue.get_nowait()
-                except Empty:
-                    break
+                    # Deserialize incoming JSON message to a dict.
+                    message_dict = json.loads(data.decode())
+                    cmd_type = message_dict.get("command")
+                    if cmd_type in COMMAND_MAP:
+                        # Instantiate the appropriate dataclass.
+                        cmd_obj = COMMAND_MAP[cmd_type](**message_dict)
+                    else:
+                        raise ValueError(f"Unknown command: {cmd_type}")
+
+                    # Validate auth key
+                    if cmd_obj.auth_key != self.auth_key:
+                        response = UnauthorizedResponse(
+                            status="error",
+                            message="Invalid authentication key"
+                        )
+                        writer.write((json.dumps(asdict(response)) + "\n").encode())
+                        await writer.drain()
+                        continue
+
+                    # Process command based on its type.
+                    if isinstance(cmd_obj, SendJobCommand):
+                        self.jobs[cmd_obj.job_id] = cmd_obj.job_data
+                        response = OKResponse(status="ok")
+                    elif isinstance(cmd_obj, SendResponseCommand):
+                        self.responses[cmd_obj.job_id] = cmd_obj.response_data
+                        # If any futures are waiting, notify them.
+                        if cmd_obj.job_id in self.pending_futures:
+                            for fut in self.pending_futures[cmd_obj.job_id]:
+                                if not fut.done():
+                                    fut.set_result(cmd_obj.response_data)
+                            del self.pending_futures[cmd_obj.job_id]
+                        response = OKResponse(status="ok")
+                    elif isinstance(cmd_obj, GetResponseCommand):
+                        if cmd_obj.job_id in self.responses:
+                            response = OKResponse(
+                                status="ok", response_data=self.responses[cmd_obj.job_id]
+                            )
+                        else:
+                            fut = self.loop.create_future()
+                            self.pending_futures.setdefault(cmd_obj.job_id, []).append(fut)
+                            response_data = await fut
+                            response = OKResponse(status="ok", response_data=response_data)
+                    else:
+                        response = BaseResponse(
+                            status="error", message="Unhandled command type"
+                        )
+                except Exception as e:
+                    response = BaseResponse(status="error", message=str(e))
+
+                # Send back response as JSON.
+                writer.write((json.dumps(asdict(response)) + "\n").encode())
+                await writer.drain()
         except Exception as e:
-            LOGGER.error(f"Error draining queues: {e}")
+            response = BaseResponse(status="error", message=str(e))
+            writer.write((json.dumps(asdict(response)) + "\n").encode())
+            await writer.drain()
+        finally:
+            writer.close()
 
-    async def _consume_responses(self):
+    #
+    # Direct client API methods
+    # These are callable from other threads/processes to communicate with the central server.
+    #
+
+    async def send_job(self, job_id: str, job_data: Any) -> OKResponse:
         """
-        Consume responses from the response queue and resolve corresponding futures.
-
-        This internal method runs as a background task, continuously polling the response
-        queue for new responses. When a response is received, it finds the corresponding
-        future by its ID and resolves it with the response value.
+        Send a job to the broker server and wait for acknowledgement.
         """
-        while not self._should_stop:
-            try:
-                if not self._executor:
-                    break
+        cmd = SendJobCommand(command="send_job", job_id=job_id, job_data=job_data, auth_key=self.auth_key)
+        response = await self._send_message(self.host, self.port, cmd)
+        if response.get("status") == "error" and isinstance(response.get("message"), str) and "authentication" in response.get("message").lower():
+            raise BrokerAuthenticationError(response.get("message"))
+        return OKResponse(**response)
 
-                try:
-                    (
-                        response_id,
-                        response,
-                    ) = await asyncio.get_event_loop().run_in_executor(
-                        self._executor,
-                        self.response_queue.get,
-                        True,
-                        2,
-                    )
-
-                    if response_id in self._pending_futures:
-                        future = self._pending_futures.pop(response_id)
-                        if not future.done():
-                            future.set_result(response)
-
-                except Empty:
-                    continue
-                except Exception:
-                    continue
-
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                if not self._should_stop:
-                    LOGGER.error(f"Error consuming response: {e}", exc_info=True)
-
-    def send_message(
-        self, message: IsolatedMessageBase[TResponse]
-    ) -> BrokerMessageFuture[TResponse]:
+    async def send_response(self, job_id: str, response_data: Any) -> OKResponse:
         """
-        Send a message and return a future that will be resolved with the response.
-
-        This method generates a unique ID for the message, creates a future for the
-        response, adds the future to the pending futures dictionary, and puts the
-        message in the message queue. The future will be resolved when a response
-        with the corresponding ID is received in the response queue.
-
-        :param message: The message to send, which must be a subclass of IsolatedMessageBase
-        :return: A future that will be resolved with the response
+        Send a response for a job to the broker server.
         """
-        if not self._response_task:
-            raise ValueError("MessageBroker requires launching with .launch")
+        cmd = SendResponseCommand(command="send_response", job_id=job_id, response_data=response_data, auth_key=self.auth_key)
+        response = await self._send_message(self.host, self.port, cmd)
+        if response.get("status") == "error" and isinstance(response.get("message"), str) and "authentication" in response.get("message").lower():
+            raise BrokerAuthenticationError(response.get("message"))
+        return OKResponse(**response)
 
-        message_id = str(uuid.uuid4())
-        future = BrokerMessageFuture[TResponse]()
-        self._pending_futures[message_id] = future
-        print(f"PUTTING MESSAGE: {message_id}, {message}", flush=True)
-        self.message_queue.put((message_id, message))
-        print("PUT MESSAGE DONE", flush=True)
-        return future
+    async def get_response(self, job_id: str) -> Any:
+        """
+        Get a response for a job from the broker server.
+        If the response is not available, wait for it.
+        """
+        cmd = GetResponseCommand(command="get_response", job_id=job_id, auth_key=self.auth_key)
+        response = await self._send_message(self.host, self.port, cmd)
+        if response.get("status") == "error":
+            if isinstance(response.get("message"), str) and "authentication" in response.get("message").lower():
+                raise BrokerAuthenticationError(response.get("message"))
+            raise ValueError(f"Failed to get response: {response.get('message', 'Unknown error')}")
+        if "response_data" in response:
+            return response["response_data"]
+        raise ValueError("Response data not found in server response")
+
+    async def _send_message(self, host: str, port: int, message_obj: BaseCommand) -> dict:
+        """
+        Helper function to send a dataclass message (converted to JSON) and receive the response asynchronously.
+        """
+        reader, writer = await asyncio.open_connection(host, port)
+        try:
+            json_msg = json.dumps(asdict(message_obj)) + "\n"
+            writer.write(json_msg.encode())
+            await writer.drain()
+
+            response_line = await reader.readline()
+            return json.loads(response_line.decode())
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    @classmethod
+    @asynccontextmanager
+    async def start_server(cls):
+        server = cls()
+        server.start()
+
+        # Wait for the server to start.
+        while not server.is_running:
+            await asyncio.sleep(0.1)
+
+        try:
+            yield server, BrokerServerConfig(host=server.host, port=server.port, auth_key=server.auth_key)
+        finally:
+            await server.stop()
+            server.join(timeout=5.0)  # Wait for thread to finish with timeout
+            if server.is_alive():
+                print("Warning: Server thread did not shut down cleanly")
+
+    @classmethod
+    @asynccontextmanager
+    async def new_client(cls, config: BrokerServerConfig):
+        client = cls(host=config.host, port=config.port, auth_key=config.auth_key)
+        yield client

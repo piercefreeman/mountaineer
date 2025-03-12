@@ -1,8 +1,8 @@
 import importlib
+from os import environ
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
-from os import environ
 
 from fastapi import Request
 
@@ -138,7 +138,7 @@ class IsolatedAppContext:
                     )
                     print(
                         f"Isolated app context failed to process message: {e}, continuing...",
-                        flush=True
+                        flush=True,
                     )
                     broker.response_queue.put(
                         (
@@ -172,7 +172,7 @@ class IsolatedAppContext:
         if not isinstance(response, SuccessResponse):
             print("handle_bootstrap", response)
             return response
-        
+
         print("START start_server")
         return await self.start_server()
 
@@ -208,7 +208,7 @@ class IsolatedAppContext:
         print("WILL CHECK APP CONTROLLER", flush=True)
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
-        
+
         print("WILL RUN RUN BUILDER PLUGINS", flush=True)
         await self.app_compiler.run_builder_plugins(limit_paths=updated_js)
         print("DID RUN RUN BUILDER PLUGINS", flush=True)
@@ -282,7 +282,7 @@ class IsolatedAppContext:
 
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
-        
+
         # Inject the live reload port
         self.app_controller.live_reload_port = self.live_reload_port or 0
 

@@ -79,7 +79,7 @@ class ClientCompiler:
         )
 
         # This seems to stall our writer
-        #LOGGER.debug(f"Plugin builders took {(monotonic_ns() - start) / 1e9}s")
+        # LOGGER.debug(f"Plugin builders took {(monotonic_ns() - start) / 1e9}s")
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False
