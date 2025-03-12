@@ -218,6 +218,23 @@ class AsyncMessageBroker(Generic[AppMessageType]):
         finally:
             await self._stop()
 
+    def drain_all(self):
+        """
+        Drain all current messages in the queue so they can be repurposed
+        for another job without having dangling requests/responses hanging around.
+
+        """
+        while not self.message_queue.empty():
+            try:
+                self.message_queue.get_nowait()
+            except Empty:
+                break
+        while not self.response_queue.empty():
+            try:
+                self.response_queue.get_nowait()
+            except Empty:
+                break
+
     async def _start(self):
         """
         Start the response consumer task.

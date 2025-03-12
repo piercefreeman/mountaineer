@@ -325,6 +325,9 @@ async def handle_runserver(
                 # No-op if no dependencies have changed, so the subsequent exec should be instantaneous
                 environment.update_environment()
 
+                # Make sure no messages are destined for the old context
+                broker.drain_all()
+
                 current_context = environment.exec(
                     run_isolated, webcontroller, host, port, config
                 )
