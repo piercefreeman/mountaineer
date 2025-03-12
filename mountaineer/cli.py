@@ -1,5 +1,4 @@
 import asyncio
-import os
 import traceback
 from dataclasses import dataclass, field
 from hashlib import md5
@@ -266,7 +265,6 @@ async def run_isolated(
     )
 
     try:
-        print(f"SUBPROCESS WILL CONNECT TO BROKER: {message_config}", flush=True)
         async with AsyncMessageBroker.new_client(message_config) as broker:
             await app_context.run_async(broker)
     except Exception as e:
@@ -315,10 +313,8 @@ async def handle_runserver(
     first_run: bool = True
 
     async with AsyncMessageBroker.start_server() as (broker, config):
-        print("BROKER CONFIG", config)
         with isolate_imports(package) as environment:
-            CONSOLE.print("[bold blue]Process manager started")
-            print("ROOT PID", os.getpid())
+            CONSOLE.print("[bold blue]Development manager started")
 
             async def restart_backend():
                 CONSOLE.print("Restarting backend")
@@ -331,9 +327,6 @@ async def handle_runserver(
                 # No-op if no dependencies have changed, so the subsequent exec should be instantaneous
                 environment.update_environment()
 
-                # Make sure no messages are destined for the old context
-                # broker.drain_all()
-
                 current_context = environment.exec(
                     run_isolated,
                     webcontroller,
@@ -344,25 +337,23 @@ async def handle_runserver(
                 )
 
                 # Bootstrap the process and rebuild the server files
-                CONSOLE.print("Booting server")
+                start = time()
+                CONSOLE.print("[bold cyan]🚀 Booting server...[/bold cyan]")
                 await broker.send_and_get_response(BootupMessage())
-                CONSOLE.print("Building useServer")
+                CONSOLE.print(
+                    "[bold yellow]⚙️  Building useServer components...[/bold yellow]"
+                )
                 await broker.send_and_get_response(BuildUseServerMessage())
-                CONSOLE.print("Done with backend build")
+                build_time = time() - start
+                CONSOLE.print(
+                    f"[bold green]✨ Backend build complete in {build_time:.2f}s![/bold green]"
+                )
 
             async def rebuild_frontend():
                 nonlocal file_changes_state
 
-                CONSOLE.print("Rebuilding frontend")
-
-                print(
-                    "VALUES",
-                    BuildJsMessage(
-                        updated_js=list(file_changes_state.pending_js)
-                        if file_changes_state.pending_js
-                        else None
-                    ),
-                )
+                start = time()
+                CONSOLE.print("[bold yellow]🔨 Rebuilding frontend...[/bold yellow]")
 
                 await broker.send_and_get_response(
                     # None will rebuild everything - we want this in cases where we are called
@@ -374,11 +365,14 @@ async def handle_runserver(
                     )
                 )
 
-                CONSOLE.print("Done with frontend build")
+                build_time = time() - start
+                CONSOLE.print(
+                    f"[bold green]✨ Frontend build complete in {build_time:.2f}s![/bold green]"
+                )
 
             async def handle_file_changes(metadata: CallbackMetadata):
                 try:
-                    print("Should handle", metadata)
+                    LOGGER.debug(f"Handling file changes: {metadata}")
                     nonlocal first_run
                     nonlocal file_changes_state
 
@@ -400,6 +394,11 @@ async def handle_runserver(
 
                     if file_changes_state.pending_js or first_run:
                         await rebuild_frontend()
+
+                    # If we've succeeded, we should clear out the pending
+                    # files so we don't rebuild them again
+                    file_changes_state.pending_js.clear()
+                    file_changes_state.pending_python.clear()
 
                     # Ping the watcher webservice to let it know we've updated
                     await watcher_webservice.broadcast_listeners()

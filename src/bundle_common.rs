@@ -164,9 +164,6 @@ pub fn bundle_common(
     // Create the bundler instance.
     let mut bundler = Bundler::new(bundler_options);
 
-    // Run the bundler asynchronously
-    println!("RUNNING BUNDLER FOR {} ENTRYPOINTS", entrypoint_paths.len());
-
     let rt = Runtime::new().map_err(|e| BundleError::BundlingError(e.to_string()))?;
 
     rt.block_on(async {

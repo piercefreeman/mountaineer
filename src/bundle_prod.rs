@@ -19,8 +19,6 @@ pub fn compile_production_bundle(
     is_server: bool,
     tsconfig_path: Option<String>,
 ) -> PyResult<Py<PyDict>> {
-    println!("COMPILING PROD BUNDLE");
-
     let temp_dir =
         TempDir::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
     let temp_dir_path = temp_dir.path();
@@ -34,10 +32,6 @@ pub fn compile_production_bundle(
     } else {
         BundleMode::MULTI_CLIENT
     };
-
-    if let Some(tsconfig) = &tsconfig_path {
-        println!("USING TSCONFIG: {}", tsconfig);
-    }
 
     // Call bundle_common with the appropriate parameters
     let bundle_results = bundle_common::bundle_common(

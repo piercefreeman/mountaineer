@@ -13,6 +13,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
 
+from mountaineer.logging import LOGGER
+
 TResponse = TypeVar("TResponse")
 AppMessageTypes = TypeVar("AppMessageType")
 
@@ -168,7 +170,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         # Start the asyncio TCP server.
         coro = asyncio.start_server(self.handle_client, self.host, self.port)
         self.server = self.loop.run_until_complete(coro)
-        print(f"JobBrokerServer started on {self.host}:{self.port}")
+        LOGGER.info(f"JobBrokerServer started on {self.host}:{self.port}")
 
         self.is_running = True
 
@@ -409,12 +411,12 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         reader, writer = await asyncio.open_connection(host, port)
         try:
             json_msg = json.dumps(message_obj.model_dump()) + "\n"
-            print(f"SENDING MESSAGE: {json_msg}", flush=True)
+            LOGGER.debug(f"Sending message to broker: {json_msg}")
             writer.write(json_msg.encode())
             await writer.drain()
 
             response_line = await reader.readline()
-            print(f"RECEIVED RESPONSE: {response_line}", flush=True)
+            LOGGER.debug(f"Received server response: {response_line}")
             response_dict = json.loads(response_line.decode())
             return response_type_adapter.validate_python(response_dict)
         finally:
@@ -442,7 +444,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             await server.stop()
             server.join(timeout=5.0)  # Wait for thread to finish with timeout
             if server.is_alive():
-                print("Warning: Server thread did not shut down cleanly")
+                LOGGER.warning("Warning: Server thread did not shut down cleanly")
 
     @classmethod
     @asynccontextmanager

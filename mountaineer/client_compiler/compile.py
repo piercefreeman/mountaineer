@@ -2,7 +2,6 @@ from hashlib import md5
 from pathlib import Path
 from shutil import move as shutil_move
 from tempfile import mkdtemp
-from time import monotonic_ns
 
 from mountaineer.app import AppController
 from mountaineer.client_compiler.base import ClientBundleMetadata
@@ -43,7 +42,6 @@ class ClientCompiler:
         this is a None equality check; a blank list is provided, we won't refresh any files.
 
         """
-        print("WILL RUN run_builder_plugins", flush=True)
         if limit_paths is None:
             limit_paths = list(self._get_static_files())
             limit_paths += [
@@ -53,7 +51,6 @@ class ClientCompiler:
                 for controller_definition in self.app.controllers
             ]
 
-        print(f"NEW LIMIT PATHS: {limit_paths}", flush=True)
         if not limit_paths:
             LOGGER.debug("No files to compile in builder plugins, skipping...")
             return
@@ -61,17 +58,12 @@ class ClientCompiler:
         # For now we do this every time to make sure we pick up on
         # new controllers that might have been added since this class
         # was created
-        print("INIT BUILDERS", flush=True)
         self._init_builders()
 
-        print("WILL MARK FILE DIRTY", flush=True)
         for path in limit_paths:
             for builder in self.app.builders:
                 builder.mark_file_dirty(path)
 
-        print("WILL BUILD WRAPPER", flush=True)
-        print(f"self.app.builders: {self.app.builders}", flush=True)
-        start = monotonic_ns()
         results = await gather_with_concurrency(
             [builder.build_wrapper() for builder in self.app.builders],
             n=max_concurrency,
@@ -84,7 +76,6 @@ class ClientCompiler:
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False
         final_exception: str = ""
-        print("WILL CHECK RESULTS", flush=True)
         for result in results:
             if isinstance(result, Exception):
                 has_build_error = True
@@ -97,7 +88,6 @@ class ClientCompiler:
 
         # Up until now builders have placed their results into a temporary
         # directory, we want to merge this with the project directory
-        print("MOVE BUILD ARTIFACTS INTO PROJECT", flush=True)
         self._move_build_artifacts_into_project()
 
         # Now that we have prepared the static folder in its final form, we

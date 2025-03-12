@@ -149,8 +149,6 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             println!("Running in debug mode");
         }
 
-        println!("COMPILING INDEPENDENT BUNDLES");
-
         bundle_independent::compile_independent_bundles(
             py,
             paths,

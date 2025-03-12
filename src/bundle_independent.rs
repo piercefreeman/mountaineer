@@ -39,8 +39,6 @@ pub fn compile_independent_bundles(
     let mut sourcemap_files = Vec::new();
 
     for path_group in paths.iter() {
-        println!("COMPILING INDEPENDENT BUNDLE {:?}", path_group);
-
         // Create a temporary directory for the current bundle.
         let temp_dir = TempDir::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
@@ -62,12 +60,6 @@ pub fn compile_independent_bundles(
         } else {
             None
         };
-
-        println!("BUNDLE MODE: {:?}", bundle_mode);
-        println!("LIVE RELOAD PORT: {:?}", live_reload_port_option);
-        if let Some(tsconfig) = &tsconfig_path {
-            println!("USING TSCONFIG: {}", tsconfig);
-        }
 
         // Use bundle_common to bundle the entrypoint
         let bundle_results = bundle_common::bundle_common(
@@ -94,8 +86,6 @@ pub fn compile_independent_bundles(
             }
             BundleError::InvalidInput(msg) => PyErr::new::<pyo3::exceptions::PyValueError, _>(msg),
         })?;
-
-        println!("BUNDLER DONE WITH BLOCK");
 
         // We should only have one result as we're bundling one entrypoint at a time
         if bundle_results.len() != 1 {

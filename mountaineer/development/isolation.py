@@ -1,5 +1,4 @@
 import importlib
-from os import environ
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
@@ -103,24 +102,20 @@ class IsolatedAppContext:
 
         The loop continues until a ShutdownMessage is received.
         """
-        print("OS ENV IN ISOLATED APP CONTEXt", environ)
         try:
             LOGGER.debug("[IsolatedAppContext] Starting isolated context")
 
             # Process messages until shutdown
             while True:
-                print("WILL BLOCK ON NEXT MESSAGE", flush=True)
+                LOGGER.debug("Will block on next message")
                 message_id, message = await broker.get_job()
-                print(f"GOT MESSAGE RAW: {message}", flush=True)
-                # LOGGER.debug(f"[IsolatedAppContext] Got message: {message}")
-                print(f"MESSAGE: {isinstance(message, BuildJsMessage)}", flush=True)
+                LOGGER.debug(f"Got message: {message}")
 
                 try:
                     response: SuccessResponse | ErrorResponse
                     if isinstance(message, BootupMessage):
                         response = await self.handle_bootstrap()
                     elif isinstance(message, BuildJsMessage):
-                        print("BUILD JS!!")
                         response = await self.handle_js_build(message.updated_js)
                     elif isinstance(message, BuildUseServerMessage):
                         response = await self.handle_build_use_server()
@@ -129,22 +124,13 @@ class IsolatedAppContext:
                         raise ValueError(
                             f"Invalid message type: {type(message)} {message}"
                         )
-                    print(f"WILL WRITE RESPONSE: {response}", flush=True)
-                    print(f"MESSAGE ID: {message_id}", flush=True)
+                    LOGGER.debug(f"Will write response: {response}")
                     await broker.send_response(message_id, response)
-                    print(f"DID WRITE RESPONSE: {response}", flush=True)
                 except Exception as e:
-                    # The only location where we log errors that occur in the build lifecycle
-                    # TODO: GET THIS TO SHOW UP WITH STDERR
                     LOGGER.error(
                         f"Isolated app context failed to process message: {e}, continuing...",
                         exc_info=True,
                     )
-                    print(
-                        f"Isolated app context failed to process message: {e}, continuing...",
-                        flush=True,
-                    )
-                    print(f"WILL WRITE ERROR RESPONSE: {e}", flush=True)
                     await broker.send_response(
                         message_id,
                         ErrorResponse(
@@ -170,13 +156,10 @@ class IsolatedAppContext:
 
         :return: Success or error response
         """
-        print("Initialize app state")
         response = self.initialize_app_state()
         if not isinstance(response, SuccessResponse):
-            print("handle_bootstrap", response)
             return response
 
-        print("START start_server")
         return await self.start_server()
 
     async def handle_build_use_server(self):
@@ -187,12 +170,9 @@ class IsolatedAppContext:
         :raises ValueError: If JS compiler is not initialized
         """
         if self.js_compiler is None:
-            print("JS COMPILER IS NULL", flush=True)
             raise ValueError("JS compiler not initialized")
 
-        print("WILL BUILD USE SERVER", flush=True)
         await self.js_compiler.build_use_server()
-        print("DID BUILD USE SERVER", flush=True)
         return SuccessResponse()
 
     async def handle_js_build(self, updated_js: list[Path] | None = None):
@@ -205,16 +185,12 @@ class IsolatedAppContext:
         :return: Success response on successful build
         :raises ValueError: If app compiler or controller is not initialized
         """
-        print("WILL CHECK APP COMPILER", flush=True)
         if self.app_compiler is None:
             raise ValueError("App compiler not initialized")
-        print("WILL CHECK APP CONTROLLER", flush=True)
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
 
-        print("WILL RUN RUN BUILDER PLUGINS", flush=True)
         await self.app_compiler.run_builder_plugins(limit_paths=updated_js)
-        print("DID RUN RUN BUILDER PLUGINS", flush=True)
         for path in updated_js or []:
             self.app_controller.invalidate_view(path)
 
@@ -296,9 +272,7 @@ class IsolatedAppContext:
             host=self.host or "127.0.0.1",
             port=self.port,
         )
-        print("WILL START astart")
         await self.webservice_thread.astart()
-        print("DID START astart")
 
     #
     # Dev Hooks
