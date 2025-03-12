@@ -18,6 +18,8 @@ pub fn compile_production_bundle(
     live_reload_import: String,
     is_server: bool,
 ) -> PyResult<Py<PyDict>> {
+    println!("COMPILING PROD BUNDLE");
+
     let temp_dir =
         TempDir::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
     let temp_dir_path = temp_dir.path();

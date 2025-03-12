@@ -61,6 +61,9 @@ pub fn compile_independent_bundles(
             None
         };
 
+        println!("BUNDLE MODE: {:?}", bundle_mode);
+        println!("LIVE RELOAD PORT: {:?}", live_reload_port_option);
+
         // Use bundle_common to bundle the entrypoint
         let bundle_results = bundle_common::bundle_common(
             vec![entrypoint_path.to_str().unwrap().to_string()],

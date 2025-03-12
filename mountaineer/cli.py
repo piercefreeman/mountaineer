@@ -254,12 +254,14 @@ async def run_isolated(
     webcontroller: str,
     host: str,
     port: int,
+    live_reload_port: int,
     message_config: BrokerServerConfig,
 ):
     app_context = IsolatedAppContext.from_webcontroller(
         webcontroller=webcontroller,
         host=host,
         port=port,
+        live_reload_port=live_reload_port,
     )
 
     try:
@@ -332,7 +334,7 @@ async def handle_runserver(
                 #broker.drain_all()
 
                 current_context = environment.exec(
-                    run_isolated, webcontroller, host, port, config
+                    run_isolated, webcontroller, host, port, watcher_webservice.port, config
                 )
 
                 # Bootstrap the process and rebuild the server files
@@ -392,6 +394,9 @@ async def handle_runserver(
 
                     if file_changes_state.pending_js or first_run:
                         await rebuild_frontend()
+
+                    # Ping the watcher webservice to let it know we've updated
+                    await watcher_webservice.broadcast_listeners()
 
                     first_run = False
 
