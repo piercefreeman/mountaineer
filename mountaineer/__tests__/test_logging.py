@@ -91,7 +91,7 @@ def test_debug_log_artifact(log_level: str, should_create_file: bool):
 
     with modify_log_level(log_level):
         path = debug_log_artifact(test_prefix, test_ext, test_content)
-    
+
     # Check the results
     if should_create_file:
         tmp_path = path.parent

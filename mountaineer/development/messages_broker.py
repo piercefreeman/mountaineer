@@ -194,7 +194,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             self.loop.close()
             self.is_running = False
 
-    async def stop(self):
+    async def stop_server(self):
         """Stop the broker server and clean up resources."""
         if not self.is_running:
             return
@@ -441,7 +441,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
                 ),
             )
         finally:
-            await server.stop()
+            await server.stop_server()
             server.join(timeout=5.0)  # Wait for thread to finish with timeout
             if server.is_alive():
                 LOGGER.warning("Warning: Server thread did not shut down cleanly")
