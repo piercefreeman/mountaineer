@@ -67,25 +67,73 @@ async def handle_watch(
     update_multiprocessing_settings()
     rich_traceback_install()
 
-    app_manager = DevAppManager.from_webcontroller(webcontroller)
     file_changes_state = FileChangesState()
+    first_run: bool = True
 
-    async def update_build(metadata: CallbackMetadata):
-        await handle_file_changes_base(
-            package=package,
-            metadata=metadata,
-            app_manager=app_manager,
-            file_changes_state=file_changes_state,
-            server_config=None,
+    async with AsyncMessageBroker.start_server() as (broker, config):
+        isolated_context = IsolatedContext(
+            webcontroller=webcontroller,
+            webserver_config=None,
+            message_config=config,
         )
 
-    async with app_manager.start_broker():
-        watchdog = build_common_watchdog(
-            package,
-            update_build,
-            subscribe_to_mountaineer=subscribe_to_mountaineer,
-        )
-        await watchdog.start_watching()
+        with isolate_imports(package) as environment:
+            CONSOLE.print("[bold blue]Development manager started")
+
+            async def handle_file_changes(metadata: CallbackMetadata):
+                try:
+                    LOGGER.debug(f"Handling file changes: {metadata}")
+                    nonlocal first_run
+                    nonlocal file_changes_state
+
+                    # First collect all the files that need updating
+                    for event in metadata.events:
+                        if event.path.suffix in KNOWN_JS_EXTENSIONS:
+                            file_changes_state.pending_js.add(event.path)
+                        elif event.path.suffix == ".py":
+                            file_changes_state.pending_python.add(event.path)
+
+                    if not first_run and not (
+                        file_changes_state.pending_js
+                        or file_changes_state.pending_python
+                    ):
+                        return
+
+                    if file_changes_state.pending_python or first_run:
+                        await restart_backend(
+                            environment,
+                            broker,
+                            file_changes_state,
+                            isolated_context,
+                        )
+
+                    if file_changes_state.pending_js or first_run:
+                        await rebuild_frontend(
+                            broker,
+                            file_changes_state,
+                        )
+
+                    # If we've succeeded, we should clear out the pending
+                    # files so we don't rebuild them again
+                    file_changes_state.pending_js.clear()
+                    file_changes_state.pending_python.clear()
+
+                    first_run = False
+
+                except Exception as e:
+                    # Otherwise silently caught by our watchfiles command
+                    CONSOLE.print(f"[red]Error: {e}")
+                    CONSOLE.print(traceback.format_exc())
+                    raise e
+
+            watchdog = build_common_watchdog(
+                package,
+                handle_file_changes,
+                subscribe_to_mountaineer=subscribe_to_mountaineer,
+            )
+            await watchdog.start_watching()
+
+    CONSOLE.print("[green]Shutdown complete")
 
 
 @async_to_sync

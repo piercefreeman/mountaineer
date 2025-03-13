@@ -17,6 +17,7 @@ from mountaineer.development.messages import (
     BuildUseServerMessage,
     ErrorResponse,
     MessageTypes,
+    StartServerMessage,
     SuccessResponse,
 )
 from mountaineer.development.messages_broker import AsyncMessageBroker
@@ -38,9 +39,6 @@ class IsolatedAppContext:
         package_path: Path,
         module_name: str,
         controller_name: str,
-        host: str | None,
-        port: int,
-        live_reload_port: int | None,
     ):
         """
         Initialize an isolated application context in a separate process.
@@ -49,19 +47,12 @@ class IsolatedAppContext:
         :param package_path: Path to the package on disk
         :param module_name: Module name containing the app controller
         :param controller_name: Variable name of the app controller within the module
-        :param host: Host address to bind the server to
-        :param port: Port number for the web server
-        :param live_reload_port: Port number for the live reload watcher service
-        :param message_broker: Broker for communication between main and isolated processes
         """
         super().__init__()
         self.package = package
         self.package_path = package_path
         self.module_name = module_name
         self.controller_name = controller_name
-        self.host = host
-        self.port = port
-        self.live_reload_port = live_reload_port
         self.webservice_thread: UvicornThread | None = None
 
         self.app_controller: AppController | None = None
@@ -70,13 +61,7 @@ class IsolatedAppContext:
         self.app_compiler: ClientCompiler | None = None
 
     @classmethod
-    def from_webcontroller(
-        cls,
-        webcontroller: str,
-        host: str,
-        port: int,
-        live_reload_port: int | None = None,
-    ):
+    def from_webcontroller(cls, webcontroller: str):
         package = webcontroller.split(".")[0]
         module_name = webcontroller.split(":")[0]
         controller_name = webcontroller.split(":")[1]
@@ -86,9 +71,6 @@ class IsolatedAppContext:
             package_path=Path(package.replace(".", "/")),
             module_name=module_name,
             controller_name=controller_name,
-            host=host,
-            port=port,
-            live_reload_port=live_reload_port,
         )
 
     async def run_async(self, broker: AsyncMessageBroker[MessageTypes]):
@@ -114,7 +96,13 @@ class IsolatedAppContext:
                 try:
                     response: SuccessResponse | ErrorResponse
                     if isinstance(message, BootupMessage):
-                        response = await self.handle_bootstrap()
+                        response = await self.initialize_app_state()
+                    elif isinstance(message, StartServerMessage):
+                        response = await self.handle_start_server(
+                            host=message.host,
+                            port=message.port,
+                            live_reload_port=message.live_reload_port,
+                        )
                     elif isinstance(message, BuildJsMessage):
                         response = await self.handle_js_build(message.updated_js)
                     elif isinstance(message, BuildUseServerMessage):
@@ -146,21 +134,6 @@ class IsolatedAppContext:
     #
     # Message Handlers
     #
-
-    async def handle_bootstrap(self):
-        """
-        Initialize the application state and start the server.
-
-        This is called in response to a BootupMessage and performs the initial setup
-        of the application in the isolated process.
-
-        :return: Success or error response
-        """
-        response = self.initialize_app_state()
-        if not isinstance(response, SuccessResponse):
-            return response
-
-        return await self.start_server()
 
     async def handle_build_use_server(self):
         """
@@ -200,7 +173,7 @@ class IsolatedAppContext:
     # Server Initialization
     #
 
-    def initialize_app_state(self):
+    async def initialize_app_state(self):
         """
         Initialize all application state components within the isolated context.
 
@@ -214,7 +187,9 @@ class IsolatedAppContext:
         :raises ValueError: If app controller fails to initialize
         """
         # Import and initialize the module
-        self.load_webservice()
+        self.module = importlib.import_module(self.module_name)
+        initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
+        self.app_controller = initial_state[self.controller_name]
 
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
@@ -236,18 +211,7 @@ class IsolatedAppContext:
 
         return SuccessResponse()
 
-    def load_webservice(self):
-        """
-        Import the specified module and extract the app controller.
-
-        Dynamically loads the module containing the app controller and
-        retrieves the controller instance from it.
-        """
-        self.module = importlib.import_module(self.module_name)
-        initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
-        self.app_controller = initial_state[self.controller_name]
-
-    async def start_server(self):
+    async def handle_start_server(self, host: str, port: int, live_reload_port: int):
         """
         Start the Uvicorn server for the web application.
 
@@ -263,14 +227,14 @@ class IsolatedAppContext:
             raise ValueError("App controller not initialized")
 
         # Inject the live reload port
-        self.app_controller.live_reload_port = self.live_reload_port or 0
+        self.app_controller.live_reload_port = live_reload_port or 0
 
         self.webservice_thread = UvicornThread(
             name="Dev webserver",
             emoticon="🚀",
             app=self.app_controller.app,
-            host=self.host or "127.0.0.1",
-            port=self.port,
+            host=host,
+            port=port,
         )
         await self.webservice_thread.astart()
 

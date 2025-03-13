@@ -27,6 +27,15 @@ class BootupMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
 
 
 @dataclass
+class StartServerMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
+    """Message to start the server"""
+
+    host: str
+    port: int
+    live_reload_port: int
+
+
+@dataclass
 class BuildJsMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]):
     """Message to trigger JS compilation"""
 
@@ -40,4 +49,6 @@ class BuildUseServerMessage(IsolatedMessageBase[SuccessResponse | ErrorResponse]
     pass
 
 
-MessageTypes = BootupMessage | BuildJsMessage | BuildUseServerMessage
+MessageTypes = (
+    BootupMessage | StartServerMessage | BuildJsMessage | BuildUseServerMessage
+)

@@ -11,6 +11,7 @@ from mountaineer.development.messages import (
     BootupMessage,
     BuildJsMessage,
     BuildUseServerMessage,
+    StartServerMessage,
 )
 from mountaineer.development.messages_broker import (
     AsyncMessageBroker,
@@ -45,11 +46,12 @@ class IsolatedContext:
 async def run_isolated(
     isolated_context: IsolatedContext,
 ):
+    """
+    Isolated subprocess with all runtime modules already injected by firehot.
+
+    """
     app_context = IsolatedAppContext.from_webcontroller(
         webcontroller=isolated_context.webcontroller,
-        host=isolated_context.host,
-        port=isolated_context.port,
-        live_reload_port=isolated_context.live_reload_port,
     )
 
     try:
@@ -87,6 +89,16 @@ async def restart_backend(
     start = time()
     CONSOLE.print("[bold cyan]🚀 Booting server...[/bold cyan]")
     await broker.send_and_get_response(BootupMessage())
+
+    if isolated_context.webserver_config is not None:
+        await broker.send_and_get_response(
+            StartServerMessage(
+                host=isolated_context.webserver_config.host,
+                port=isolated_context.webserver_config.port,
+                live_reload_port=isolated_context.webserver_config.live_reload_port,
+            )
+        )
+
     CONSOLE.print("[bold yellow]⚙️  Building useServer components...[/bold yellow]")
     await broker.send_and_get_response(BuildUseServerMessage())
     build_time = time() - start
