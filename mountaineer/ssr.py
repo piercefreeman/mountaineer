@@ -71,7 +71,7 @@ def find_tsconfig(paths: list[list[str]]) -> str | None:
 
     if not tsconfig_paths:
         logging.warning(
-            "No tsconfig.json found in any parent directory of the provided paths"
+            f"No tsconfig.json found in any parent directory of the provided paths: {paths}"
         )
         return None
 

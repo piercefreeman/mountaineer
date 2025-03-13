@@ -8,6 +8,11 @@ use std::path::Path;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
+#[derive(Debug)]
+pub enum OutputType {
+    File(std::path::PathBuf),
+    Directory(std::path::PathBuf),
+}
 
 #[derive(Debug)]
 pub enum BundleMode {
@@ -101,6 +106,27 @@ pub fn bundle_common(
     // Create a temporary directory for output
     let temp_dir = TempDir::new().map_err(|e| BundleError::IoError(e))?;
 
+    // Get the output directory
+    let output_dir = temp_dir.path().join("dist");
+    fs::create_dir_all(&output_dir).map_err(|e| BundleError::IoError(e))?;
+
+    // Determine output type based on mode
+    let output_type = match mode {
+        BundleMode::SINGLE_CLIENT | BundleMode::SINGLE_SERVER => {
+            // Extract the file stem from the first (and only) entrypoint
+            let file_stem = Path::new(&entrypoint_paths[0])
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_else(|| "bundle".to_string());
+            OutputType::File(output_dir.join(format!("{}.js", file_stem)))
+        },
+        BundleMode::MULTI_CLIENT => {
+            // Iife files have to be in a directory, otherwise rolldown will return
+            // a build error
+            OutputType::Directory(output_dir.clone())
+        },
+    };
+
     // Define environment variables and other settings
     let mut define: IndexMap<String, String, BuildHasherDefault<FxHasher>> =
         IndexMap::with_hasher(BuildHasherDefault::default());
@@ -145,9 +171,22 @@ pub fn bundle_common(
         })
         .collect();
 
+    println!("Output type: {:?}", output_type);
+    println!("Input items: {:?}", input_items);
+    println!("Bundle mode: {:?}", mode);
+
     let bundler_options = BundlerOptions {
         input: Some(input_items),
-        cwd: Some(temp_dir.path().to_path_buf()),
+        dir: match &output_type {
+            OutputType::Directory(path) => Some(path.to_string_lossy().to_string()),
+            OutputType::File(_) => None,
+        },
+        file: match &output_type {
+            OutputType::File(path) => Some(path.to_string_lossy().to_string()),
+            OutputType::Directory(_) => None,
+        },
+        // Required for inlining client-side scripts
+        inline_dynamic_imports: Some(true),
         sourcemap: Some(SourceMapType::File),
         define: Some(define),
         resolve,
@@ -173,11 +212,10 @@ pub fn bundle_common(
             .map_err(|err| BundleError::BundlingError(format!("Error during bundling: {:?}", err)))
     })?;
 
-    // Get the output directory
-    let output_dir = temp_dir.path().join("dist");
-
     // Process each entrypoint and collect results
     let mut results = HashMap::new();
+
+    // TODO: COPY ALL CREATED OUTPUT FILES, REQUIRED IN TREE-SHAKING MODE
 
     for entrypoint_path in entrypoint_paths {
         // Extract the base filename from the input path
@@ -195,6 +233,13 @@ pub fn bundle_common(
 
         let js_path = output_dir.join(js_filename);
         let map_path = output_dir.join(map_filename);
+
+        // Print all files in the output directory for debugging
+        println!("Files in output directory {}:", output_dir.display());
+        for entry in fs::read_dir(&output_dir).map_err(|e| BundleError::IoError(e))? {
+            let entry = entry.map_err(|e| BundleError::IoError(e))?;
+            println!("  - {}", entry.path().display());
+        }
 
         // Read the JavaScript output file (required)
         let script = fs::read_to_string(&js_path).map_err(|e| match e.kind() {

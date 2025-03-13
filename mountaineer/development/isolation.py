@@ -309,6 +309,8 @@ class IsolatedAppContext:
         :return: HTML response for GET requests
         :raises: The original exception for non-GET requests
         """
+        LOGGER.error(f"Handling dev exception: {exc}")
+
         if request.method == "GET":
             html = await self.exception_controller._definition.view_route(  # type: ignore
                 exception=str(exc),

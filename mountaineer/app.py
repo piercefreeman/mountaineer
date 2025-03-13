@@ -336,6 +336,7 @@ class AppController:
                 tsconfig_path = find_tsconfig(view_paths)
 
                 if not controller_node.cached_server_script:
+                    LOGGER.debug(f"Compiling server-side bundle for {controller_name}: {view_paths}")
                     (
                         script_payloads,
                         sourcemap_payloads,
@@ -351,6 +352,7 @@ class AppController:
                     controller_node.cached_server_script = script_payloads[0]
                     controller_node.cached_server_sourcemap = sourcemap_payloads[0]
                 if not controller_node.cached_client_script:
+                    LOGGER.debug(f"Compiling client-side bundle for {controller_name}: {view_paths}")
                     script_payloads, _ = mountaineer_rs.compile_independent_bundles(
                         view_paths,
                         str(self._view_root / "node_modules"),

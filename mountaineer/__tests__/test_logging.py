@@ -65,7 +65,10 @@ def modify_log_level(log_level: str):
     try:
         yield current_log_level
     finally:
-        os.environ["MOUNTAINEER_LOG_LEVEL"] = current_log_level
+        if current_log_level is not None:
+            os.environ["MOUNTAINEER_LOG_LEVEL"] = current_log_level
+        else:
+            del os.environ["MOUNTAINEER_LOG_LEVEL"]
 
 
 @pytest.mark.parametrize(
@@ -88,13 +91,14 @@ def test_debug_log_artifact(log_level: str, should_create_file: bool):
 
     with modify_log_level(log_level):
         path = debug_log_artifact(test_prefix, test_ext, test_content)
-        tmp_path = path.parent
-
+    
     # Check the results
-    files = list(tmp_path.glob(f"{test_prefix}-*.{test_ext}"))
     if should_create_file:
+        tmp_path = path.parent
+        files = list(tmp_path.glob(f"{test_prefix}-*.{test_ext}"))
+
         assert len(files) == 1
         with open(files[0], "r") as f:
             assert f.read() == test_content
     else:
-        assert len(files) == 0
+        assert path is None
