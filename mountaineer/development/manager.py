@@ -3,7 +3,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from time import time
 
-from firehot import ImportRunner
+from firehot import Environment
+from firehot.environment import IsolatedProcess
 
 from mountaineer.console import CONSOLE
 from mountaineer.development.isolation import IsolatedAppContext
@@ -25,7 +26,7 @@ class FileChangesState:
     pending_js: set[Path] = field(default_factory=set)
     pending_python: set[Path] = field(default_factory=set)
 
-    current_context: IsolatedAppContext | None = None
+    current_context: IsolatedProcess | None = None
 
 
 @dataclass
@@ -67,7 +68,7 @@ async def run_isolated(
 
 
 async def restart_backend(
-    environment: ImportRunner,
+    environment: Environment,
     broker: AsyncMessageBroker,
     state: FileChangesState,
     isolated_context: IsolatedContext,

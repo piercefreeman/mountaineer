@@ -80,8 +80,6 @@ class GetJobCommand(BaseCommand):
 class BaseResponse(BaseModel):
     """Base class for all broker responses"""
 
-    message: str | None = None
-
 
 class OKResponse(BaseResponse):
     """Response indicating successful command execution"""
@@ -107,11 +105,11 @@ CommandTypes = SendJobCommand | SendResponseCommand | GetResponseCommand | GetJo
 ResponseTypes = OKResponse | UnauthorizedResponse
 
 # Create type adapters for polymorphic validation
-command_type_adapter = TypeAdapter(
+command_type_adapter = TypeAdapter(  # type: ignore
     Annotated[CommandTypes, Field(discriminator="item_type")]
 )
 
-response_type_adapter = TypeAdapter(
+response_type_adapter = TypeAdapter(  # type: ignore
     Annotated[ResponseTypes, Field(discriminator="item_type")]
 )
 
@@ -382,7 +380,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
-            raise ValueError(f"Failed to get response: {response.message}")
+            raise ValueError(f"Failed to get response: {response}")
         if response.response_data is None:
             raise ValueError("No response data")
         return pickle.loads(b64decode(response.response_data))
@@ -400,7 +398,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
-            raise ValueError(f"Failed to get job: {response.message}")
+            raise ValueError(f"Failed to get job: {response}")
         if response.response_data is None:
             raise ValueError("No job data")
         return response.response_data["job_id"], pickle.loads(

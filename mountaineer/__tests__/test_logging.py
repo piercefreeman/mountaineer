@@ -94,6 +94,7 @@ def test_debug_log_artifact(log_level: str, should_create_file: bool):
 
     # Check the results
     if should_create_file:
+        assert path is not None
         tmp_path = path.parent
         files = list(tmp_path.glob(f"{test_prefix}-*.{test_ext}"))
 

@@ -202,7 +202,6 @@ class IsolatedAppContext:
         global_build_cache = Path(mkdtemp())
         self.js_compiler = APIBuilder(
             self.app_controller,
-            live_reload_port=self.live_reload_port,
             build_cache=global_build_cache,
         )
         self.app_compiler = ClientCompiler(
@@ -237,6 +236,8 @@ class IsolatedAppContext:
             port=port,
         )
         await self.webservice_thread.astart()
+
+        return SuccessResponse()
 
     #
     # Dev Hooks

@@ -721,12 +721,14 @@ class AppController:
         if inline_client_script is not None:
             debug_log_artifact("inline_client", "js", inline_client_script)
 
-        # We need to escape these inline. Otherwise we will close the parent script tag
-        # prematurely and break the page.
-        inline_client_script = inline_client_script.replace("</script>", "<\\/script>")
-
         client_import: str
         if inline_client_script:
+            # We need to escape these inline. Otherwise we will close the parent script tag
+            # prematurely and break the page.
+            inline_client_script = inline_client_script.replace(
+                "</script>", "<\\/script>"
+            )
+
             # When we're running in debug mode, we just import
             # the script into each page so we can pick up on the latest changes
             client_import = (

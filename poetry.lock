@@ -114,21 +114,21 @@ standard = ["email-validator (>=2.0.0)", "fastapi-cli[standard] (>=0.0.5)", "htt
 
 [[package]]
 name = "firehot"
-version = "0.3.0"
+version = "0.3.3"
 description = "Wicked fast hot reloading"
 optional = false
 python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "firehot-0.3.0-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:3f0b4a6612fe2202a096e573b233d6abf86f4e1b76ed1369e5ace7634e2f88a6"},
-    {file = "firehot-0.3.0-cp310-cp310-manylinux_2_39_x86_64.whl", hash = "sha256:9fa862c72284f084b5af614b0eefdfa802a8c4ce6fa0466850a01959ae6f8229"},
-    {file = "firehot-0.3.0-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:a2d06d963295b26fd4d2e083b24cdc713ccc546241a2a89d86c6115183a34e5d"},
-    {file = "firehot-0.3.0-cp311-cp311-manylinux_2_39_x86_64.whl", hash = "sha256:29cadb12178369c4854774b02ed97ba7fb1652731082a0d4a37c5e4057a83c03"},
-    {file = "firehot-0.3.0-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:433d1600f964126c36bfab9b77f5cd20d683257e5dc6533d0cc923297a5ac39b"},
-    {file = "firehot-0.3.0-cp312-cp312-manylinux_2_39_x86_64.whl", hash = "sha256:b951e6ee24e0a4446948e49a0538ff21685c9c57a20460e2d5635ef6242f06cd"},
-    {file = "firehot-0.3.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:4fc33391fea2c3ed17e9b28a180bc4af95a8295a218ab4f2a7a3d2dd9028005d"},
-    {file = "firehot-0.3.0-cp313-cp313-manylinux_2_39_x86_64.whl", hash = "sha256:b6baf94689cf349bfbfe3c87f73c9e81053f844c713584a6b7247d4fa947b429"},
-    {file = "firehot-0.3.0.tar.gz", hash = "sha256:06aa4a06010dd08e117d89f366aa04d3aad9b9e923eaabf75117b4f20403fde8"},
+    {file = "firehot-0.3.3-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e7da656f341cf018381c0071b9ab20cfbeb5bf8102d151160821def931ceaaa3"},
+    {file = "firehot-0.3.3-cp310-cp310-manylinux_2_39_x86_64.whl", hash = "sha256:b65a25d68d048605d5f0bd1c384c8633f91be65bc88cdf5e1a2852f772cec99a"},
+    {file = "firehot-0.3.3-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:dc143c5390a96881cbcaa1e8015e1a2190a6142cd92acd89cd57b108a7ef2065"},
+    {file = "firehot-0.3.3-cp311-cp311-manylinux_2_39_x86_64.whl", hash = "sha256:bb7266a6e10e07e3d43afafcd32313f60b8ce081a05da1d77baa109e4078fbb0"},
+    {file = "firehot-0.3.3-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:abf9dfb5c60b4f078139e5dd3b1248c6e030ae41416e364d83e252854dc5719c"},
+    {file = "firehot-0.3.3-cp312-cp312-manylinux_2_39_x86_64.whl", hash = "sha256:82e67fdfc39b5067de675f113c7876dde670a13a5c2eb36b1724da1734780b4c"},
+    {file = "firehot-0.3.3-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:49c4f0c3ac8d9cfe9fb4af9498918887b12f71abece14eea77a3c9413064bed2"},
+    {file = "firehot-0.3.3-cp313-cp313-manylinux_2_39_x86_64.whl", hash = "sha256:53ed63548c46710426de042c1bc29d2c7cda381fd4e4ec16ce5988caf8f1a973"},
+    {file = "firehot-0.3.3.tar.gz", hash = "sha256:6dee4fa1b95b2b5804ea0acc6f020ef84e08eab01b9fbfe425fe68667d007d73"},
 ]
 
 [[package]]
