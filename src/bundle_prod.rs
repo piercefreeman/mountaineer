@@ -28,9 +28,9 @@ pub fn compile_production_bundle(
 
     // Use bundle_common instead of the commented-out bundling code
     let bundle_mode = if is_server {
-        BundleMode::SINGLE_SERVER
+        BundleMode::SingleServer
     } else {
-        BundleMode::MULTI_CLIENT
+        BundleMode::MultiClient
     };
 
     // Call bundle_common with the appropriate parameters
@@ -41,6 +41,7 @@ pub fn compile_production_bundle(
         node_modules_path,
         None, // No live reload port for production
         tsconfig_path,
+        true,
     )
     .map_err(|e| match e {
         BundleError::IoError(err) => PyErr::new::<pyo3::exceptions::PyIOError, _>(err.to_string()),

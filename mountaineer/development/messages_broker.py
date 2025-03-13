@@ -8,7 +8,7 @@ from base64 import b64decode, b64encode
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from threading import Thread
-from typing import Annotated, Any, Generic, Literal, TypeVar
+from typing import Annotated, Any, Generic, Literal, TypeVar, cast
 from uuid import uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 from mountaineer.logging import LOGGER
 
 TResponse = TypeVar("TResponse")
-AppMessageTypes = TypeVar("AppMessageType")
+AppMessageTypes = TypeVar("AppMessageTypes")
 
 
 @dataclass
@@ -149,8 +149,8 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             Future
         ] = []  # list of futures waiting for next job
 
-        self.loop = None
-        self.server = None
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.server: asyncio.AbstractServer | None = None
 
         # Thread control.
         self.is_running = False
@@ -198,6 +198,8 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         """Stop the broker server and clean up resources."""
         if not self.is_running:
             return
+        if not self.loop:
+            raise RuntimeError("Broker server async loop not running")
 
         self.should_stop = True
 
@@ -238,6 +240,11 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
                         break  # connection closed
                 except (ConnectionError, asyncio.CancelledError):
                     break
+
+                response: BaseResponse | None = None
+
+                if not self.loop:
+                    raise RuntimeError("Broker server async loop not running")
 
                 try:
                     # Deserialize incoming JSON message using the type adapter
@@ -335,7 +342,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
     # These are callable from other threads/processes to communicate with the central server.
     #
 
-    async def send_job(self, job_id: str, job_data: AppMessageTypes) -> OKResponse:
+    async def send_job(self, job_id: str, job_data: AppMessageTypes) -> BaseResponse:
         """
         Send a job to the broker server and wait for acknowledgement.
         """
@@ -349,7 +356,9 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             raise BrokerAuthenticationError(response.message)
         return response
 
-    async def send_response(self, job_id: str, response_data: TResponse) -> OKResponse:
+    async def send_response(
+        self, job_id: str, response_data: TResponse
+    ) -> BaseResponse:
         """
         Send a response for a job to the broker server.
         """
@@ -363,7 +372,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             raise BrokerAuthenticationError(response.message)
         return response
 
-    async def get_response(self, job_id: str) -> TResponse:
+    async def get_response(self, job_id: str) -> Any:
         """
         Get a response for a job from the broker server.
         If the response is not available, wait for it.
@@ -374,6 +383,8 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
             raise ValueError(f"Failed to get response: {response.message}")
+        if response.response_data is None:
+            raise ValueError("No response data")
         return pickle.loads(b64decode(response.response_data))
 
     async def get_job(self) -> tuple[str, AppMessageTypes]:
@@ -390,11 +401,13 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             raise BrokerAuthenticationError(response.message)
         if not isinstance(response, OKResponse):
             raise ValueError(f"Failed to get job: {response.message}")
+        if response.response_data is None:
+            raise ValueError("No job data")
         return response.response_data["job_id"], pickle.loads(
             b64decode(response.response_data["job_data"])
         )
 
-    async def send_and_get_response(self, job_data: AppMessageTypes) -> TResponse:
+    async def send_and_get_response(self, job_data: AppMessageTypes) -> Any:
         """
         Send a job to the broker server and wait for a response.
         """
@@ -416,9 +429,12 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             await writer.drain()
 
             response_line = await reader.readline()
-            LOGGER.debug(f"Received server response: {response_line}")
             response_dict = json.loads(response_line.decode())
-            return response_type_adapter.validate_python(response_dict)
+            LOGGER.debug(f"Received server response: {response_dict}")
+
+            return cast(
+                BaseResponse, response_type_adapter.validate_python(response_dict)
+            )
         finally:
             writer.close()
             await writer.wait_closed()

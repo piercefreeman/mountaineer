@@ -721,10 +721,9 @@ class AppController:
         if inline_client_script is not None:
             debug_log_artifact("inline_client", "js", inline_client_script)
 
-        # TODO: We need to escape these inline. The old esbuild version potentially
-        # took care of this through minimization, so it might not have been affected
-        inline_client_script = inline_client_script.replace("<script>", "<script2>")
-        inline_client_script = inline_client_script.replace("</script>", "</script2>")
+        # We need to escape these inline. Otherwise we will close the parent script tag
+        # prematurely and break the page.
+        inline_client_script = inline_client_script.replace("</script>", "<\\/script>")
 
         client_import: str
         if inline_client_script:

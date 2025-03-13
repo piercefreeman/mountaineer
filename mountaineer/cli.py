@@ -1,7 +1,6 @@
 import traceback
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
-from pathlib import Path
 from time import time
 from typing import Any, Callable, Coroutine
 
@@ -21,7 +20,6 @@ from mountaineer.development.manager import (
     restart_backend,
 )
 from mountaineer.development.messages import (
-    IsolatedMessageBase,
     SuccessResponse,
 )
 from mountaineer.development.messages_broker import (
@@ -266,122 +264,100 @@ async def handle_build(
     """
     start = time()
 
-    # Parse the webcontroller string
-    package = webcontroller.split(".")[0]
-    module_name = webcontroller.split(":")[0]
-    controller_name = webcontroller.split(":")[1]
-
-    # Create message broker for isolated context
-    message_broker = AsyncMessageBroker[IsolatedMessageBase[Any]]()
-    message_broker.start()
-
     # Initialize the isolated context directly
     isolated_context = IsolatedAppContext.from_webcontroller(
         webcontroller=webcontroller,
     )
 
-    try:
-        # Initialize app state
-        response = isolated_context.initialize_app_state()
-        if not isinstance(response, SuccessResponse):
-            raise ValueError("Failed to initialize app state")
+    # Initialize app state
+    response = await isolated_context.initialize_app_state()
+    if not isinstance(response, SuccessResponse):
+        raise ValueError("Failed to initialize app state")
 
-        # Build the latest client support files
-        if isolated_context.js_compiler is None:
-            raise ValueError("JS compiler not initialized")
-        if isolated_context.app_compiler is None:
-            raise ValueError("App compiler not initialized")
-        if isolated_context.app_controller is None:
-            raise ValueError("App controller not initialized")
+    # Type validation
+    assert isolated_context.js_compiler is not None
+    assert isolated_context.app_compiler is not None
+    assert isolated_context.app_controller is not None
 
-        await isolated_context.js_compiler.build_use_server()
-        await isolated_context.app_compiler.run_builder_plugins()
+    # Build the frontend support bundle
+    await isolated_context.js_compiler.build_use_server()
+    await isolated_context.app_compiler.run_builder_plugins()
 
-        # Get view paths for all controllers
-        all_view_paths: list[list[str]] = []
-        for controller_definition in isolated_context.app_controller.controllers:
-            (
-                _,
-                direct_hierarchy,
-            ) = isolated_context.app_controller._view_hierarchy_for_controller(
-                controller_definition.controller
-            )
-            direct_hierarchy.reverse()
-            all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
+    # Get view paths for all controllers
+    all_view_paths: list[list[str]] = []
+    for controller_definition in isolated_context.app_controller.controllers:
+        (
+            _,
+            direct_hierarchy,
+        ) = isolated_context.app_controller._view_hierarchy_for_controller(
+            controller_definition.controller
+        )
+        direct_hierarchy.reverse()
+        all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
 
-        # Find tsconfig.json in the parent directories of the view paths
-        tsconfig_path = find_tsconfig(all_view_paths)
+    # Find tsconfig.json in the parent directories of the view paths
+    tsconfig_path = find_tsconfig(all_view_paths)
 
-        # Compile the final client bundle
-        client_bundle_result = mountaineer_rs.compile_production_bundle(
-            all_view_paths,
-            str(isolated_context.app_controller._view_root / "node_modules"),
-            "production",
-            minify,
-            str(get_static_path("live_reload.ts").resolve().absolute()),
-            False,
-            tsconfig_path,
+    # Compile the final client bundle
+    client_bundle_result = mountaineer_rs.compile_production_bundle(
+        all_view_paths,
+        str(isolated_context.app_controller._view_root / "node_modules"),
+        "production",
+        minify,
+        str(get_static_path("live_reload.ts").resolve().absolute()),
+        False,
+        tsconfig_path,
+    )
+
+    static_output = isolated_context.app_controller._view_root.get_managed_static_dir()
+    ssr_output = isolated_context.app_controller._view_root.get_managed_ssr_dir()
+
+    # If we don't have the same number of entrypoints as controllers, something went wrong
+    if len(client_bundle_result["entrypoints"]) != len(
+        isolated_context.app_controller.controllers
+    ):
+        raise ValueError(
+            f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
+            f"Controllers: {len(isolated_context.app_controller.controllers)}\n"
+            f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
         )
 
-        static_output = (
-            isolated_context.app_controller._view_root.get_managed_static_dir()
-        )
-        ssr_output = isolated_context.app_controller._view_root.get_managed_ssr_dir()
+    # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
+    for controller_definition, content, map_content in zip(
+        isolated_context.app_controller.controllers,
+        client_bundle_result["entrypoints"],
+        client_bundle_result["entrypoint_maps"],
+    ):
+        script_root = underscore(controller_definition.controller.__class__.__name__)
+        content_hash = md5(content.encode()).hexdigest()
+        (static_output / f"{script_root}-{content_hash}.js").write_text(content)
+        (static_output / f"{script_root}-{content_hash}.map.js").write_text(map_content)
 
-        # If we don't have the same number of entrypoints as controllers, something went wrong
-        if len(client_bundle_result["entrypoints"]) != len(
-            isolated_context.app_controller.controllers
-        ):
-            raise ValueError(
-                f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
-                f"Controllers: {len(isolated_context.app_controller.controllers)}\n"
-                f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
-            )
+    # Copy the other files 1:1 because they'll be referenced by name in the
+    # entrypoints
+    for path, content in client_bundle_result["supporting"].items():
+        (static_output / path).write_text(content)
 
-        # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
-        for controller_definition, content, map_content in zip(
-            isolated_context.app_controller.controllers,
-            client_bundle_result["entrypoints"],
-            client_bundle_result["entrypoint_maps"],
-        ):
-            script_root = underscore(
-                controller_definition.controller.__class__.__name__
-            )
-            content_hash = md5(content.encode()).hexdigest()
-            (static_output / f"{script_root}-{content_hash}.js").write_text(content)
-            (static_output / f"{script_root}-{content_hash}.map.js").write_text(
-                map_content
-            )
+    # Now we go one-by-one to provide the SSR files, which will be consolidated
+    # into a single runnable script for ease of use by the V8 engine
+    result_scripts, _ = mountaineer_rs.compile_independent_bundles(
+        all_view_paths,
+        str(isolated_context.app_controller._view_root / "node_modules"),
+        "production",
+        0,
+        str(get_static_path("live_reload.ts").resolve().absolute()),
+        True,
+        tsconfig_path,
+    )
 
-        # Copy the other files 1:1 because they'll be referenced by name in the
-        # entrypoints
-        for path, content in client_bundle_result["supporting"].items():
-            (static_output / path).write_text(content)
+    # Write each script to disk
+    for controller_definition, script in zip(
+        isolated_context.app_controller.controllers, result_scripts
+    ):
+        script_root = underscore(controller_definition.controller.__class__.__name__)
+        (ssr_output / f"{script_root}.js").write_text(script)
 
-        # Now we go one-by-one to provide the SSR files, which will be consolidated
-        # into a single runnable script for ease of use by the V8 engine
-        result_scripts, _ = mountaineer_rs.compile_independent_bundles(
-            all_view_paths,
-            str(isolated_context.app_controller._view_root / "node_modules"),
-            "production",
-            0,
-            str(get_static_path("live_reload.ts").resolve().absolute()),
-            True,
-            tsconfig_path,
-        )
-
-        # Write each script to disk
-        for controller_definition, script in zip(
-            isolated_context.app_controller.controllers, result_scripts
-        ):
-            script_root = underscore(
-                controller_definition.controller.__class__.__name__
-            )
-            (ssr_output / f"{script_root}.js").write_text(script)
-
-        LOGGER.info(f"Build completed in {(time() - start):.2f}s")
-    finally:
-        message_broker.stop()
+    LOGGER.info(f"Build completed in {(time() - start):.2f}s")
 
 
 def update_multiprocessing_settings():

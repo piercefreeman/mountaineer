@@ -49,9 +49,9 @@ pub fn compile_independent_bundles(
 
         // Determine bundle mode based on is_ssr flag
         let bundle_mode = if is_ssr {
-            BundleMode::SINGLE_SERVER
+            BundleMode::SingleServer
         } else {
-            BundleMode::SINGLE_CLIENT
+            BundleMode::SingleClient
         };
 
         // Get live_reload_port as Option<u16>
@@ -69,6 +69,7 @@ pub fn compile_independent_bundles(
             node_modules_path.clone(),
             live_reload_port_option,
             tsconfig_path.clone(),
+            false,
         )
         .map_err(|e| match e {
             BundleError::IoError(err) => {

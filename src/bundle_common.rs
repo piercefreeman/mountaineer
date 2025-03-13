@@ -87,6 +87,7 @@ impl From<std::io::Error> for BundleError {
 /// * `node_modules_path` - Path to the node_modules directory for dependency resolution
 /// * `live_reload_port` - Optional port number for live reload functionality
 /// * `tsconfig_path` - Optional path to a tsconfig.json file for TypeScript configuration
+/// * `minify` - Boolean indicating whether to use aggressive minification
 ///
 /// # Returns
 ///
@@ -101,21 +102,6 @@ impl From<std::io::Error> for BundleError {
 /// * Any entrypoint file doesn't exist
 /// * The bundling process fails
 /// * File I/O operations fail
-///
-/// # Examples
-///
-/// ```no_run
-/// use crate::bundle_common::{bundle_common, BundleMode};
-///
-/// let result = bundle_common(
-///     vec!["src/index.ts".to_string()],
-///     BundleMode::SingleClient,
-///     "development".to_string(),
-///     "node_modules".to_string(),
-///     None,
-///     None,
-/// );
-/// ```
 pub fn bundle_common(
     entrypoint_paths: Vec<String>,
     mode: BundleMode,
@@ -124,6 +110,7 @@ pub fn bundle_common(
     node_modules_path: String,
     live_reload_port: Option<u16>,
     tsconfig_path: Option<String>,
+    minify: bool,
 ) -> Result<BundleResults, BundleError> {
     // Validate inputs
     if entrypoint_paths.is_empty() {
@@ -221,11 +208,12 @@ pub fn bundle_common(
             }
         })
         .collect();
-
+    
     println!("Output type: {:?}", output_type);
     println!("Input items: {:?}", input_items);
     println!("Bundle mode: {:?}", mode);
 
+    // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
     let bundler_options = BundlerOptions {
         input: Some(input_items),
         dir: match &output_type {
@@ -248,6 +236,7 @@ pub fn bundle_common(
         } else {
             Some(OutputFormat::Esm)
         },
+        minify: Some(minify),
         // Add additional options as needed
         ..Default::default()
     };
@@ -418,6 +407,7 @@ mod tests {
             node_modules_path,
             None,
             None,
+            true,
         );
         
         // Verify the result
@@ -474,6 +464,7 @@ mod tests {
             node_modules_path,
             None,
             None,
+            true,
         );
         
         // Verify the result
@@ -523,6 +514,7 @@ mod tests {
             node_modules_path,
             None,
             None,
+            true,
         );
         
         // Verify the result

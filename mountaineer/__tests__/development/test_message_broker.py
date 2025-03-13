@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 import pytest_asyncio
 
-from mountaineer.development.messages import IsolatedMessageBase
+from mountaineer.development.messages import IsolatedMessageBase, MessageTypes
 from mountaineer.development.messages_broker import (
     AsyncMessageBroker,
     BrokerAuthenticationError,
@@ -65,7 +65,7 @@ async def test_auth_validation(
     server_broker, _ = broker_pair
 
     # Create client with invalid auth
-    invalid_config = BrokerServerConfig(
+    invalid_config = BrokerServerConfig[MessageTypes](
         host=server_broker.host, port=server_broker.port, auth_key="invalid_key"
     )
 
@@ -186,7 +186,7 @@ def client_process_entrypoint(config_dict: dict, job_id: str, response_data: Any
     """
     Synchronous entry point for client process.
     """
-    config = BrokerServerConfig(**config_dict)
+    config = BrokerServerConfig[MessageTypes](**config_dict)
     asyncio.run(run_client_process(config, job_id, response_data))
 
 
@@ -304,7 +304,7 @@ async def test_process_reconnection():
 
 def error_client_entrypoint(config_dict: dict):
     async def main():
-        config = BrokerServerConfig(**config_dict)
+        config = BrokerServerConfig[MessageTypes](**config_dict)
         async with AsyncMessageBroker.new_client(config) as client:
             # Simulate an error by trying to send response for non-existent job
             await client.send_response("nonexistent", "error")
@@ -336,7 +336,7 @@ async def test_process_error_handling():
 
 def worker_process(config_dict: dict):
     async def main():
-        config = BrokerServerConfig(**config_dict)
+        config = BrokerServerConfig[MessageTypes](**config_dict)
         async with AsyncMessageBroker.new_client(config) as client:
             # Get a job and send a response
             job_id, job_data = await client.get_job()
