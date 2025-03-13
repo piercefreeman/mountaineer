@@ -17,11 +17,11 @@ pub enum OutputType {
 #[derive(Debug)]
 pub enum BundleMode {
     // 1. Single client-side javascript: wraps all dependencies in one file, intended for development embedding
-    SINGLE_CLIENT,
+    SingleClient,
     // 2. Split client-side javascript: tree-shakes dependencies into nested files, allows for better caching between
-    MULTI_CLIENT,
+    MultiClient,
     // 3. Server-side javascript: single bundle in Iife mode
-    SINGLE_SERVER,
+    SingleServer,
 }
 
 #[derive(Debug)]
@@ -31,6 +31,14 @@ pub struct BundleResult {
     // our Python client will need this in memory anyway.
     pub script: String,
     pub map: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct BundleResults {
+    // Map of entrypoint paths to their bundle results
+    pub entrypoints: HashMap<String, BundleResult>,
+    // Map of extra generated file paths to their bundle results
+    pub extras: HashMap<String, BundleResult>,
 }
 
 // Custom error type for bundle operations
@@ -73,7 +81,7 @@ pub fn bundle_common(
     node_modules_path: String,
     live_reload_port: Option<u16>,
     tsconfig_path: Option<String>,
-) -> Result<std::collections::HashMap<String, BundleResult>, BundleError> {
+) -> Result<BundleResults, BundleError> {
     // Validate inputs
     if entrypoint_paths.is_empty() {
         return Err(BundleError::InvalidInput(
@@ -81,12 +89,9 @@ pub fn bundle_common(
         ));
     }
 
-    // Determine if this is server-side rendering based on mode
-    let is_ssr = matches!(mode, BundleMode::SINGLE_SERVER);
-
-    // If our mode is either SINGLE_CLIENT or SINGLE_SERVER, we should only accept
+    // If our mode is either SingleClient or SingleServer, we should only accept
     // one file entrypoint in the file
-    if matches!(mode, BundleMode::SINGLE_CLIENT | BundleMode::SINGLE_SERVER)
+    if matches!(mode, BundleMode::SingleClient | BundleMode::SingleServer)
         && entrypoint_paths.len() > 1
     {
         return Err(BundleError::InvalidInput(format!(
@@ -112,7 +117,7 @@ pub fn bundle_common(
 
     // Determine output type based on mode
     let output_type = match mode {
-        BundleMode::SINGLE_CLIENT | BundleMode::SINGLE_SERVER => {
+        BundleMode::SingleClient | BundleMode::SingleServer => {
             // Extract the file stem from the first (and only) entrypoint
             let file_stem = Path::new(&entrypoint_paths[0])
                 .file_stem()
@@ -120,12 +125,15 @@ pub fn bundle_common(
                 .unwrap_or_else(|| "bundle".to_string());
             OutputType::File(output_dir.join(format!("{}.js", file_stem)))
         },
-        BundleMode::MULTI_CLIENT => {
+        BundleMode::MultiClient => {
             // Iife files have to be in a directory, otherwise rolldown will return
             // a build error
             OutputType::Directory(output_dir.clone())
         },
     };
+
+    // Determine if this is server-side rendering based on mode
+    let is_ssr = matches!(mode, BundleMode::SingleServer);
 
     // Define environment variables and other settings
     let mut define: IndexMap<String, String, BuildHasherDefault<FxHasher>> =
@@ -185,7 +193,8 @@ pub fn bundle_common(
             OutputType::File(path) => Some(path.to_string_lossy().to_string()),
             OutputType::Directory(_) => None,
         },
-        // Required for inlining client-side scripts
+        // Required for inlining client-side scripts. Otherwise specifying a single file for ESM modules will
+        // crash during bundling. 
         inline_dynamic_imports: Some(true),
         sourcemap: Some(SourceMapType::File),
         define: Some(define),
@@ -212,59 +221,84 @@ pub fn bundle_common(
             .map_err(|err| BundleError::BundlingError(format!("Error during bundling: {:?}", err)))
     })?;
 
-    // Process each entrypoint and collect results
-    let mut results = HashMap::new();
+    // Process the output directory and return the results
+    process_output_directory(&output_dir, &entrypoint_paths)
+}
 
-    // TODO: COPY ALL CREATED OUTPUT FILES, REQUIRED IN TREE-SHAKING MODE
+fn process_output_directory(
+    output_dir: &Path,
+    entrypoint_paths: &[String],
+) -> Result<BundleResults, BundleError> {
+    let mut entrypoints = HashMap::new();
+    let mut extras = HashMap::new();
 
-    for entrypoint_path in entrypoint_paths {
-        // Extract the base filename from the input path
-        let input_path = Path::new(&entrypoint_path);
-        let file_stem = input_path
+    // Print all files in the output directory for debugging
+    println!("Files in output directory {}:", output_dir.display());
+    for entry in fs::read_dir(&output_dir).map_err(|e| BundleError::IoError(e))? {
+        let entry = entry.map_err(|e| BundleError::IoError(e))?;
+        let path = entry.path();
+        println!("  - {}", path.display());
+
+        // Skip if not a file
+        if !path.is_file() {
+            continue;
+        }
+
+        // Get the file stem and extension
+        let file_stem = path
             .file_stem()
             .ok_or_else(|| {
-                BundleError::OutputError(format!("Invalid input filename: {}", entrypoint_path))
+                BundleError::OutputError(format!("Invalid filename: {}", path.display()))
             })?
             .to_string_lossy();
 
-        // Create expected output file paths based on input filename
-        let js_filename = format!("{}.js", file_stem);
-        let map_filename = format!("{}.js.map", file_stem);
-
-        let js_path = output_dir.join(js_filename);
-        let map_path = output_dir.join(map_filename);
-
-        // Print all files in the output directory for debugging
-        println!("Files in output directory {}:", output_dir.display());
-        for entry in fs::read_dir(&output_dir).map_err(|e| BundleError::IoError(e))? {
-            let entry = entry.map_err(|e| BundleError::IoError(e))?;
-            println!("  - {}", entry.path().display());
+        // Check if this is a source map file
+        let is_map = path.extension().map_or(false, |ext| ext == "map");
+        if is_map {
+            continue;
         }
 
-        // Read the JavaScript output file (required)
-        let script = fs::read_to_string(&js_path).map_err(|e| match e.kind() {
+        // Read the JavaScript output file
+        let script = fs::read_to_string(&path).map_err(|e| match e.kind() {
             std::io::ErrorKind::NotFound => BundleError::OutputError(format!(
                 "Expected output file not found: {}",
-                js_path.display()
+                path.display()
             )),
             _ => BundleError::IoError(e),
         })?;
 
-        // Read the source map (optional)
+        // Read the source map if it exists
+        let map_path = path.with_extension("js.map");
         let map = if map_path.exists() {
             Some(fs::read_to_string(&map_path).map_err(|e| BundleError::IoError(e))?)
         } else {
             None
         };
 
-        // Add result to the map
-        results.insert(entrypoint_path, BundleResult { script, map });
+        // Create bundle result
+        let bundle_result = BundleResult { script, map };
+
+        // Check if this is an entrypoint file
+        let is_entrypoint = entrypoint_paths.iter().any(|ep| {
+            Path::new(ep)
+                .file_stem()
+                .and_then(|s| Some(s.to_string_lossy().to_string()))
+                .map_or(false, |s| s == file_stem.to_string())
+        });
+
+        // Add to appropriate map
+        if is_entrypoint {
+            entrypoints.insert(file_stem.to_string(), bundle_result);
+        } else {
+            extras.insert(file_stem.to_string(), bundle_result);
+        }
     }
 
-    // Return the map of bundle results
-    Ok(results)
+    Ok(BundleResults {
+        entrypoints,
+        extras,
+    })
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -280,7 +314,7 @@ mod tests {
     }
 
     #[test]
-    fn test_single_client_bundle() {
+    fn test_SingleClient_bundle() {
         // Create a temporary directory for test files
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
@@ -304,25 +338,26 @@ mod tests {
         // Bundle the JavaScript
         let result = bundle_common(
             vec![entry_path],
-            BundleMode::SINGLE_CLIENT,
+            BundleMode::SingleClient,
             "development".to_string(),
             node_modules_path,
+            None,
             None,
         );
         
         // Verify the result
         assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
         let bundles = result.unwrap();
-        assert_eq!(bundles.len(), 1, "Expected 1 bundle result");
+        assert_eq!(bundles.entrypoints.len(), 1, "Expected 1 bundle result");
         
         // Check that the output contains our greet function
-        let (_, bundle_result) = bundles.iter().next().unwrap();
+        let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
         assert!(bundle_result.script.contains("greet"), "Bundle should contain the greet function");
         assert!(bundle_result.script.contains("Hello"), "Bundle should contain the greeting text");
     }
 
     #[test]
-    fn test_multi_client_bundle() {
+    fn test_MultiClient_bundle() {
         // Create a temporary directory for test files
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
@@ -359,28 +394,29 @@ mod tests {
         // Bundle the JavaScript
         let result = bundle_common(
             vec![entry_path],
-            BundleMode::MULTI_CLIENT,
+            BundleMode::MultiClient,
             "development".to_string(),
             node_modules_path,
+            None,
             None,
         );
         
         // Verify the result
         assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
         let bundles = result.unwrap();
-        assert!(!bundles.is_empty(), "Expected at least one bundle result");
+        assert!(!bundles.entrypoints.is_empty(), "Expected at least one bundle result");
         
         // Check that at least one of the outputs contains our greet function
-        let has_greet = bundles.iter().any(|(_, bundle)| bundle.script.contains("greet"));
+        let has_greet = bundles.entrypoints.iter().any(|(_, bundle)| bundle.script.contains("greet"));
         assert!(has_greet, "At least one bundle should contain the greet function");
         
         // Check that at least one of the outputs contains our formatName function
-        let has_format_name = bundles.iter().any(|(_, bundle)| bundle.script.contains("formatName"));
+        let has_format_name = bundles.entrypoints.iter().any(|(_, bundle)| bundle.script.contains("formatName"));
         assert!(has_format_name, "At least one bundle should contain the formatName function");
     }
 
     #[test]
-    fn test_single_server_bundle() {
+    fn test_SingleServer_bundle() {
         // Create a temporary directory for test files
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
@@ -407,19 +443,20 @@ mod tests {
         // Bundle the JavaScript
         let result = bundle_common(
             vec![entry_path],
-            BundleMode::SINGLE_SERVER,
+            BundleMode::SingleServer,
             "production".to_string(),
             node_modules_path,
+            None,
             None,
         );
         
         // Verify the result
         assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
         let bundles = result.unwrap();
-        assert_eq!(bundles.len(), 1, "Expected 1 bundle result for server-side bundle");
+        assert_eq!(bundles.entrypoints.len(), 1, "Expected 1 bundle result for server-side bundle");
         
         // Check that the output contains our processRequest function
-        let (_, bundle_result) = bundles.iter().next().unwrap();
+        let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
         assert!(bundle_result.script.contains("processRequest"), "Bundle should contain the processRequest function");
         assert!(bundle_result.script.contains("module.exports"), "Bundle should have CommonJS exports");
     }

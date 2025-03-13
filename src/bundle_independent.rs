@@ -87,16 +87,16 @@ pub fn compile_independent_bundles(
             BundleError::InvalidInput(msg) => PyErr::new::<pyo3::exceptions::PyValueError, _>(msg),
         })?;
 
-        // We should only have one result as we're bundling one entrypoint at a time
-        if bundle_results.len() != 1 {
+        // We should only have one entrypoint result as we're bundling one entrypoint at a time
+        if bundle_results.entrypoints.len() != 1 {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
                 "Expected 1 bundle result, got {}",
-                bundle_results.len()
+                bundle_results.entrypoints.len()
             )));
         }
 
         // Extract the script and sourcemap from the result
-        let (_, bundle_result) = bundle_results.into_iter().next().unwrap();
+        let (_, bundle_result) = bundle_results.entrypoints.into_iter().next().unwrap();
         let mut compiled_file = bundle_result.script;
         let sourcemap_file = bundle_result.map.unwrap_or_default();
 
