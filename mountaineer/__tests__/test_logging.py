@@ -1,9 +1,12 @@
 import json
 import logging
+import os
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from io import StringIO
 
-from mountaineer.logging import setup_logger
+import pytest
+
+from mountaineer.logging import debug_log_artifact, reset_artifact_dir, setup_logger
 
 
 @contextmanager
@@ -53,3 +56,50 @@ def test_exception_logging():
         log_output = json.loads(output.strip())
         assert "exception" in log_output
         assert "Test exception" in log_output["exception"]
+
+
+@contextmanager
+def modify_log_level(log_level: str):
+    current_log_level = os.environ.get("MOUNTAINEER_LOG_LEVEL")
+    os.environ["MOUNTAINEER_LOG_LEVEL"] = log_level
+    try:
+        yield current_log_level
+    finally:
+        if current_log_level is not None:
+            os.environ["MOUNTAINEER_LOG_LEVEL"] = current_log_level
+        else:
+            del os.environ["MOUNTAINEER_LOG_LEVEL"]
+
+
+@pytest.mark.parametrize(
+    "log_level,should_create_file",
+    [
+        ("DEBUG", True),
+        ("INFO", False),
+        ("WARNING", False),
+        ("ERROR", False),
+    ],
+)
+def test_debug_log_artifact(log_level: str, should_create_file: bool):
+    # Set up test environment
+    test_content = "test content"
+    test_prefix = "test"
+    test_ext = "txt"
+
+    # Reset any global state every run
+    reset_artifact_dir()
+
+    with modify_log_level(log_level):
+        path = debug_log_artifact(test_prefix, test_ext, test_content)
+
+    # Check the results
+    if should_create_file:
+        assert path is not None
+        tmp_path = path.parent
+        files = list(tmp_path.glob(f"{test_prefix}-*.{test_ext}"))
+
+        assert len(files) == 1
+        with open(files[0], "r") as f:
+            assert f.read() == test_content
+    else:
+        assert path is None

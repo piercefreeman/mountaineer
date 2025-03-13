@@ -8,7 +8,8 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.development.manager import DevAppManager
+
+# from mountaineer.development.manager import DevAppManager
 
 AppPackageType = tuple[str, Path, Path]
 
@@ -140,14 +141,3 @@ def app_package(isolated_package_dir: tuple[Path, str]) -> AppPackageType:
     (views_dir / "test_controller" / "page.tsx").write_text("")
 
     return package_name, package_path, controller_file
-
-
-@pytest.fixture
-def manager(app_package: AppPackageType) -> DevAppManager:
-    package_name, _, _ = app_package
-    return DevAppManager.from_webcontroller(  # type: ignore
-        f"{package_name}.test_controller:test_controller",
-        host="localhost",
-        port=8000,
-        live_reload_port=8001,
-    )

@@ -2,7 +2,6 @@ from hashlib import md5
 from pathlib import Path
 from shutil import move as shutil_move
 from tempfile import mkdtemp
-from time import monotonic_ns
 
 from mountaineer.app import AppController
 from mountaineer.client_compiler.base import ClientBundleMetadata
@@ -65,13 +64,14 @@ class ClientCompiler:
             for builder in self.app.builders:
                 builder.mark_file_dirty(path)
 
-        start = monotonic_ns()
         results = await gather_with_concurrency(
             [builder.build_wrapper() for builder in self.app.builders],
             n=max_concurrency,
             catch_exceptions=True,
         )
-        LOGGER.debug(f"Plugin builders took {(monotonic_ns() - start) / 1e9}s")
+
+        # This seems to stall our writer
+        # LOGGER.debug(f"Plugin builders took {(monotonic_ns() - start) / 1e9}s")
 
         # Go through the exceptions, logging the build errors explicitly
         has_build_error = False

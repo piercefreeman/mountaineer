@@ -1,7 +1,7 @@
 import asyncio
 import socket
 from functools import lru_cache, wraps
-from typing import Any, Callable, Coroutine, TypeVar
+from typing import Any, Callable, Coroutine, ParamSpec, TypeVar
 
 
 async def gather_with_concurrency(
@@ -23,11 +23,12 @@ async def gather_with_concurrency(
 
 
 T = TypeVar("T")
+P = ParamSpec("P")
 
 
-def async_to_sync(async_fn: Callable[..., Coroutine[Any, Any, T]]) -> Callable[..., T]:
+def async_to_sync(async_fn: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, T]:
     @wraps(async_fn)
-    def wrapper(*args, **kwargs) -> T:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
         loop = asyncio.get_event_loop()
         result = loop.run_until_complete(async_fn(*args, **kwargs))
         return result

@@ -37,10 +37,10 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
-from mountaineer.logging import LOGGER
+from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
-from mountaineer.ssr import render_ssr
+from mountaineer.ssr import find_tsconfig, render_ssr
 from mountaineer.static import get_static_path
 
 
@@ -331,7 +331,14 @@ class AppController:
                 # Caching the build files saves about 0.3 on every load
                 # during development
                 start = monotonic_ns()
+
+                # Find tsconfig.json in the parent directories of the view paths
+                tsconfig_path = find_tsconfig(view_paths)
+
                 if not controller_node.cached_server_script:
+                    LOGGER.debug(
+                        f"Compiling server-side bundle for {controller_name}: {view_paths}"
+                    )
                     (
                         script_payloads,
                         sourcemap_payloads,
@@ -342,10 +349,14 @@ class AppController:
                         0,
                         str(get_static_path("live_reload.ts").resolve().absolute()),
                         True,
+                        tsconfig_path,
                     )
                     controller_node.cached_server_script = script_payloads[0]
                     controller_node.cached_server_sourcemap = sourcemap_payloads[0]
                 if not controller_node.cached_client_script:
+                    LOGGER.debug(
+                        f"Compiling client-side bundle for {controller_name}: {view_paths}"
+                    )
                     script_payloads, _ = mountaineer_rs.compile_independent_bundles(
                         view_paths,
                         str(self._view_root / "node_modules"),
@@ -353,12 +364,12 @@ class AppController:
                         self.live_reload_port,
                         str(get_static_path("live_reload.ts").resolve().absolute()),
                         False,
+                        tsconfig_path,
                     )
                     controller_node.cached_client_script = script_payloads[0]
                 LOGGER.debug(
                     f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
                 )
-
                 html = self.compile_html(
                     cast(str, controller_node.cached_server_script),
                     controller_output,
@@ -705,8 +716,19 @@ class AppController:
             sourcemap=sourcemap,
         )
 
+        # Before building up the inline client script, log it to the temp directory
+        # so we can inspect it in the debugger
+        if inline_client_script is not None:
+            debug_log_artifact("inline_client", "js", inline_client_script)
+
         client_import: str
         if inline_client_script:
+            # We need to escape these inline. Otherwise we will close the parent script tag
+            # prematurely and break the page.
+            inline_client_script = inline_client_script.replace(
+                "</script>", "<\\/script>"
+            )
+
             # When we're running in debug mode, we just import
             # the script into each page so we can pick up on the latest changes
             client_import = (

@@ -1,117 +1,161 @@
 use pyo3::prelude::*;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::PathBuf;
 use tempfile::TempDir;
 
+use crate::bundle_common::{BundleError, BundleMode, bundle_common};
 use crate::code_gen;
 
+/// Compile independent bundles using bundle_common.
+///
+/// For each group of input paths, this function:
+/// 1. Creates a temporary directory.
+/// 2. Writes an entrypoint file (using your custom code generation logic).
+/// 3. Uses bundle_common to compile the entrypoint.
+/// 4. Returns two lists (one for output and one for sourcemaps) to Python.
+///
+/// Parameters:
+///   - `paths`: List of list of strings representing groups of module paths.
+///   - `node_modules_path`: Path to node_modules directory for resolving dependencies.
+///   - `environment`: Environment string (e.g., "development", "production").
+///   - `live_reload_port`: Port for live reload server if enabled, or -1 if disabled.
+///   - `live_reload_import`: An extra import string (if needed) for live reload.
+///   - `is_ssr`: Whether the bundle is for server-side (affects entrypoint generation).
+///   - `tsconfig_path`: Path to tsconfig file for bundling.
 #[pyfunction]
+#[pyo3(signature = (paths, node_modules_path, environment, live_reload_port, live_reload_import, is_ssr, tsconfig_path=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn compile_independent_bundles(
-    py: Python,
+    _py: Python,
     paths: Vec<Vec<String>>,
     node_modules_path: String,
     environment: String,
     live_reload_port: i32,
     live_reload_import: String,
-    is_server: bool,
+    is_ssr: bool,
+    tsconfig_path: Option<String>,
 ) -> PyResult<(Vec<String>, Vec<String>)> {
     let mut output_files = Vec::new();
     let mut sourcemap_files = Vec::new();
 
     for path_group in paths.iter() {
-        let temp_dir = create_temp_dir()?;
-        let temp_file_path =
-            create_entrypoint(&temp_dir, path_group, is_server, &live_reload_import)?;
-        let context_id = create_build_context(
-            &temp_file_path,
-            &node_modules_path,
-            &environment,
-            live_reload_port,
-            is_server,
-        )?;
-        rebuild_context(py, context_id)?;
+        // Create a temporary directory for the current bundle.
+        let temp_dir = TempDir::new()
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
 
-        let compiled_content = read_compiled_file(&temp_file_path)?;
-        let sourcemap_content = read_sourcemap_file(&temp_file_path)?;
+        // Create the entrypoint file using your custom logic.
+        let entrypoint_path =
+            create_entrypoint(&temp_dir, path_group, is_ssr, &live_reload_import)?;
 
-        output_files.push(compiled_content);
-        sourcemap_files.push(sourcemap_content);
+        // Determine bundle mode based on is_ssr flag
+        let bundle_mode = if is_ssr {
+            BundleMode::SingleServer
+        } else {
+            BundleMode::SingleClient
+        };
+
+        // Get live_reload_port as Option<u16>
+        let live_reload_port_option = if live_reload_port > 0 {
+            Some(live_reload_port as u16)
+        } else {
+            None
+        };
+
+        // Use bundle_common to bundle the entrypoint
+        let bundle_results = bundle_common(
+            vec![entrypoint_path.to_str().unwrap().to_string()],
+            bundle_mode,
+            environment.clone(),
+            node_modules_path.clone(),
+            live_reload_port_option,
+            tsconfig_path.clone(),
+            false,
+        )
+        .map_err(|e| match e {
+            BundleError::IoError(err) => {
+                PyErr::new::<pyo3::exceptions::PyIOError, _>(err.to_string())
+            }
+            BundleError::BundlingError(msg) => {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(msg)
+            }
+            BundleError::OutputError(msg) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(msg),
+            BundleError::FileNotFound(path) => {
+                PyErr::new::<pyo3::exceptions::PyFileNotFoundError, _>(format!(
+                    "File not found: {}",
+                    path
+                ))
+            }
+            BundleError::InvalidInput(msg) => PyErr::new::<pyo3::exceptions::PyValueError, _>(msg),
+        })?;
+
+        // We should only have one entrypoint result as we're bundling one entrypoint at a time
+        if bundle_results.entrypoints.len() != 1 {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Expected 1 bundle result, got {}",
+                bundle_results.entrypoints.len()
+            )));
+        }
+
+        // Extract the script and sourcemap from the result
+        let (_, bundle_result) = bundle_results.entrypoints.into_iter().next().unwrap();
+        let mut compiled_file = bundle_result.script;
+        let sourcemap_file = bundle_result.map.unwrap_or_default();
+
+        // Special handling for SSR mode
+        if is_ssr {
+            // We expect the format of the iife file will be (function() { ... })()
+            // Unlike esbuild, which supports a global-name (https://esbuild.github.io/api/#global-name) to set
+            // the entrypoint, rolldown does not currently support this.
+
+            // First validate the format of the compiled file matches our expectations
+            if !compiled_file.starts_with("(function(") {
+                // Log the beginning and ending of the compiled file for debugging
+                let start_chars: String = compiled_file.chars().take(50).collect();
+                let end_chars: String = compiled_file
+                    .chars()
+                    .rev()
+                    .take(50)
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    format!(
+                        "Compiled file does not match expected IIFE format: (function() {{ ... }})()\n\nBeginning 50 chars: {}\nEnding 50 chars: {}",
+                        start_chars, end_chars
+                    )
+                ));
+            }
+
+            // Then we add a manual var assignment prefix
+            // Replace the opening part with our SSR variable assignment
+            // Newlines required to clear out any trailing comments
+            compiled_file = format!("var SSR = (() => {{\nreturn {}\n}})();", compiled_file)
+        }
+
+        output_files.push(compiled_file);
+        sourcemap_files.push(sourcemap_file);
     }
-
     Ok((output_files, sourcemap_files))
 }
 
-fn create_temp_dir() -> PyResult<TempDir> {
-    TempDir::new().map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))
-}
-
+/// Create an entrypoint file in the given temporary directory.
+/// The file is named "entrypoint.jsx". It is written using custom code generation logic.
 fn create_entrypoint(
     temp_dir: &TempDir,
     path_group: &[String],
     is_server: bool,
     live_reload_import: &str,
 ) -> PyResult<PathBuf> {
-    let temp_file_path = temp_dir.path().join("entrypoint.jsx");
-    let mut temp_file = File::create(&temp_file_path)
+    let entrypoint_path = temp_dir.path().join("entrypoint.jsx");
+    let mut file = File::create(&entrypoint_path)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
+
+    // Replace this with your actual code generation logic.
     let entrypoint_content = code_gen::build_entrypoint(path_group, is_server, live_reload_import);
-    temp_file
-        .write_all(entrypoint_content.as_bytes())
+    file.write_all(entrypoint_content.as_bytes())
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
-    Ok(temp_file_path)
-}
-
-fn create_build_context(
-    temp_path: &Path,
-    node_modules_path: &str,
-    environment: &str,
-    live_reload_port: i32,
-    is_server: bool,
-) -> PyResult<i32> {
-    let temp_path_str = temp_path.to_str().unwrap().to_string();
-    src_go::get_build_context(
-        &temp_path_str,
-        node_modules_path,
-        environment,
-        live_reload_port,
-        is_server,
-    )
-    .map_err(|err| {
-        println!("Error getting build context: {:?}", err);
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(err)
-    })
-}
-
-fn rebuild_context(py: Python, context_id: i32) -> PyResult<()> {
-    let callback = Arc::new(Box::new(move |_id: i32| {
-        // We don't need to do anything in the callback for a single file compilation
-    }) as Box<dyn Fn(i32) + Send + Sync>);
-
-    py.allow_threads(move || src_go::rebuild_contexts(vec![context_id], callback))
-        .map_err(|err| {
-            println!("Error rebuilding context: {:?}", err);
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(err.join("\n"))
-        })
-}
-
-fn read_compiled_file(temp_file_path: &Path) -> PyResult<String> {
-    fs::read_to_string(temp_file_path.with_extension("jsx.out")).map_err(|err| {
-        println!("Error reading compiled file: {:?}", err);
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-            "Failed to read compiled file: {}",
-            err
-        ))
-    })
-}
-
-fn read_sourcemap_file(temp_file_path: &Path) -> PyResult<String> {
-    fs::read_to_string(temp_file_path.with_extension("jsx.out.map")).map_err(|err| {
-        println!("Error reading sourcemap file: {:?}", err);
-        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-            "Failed to read sourcemap file: {}",
-            err
-        ))
-    })
+    Ok(entrypoint_path)
 }

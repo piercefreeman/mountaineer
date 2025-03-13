@@ -110,24 +110,34 @@ class ReconnectWebSocket {
   }
 }
 
-const mountLiveReload = ({ host, port }: { host?: string; port?: number }) => {
+const mountLiveReload = (
+  { 
+    host,
+    port,
+    SSR_RENDERING,
+    NODE_ENV,
+    LIVE_RELOAD_PORT,
+  }: { 
+    host?: string;
+    port?: number;
+    SSR_RENDERING: boolean;
+    NODE_ENV: string;
+    LIVE_RELOAD_PORT?: number;
+  }) => {
   // Noop if we're not in development mode
-  if (
-    process.env.SSR_RENDERING === true ||
-    process.env.NODE_ENV !== "development"
-  ) {
+  if (SSR_RENDERING === true || NODE_ENV !== "development") {
     return;
   }
 
   if (!host) host = "localhost";
   if (!port) {
-    if (!process.env.LIVE_RELOAD_PORT) {
+    if (!LIVE_RELOAD_PORT) {
       console.error(
         "process.env.LIVE_RELOAD_PORT is not passed from server to development client.",
       );
       return;
     }
-    port = Number(process.env.LIVE_RELOAD_PORT);
+    port = Number(LIVE_RELOAD_PORT);
   }
 
   useEffect(() => {

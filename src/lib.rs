@@ -3,6 +3,7 @@ use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
+mod bundle_common;
 mod bundle_independent;
 mod bundle_prod;
 mod code_gen;
@@ -70,7 +71,11 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
-    fn render_ssr(py: Python, js_string: String, hard_timeout: u64) -> PyResult<Bound<'_, PyString>> {
+    fn render_ssr(
+        py: Python,
+        js_string: String,
+        hard_timeout: u64,
+    ) -> PyResult<Bound<'_, PyString>> {
         /*
          * :param js_string: the full ssr compiled .js script to execute in V8
          * :param hard_timeout: after this many milliseconds, the V8 engine will be forcibly
@@ -124,6 +129,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "compile_independent_bundles")]
+    #[pyo3(signature = (paths, node_modules_path, environment, live_reload_port, live_reload_import, is_server, tsconfig_path=None))]
+    #[allow(clippy::too_many_arguments)]
     fn compile_independent_bundles(
         py: Python,
         paths: Vec<Vec<String>>,
@@ -132,6 +139,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         live_reload_port: i32,
         live_reload_import: String,
         is_server: bool,
+        tsconfig_path: Option<String>,
     ) -> PyResult<(Vec<String>, Vec<String>)> {
         /*
          * Accepts a list of page definitions and creates fully isolated bundles
@@ -151,11 +159,14 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             live_reload_port,
             live_reload_import,
             is_server,
+            tsconfig_path,
         )
     }
 
     #[pyfn(m)]
     #[pyo3(name = "compile_production_bundle")]
+    #[pyo3(signature = (paths, node_modules_path, environment, minify, live_reload_import, is_server, tsconfig_path=None))]
+    #[allow(clippy::too_many_arguments)]
     fn compile_production_bundle(
         py: Python,
         paths: Vec<Vec<String>>,
@@ -164,6 +175,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         minify: bool,
         live_reload_import: String,
         is_server: bool,
+        tsconfig_path: Option<String>,
     ) -> PyResult<Py<PyDict>> {
         /*
          * Builds a full production bundle from multiple JavaScript files. Uses
@@ -182,6 +194,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             minify,
             live_reload_import,
             is_server,
+            tsconfig_path,
         )
     }
 

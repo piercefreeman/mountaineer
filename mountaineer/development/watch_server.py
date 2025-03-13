@@ -129,9 +129,11 @@ class WatcherWebservice:
         LOGGER.debug("Starting WatcherWebservice on port %d", self.port)
         await self.webservice_thread.astart()
 
+        LOGGER.debug("Starting monitor build thread")
         self.monitor_build_thread = Thread(target=self.monitor_builds, daemon=True)
         self.monitor_build_thread.start()
 
+        LOGGER.debug("Finished WatcherWebservice constructor")
         self.has_started = True
 
     async def stop(self, wait_for_completion: int = 1) -> bool:

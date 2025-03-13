@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import socket
 from threading import Thread
 from time import time
@@ -8,52 +7,6 @@ from typing import Optional
 from fastapi import FastAPI
 from uvicorn import Config
 from uvicorn.server import Server
-
-from mountaineer.logging import LOGGER
-
-KNOWN_OKAY_LOGS = [
-    "Started server process",
-    "Waiting for application startup",
-    "Application startup complete",
-    "Uvicorn running on",
-    "Waiting for application shutdown",
-    "Application shutdown complete",
-    "Finished server process",
-    "Shutting down",
-]
-
-
-def configure_uvicorn_logging(name: str, emoticon: str, log_level: str) -> None:
-    """
-    Uvicorn's default logging is too verbose for our development restart logic, so we
-    replace it with a more concise logging system that only logs certain messages.
-
-    KNOWN_OKAY_LOGS are logs that we expect to see and are not indicative of a problem.
-    Otherwise we pass through error logs so users are still alerted of issues.
-
-    """
-    # Remove all existing handlers
-    for logger_name in ["uvicorn", "uvicorn.error"]:
-        logger = logging.getLogger(logger_name)
-        logger.handlers = []
-        logger.propagate = False
-        logger.setLevel(log_level.upper())
-
-    def log_adapter(logger_name: str):
-        def _log(msg: str, *args, **kwargs):
-            is_okay = any(token in msg for token in KNOWN_OKAY_LOGS)
-            if logger_name == "uvicorn.error" and not is_okay:
-                LOGGER.error(msg, *args, **kwargs)
-            else:
-                LOGGER.debug(msg, *args, **kwargs)
-
-        return _log
-
-    # Replace the info methods directly
-    uvicorn_logger = logging.getLogger("uvicorn")
-    uvicorn_error_logger = logging.getLogger("uvicorn.error")
-    uvicorn_logger.info = log_adapter("uvicorn")  # type: ignore
-    uvicorn_error_logger.info = log_adapter("uvicorn.error")  # type: ignore
 
 
 class UvicornThread(Thread):
@@ -81,10 +34,6 @@ class UvicornThread(Thread):
         self.shutdown = False
 
     def run(self) -> None:
-        # Configure logging before creating the server
-        if self.use_logs:
-            configure_uvicorn_logging(self.name, self.emoticon, self.log_level)
-
         loop = asyncio.new_event_loop()
         config = Config(
             app=self.app,
@@ -112,6 +61,7 @@ class UvicornThread(Thread):
             is_mounted = (
                 self.server and self.server.started and not self._is_port_free()
             )
+            # print("is_mounted", is_mounted, self.host, self.port, flush=True)
             if is_mounted:
                 did_start = True
                 break
@@ -119,7 +69,9 @@ class UvicornThread(Thread):
             await asyncio.sleep(0.1)
 
         if not did_start:
-            raise TimeoutError(f"Server did not start in {timeout}s")
+            raise TimeoutError(
+                f"Server did not start in {timeout}s (checked {self.host}:{self.port})"
+            )
 
     async def astop(self, timeout: int = 1) -> None:
         """

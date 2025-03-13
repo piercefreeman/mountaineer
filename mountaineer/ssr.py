@@ -1,10 +1,13 @@
+import logging
 from json import dumps as json_dumps
+from pathlib import Path
 from re import finditer as re_finditer
 from typing import Any, cast
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
 from mountaineer.client_compiler.source_maps import SourceMapParser
+from mountaineer.logging import debug_log_artifact
 from mountaineer.static import get_static_path
 
 
@@ -43,6 +46,39 @@ def fix_exception_lines(*, exception: str, injected_script: str):
     return exception
 
 
+def find_tsconfig(paths: list[list[str]]) -> str | None:
+    """
+    Find the tsconfig.json file in the parent directories of the provided paths.
+    We look for tsconfig.json in the parent directories of each path in the list.
+    If multiple tsconfig.json files are found, we use the one closest to the root.
+
+    :param paths: List of lists of file paths to search from
+    :return: Path to tsconfig.json if found, None otherwise
+    """
+    tsconfig_paths = set()
+
+    # For each group of paths
+    for path_group in paths:
+        # For each path in the group
+        for path in path_group:
+            current = Path(path).parent
+            # Walk up the directory tree
+            while current != current.parent:
+                tsconfig = current / "tsconfig.json"
+                if tsconfig.exists():
+                    tsconfig_paths.add(str(tsconfig))
+                current = current.parent
+
+    if not tsconfig_paths:
+        logging.warning(
+            f"No tsconfig.json found in any parent directory of the provided paths: {paths}"
+        )
+        return None
+
+    # Return the tsconfig.json closest to the original file
+    return min(tsconfig_paths, key=len)
+
+
 @extended_lru_cache(maxsize=128, max_size_mb=5)
 def render_ssr(
     script: str,
@@ -73,6 +109,8 @@ def render_ssr(
 
     injected_script = f"var SERVER_DATA = {data_json};\n{polyfill_script}\n"
     full_script = f"{injected_script}{script}"
+
+    debug_log_artifact("ssr_script", "js", full_script)
 
     try:
         # Convert to milliseconds for the rust worker
