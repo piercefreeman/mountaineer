@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use rolldown::{Bundler, BundlerOptions, InputItem, SourceMapType, OutputExports, OutputFormat, ResolveOptions};
+use rolldown::{Bundler, BundlerOptions, InputItem, SourceMapType, OutputFormat, ResolveOptions};
 use rustc_hash::FxHasher;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
@@ -139,11 +139,11 @@ pub fn bundle_common(
     }
 
     // Create a temporary directory for output
-    let temp_dir = TempDir::new().map_err(|e| BundleError::IoError(e))?;
+    let temp_dir = TempDir::new().map_err(BundleError::IoError)?;
 
     // Get the output directory
     let output_dir = temp_dir.path().join("dist");
-    fs::create_dir_all(&output_dir).map_err(|e| BundleError::IoError(e))?;
+    fs::create_dir_all(&output_dir).map_err(BundleError::IoError)?;
 
     // Determine output type based on mode
     let output_type = match mode {
@@ -298,8 +298,8 @@ fn process_output_directory(
 
     // Print all files in the output directory for debugging
     println!("Files in output directory {}:", output_dir.display());
-    for entry in fs::read_dir(&output_dir).map_err(|e| BundleError::IoError(e))? {
-        let entry = entry.map_err(|e| BundleError::IoError(e))?;
+    for entry in fs::read_dir(output_dir).map_err(BundleError::IoError)? {
+        let entry = entry.map_err(BundleError::IoError)?;
         let path = entry.path();
         println!("  - {}", path.display());
 
@@ -317,7 +317,7 @@ fn process_output_directory(
             .to_string_lossy();
 
         // Check if this is a source map file
-        let is_map = path.extension().map_or(false, |ext| ext == "map");
+        let is_map = path.extension().is_some_and(|ext| ext == "map");
         if is_map {
             continue;
         }
@@ -334,7 +334,7 @@ fn process_output_directory(
         // Read the source map if it exists
         let map_path = path.with_extension("js.map");
         let map = if map_path.exists() {
-            Some(fs::read_to_string(&map_path).map_err(|e| BundleError::IoError(e))?)
+            Some(fs::read_to_string(&map_path).map_err(BundleError::IoError)?)
         } else {
             None
         };
@@ -346,8 +346,7 @@ fn process_output_directory(
         let is_entrypoint = entrypoint_paths.iter().any(|ep| {
             Path::new(ep)
                 .file_stem()
-                .and_then(|s| Some(s.to_string_lossy().to_string()))
-                .map_or(false, |s| s == file_stem.to_string())
+                .map(|s| s.to_string_lossy().to_string()).is_some_and(|s| s == file_stem)
         });
 
         // Add to appropriate map

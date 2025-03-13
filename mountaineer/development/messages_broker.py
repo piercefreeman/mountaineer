@@ -215,7 +215,11 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         self.pending_job_futures.clear()
 
         if self.server:
-            self.server.close()
+            try:
+                self.server.close()
+            except TypeError:
+                # Expected error during failed _wakeup in base_events:close()
+                pass
             # Schedule wait_closed on the broker's loop
             fut = asyncio.run_coroutine_threadsafe(self.server.wait_closed(), self.loop)
             await asyncio.wrap_future(fut)

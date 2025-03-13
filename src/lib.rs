@@ -129,6 +129,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "compile_independent_bundles")]
+    #[pyo3(signature = (paths, node_modules_path, environment, live_reload_port, live_reload_import, is_server, tsconfig_path=None))]
+    #[allow(clippy::too_many_arguments)]
     fn compile_independent_bundles(
         py: Python,
         paths: Vec<Vec<String>>,
@@ -163,6 +165,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "compile_production_bundle")]
+    #[pyo3(signature = (paths, node_modules_path, environment, minify, live_reload_import, is_server, tsconfig_path=None))]
+    #[allow(clippy::too_many_arguments)]
     fn compile_production_bundle(
         py: Python,
         paths: Vec<Vec<String>>,

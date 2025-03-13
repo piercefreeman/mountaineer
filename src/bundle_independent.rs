@@ -1,11 +1,10 @@
 use pyo3::prelude::*;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tempfile::TempDir;
-use walkdir::WalkDir;
 
-use crate::bundle_common::{self, BundleError, BundleMode};
+use crate::bundle_common::{BundleError, BundleMode, bundle_common};
 use crate::code_gen;
 
 /// Compile independent bundles using bundle_common.
@@ -25,8 +24,10 @@ use crate::code_gen;
 ///   - `is_ssr`: Whether the bundle is for server-side (affects entrypoint generation).
 ///   - `tsconfig_path`: Path to tsconfig file for bundling.
 #[pyfunction]
+#[pyo3(signature = (paths, node_modules_path, environment, live_reload_port, live_reload_import, is_ssr, tsconfig_path=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn compile_independent_bundles(
-    py: Python,
+    _py: Python,
     paths: Vec<Vec<String>>,
     node_modules_path: String,
     environment: String,
@@ -62,7 +63,7 @@ pub fn compile_independent_bundles(
         };
 
         // Use bundle_common to bundle the entrypoint
-        let bundle_results = bundle_common::bundle_common(
+        let bundle_results = bundle_common(
             vec![entrypoint_path.to_str().unwrap().to_string()],
             bundle_mode,
             environment.clone(),

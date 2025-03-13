@@ -369,3 +369,29 @@ async def test_get_job_process():
         # Clean up process
         process.join()
         assert process.exitcode == 0
+
+
+@pytest.mark.asyncio
+async def test_multiple_waiting_clients():
+    """Test multiple clients waiting for jobs."""
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        async with AsyncMessageBroker.new_client(
+            config
+        ) as client1, AsyncMessageBroker.new_client(config) as client2:
+            # Start both clients waiting for jobs
+            task1 = asyncio.create_task(client1.get_job())
+            task2 = asyncio.create_task(client2.get_job())
+
+            # Small delay to ensure both clients are waiting
+            await asyncio.sleep(0.1)
+
+            # Send two jobs
+            await server_broker.send_job("job1", {"task": "task1"})
+            await server_broker.send_job("job2", {"task": "task2"})
+
+            # Get results from both clients
+            results = await asyncio.gather(task1, task2)
+
+            # Verify each job was received exactly once
+            job_ids = {result[0] for result in results}
+            assert job_ids == {"job1", "job2"}

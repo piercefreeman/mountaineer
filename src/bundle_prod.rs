@@ -1,14 +1,15 @@
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Write;
-use std::path::Path;
 use tempfile::TempDir;
 
 use crate::bundle_common::{self, BundleError, BundleMode};
 use crate::code_gen;
 
 #[pyfunction]
+#[pyo3(signature = (paths, node_modules_path, environment, minify, live_reload_import, is_server, tsconfig_path=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn compile_production_bundle(
     py: Python,
     paths: Vec<Vec<String>>,
@@ -41,7 +42,7 @@ pub fn compile_production_bundle(
         node_modules_path,
         None, // No live reload port for production
         tsconfig_path,
-        true,
+        minify,
     )
     .map_err(|e| match e {
         BundleError::IoError(err) => PyErr::new::<pyo3::exceptions::PyIOError, _>(err.to_string()),
