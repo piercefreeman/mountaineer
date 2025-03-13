@@ -71,8 +71,51 @@ impl From<std::io::Error> for BundleError {
     }
 }
 
-// Our common bundler supports
-// pages that share functions in production
+/// Bundles JavaScript/TypeScript files using Rolldown, with support for different bundling modes
+/// and environment configurations.
+///
+/// This function serves as the core bundling logic, supporting three modes:
+/// - SingleClient: Creates a single bundle for client-side usage
+/// - MultiClient: Creates multiple bundles with tree-shaking for optimized client delivery
+/// - SingleServer: Creates a single IIFE bundle for server-side rendering
+///
+/// # Arguments
+///
+/// * `entrypoint_paths` - Vector of file paths to use as entrypoints for bundling
+/// * `mode` - The [`BundleMode`] determining how files should be bundled
+/// * `environment` - String indicating the environment (e.g., "development", "production")
+/// * `node_modules_path` - Path to the node_modules directory for dependency resolution
+/// * `live_reload_port` - Optional port number for live reload functionality
+/// * `tsconfig_path` - Optional path to a tsconfig.json file for TypeScript configuration
+///
+/// # Returns
+///
+/// Returns a [`Result`] containing [`BundleResults`] with both entrypoint and extra generated files,
+/// or a [`BundleError`] if the operation fails.
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * No entrypoint paths are provided
+/// * SingleClient/SingleServer modes receive multiple entrypoints
+/// * Any entrypoint file doesn't exist
+/// * The bundling process fails
+/// * File I/O operations fail
+///
+/// # Examples
+///
+/// ```no_run
+/// use crate::bundle_common::{bundle_common, BundleMode};
+///
+/// let result = bundle_common(
+///     vec!["src/index.ts".to_string()],
+///     BundleMode::SingleClient,
+///     "development".to_string(),
+///     "node_modules".to_string(),
+///     None,
+///     None,
+/// );
+/// ```
 pub fn bundle_common(
     entrypoint_paths: Vec<String>,
     mode: BundleMode,
@@ -225,6 +268,38 @@ pub fn bundle_common(
     process_output_directory(&output_dir, &entrypoint_paths)
 }
 
+/// Processes the output directory after bundling to categorize and read generated files.
+///
+/// This function scans the output directory and:
+/// 1. Identifies JavaScript files and their associated source maps
+/// 2. Categorizes files as either entrypoints or extra generated files
+/// 3. Reads the contents of all files into memory
+///
+/// # Arguments
+///
+/// * `output_dir` - Path to the directory containing the bundled output files
+/// * `entrypoint_paths` - Slice of original entrypoint paths used to identify main bundles
+///
+/// # Returns
+///
+/// Returns a [`Result`] containing [`BundleResults`] with:
+/// * `entrypoints`: HashMap of entrypoint file names to their bundle results
+/// * `extras`: HashMap of additional generated file names to their bundle results
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// * Directory reading fails
+/// * File reading fails
+/// * A file has an invalid name
+/// * Expected output files are missing
+///
+/// # Notes
+///
+/// The function automatically handles source map files by:
+/// * Skipping them in the initial file scan
+/// * Associating them with their corresponding JavaScript files
+/// * Including them in the bundle results when present
 fn process_output_directory(
     output_dir: &Path,
     entrypoint_paths: &[String],

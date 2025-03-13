@@ -276,15 +276,8 @@ async def handle_build(
     message_broker.start()
 
     # Initialize the isolated context directly
-    isolated_context = IsolatedAppContext(
-        package=package,
-        package_path=Path(package.replace(".", "/")),
-        module_name=module_name,
-        controller_name=controller_name,
-        host=None,
-        port=0,
-        live_reload_port=None,
-        message_broker=message_broker,
+    isolated_context = IsolatedAppContext.from_webcontroller(
+        webcontroller=webcontroller,
     )
 
     try:
