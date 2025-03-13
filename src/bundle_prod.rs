@@ -59,6 +59,7 @@ pub fn compile_production_bundle(
     let entrypoints = PyList::empty(py);
     let entrypoint_maps = PyList::empty(py);
     let supporting = PyDict::new(py);
+    let supporting_maps = PyDict::new(py);
 
     // Add entrypoint results
     for (_, bundle_result) in bundle_results.entrypoints {
@@ -71,12 +72,16 @@ pub fn compile_production_bundle(
 
     // Add extra results to supporting dict
     for (filename, bundle_result) in bundle_results.extras {
-        supporting.set_item(&filename, (&bundle_result.script, bundle_result.map))?;
+        supporting.set_item(&filename, &bundle_result.script)?;
+        if let Some(map) = bundle_result.map {
+            supporting_maps.set_item(&filename, &map)?;
+        }
     }
 
     result.set_item("entrypoints", entrypoints)?;
     result.set_item("entrypoint_maps", entrypoint_maps)?;
     result.set_item("supporting", supporting)?;
+    result.set_item("supporting_maps", supporting_maps)?;
 
     Ok(result.into())
 }
