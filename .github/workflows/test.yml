@@ -66,21 +66,6 @@ jobs:
         with:
           key: v1
 
-      - name: install golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.21.2"
-
-      - name: Log go env
-        run: |
-          go env
-
-      - name: Get GOROOT
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
-          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
-
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -97,10 +82,6 @@ jobs:
 
       - name: Tests
         run: make test-lib
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   lint:
     name: lint py${{ matrix.python-version }}
@@ -129,44 +110,17 @@ jobs:
       - name: Install poetry
         run: curl -sSL https://install.python-poetry.org | python3 -
 
-      - name: install golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.21.2"
-
-      - name: Log go env
-        run: |
-          go env
-
-      - name: Get GOROOT
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
-          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
-
-      - name: Log go env
-        run: |
-          go env
-
       - name: Install dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
           make clean-poetry-lock
           make install-deps
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOMODCACHE: ${{ env.GOMODCACHE }}
 
       - name: Run typehinting
         run: make lint-validation
 
       - name: Lint Clippy
         run: cargo clippy -- -D warnings
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
@@ -194,21 +148,6 @@ jobs:
     runs-on: ${{ (matrix.os == 'linux' && 'ubuntu') || matrix.os }}-${{ matrix.release || 'latest' }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: install golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.21.2"
-
-      - name: Log go env
-        run: |
-          go env
-
-      - name: Get GOROOT
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
-          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
 
       - name: Set up Python 3.10 (min supported version)
         uses: actions/setup-python@v5
@@ -261,36 +200,6 @@ jobs:
           python-version: "3.11"
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
-      - name: install golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.21.2"
-
-      - name: Set golang build architecture
-        shell: bash
-        run: |
-          case "${{ matrix.target }}" in
-            x86_64) export GOARCH="amd64";;
-            aarch64) export GOARCH="arm64";;
-            *) echo "Unsupported architecture: ${{ matrix.target }}"; exit 1;;
-          esac
-          echo "GOARCH=${GOARCH}"
-          echo "GOARCH=${GOARCH}" >> $GITHUB_ENV
-
-          # Must be explicitly specified for cross-compilation
-          # Otherwise it causes the misleading "go: no Go source files" error
-          echo "CGO_ENABLED=1" >> $GITHUB_ENV
-
-      - name: Log go env
-        run: |
-          go env
-
-      - name: Get GOROOT
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
-          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
-
       - run: pip install -U twine
 
       #
@@ -323,87 +232,11 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
           args: -vv --release --out dist --interpreter ${{ matrix.interpreter || '3.10 3.11 3.12 3.13' }}
           rust-toolchain: stable
-          docker-options: -e CI -e CI_TARGET=${{ matrix.target }} -e GOARCH=${{ env.GOARCH }} -e CGO_ENABLED=${{ env.CGO_ENABLED }}
+          docker-options: -e CI -e CI_TARGET=${{ matrix.target }}
           # Already defaults to build, but we make explicit here. Any arguments should
           # be added to args above and not here - otherwise we will affect the switch()
           # condition handling of maturin-action.
           command: build
-          before-script-linux: |
-            # Install go within the docker container - only used for manylinux builds
-            # since they need an isolated docker context. The other build pipelines
-            # just run within the host so use the global worker's go install.
-            # Determine the machine architecture
-            echo "Raw architecture: $(uname -m)"
-
-            # Log the current glibc version
-            ldd --version
-
-            # System configs
-            uname -a
-            cat /etc/os-release
-            cat /proc/version
-
-            # Determine distribution from /etc/os-release
-            DISTRO=$(grep ^ID= /etc/os-release | cut -d= -f2 | tr -d '"')
-
-            # Install necessary packages based on the distribution
-            if [ "$DISTRO" = "centos" ]; then
-                # CentOS specific package installation
-                yum -y install wget llvm-toolset-7 centos-release-scl
-                export PATH=/opt/rh/llvm-toolset-7/root/usr/bin:/opt/rh/llvm-toolset-7/root/usr/sbin:/opt/rh/devtoolset-10/root/usr/bin:$PATH
-                export LIBCLANG_PATH=/opt/rh/llvm-toolset-7/root/usr/lib64/
-            elif [ "$DISTRO" = "ubuntu" ]; then
-                # Ubuntu specific package installation
-                # Clang is already installed as part of the base image
-                apt-get update
-                apt-get -y install wget
-
-                # The maturin environment includes the gcc cross-compilers for aarch64, but it
-                # doesn't include the necessary headers
-                # This causes issues when rust / bindgen tries to run clang, which will fail with
-                # missing headers like 'bits/libc-header-start.h' file not found
-                # We install the headers here to fix this issue
-                apt install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
-                find /usr -name libc-header-start.h
-            else
-                echo "Unsupported distribution: $DISTRO"
-                exit 1
-            fi
-
-            clang --version
-
-            ls -ls /usr/bin
-
-            case "${{ matrix.target }}" in
-              x86_64) ;;
-              aarch64)
-              export PATH=$PATH:/usr/aarch64-unknown-linux-gnu/bin;
-              aarch64-unknown-linux-gnu-gcc --version;
-              export CC=aarch64-unknown-linux-gnu-gcc;;
-              *) echo "Unsupported architecture: ${{ matrix.target }}"; exit 1;;
-            esac
-            echo "GOARCH=${GOARCH}"
-
-            GOVERSION="1.22.1"
-
-            # Download and Install Go - we will always be running on a x86_64 runner
-            # despite the build architecture
-            wget -q https://go.dev/dl/go${GOVERSION}.linux-amd64.tar.gz
-            tar -C /usr/local -xzf go${GOVERSION}.linux-amd64.tar.gz
-            rm -f go${GOVERSION}.linux-amd64.tar.gz
-
-            # Set up Go environment variables
-            export GOROOT=/usr/local/go
-            export PATH=$PATH:$GOROOT/bin
-
-            go env
-
-            go version
-            go tool dist list
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOMODCACHE: ${{ env.GOMODCACHE }}
 
       - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
 
@@ -565,21 +398,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: install golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.21.2"
-
-      - name: Log go env
-        run: |
-          go env
-
-      - name: Get GOROOT
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
-          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
-
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
@@ -591,10 +409,6 @@ jobs:
       - name: Run tests
         timeout-minutes: 10
         run: make test-lib-integrations
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   # Tie create-mountaineer-app distribution to the release of the main
   # package, since if the main package fails we shouldn't yet bump the
@@ -616,21 +430,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: install golang
-        uses: actions/setup-go@v3
-        with:
-          go-version: "1.21.2"
-
-      - name: Log go env
-        run: |
-          go env
-
-      - name: Get GOROOT
-        run: |
-          echo "GOROOT=$(go env GOROOT)" >> $GITHUB_ENV
-          echo "GOPATH=$(go env GOPATH)" >> $GITHUB_ENV
-          echo "GOMODCACHE=$(go env GOMODCACHE)" >> $GITHUB_ENV
-
       - name: Install Poetry
         run: |
           curl -sSL https://install.python-poetry.org | python3 -
@@ -645,10 +444,6 @@ jobs:
       - name: Run integration tests
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
         run: make test-create-mountaineer-app-integrations test-args="-vv"
-        env:
-          GOROOT: ${{ env.GOROOT }}
-          GOPATH: ${{ env.GOPATH }}
-          GOMODCACHE: ${{ env.GOMODCACHE }}
 
   cma-build:
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || contains(github.event.pull_request.labels.*.name, 'Full Build')
