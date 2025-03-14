@@ -1,10 +1,9 @@
-import pytest
-from enum import Enum
-from typing import Any, List, Optional
+from typing import List, Optional
 
+import pytest
 from pydantic import BaseModel
 
-from mountaineer.client_builder.parser import ControllerParser, ControllerWrapper
+from mountaineer.client_builder.parser import ControllerParser
 from mountaineer.controller import ControllerBase
 from mountaineer.render import RenderBase
 
@@ -59,34 +58,37 @@ class TestTypeScriptGenerationWithMultipleInheritance:
         employee_base_wrapper = parser._parse_model(EmployeeBase)
         employee_person_wrapper = parser._parse_model(EmployeePerson)
         manager_wrapper = parser._parse_model(Manager)
-        
+
         # Import the ModelInterface class
         from mountaineer.client_builder.interface_builders.model import ModelInterface
-        
+
         # Generate TypeScript interfaces
         person_base_interface = ModelInterface.from_model(person_base_wrapper)
         employee_base_interface = ModelInterface.from_model(employee_base_wrapper)
         employee_person_interface = ModelInterface.from_model(employee_person_wrapper)
         manager_interface = ModelInterface.from_model(manager_wrapper)
-        
+
         # Convert to TypeScript code
         person_base_ts = person_base_interface.to_js()
         employee_base_ts = employee_base_interface.to_js()
         employee_person_ts = employee_person_interface.to_js()
         manager_ts = manager_interface.to_js()
-        
+
         # Print the generated TypeScript code for debugging
         print(f"PersonBase TypeScript:\n{person_base_ts}\n")
         print(f"EmployeeBase TypeScript:\n{employee_base_ts}\n")
         print(f"EmployeePerson TypeScript:\n{employee_person_ts}\n")
         print(f"Manager TypeScript:\n{manager_ts}\n")
-        
+
         # Check that the inheritance hierarchy is correct
         assert "interface PersonBase" in person_base_ts
         assert "interface EmployeeBase" in employee_base_ts
-        assert "interface EmployeePerson extends PersonBase, EmployeeBase" in employee_person_ts
+        assert (
+            "interface EmployeePerson extends PersonBase, EmployeeBase"
+            in employee_person_ts
+        )
         assert "interface Manager extends EmployeePerson" in manager_ts
-        
+
         # Check that fields are correctly included
         assert "name: string" in person_base_ts
         assert "age: number" in person_base_ts
@@ -96,14 +98,14 @@ class TestTypeScriptGenerationWithMultipleInheritance:
         assert "salary: number" in employee_person_ts
         assert "team_size: number" in manager_ts
         assert "reports_to?: string" in manager_ts
-        
+
         # Check that the inheritance hierarchy is correct
         # PersonBase and EmployeeBase should not extend anything
         assert "extends" not in person_base_ts
         assert "extends" not in employee_base_ts
-        
+
         # EmployeePerson should extend both PersonBase and EmployeeBase
         assert "extends PersonBase, EmployeeBase" in employee_person_ts
-        
+
         # Manager should extend EmployeePerson
-        assert "extends EmployeePerson" in manager_ts 
+        assert "extends EmployeePerson" in manager_ts

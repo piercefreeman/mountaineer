@@ -129,46 +129,48 @@ class TestInheritanceHandling:
         """Test a more complex multiple inheritance scenario with field overrides"""
         # Create base models with some shared field names
         base1_wrapper = create_model_wrapper(
-            BaseModel, 
-            "ComplexBase1", 
+            BaseModel,
+            "ComplexBase1",
             [
                 create_field_wrapper("base1_field", str),
                 create_field_wrapper("shared_field", int),
                 create_field_wrapper("common_field", str),
-            ]
+            ],
         )
-        
+
         base2_wrapper = create_model_wrapper(
-            BaseModel, 
-            "ComplexBase2", 
+            BaseModel,
+            "ComplexBase2",
             [
                 create_field_wrapper("base2_field", bool),
-                create_field_wrapper("shared_field", float),  # Different type than base1
-                create_field_wrapper("common_field", int),    # Different type than base1
-            ]
+                create_field_wrapper(
+                    "shared_field", float
+                ),  # Different type than base1
+                create_field_wrapper("common_field", int),  # Different type than base1
+            ],
         )
-        
+
         # Create a child model that inherits from both bases and overrides some fields
         child_wrapper = create_model_wrapper(
             BaseModel,
             "ComplexChild",
             [
                 create_field_wrapper("child_field", str),
-                create_field_wrapper("shared_field", str),    # Override with a new type
+                create_field_wrapper("shared_field", str),  # Override with a new type
             ],
             superclasses=[base1_wrapper, base2_wrapper],
         )
-        
+
         interface = ModelInterface.from_model(child_wrapper)
         ts_code = interface.to_js()
-        
+
         # Check that the interface extends both base interfaces
         assert "interface ComplexChild extends ComplexBase1, ComplexBase2" in ts_code
-        
+
         # Check that the child's fields are included
         assert "child_field: string" in ts_code
         assert "shared_field: string" in ts_code  # Child's override should be used
-        
+
         # The common_field is not directly in the child, but will be available through inheritance
         assert "common_field" not in ts_code
 
