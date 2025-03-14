@@ -2,5 +2,33 @@
 name = "scripts"
 version = "0.1.0"
 description = "Github action scripts"
-requires-python = ">=3.10"
-dependencies = []
+authors = [
+     { name = "Pierce Freeman", email = "pierce@freeman.vc" }
+]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "packaging>=24.2",
+    "toml>=0.10.2",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pyright>=1.1.396",
+    "pytest>=8.3.5",
+    "ruff>=0.10.0",
+    "types-toml>=0.10.8.20240310",
+]
+
+[tool.mypy]
+warn_return_any = true
+warn_unused_configs = true
+check_untyped_defs = true
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Disable print statements
+select = ["E4", "E7", "E9", "F", "I001", "T201"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
