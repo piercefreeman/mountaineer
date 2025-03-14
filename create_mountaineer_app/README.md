@@ -2,48 +2,26 @@
 
 # Project Template
 
-CLI to setup a basic scaffolding for mountaineer. This provides a simple base project that can be generated via pipx.
+CLI to setup a basic scaffolding for mountaineer. This provides a simple base project that can be generated via UV.
 
 ```bash
-pipx run create-mountaineer-app
+uv run create-mountaineer-app
 ```
 
-## Installing pipx
+## Installing UV
 
-pipx is similar in nature to npx, except it's not installed by default alongside npm. Follow their [install guide](https://pipx.pypa.io/stable/installation/) to get started.
-
-Once pipx is installed, you can call the latest create-mountaineer-app logic without installing the package globally.
+UV is a fast Python package installer and resolver, written in Rust. Follow their [install guide](https://github.com/astral-sh/uv#installation) to get started.
 
 ## Development
 
-To work on `create-mountaineer-app`, we use poetry to manage local dependencies. Note this is only required if you're hacking on this CLI, not if you just want to run it.
+If you're making frequent changes in development, you can create a fresh project directory:
 
 ```bash
-poetry install
+rm -rf test-project && uv run create-mountaineer-app --output-path test-project --mountaineer-dev-path ../
 ```
 
-If you're making frequent changes in development, you'll often want to create a fully fresh project directory in the CLI:
+For local development on the CLI itself, install in editable mode:
 
 ```bash
-poetry install
-rm -rf test-project && poetry run create-mountaineer-app --output-path test-project --mountaineer-dev-path ../
-```
-
-### Client Poetry Installation
-
-If you want to test the full poetry install, you can temporarily uninstall poetry and validate it's installed by this installer:
-
-```bash
-curl -sSL https://install.python-poetry.org | python3 - --uninstall
-curl -sSL https://install.python-poetry.org | POETRY_UNINSTALL=1 python3 -
-```
-
-Then, run `create-mountaineer-app` via a virtualenv:
-
-```bash
-python -m venv create_app_venv
-source create_app_venv/bin/activate
-
-pip install -e .
-python create_mountaineer_app/cli.py
+uv pip install -e .
 ```
