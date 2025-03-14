@@ -1,46 +1,41 @@
-[tool.poetry]
+[project]
 name = "create-mountaineer-app"
 version = "0.1.0"
 description = "Easily get started with a new Mountaineer project."
-authors = ["Pierce Freeman <pierce@freeman.vc>"]
+authors = [{ name = "Pierce Freeman", email = "pierce@freeman.vc" }]
 readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "click>=8.1.8",
+    "jinja2>=3.1.6",
+    "pydantic>=2.10.6",
+    "questionary>=2.1.0",
+]
 
-[tool.poetry.dependencies]
-python = "^3.10"
-questionary = "^2.0.1"
-click = "^8.1.7"
-jinja2 = "^3.1.3"
-pydantic = "^2.6.1"
-
-[tool.poetry.scripts]
-create-mountaineer-app = 'create_mountaineer_app.cli:main'
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
-ruff = "^0.2.1"
-mypy = "^1.8.0"
-requests = "^2.31.0"
-types-requests = "^2.31.0.20240125"
-pytest-asyncio = "^0.23.4"
-pytest-xdist = "^3.5.0"
-psycopg = "^3.1.12"
-types-psycopg2 = "^2.9.21.20240218"
-pyright = "^1.1.352"
-toml = { version = "^0.10.2", python = "<3.11" }
-types-toml = { version = "^0.10.8", python = "<3.11" }
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "psycopg>=3.2.6",
+    "pyright>=1.1.396",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.25.3",
+    "pytest-xdist>=3.6.1",
+    "requests>=2.32.3",
+    "ruff>=0.10.0",
+    "toml>=0.10.2",
+    "types-psycopg2>=2.9.21.20250121",
+    "types-requests>=2.32.0.20250306",
+    "types-toml>=0.10.8.20240310",
+]
 
 [tool.mypy]
 exclude = ".*/templates/.*"
 
-[tool.ruff]
-exclude = ["**/templates/**"]
-
 [tool.pyright]
 exclude = ["**/templates"]
+
+[tool.ruff]
+exclude = ["**/templates/**"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
