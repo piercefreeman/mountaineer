@@ -1,15 +1,12 @@
-[tool.poetry]
+[project]
 name = "benchmarking"
 version = "0.1.0"
-description = ""
-authors = ["Pierce Freeman <pierce@freeman.vc>"]
+description = "Mountaineer benchmarking scripts"
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.10"
-locust = "^2.21.0"
-
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+authors = [
+     { name = "Pierce Freeman", email = "pierce@freeman.vc" }
+]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "locust>=2.33.1",
+]
