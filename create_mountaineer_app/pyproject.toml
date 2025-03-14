@@ -12,6 +12,9 @@ dependencies = [
     "questionary>=2.1.0",
 ]
 
+[project.scripts]
+create-mountaineer-app = 'create_mountaineer_app.cli:main'
+
 [dependency-groups]
 dev = [
     "mypy>=1.15.0",
