@@ -42,8 +42,20 @@ pub fn build_entrypoint(
         entrypoint_content += "const container = document.getElementById('root');\n";
         entrypoint_content += "hydrateRoot(container, <Entrypoint />);\n";
     } else {
-        entrypoint_content += "import { renderToString } from 'react-dom/server.edge';\n";
-        entrypoint_content += "export const Index = () => renderToString(<Entrypoint />);\n";
+        entrypoint_content += "// Dynamically import renderToString based on React version\n";
+        entrypoint_content += "async function getRenderToString() {\n";
+        entrypoint_content += "  const reactVersion = React.version;\n";
+        entrypoint_content += "  const majorVersion = parseInt(reactVersion.split('.')[0], 10);\n\n";
+        entrypoint_content += "  if (majorVersion >= 19) {\n";
+        entrypoint_content += "    return (await import('react-dom/server.edge')).renderToString;\n";
+        entrypoint_content += "  } else {\n";
+        entrypoint_content += "    return (await import('react-dom/server')).renderToString;\n";
+        entrypoint_content += "  }\n";
+        entrypoint_content += "}\n\n";
+        entrypoint_content += "export const Index = async () => {\n";
+        entrypoint_content += "  const renderToString = await getRenderToString();\n";
+        entrypoint_content += "  return renderToString(<Entrypoint />);\n";
+        entrypoint_content += "};\n";
     }
 
     entrypoint_content
