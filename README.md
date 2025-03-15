@@ -1,4 +1,10 @@
-![Mountaineer Header](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/media/header.png)
+# Mountaineer
+
+![Mountaineer Logo](https://raw.githubusercontent.com/piercefreeman/mountaineer/main/media/header.png)
+
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/mountaineer)
+[![Test status](https://github.com/piercefreeman/mountaineer/actions/workflows/test.yml/badge.svg)](https://github.com/piercefreeman/mountaineer/actions)
+
 
 <p align="center"><i>Move fast. Climb mountains. Don't break things.</i></p>
 
