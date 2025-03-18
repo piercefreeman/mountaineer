@@ -15,6 +15,29 @@ by the browser. It also ahead-of-time generates the server code that will be run
 You'll want to do it before deploying your application into production - but since a full build can take up
 to 10s, `handle_runserver` provides a better workflow for daily development.
 
+## Global Env
+
+Our development server (used in `runserver` and `watch`) rely on forking processes to keep your
+development workflow fast. This requires that third party packages don't spawn any threads
+during their import, otherwise you might see a warning like the following:
+
+```
+[2025-03-14T23:47:49Z ERROR firehot::layer] Import of 'gent.config' introduced 2 new threads:
+[2025-03-14T23:47:49Z ERROR firehot::layer]   - Total threads: 1 -> 3
+[2025-03-14T23:47:49Z ERROR firehot::layer]   - Python threads: 1 -> 1
+[2025-03-14T23:47:49Z ERROR firehot::layer]   - C/native threads: 0 -> 2
+```
+
+If you see this error, we suggest diving into the module's implementation and seeing why it launches
+threads on import. This is an antipattern in library design. If you've confirmed the behavior is as-expected
+(which it is particularly in numerical computation libraries), you can selectively exclude the module from
+being imported into the main process. Instead it will delay until it's loaded in your application layer. This makes
+hotreloads a bit slower:
+
+```
+MOUNTAINEER_IGNORE_HOTRELOAD=gent.config,gent.main poetry run runserver
+```
+
 ## Database CLI
 
 ::: mountaineer.database.cli.handle_createdb
