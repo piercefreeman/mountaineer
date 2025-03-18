@@ -1,6 +1,8 @@
 import traceback
+from contextlib import contextmanager
 from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
+from os import getenv
 from time import time
 from typing import Any, Callable, Coroutine
 
@@ -75,7 +77,7 @@ async def handle_watch(
             message_config=config,
         )
 
-        with isolate_imports(package) as environment:
+        with get_mountaineer_isolated_env(package) as environment:
             CONSOLE.print("[bold blue]Development manager started")
 
             async def handle_file_changes(metadata: CallbackMetadata):
@@ -182,7 +184,7 @@ async def handle_runserver(
             message_config=config,
         )
 
-        with isolate_imports(package) as environment:
+        with get_mountaineer_isolated_env(package) as environment:
             CONSOLE.print("[bold blue]Development manager started")
 
             async def handle_file_changes(metadata: CallbackMetadata):
@@ -416,3 +418,23 @@ def build_common_watchdog(
         # We want to generate a build on the first load
         run_on_bootup=True,
     )
+
+
+@contextmanager
+def get_mountaineer_isolated_env(package: str):
+    """
+    Allow users to deny certain imports from being loaded into the core environment, in case
+    these launch threads during initialization.
+
+    :param package: The package to isolate imports from.
+
+    """
+    ignored_modules_raw = getenv("MOUNTAINEER_IGNORE_HOTRELOAD", "")
+    ignored_modules = (
+        [mod.strip() for mod in ignored_modules_raw.split(",")]
+        if ignored_modules_raw
+        else None
+    )
+
+    with isolate_imports(package, ignored_modules=ignored_modules) as environment:
+        yield environment
