@@ -40,10 +40,10 @@ build-backend = "maturin"
 # NOTE: https://github.com/PyO3/maturin/issues/2314
 cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs"}]
 
-[tool.maturin]
-module-name = "mountaineer._core"
-python-packages = ["mountaineer"]
-python-source = "src"
+#[tool.maturin]
+#module-name = "mountaineer._core"
+#python-packages = ["mountaineer"]
+#python-source = "src"
 
 [tool.mypy]
 warn_return_any = true
@@ -93,4 +93,5 @@ dev = [
     "types-setuptools>=76.0.0.20250313",
     "types-toml>=0.10.8.20240310",
     "types-tqdm>=4.67.0.20250301",
+    "maturin>=1.0,<2.0"
 ]
