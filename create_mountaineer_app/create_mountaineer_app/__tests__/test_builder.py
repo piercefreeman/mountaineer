@@ -41,7 +41,7 @@ def mountaineer_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     # Build the wheel using maturin
     subprocess.run(
-        ["maturin", "build", "--out", str(wheel_dir)],
+        ["uv", "run", "maturin", "build", "--out", str(wheel_dir)],
         cwd=main_mountaineer_path,
         check=True,
     )
