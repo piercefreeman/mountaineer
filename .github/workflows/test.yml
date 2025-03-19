@@ -65,6 +65,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: v1
+          cache-directories: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+            target/
+          shared-key: "rust-cache-${{ matrix.python-version }}"
+          save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -197,6 +204,32 @@ jobs:
         with:
           python-version: "3.11"
           architecture: ${{ matrix.python-architecture || 'x64' }}
+
+      # Add comprehensive caching for Rust and build artifacts
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: v1-${{ matrix.os }}-${{ matrix.target }}
+          cache-directories: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git
+            target/
+          shared-key: "rust-build-cache-${{ matrix.os }}-${{ matrix.target }}"
+          save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
+
+      # Cache Python wheels and build artifacts
+      - name: Cache Python wheels and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist/
+            unpacked_wheels/
+            ~/.cache/pip
+            ~/.cache/uv
+          key: wheels-${{ matrix.os }}-${{ matrix.target }}-${{ hashFiles('**/pyproject.toml', '**/Cargo.lock') }}-v1
+          restore-keys: |
+            wheels-${{ matrix.os }}-${{ matrix.target }}-
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5

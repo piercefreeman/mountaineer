@@ -1,7 +1,8 @@
 [project]
 name = "mountaineer"
 version = "0.1.0"
-description = "Mountaineer is a batteries-included web framework for Python."
+description = "Mountaineer is a batteries-included webapp framework for Python."
+readme = "README.md"
 authors = [
     { name = "Pierce Freeman", email = "pierce@freeman.vc" }
 ]
