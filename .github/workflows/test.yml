@@ -435,7 +435,6 @@ jobs:
         # can validate our version() sniffing behavior which is package dependent
         run: |
           make install-deps-create-mountaineer-app
-          cd create_mountaineer_app && uv pip install -e .
 
       - name: Run tests
         run: make test-create-mountaineer-app

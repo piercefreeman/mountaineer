@@ -46,6 +46,7 @@ install-deps-lib:
 install-deps-create-mountaineer-app:
 	@echo "Installing dependencies for $(CREATE_MOUNTAINEER_APP_DIR)..."
 	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && uv sync)
+	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && uv pip install -e .)
 
 install-deps-scripts:
 	@echo "Installing dependencies for $(SCRIPTS_DIR)..."
