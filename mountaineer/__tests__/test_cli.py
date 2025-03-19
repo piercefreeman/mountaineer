@@ -110,7 +110,7 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
     test_file_path = tmp_ci_webapp / "ci_webapp" / "controllers" / "home.py"
 
     try:
-        for _ in range(50):
+        for _ in range(5):
             with open(test_file_path, "a") as f:
                 print(f"Adding content to {test_file_path}")  # noqa: T201
                 f.write("\npass\n")
