@@ -380,6 +380,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache-prefix: 'cma'
 
+      - name: Install poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+        
       - name: Install dependencies
         run: make install-deps-create-mountaineer-app
 
