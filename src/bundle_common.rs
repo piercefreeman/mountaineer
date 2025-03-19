@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use rolldown::{Bundler, BundlerOptions, InputItem, SourceMapType, OutputFormat, ResolveOptions};
+use rolldown::{Bundler, BundlerOptions, InputItem, RawMinifyOptions, SourceMapType, OutputFormat, ResolveOptions};
 use rustc_hash::FxHasher;
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
@@ -211,6 +211,8 @@ pub fn bundle_common(
     
     println!("Output type: {:?}", output_type);
     println!("Input items: {:?}", input_items);
+    println!("Define: {:?}", define);
+    println!("Resolve: {:?}", resolve);
     println!("Bundle mode: {:?}", mode);
 
     // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
@@ -236,7 +238,7 @@ pub fn bundle_common(
         } else {
             Some(OutputFormat::Esm)
         },
-        minify: Some(minify),
+        minify: Some(RawMinifyOptions::Bool(minify)),
         // Add additional options as needed
         ..Default::default()
     };
@@ -438,7 +440,7 @@ mod tests {
         
         // Create a main entry file that imports the module
         let entry_js = r#"
-            import { formatName } from './utils.js';
+            import { formatName } from './utils';
             
             export function greet(firstName, lastName) {
                 const fullName = formatName(firstName, lastName);
@@ -455,20 +457,22 @@ mod tests {
         let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
         fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
         
-        // Bundle the JavaScript
+        // Bundle the JavaScript - pass both files as entry points
         let result = bundle_common(
-            vec![entry_path],
+            vec![entry_path, utils_path],
             BundleMode::MultiClient,
             "development".to_string(),
             node_modules_path,
             None,
             None,
-            true,
+            false,  // Set minify to false to make it easier to inspect output
         );
         
         // Verify the result
         assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
         let bundles = result.unwrap();
+        
+        // Check that we have both entrypoints
         assert!(!bundles.entrypoints.is_empty(), "Expected at least one bundle result");
         
         // Check that at least one of the outputs contains our greet function

@@ -17,9 +17,7 @@ class EnvironmentBase(ABC):
     def __init__(self):
         self.global_env = {
             "HOME": environ.get("HOME", ""),
-            "GOROOT": environ.get("GOROOT", ""),
-            "GOPATH": environ.get("GOPATH", ""),
-            "GOMODCACHE": environ.get("GOMODCACHE", ""),
+            "MOUNTAINEER_LOG_LEVEL": environ.get("MOUNTAINEER_LOG_LEVEL", "WARNING"),
         }
 
     @abstractmethod

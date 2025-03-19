@@ -119,6 +119,7 @@ def test_valid_permutations(
     run and return the expected endpoints.
 
     """
+    secho(f"Building project in {tmpdir}", fg="blue")
     secho(f"Using wheel: {mountaineer_wheel}", fg="blue")
     secho(
         f"Running with params:\n"
