@@ -344,7 +344,7 @@ class AppController:
                         sourcemap_payloads,
                     ) = mountaineer_rs.compile_independent_bundles(
                         view_paths,
-                        str(self._view_root / "node_modules"),
+                        str((self._view_root / "node_modules").resolve().absolute()),
                         "development",
                         0,
                         str(get_static_path("live_reload.ts").resolve().absolute()),
@@ -359,7 +359,7 @@ class AppController:
                     )
                     script_payloads, _ = mountaineer_rs.compile_independent_bundles(
                         view_paths,
-                        str(self._view_root / "node_modules"),
+                        str((self._view_root / "node_modules").resolve().absolute()),
                         "development",
                         self.live_reload_port,
                         str(get_static_path("live_reload.ts").resolve().absolute()),

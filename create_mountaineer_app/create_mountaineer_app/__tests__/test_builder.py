@@ -89,7 +89,7 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
     "use_poetry, use_tailwind, editor_config, create_stub_files",
     list(
         product(
-            [False],
+            [False, True],
             [False],
             [None],
             [True],
