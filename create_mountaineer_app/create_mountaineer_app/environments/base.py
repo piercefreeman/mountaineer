@@ -38,6 +38,20 @@ class EnvironmentBase(ABC):
         pass
 
     @abstractmethod
+    def insert_wheel(
+        self, package_name: str, wheel_path: Path, project_path: Path
+    ) -> None:
+        """
+        Update the project's dependency configuration to use a local wheel file instead
+        of pulling from PyPI.
+
+        :param package_name: Name of the package to replace
+        :param wheel_path: Path to the wheel file to use
+        :param project_path: Path to the project root
+        """
+        pass
+
+    @abstractmethod
     def run_command(self, command: list[str], path: Path) -> Popen:
         """
         Run a command in the environment

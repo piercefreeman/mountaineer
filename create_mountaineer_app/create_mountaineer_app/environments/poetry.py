@@ -3,6 +3,7 @@ from os import environ, pathsep
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import toml
 from click import secho
 
 from create_mountaineer_app.environments.base import EnvironmentBase
@@ -43,6 +44,41 @@ class PoetryEnvironment(EnvironmentBase):
         except FileNotFoundError:
             # Poetry is not installed
             return False
+
+    def insert_wheel(
+        self, package_name: str, wheel_path: Path, project_path: Path
+    ) -> None:
+        """
+        Update the pyproject.toml to use a local wheel file instead of pulling from PyPI.
+        """
+        pyproject_path = project_path / "pyproject.toml"
+        if not pyproject_path.exists():
+            raise ValueError("pyproject.toml not found")
+
+        # Read the current pyproject.toml
+        with open(pyproject_path) as f:
+            pyproject = toml.load(f)
+
+        # Update the dependency to point to the wheel file
+        if "tool" not in pyproject:
+            pyproject["tool"] = {}
+        if "poetry" not in pyproject["tool"]:
+            pyproject["tool"]["poetry"] = {}
+        if "dependencies" not in pyproject["tool"]["poetry"]:
+            pyproject["tool"]["poetry"]["dependencies"] = {}
+
+        pyproject["tool"]["poetry"]["dependencies"][package_name] = {
+            "path": str(wheel_path.resolve())
+        }
+
+        secho(
+            f"Updated pyproject.toml to use local wheel: {pyproject['tool']['poetry']['dependencies']}",
+            fg="blue",
+        )
+
+        # Write the updated pyproject.toml
+        with open(pyproject_path, "w") as f:
+            toml.dump(pyproject, f)
 
     def install_project(self, project_path: Path):
         subprocess.run(

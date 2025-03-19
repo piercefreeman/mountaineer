@@ -28,6 +28,32 @@ from create_mountaineer_app.io import get_free_port
 from create_mountaineer_app.templates import get_template_path
 
 
+@pytest.fixture(scope="session")
+def mountaineer_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """
+    Build the mountaineer wheel once per test session and return its path.
+    """
+    # Create a temporary directory for the wheel
+    wheel_dir = tmp_path_factory.mktemp("wheel")
+
+    # Get the main mountaineer package path
+    main_mountaineer_path = get_template_path("../../../").resolve()
+
+    # Build the wheel using maturin
+    subprocess.run(
+        ["maturin", "build", "--out", str(wheel_dir)],
+        cwd=main_mountaineer_path,
+        check=True,
+    )
+
+    # Find the wheel file - should be the only .whl file in the directory
+    wheel_files = list(wheel_dir.glob("*.whl"))
+    if not wheel_files:
+        raise ValueError("No wheel file was built")
+
+    return wheel_files[0]
+
+
 @pytest.mark.parametrize(
     "root_path, input_path, expected_copy",
     [
@@ -81,6 +107,7 @@ def test_valid_permutations(
     use_tailwind: bool,
     editor_config: EditorType | None,
     create_stub_files: bool,
+    mountaineer_wheel: Path,
 ):
     """
     Ensures that regardless of the input parameters
@@ -88,6 +115,17 @@ def test_valid_permutations(
     run and return the expected endpoints.
 
     """
+    secho(f"Using wheel: {mountaineer_wheel}", fg="blue")
+    secho(
+        f"Running with params:\n"
+        f"use_poetry: {use_poetry}\n"
+        f"use_tailwind: {use_tailwind}\n"
+        f"editor_config: {editor_config}\n"
+        f"create_stub_files: {create_stub_files}\n"
+        f"mountaineer_wheel: {mountaineer_wheel}",
+        fg="blue",
+    )
+
     new_project_dir = Path(tmpdir) / str(uuid4())
     new_project_dir.mkdir()
 
@@ -121,7 +159,7 @@ def test_valid_permutations(
         mountaineer_dev_path=main_mountaineer_path,
     )
 
-    build_project(metadata)
+    build_project(metadata, mountaineer_wheel=mountaineer_wheel)
 
     # Launch docker to host the default database
     docker_compose_env = {
