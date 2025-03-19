@@ -33,10 +33,12 @@ def tmp_ci_webapp(tmp_path: Path):
         content = toml.load(file)
 
     # Point to the absolute path of the local mountaineer core package, versus the
-    # symlinked version in the original package
-    content["tool"]["poetry"]["dependencies"]["mountaineer"]["path"] = str(
-        base_package_path
-    )
+    # symlinked version in the original package. We only have one dependency so we can
+    # just replace the entire bundle.
+    assert len(content["project"]["dependencies"]) == 1
+    content["project"]["dependencies"] = [
+        f"mountaineer @ file://{str(base_package_path)}"
+    ]
 
     with open(pyproject_path, "w") as file:
         toml.dump(content, file)
@@ -83,29 +85,26 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         except httpx.RequestError:
             pass
 
-    poetry_env = {
+    uv_env = {
         key: value
         for key, value in environ.items()
         if not key.startswith("VIRTUAL_ENV")
     }
 
-    return_code = Popen(["poetry", "lock"], cwd=tmp_ci_webapp, env=poetry_env).wait()
-    assert return_code == 0
-
     # We need to poetry install the packages at the new path
-    return_code = Popen(["poetry", "install"], cwd=tmp_ci_webapp, env=poetry_env).wait()
+    return_code = Popen(["uv", "sync"], cwd=tmp_ci_webapp, env=uv_env).wait()
     assert return_code == 0
 
     return_code = Popen(
-        ["npm", "install"], cwd=tmp_ci_webapp / "ci_webapp" / "views", env=poetry_env
+        ["npm", "install"], cwd=tmp_ci_webapp / "ci_webapp" / "views", env=uv_env
     ).wait()
     assert return_code == 0
 
     # Start the handle_runserver function in a process
     server_process = Popen(
-        ["poetry", "run", "runserver", "--port", str(port)],
+        ["uv", "run", "runserver", "--port", str(port)],
         cwd=tmp_ci_webapp,
-        env=poetry_env,
+        env=uv_env,
     )
     test_file_path = tmp_ci_webapp / "ci_webapp" / "controllers" / "home.py"
 
