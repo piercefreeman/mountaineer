@@ -31,8 +31,6 @@ class UvicornThread(Thread):
         self.server: Optional[Server] = None
         self.use_logs = use_logs
 
-        self.shutdown = False
-
     def run(self) -> None:
         loop = asyncio.new_event_loop()
         config = Config(
@@ -61,7 +59,6 @@ class UvicornThread(Thread):
             is_mounted = (
                 self.server and self.server.started and not self._is_port_free()
             )
-            # print("is_mounted", is_mounted, self.host, self.port, flush=True)
             if is_mounted:
                 did_start = True
                 break

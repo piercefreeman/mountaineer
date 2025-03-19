@@ -4,6 +4,7 @@ version = "0.1.0"
 description = ""
 authors = [{ name = "{{ author }}", email = "{{ author_email }}" }]
 readme = "README.md"
+requires-python = ">=3.11,<4.0"
 
 dependencies = [
     {% if mountaineer_dev_path %}
@@ -20,7 +21,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
 {{ project_name }} = [
-    "views/**/*",
+    "views/**/*"
 ]
 
 [project.scripts]

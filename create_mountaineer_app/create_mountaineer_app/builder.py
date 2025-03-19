@@ -112,7 +112,13 @@ def build_project(
             secho(f"Error installing python dependencies: {e}", fg="red")
 
         if has_npm():
-            npm_install(metadata.project_path / metadata.project_name / "views")
+            success = npm_install(
+                metadata.project_path / metadata.project_name / "views"
+            )
+            if success:
+                secho("npm dependencies installed successfully.", fg="green")
+            else:
+                secho("npm dependencies installation failed.", fg="red")
         else:
             secho(
                 "npm is not installed and is required to install React dependencies.",

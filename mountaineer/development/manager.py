@@ -19,6 +19,7 @@ from mountaineer.development.messages_broker import (
     BrokerServerConfig,
 )
 from mountaineer.io import async_to_sync
+from mountaineer.logging import LOGGER
 
 
 @dataclass
@@ -75,6 +76,11 @@ async def restart_backend(
 ):
     CONSOLE.print("Restarting backend")
     if state.current_context is not None:
+        # Drain any pending messages from the previous process
+        LOGGER.debug("Draining message queue")
+        jobs = await broker.drain_queue()
+        if jobs:
+            LOGGER.debug(f"Dropped {len(jobs)} pending messages")
         environment.stop_isolated(state.current_context)
 
     # We might have updated imports, so pass to the env to optionally update
