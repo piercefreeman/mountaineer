@@ -173,6 +173,9 @@ jobs:
 
       - run: pip install -U twine
 
+      #
+      # Build pipeline
+      #
       - name: build sdist
         if: ${{ matrix.os == 'linux' && matrix.target == 'x86_64' }}
         uses: PyO3/maturin-action@v1
@@ -188,14 +191,37 @@ jobs:
           args: -vv --release --out dist --interpreter ${{ matrix.interpreter || '3.10 3.11 3.12 3.13' }}
           rust-toolchain: stable
           docker-options: -e CI -e CI_TARGET=${{ matrix.target }}
+          # Already defaults to build, but we make explicit here. Any arguments should
+          # be added to args above and not here - otherwise we will affect the switch()
+          # condition handling of maturin-action.
           command: build
 
       - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
+
       - run: twine check --strict dist/*
+
+      # Unzip wheel files to directories
+      - name: Unzip Wheels
+        shell: bash
+        run: |
+          mkdir unpacked_wheels
+          for wheel in dist/*.whl; do
+            unzip -d unpacked_wheels/"$(basename "$wheel" .whl)" "$wheel"
+          done
+          rm dist/*.whl # Remove original .whl files to avoid confusion
+
+      - name: List unpacked wheel directories
+        shell: bash
+        run: ls -lh unpacked_wheels/
 
       - uses: actions/upload-artifact@v4
         with:
           name: pypi_files-${{ matrix.os }}-${{ matrix.target }}
+          path: unpacked_wheels/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi_files_sdist-${{ matrix.os }}-${{ matrix.target }}
           path: dist/
 
   inspect-pypi-assets:

@@ -127,5 +127,5 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         print("Server is bound to expected port")  # noqa: T201
     finally:
         # Terminate the processes after test
-        os.kill(server_process.pid, signal.SIGINT)
+        os.kill(server_process.pid, signal.SIGKILL)
         server_process.wait()
