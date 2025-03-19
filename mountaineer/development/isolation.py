@@ -220,7 +220,8 @@ class IsolatedAppContext:
         :raises ValueError: If app controller is not initialized
         """
         if self.webservice_thread is not None:
-            await self.webservice_thread.astop()
+            LOGGER.debug("Server is already running")
+            return SuccessResponse()
 
         if self.app_controller is None:
             raise ValueError("App controller not initialized")

@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.10, <3.14"
 
 [[package]]
@@ -105,7 +104,7 @@ wheels = [
 [[package]]
 name = "create-mountaineer-app"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "jinja2" },

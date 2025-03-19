@@ -119,7 +119,7 @@ def log_time_duration(message: str):
     """
     start = monotonic_ns()
     yield
-    LOGGER.debug(f"{message} : Took {(monotonic_ns() - start)/1e9:.2f}s")
+    LOGGER.debug(f"{message} : Took {(monotonic_ns() - start) / 1e9:.2f}s")
 
 
 def setup_internal_logger(name: str):

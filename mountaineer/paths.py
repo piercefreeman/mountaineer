@@ -348,6 +348,13 @@ def resolve_package_path(package_name: str):
         )
     ]
 
+    LOGGER.debug(
+        f"Resolving package path for {package_name}\n"
+        f"Found symbolic links: {symbolic_links}\n"
+        f"Explicit links: {explicit_links}\n"
+        f"Dist links: {dist_links}"
+    )
+
     # The user installed code as an absolute package (ie. with pip install .) instead of
     # as a reference. There's no need to sniff for the additional package path since
     # we've already found it
@@ -370,6 +377,8 @@ def resolve_package_path(package_name: str):
         direct_metadata = json_loads(dist_link.read_text())
         package_path = "/" + direct_metadata["url"].lstrip("file://").lstrip("/")
         raw_path = Path(str(dist.locate_file(package_path)))
+
+    LOGGER.debug(f"Resolved raw path: {raw_path}")
 
     if not raw_path:
         raise ValueError(

@@ -12,8 +12,13 @@ dependencies = [
     "questionary>=2.1.0",
 ]
 
+
 [project.scripts]
 create-mountaineer-app = 'create_mountaineer_app.cli:main'
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [

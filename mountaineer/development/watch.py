@@ -194,9 +194,6 @@ class PackageWatchdog:
         self.stop_event = asyncio.Event()
         self.running = False
 
-        self.check_packages_installed()
-        self.get_package_paths()
-
     async def start_watching(self):
         """
         Begin asynchronously watching all package paths for file changes.
@@ -208,6 +205,9 @@ class PackageWatchdog:
         :raises ValueError: If the watchdog is already running
 
         """
+        self.check_packages_installed()
+        self.get_package_paths()
+
         if self.run_on_bootup:
             for callback_definition in self.callbacks:
                 await callback_definition.callback(CallbackMetadata(events=[]))

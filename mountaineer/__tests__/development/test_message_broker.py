@@ -156,9 +156,10 @@ async def test_nonexistent_job():
 async def test_concurrent_clients():
     """Test multiple clients can interact with the same server."""
     async with AsyncMessageBroker.start_server() as (server_broker, config):
-        async with AsyncMessageBroker.new_client(
-            config
-        ) as client1, AsyncMessageBroker.new_client(config) as client2:
+        async with (
+            AsyncMessageBroker.new_client(config) as client1,
+            AsyncMessageBroker.new_client(config) as client2,
+        ):
             # Client 1 handles job1
             await server_broker.send_job("job1", "data1")
             await client1.send_response("job1", "response1")
@@ -375,9 +376,10 @@ async def test_get_job_process():
 async def test_multiple_waiting_clients():
     """Test multiple clients waiting for jobs."""
     async with AsyncMessageBroker.start_server() as (server_broker, config):
-        async with AsyncMessageBroker.new_client(
-            config
-        ) as client1, AsyncMessageBroker.new_client(config) as client2:
+        async with (
+            AsyncMessageBroker.new_client(config) as client1,
+            AsyncMessageBroker.new_client(config) as client2,
+        ):
             # Start both clients waiting for jobs
             task1 = asyncio.create_task(client1.get_job())
             task2 = asyncio.create_task(client2.get_job())

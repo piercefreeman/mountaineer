@@ -79,7 +79,7 @@ class TypeComparisonHelpers:
         """
         Compares two TypeDefinition instances for equivalence by comparing their attributes.
         """
-        if type(def1) != type(def2):
+        if type(def1) is not type(def2):
             return False
 
         non_type_1 = [

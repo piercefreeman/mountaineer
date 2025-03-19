@@ -1,6 +1,7 @@
 """
 Utilities for client unit and integration tests
 """
+
 from functools import wraps
 from inspect import isawaitable, iscoroutinefunction, signature
 from tempfile import NamedTemporaryFile
@@ -146,7 +147,7 @@ def benchmark_function(
                     await result
 
                 pytest.fail(
-                    f"Test function failed in {average_duration/1e9}s and profiles generated; Pyinstrument: {output_filename}"
+                    f"Test function failed in {average_duration / 1e9}s and profiles generated; Pyinstrument: {output_filename}"
                 )
 
         wrapper.__signature__ = new_sig  # type: ignore

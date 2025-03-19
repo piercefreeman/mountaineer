@@ -1,52 +1,10 @@
-{# POETRY #}
-{% if use_poetry %}
-
-[tool.poetry]
-name = "{{project_name}}"
-version = "0.1.0"
-description = ""
-authors = ["{{author_name}} <{{author_email}}>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-
-{% if mountaineer_dev_path %}
-mountaineer = { path = "{{mountaineer_dev_path}}", develop = true }
-{% else %}
-mountaineer = "^{{ mountaineer_min_version }}"
-{% endif %}
-
-iceaxe = "^0.5.0"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.scripts]
-runserver = "{{ project_name }}.cli:runserver"
-watch = "{{ project_name }}.cli:watch"
-build = "{{ project_name }}.cli:build"
-createdb = "{{ project_name }}.cli:createdb"
-
-[tool.mypy]
-plugins = ["pydantic.mypy"]
-
-{% if editor_config == 'zed' %}
-[tool.pyright]
-venvPath = "{{venv_name}}"
-venv = "{{venv_name}}"
-{% endif %}
-
-{# VENV #}
-{% else %}
-
 [project]
 name = "{{ project_name }}"
 version = "0.1.0"
 description = ""
 authors = [{ name = "{{ author }}", email = "{{ author_email }}" }]
 readme = "README.md"
+requires-python = ">=3.11,<4.0"
 
 dependencies = [
     {% if mountaineer_dev_path %}
@@ -63,7 +21,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
 {{ project_name }} = [
-    "views/**/*",
+    "views/**/*"
 ]
 
 [project.scripts]
@@ -81,5 +39,3 @@ venvPath = "{{venv_name}}"
 venv = "{{venv_name}}"
 {% endif %}
 
-
-{% endif %}

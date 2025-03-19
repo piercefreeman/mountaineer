@@ -52,32 +52,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: set up python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-rust
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: install rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - id: cache-rust
-        name: cache rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: v1
-
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-
-      - name: Install poetry
-        run: curl -sSL https://install.python-poetry.org | python3 -
+          cache-prefix: 'test'
 
       - name: Install main dependencies
         run: |
           export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          make clean-poetry-lock
           make install-deps-lib
 
       - name: Tests
@@ -95,26 +77,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-rust
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: install rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: cache rust
-        uses: Swatinem/rust-cache@v2
-
-      - name: Install poetry
-        run: curl -sSL https://install.python-poetry.org | python3 -
+          cache-prefix: 'lint'
 
       - name: Install dependencies
-        run: |
-          export PATH="/Users/runner/.local/bin:/Users/runner/.cargo/bin:$PATH"
-          make clean-poetry-lock
-          make install-deps
+        run: make install-deps
 
       - name: Run typehinting
         run: make lint-validation
@@ -171,22 +140,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The main contraint with our architecture choices at the moment is the dependency
-          # on rusty_v8, which only supports x86_64 and aarch64. Deno is tracking: https://github.com/denoland/deno/issues/7517
-
-          # linux
           - os: linux
             target: x86_64
           - os: linux
             target: aarch64
-
-          # macos
           - os: macos
             target: x86_64
           - os: macos
             target: aarch64
-
-          # windows
           - os: windows
             target: x86_64
 
@@ -194,26 +155,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: set up python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-rust
         with:
           python-version: "3.11"
-          architecture: ${{ matrix.python-architecture || 'x64' }}
+          cache-prefix: 'build'
+          os: ${{ matrix.os }}
+          target: ${{ matrix.target }}
+          python-architecture: ${{ matrix.python-architecture || 'x64' }}
 
-      - run: pip install -U twine
-
-      #
-      # Bump release version
-      # Our managed directory uses poetry for these dependencies but there's an issue
-      # with installing poetry on windows runners, so we use a global python install
-      # for the required dependencies
-      #
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          pip install packaging toml
+          (cd .github/scripts && uv sync && uv venv)
+          source .github/scripts/venv/bin/activate
           python .github/scripts/update_version.py ${{ github.ref_name }}
+
+      - run: pip install -U twine
 
       #
       # Build pipeline
@@ -393,15 +351,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-rust
         with:
           python-version: ${{ matrix.python-version }}
-
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          cache-prefix: 'integration'
 
       - name: Install dependencies
         run: make install-deps-lib
@@ -410,9 +363,6 @@ jobs:
         timeout-minutes: 10
         run: make test-lib-integrations
 
-  # Tie create-mountaineer-app distribution to the release of the main
-  # package, since if the main package fails we shouldn't yet bump the
-  # create-mountaineer-app version.
   cma-test:
     name: CMA Test - py${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -425,16 +375,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: ./.github/actions/setup-python-rust
         with:
           python-version: ${{ matrix.python-version }}
+          cache-prefix: 'cma'
 
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
+      - name: Install poetry
+        run: curl -sSL https://install.python-poetry.org | python3 -
+        
       - name: Install dependencies
         run: make install-deps-create-mountaineer-app
 
@@ -473,23 +421,22 @@ jobs:
           python-version: "3.11"
           architecture: ${{ matrix.python-architecture || 'x64' }}
 
-      - name: Install Poetry
-        run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Update version in pyproject.toml
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
+          (cd .github/scripts && uv sync && uv venv)
+          source .github/scripts/venv/bin/activate
+
           cd create_mountaineer_app
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "Version to update: $VERSION"
-          poetry version $VERSION
+          python .github/scripts/update_version.py ${{ github.ref_name }}
 
       - name: Build
         run: |
-          cd create_mountaineer_app
-          poetry build
+          make install-deps-create-mountaineer-app
+          cd create_mountaineer_app && uv build
 
       - uses: actions/upload-artifact@v4
         with:

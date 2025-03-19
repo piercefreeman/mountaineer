@@ -86,7 +86,11 @@ def copy_source_to_project(template_base: Path, metadata: ProjectMetadata):
         full_output.write_text(output_bundle.content)
 
 
-def build_project(metadata: ProjectMetadata, install_deps: bool = True):
+def build_project(
+    metadata: ProjectMetadata,
+    install_deps: bool = True,
+    mountaineer_wheel: Path | None = None,
+):
     template_base = get_template_path("project")
 
     copy_source_to_project(template_base, metadata)
@@ -96,12 +100,25 @@ def build_project(metadata: ProjectMetadata, install_deps: bool = True):
         environment = environment_from_metadata(metadata)
 
         try:
+            # If we have a pre-built wheel, configure it in the project dependencies
+            if mountaineer_wheel is not None:
+                environment.insert_wheel(
+                    "mountaineer", mountaineer_wheel, metadata.project_path
+                )
+                secho("Pre-built mountaineer wheel configured.", fg="green")
+
             environment.install_project(metadata.project_path)
         except Exception as e:
             secho(f"Error installing python dependencies: {e}", fg="red")
 
         if has_npm():
-            npm_install(metadata.project_path / metadata.project_name / "views")
+            success = npm_install(
+                metadata.project_path / metadata.project_name / "views"
+            )
+            if success:
+                secho("npm dependencies installed successfully.", fg="green")
+            else:
+                secho("npm dependencies installation failed.", fg="red")
         else:
             secho(
                 "npm is not installed and is required to install React dependencies.",
@@ -122,4 +139,4 @@ def build_project(metadata: ProjectMetadata, install_deps: bool = True):
         if metadata_path:
             editor_template_base = get_template_path("editor_configs") / metadata_path
             copy_source_to_project(editor_template_base, metadata)
-        secho(f"Editor config created at {metadata.project_path}", fg="green")
+            secho(f"Editor config created at {metadata.project_path}", fg="green")

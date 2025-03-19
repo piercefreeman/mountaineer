@@ -77,6 +77,12 @@ class GetJobCommand(BaseCommand):
     item_type: Literal["get_job"] = "get_job"
 
 
+class DrainQueueCommand(BaseCommand):
+    """Command to drain all jobs from the queue"""
+
+    item_type: Literal["drain_queue"] = "drain_queue"
+
+
 class BaseResponse(BaseModel):
     """Base class for all broker responses"""
 
@@ -101,7 +107,13 @@ class BrokerAuthenticationError(Exception):
     pass
 
 
-CommandTypes = SendJobCommand | SendResponseCommand | GetResponseCommand | GetJobCommand
+CommandTypes = (
+    SendJobCommand
+    | SendResponseCommand
+    | GetResponseCommand
+    | GetJobCommand
+    | DrainQueueCommand
+)
 ResponseTypes = OKResponse | UnauthorizedResponse
 
 # Create type adapters for polymorphic validation
@@ -322,6 +334,18 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
                                 response = UnauthorizedResponse(
                                     message="Operation cancelled"
                                 )
+                    elif isinstance(cmd_obj, DrainQueueCommand):
+                        # Return all jobs in the queue at once
+                        jobs = []
+                        while self.job_queue:
+                            job_id = self.job_queue.pop(0)
+                            jobs.append(
+                                {
+                                    "job_id": job_id,
+                                    "job_data": self.jobs[job_id],
+                                }
+                            )
+                        response = OKResponse(response_data=jobs)
                     else:
                         response = UnauthorizedResponse(
                             message="Unhandled command type"
@@ -416,6 +440,28 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         job_id = str(uuid4())
         await self.send_job(job_id, job_data)
         return await self.get_response(job_id)
+
+    async def drain_queue(self) -> list[tuple[str, AppMessageTypes]]:
+        """
+        Process all pending messages in the queue until it's empty.
+        Returns immediately with all currently queued messages.
+
+        Returns:
+            A list of tuples containing (job_id, job_data) for all jobs that were in the queue.
+        """
+        cmd = DrainQueueCommand(auth_key=self.auth_key)
+        response = await self._send_message(self.host, self.port, cmd)
+        if isinstance(response, UnauthorizedResponse):
+            raise BrokerAuthenticationError(response.message)
+        if not isinstance(response, OKResponse):
+            raise ValueError(f"Failed to drain queue: {response}")
+        if response.response_data is None:
+            return []
+
+        return [
+            (job["job_id"], pickle.loads(b64decode(job["job_data"])))
+            for job in response.response_data
+        ]
 
     async def _send_message(
         self, host: str, port: int, message_obj: BaseCommand
