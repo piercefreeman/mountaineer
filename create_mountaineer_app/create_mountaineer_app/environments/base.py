@@ -3,6 +3,9 @@ from os import environ
 from pathlib import Path
 from subprocess import Popen
 
+import toml
+from click import secho
+
 
 class EnvironmentBase(ABC):
     """
@@ -37,7 +40,6 @@ class EnvironmentBase(ABC):
         """
         pass
 
-    @abstractmethod
     def insert_wheel(
         self, package_name: str, wheel_path: Path, project_path: Path
     ) -> None:
@@ -49,7 +51,42 @@ class EnvironmentBase(ABC):
         :param wheel_path: Path to the wheel file to use
         :param project_path: Path to the project root
         """
-        pass
+        pyproject_path = project_path / "pyproject.toml"
+        if not pyproject_path.exists():
+            raise ValueError("pyproject.toml not found")
+
+        # Read the current pyproject.toml
+        with open(pyproject_path) as f:
+            pyproject = toml.load(f)
+
+        # Update the dependency to point to the wheel file
+        if "project" not in pyproject:
+            pyproject["project"] = {}
+        if "dependencies" not in pyproject["project"]:
+            pyproject["project"]["dependencies"] = []
+
+        # Remove any existing dependency for this package
+        pyproject["project"]["dependencies"] = [
+            dep
+            for dep in pyproject["project"]["dependencies"]
+            if not (isinstance(dep, str) and dep.startswith(package_name))
+        ]
+
+        # Add the wheel file as a dependency using PEP 508 format
+        # Format: package_name @ file:///absolute/path/to/wheel
+        wheel_path_str = wheel_path.resolve().as_uri()
+        pyproject["project"]["dependencies"].append(
+            f"{package_name} @ {wheel_path_str}"
+        )
+
+        secho(
+            f"Updated pyproject.toml to use local wheel: {pyproject['project']['dependencies']}",
+            fg="blue",
+        )
+
+        # Write the updated pyproject.toml
+        with open(pyproject_path, "w") as f:
+            toml.dump(pyproject, f)
 
     @abstractmethod
     def run_command(self, command: list[str], path: Path) -> Popen:

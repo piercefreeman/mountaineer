@@ -3,7 +3,6 @@ from os import environ
 from pathlib import Path
 from shutil import which
 
-import toml
 from click import secho
 
 from create_mountaineer_app.environments.base import EnvironmentBase
@@ -22,49 +21,6 @@ class VEnvEnvironment(EnvironmentBase):
 
     def has_provider(self):
         return which("python3") is not None
-
-    def insert_wheel(
-        self, package_name: str, wheel_path: Path, project_path: Path
-    ) -> None:
-        """
-        Update the pyproject.toml to use a local wheel file instead of pulling from PyPI.
-        """
-        pyproject_path = project_path / "pyproject.toml"
-        if not pyproject_path.exists():
-            raise ValueError("pyproject.toml not found")
-
-        # Read the current pyproject.toml
-        with open(pyproject_path) as f:
-            pyproject = toml.load(f)
-
-        # Update the dependency to point to the wheel file
-        if "project" not in pyproject:
-            pyproject["project"] = {}
-        if "dependencies" not in pyproject["project"]:
-            pyproject["project"]["dependencies"] = []
-
-        # Remove any existing dependency for this package
-        pyproject["project"]["dependencies"] = [
-            dep
-            for dep in pyproject["project"]["dependencies"]
-            if not (isinstance(dep, str) and dep.startswith(package_name))
-        ]
-
-        # Add the wheel file as a dependency using PEP 508 format
-        # Format: package_name @ file:///absolute/path/to/wheel
-        wheel_path_str = wheel_path.resolve().as_uri()
-        pyproject["project"]["dependencies"].append(
-            f"{package_name} @ {wheel_path_str}"
-        )
-
-        secho(
-            f"Updated pyproject.toml to use local wheel: {pyproject['project']['dependencies']}",
-            fg="blue",
-        )
-
-        # Write the updated pyproject.toml
-        with open(pyproject_path, "w") as f:
-            toml.dump(pyproject, f)
 
     def install_project(self, project_path: Path):
         # Create a virtual environment

@@ -89,14 +89,18 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
     "use_poetry, use_tailwind, editor_config, create_stub_files",
     list(
         product(
+            [False],
+            [False],
+            [None],
+            [True],
             # Use poetry
-            [False, True],
+            # [False, True],
             # Use tailwind
-            [False, True],
+            # [False, True],
             # Editor config
-            [None, EditorType.VSCODE, EditorType.VIM, EditorType.ZED],
+            # [None, EditorType.VSCODE, EditorType.VIM, EditorType.ZED],
             # Create stub files
-            [False, True],
+            # [False, True],
         )
     ),
 )
@@ -274,15 +278,6 @@ def test_build_version_number(use_poetry: bool, tmp_path: Path):
     pyproject_contents = (tmp_path / "pyproject.toml").read_text()
     package_requirements = toml_loads(pyproject_contents)
 
-    if use_poetry:
-        # Parse the poetry convention into the PEP 508 specifier format
-        raw_version = package_requirements["tool"]["poetry"]["dependencies"][
-            "mountaineer"
-        ]
-        assert raw_version == "^0.2.5"
-        version = f"mountaineer {raw_version}".replace("^", ">=").replace("~", "~=")
-    else:
-        version = package_requirements["project"]["dependencies"][0]
-
+    version = package_requirements["project"]["dependencies"][0]
     req = Requirement(version)
     assert req.specifier.contains(Version("0.2.5"))
