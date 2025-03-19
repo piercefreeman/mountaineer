@@ -55,8 +55,7 @@ def passthrough(  # type: ignore
 ) -> Callable[
     [Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]]],
     SideeffectWrappedCallable[C, P, R],
-]:
-    ...
+]: ...
 
 
 @overload
@@ -66,15 +65,13 @@ def passthrough(
 ) -> Callable[
     [Callable[Concatenate[C, P], RawResponseR | Coroutine[Any, Any, RawResponseR]]],
     SideeffectRawCallable[C, P, RawResponseR],
-]:
-    ...
+]: ...
 
 
 @overload
 def passthrough(
     func: Callable[Concatenate[C, P], R | Coroutine[Any, Any, R]],
-) -> SideeffectWrappedCallable[C, P, R]:
-    ...
+) -> SideeffectWrappedCallable[C, P, R]: ...
 
 
 def passthrough(*args, **kwargs):  # type: ignore

@@ -51,15 +51,7 @@ def test_python_payload_to_typescript_primitives(payload: Any, expected_str: str
     [
         (
             {"a": {"b": "b", "c": 1, "d": TSLiteral("someVariable")}},
-            (
-                "{\n"
-                "  'a': {\n"
-                "    'b': 'b',\n"
-                "    'c': 1,\n"
-                "    'd': someVariable\n"
-                "  }\n"
-                "}"
-            ),
+            ("{\n  'a': {\n    'b': 'b',\n    'c': 1,\n    'd': someVariable\n  }\n}"),
         )
     ],
 )

@@ -1,51 +1,49 @@
-[tool.poetry]
+[project]
 name = "mountaineer"
 version = "0.1.0"
 description = "Mountaineer is a batteries-included web framework for Python."
-authors = ["Pierce Freeman <pierce@freeman.vc>"]
-readme = "README.md"
-
-[tool.poetry.dependencies]
-python = "^3.10"
-pydantic = "^2.5.3"
-fastapi = "^0.114.1"
-inflection = "^0.5.1"
-click = "^8.1.7"
-uvicorn = { extras = ["standard"], version = "^0.27.0.post1" }
-packaging = "^23.2"
-pydantic-settings = "^2.1.0"
-
-# Pinned until uvicorn is upgraded: https://github.com/encode/uvicorn/issues/1908
-websockets = "<14.0"
-
-# TODO: Move to optional dependencies, since release configurations
-# will not need these.
-watchfiles = "^1.0.0"
-rich = "^13.7.1"
-firehot = "^0.4.0"
-
-[tool.poetry.group.dev.dependencies]
-mypy = "^1.8.0"
-pytest = "^7.4.4"
-ruff = "^0.1.14"
-types-setuptools = "^69.0.0.20240125"
-
-maturin = ">=1.8.0"
-types-tqdm = "^4.66.0.20240106"
-pytest-asyncio = "^0.23.4"
-pyinstrument = "^4.6.2"
-httpx = "^0.27.0"
-types-psycopg2 = "^2.9.21.20240218"
-pyright = "^1.1.352"
-tqdm = "^4.66.2"
-toml = "^0.10.2"
-types-toml = "^0.10.8.20240310"
-types-pygments = "^2.18.0.20240506"
-python-multipart = "^0.0.19"
+authors = [
+    { name = "Pierce Freeman", email = "pierce@freeman.vc" }
+]
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "pydantic>=2.5.3,<3.0.0",
+    "fastapi>=0.114.1,<1.0.0",
+    "inflection>=0.5.1,<1.0.0",
+    "click>=8.1.7,<9.0.0",
+    "uvicorn[standard]>=0.27.0.post1,<1.0.0",
+    "packaging>=23.2",
+    "pydantic-settings>=2.1.0,<3.0.0",
+    # NOTE: Pinned until uvicorn is upgraded: https://github.com/encode/uvicorn/issues/1908
+    "websockets<14.0",
+    # These are technically optional dependencies, since release configurations will not need these, but we
+    # include them by default since we don't want to force regular dev builds to install an extras
+    # for basic CLI functionality.
+    "rich>=13.7.1,<14.0.0",
+    "watchfiles>=1.0.0,<2.0.0",
+    "firehot>=0.4.0,<1.0.0",
+]
+exclude = [
+    "fixtures",
+    "ci_webapp",
+    "create_mountaineer_app",
+    "media",
+    "docs_website",
+    "benchmarking",
+]
 
 [build-system]
-requires = ["maturin>=1.8.0"]
+requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
+
+[tool.uv]
+# NOTE: https://github.com/PyO3/maturin/issues/2314
+cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs"}]
+
+[tool.maturin]
+module-name = "mountaineer._core"
+python-packages = ["mountaineer"]
+python-source = "src"
 
 [tool.mypy]
 warn_return_any = true
@@ -78,36 +76,21 @@ markers = ["integration_tests: run longer-running integration tests"]
 # Default pytest runs shouldn't execute the integration tests
 addopts = "-m 'not integration_tests'"
 
-[project]
-# Maintaned just for local installation / testing purposes with venvironments
-# since these can't pick up poetry's data definitions
-name = "mountaineer"
-version = "0.1.0"
-description = "Mountaineer is a batteries-included web framework for Python."
-authors = [
-    { name="Pierce Freeman", email="pierce@freeman.vc" }
-]
-readme = "README.md"
-dependencies = [
-    "pydantic>=2.5.3,<3.0.0",
-    "fastapi>=0.114.1,<1.0.0",
-    "inflection>=0.5.1,<1.0.0",
-    "click>=8.1.7,<9.0.0",
-    "uvicorn[standard]>=0.27.0.post1,<1.0.0",
-    "packaging>=23.2",
-    "watchfiles>=1.0.0,<2.0.0",
-    "pydantic-settings>=2.1.0,<3.0.0",
-    "rich>=13.7.1,<14.0.0",
-    "websockets<14.0",
-    "firehot>=0.4.0,<1.0.0",
-]
-
-# Excluded in sdist packaging
-exclude = [
-    "fixtures",
-    "ci_webapp",
-    "create_mountaineer_app",
-    "media",
-    "docs_website",
-    "benchmarking",
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=1.15.0",
+    "pyinstrument>=5.0.1",
+    "pyright>=1.1.396",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.25.3",
+    "python-multipart>=0.0.20",
+    "ruff>=0.10.0",
+    "toml>=0.10.2",
+    "tqdm>=4.67.1",
+    "types-psycopg2>=2.9.21.20250121",
+    "types-pygments>=2.19.0.20250305",
+    "types-setuptools>=76.0.0.20250313",
+    "types-toml>=0.10.8.20240310",
+    "types-tqdm>=4.67.0.20250301",
 ]

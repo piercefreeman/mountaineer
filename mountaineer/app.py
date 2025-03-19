@@ -654,8 +654,7 @@ class AppController:
         inline_client_script: str,
         external_client_imports: None,
         sourcemap: str | None,
-    ):
-        ...
+    ): ...
 
     @overload
     def compile_html(
@@ -667,8 +666,7 @@ class AppController:
         inline_client_script: None,
         external_client_imports: list[str],
         sourcemap: str | None,
-    ):
-        ...
+    ): ...
 
     def compile_html(
         self,
@@ -1027,9 +1025,9 @@ class AppController:
                     ).items()
                 }
                 openapi_base["components"]["schemas"].update(other_definitions)
-                openapi_base["components"]["schemas"][
-                    schema_name
-                ] = self._update_ref_path(payload.schema_value)
+                openapi_base["components"]["schemas"][schema_name] = (
+                    self._update_ref_path(payload.schema_value)
+                )
 
                 # All actions are "posts" by definition
                 openapi_base["paths"][url]["post"]["responses"][

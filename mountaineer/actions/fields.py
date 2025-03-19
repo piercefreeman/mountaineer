@@ -80,8 +80,7 @@ C = TypeVar("C", covariant=True)
 class SideeffectWrappedCallable(Protocol[C, T, R]):
     def __call__(
         self: Any, *args: T.args, **kwargs: T.kwargs
-    ) -> Awaitable[SideeffectResponseBase[R]]:
-        ...
+    ) -> Awaitable[SideeffectResponseBase[R]]: ...
 
     # Since the original function is extracted directly from the class, it's
     # just a hanging function and no longer an instance method. Users therefore
@@ -90,8 +89,7 @@ class SideeffectWrappedCallable(Protocol[C, T, R]):
 
 
 class SideeffectRawCallable(Protocol[C, T, R]):
-    def __call__(self: Any, *args: T.args, **kwargs: T.kwargs) -> Awaitable[R]:
-        ...
+    def __call__(self: Any, *args: T.args, **kwargs: T.kwargs) -> Awaitable[R]: ...
 
     original: Callable[Concatenate[C, T], Awaitable[R]]
 
@@ -102,25 +100,25 @@ class FunctionMetadata(BaseModel):
 
     # Specified for sideeffects, where all data shouldn't be update. Limits the
     # update to fields defined in this tuple.
-    reload_states: tuple[
-        FieldClassDefinition, ...
-    ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    reload_states: tuple[FieldClassDefinition, ...] | None | MountaineerUnsetValue = (
+        MountaineerUnsetValue()
+    )
 
     # Defines the data schema returned from the function that will be included in the
     # response payload sent to the client. This might be used for either passthrough
     # or sideeffect
-    passthrough_model: Type[
-        BaseModel
-    ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    passthrough_model: Type[BaseModel] | None | MountaineerUnsetValue = (
+        MountaineerUnsetValue()
+    )
     exception_models: list[Type[APIException]] = [RequestValidationError]
     media_type: str | None | MountaineerUnsetValue = MountaineerUnsetValue()
     is_raw_response: bool = False
 
     # Render type, defines the data model that is returned by the render typehint
     # If "None", the user has explicitly stated that no render model is returned
-    render_model: Type[
-        RenderBase
-    ] | None | MountaineerUnsetValue = MountaineerUnsetValue()
+    render_model: Type[RenderBase] | None | MountaineerUnsetValue = (
+        MountaineerUnsetValue()
+    )
 
     # Inserted when concrete controllers are mounted to the application controller
     return_models: dict[Any, Type[BaseModel]] = Field(default_factory=dict)

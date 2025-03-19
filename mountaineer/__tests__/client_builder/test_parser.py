@@ -352,13 +352,13 @@ class TestGenericHandling:
     def test_basic_generic(self, parser: ControllerParser):
         wrapper = parser._parse_model(GenericTestModel[str])
         assert len(wrapper.value_models) == 2
-        assert wrapper.value_models[0].value == str
+        assert wrapper.value_models[0].value is str
 
     def test_multi_generic(self, parser: ControllerParser):
         wrapper = parser._parse_model(MultiGenericTestModel[str, int])
         assert len(wrapper.value_models) == 1
         assert any(
-            f.name == "second_value" and f.value == int for f in wrapper.value_models
+            f.name == "second_value" and f.value is int for f in wrapper.value_models
         )
 
     def test_nested_generic_resolution(self, parser: ControllerParser):
@@ -441,8 +441,8 @@ class TestIsolatedModelCreation:
         assert "parent_field" not in isolated.model_fields
 
         # Check that field types are preserved
-        assert isolated.model_fields["child_field"].annotation == str
-        assert isolated.model_fields["shared_field"].annotation == int
+        assert isolated.model_fields["child_field"].annotation is str
+        assert isolated.model_fields["shared_field"].annotation is int
 
     def test_nested_inheritance_isolation(self, parser: ControllerParser):
         class GrandparentModel(BaseModel):
@@ -477,8 +477,8 @@ class TestIsolatedModelCreation:
         assert "parent_field" not in isolated.model_fields
 
         # Verify field types are correctly resolved
-        assert isolated.model_fields["child_field"].annotation == str
-        assert isolated.model_fields["shared_field"].annotation == str
+        assert isolated.model_fields["child_field"].annotation is str
+        assert isolated.model_fields["shared_field"].annotation is str
 
     def test_multi_generic_model_isolation(self, parser: ControllerParser):
         class MultiGenericParent(BaseModel, Generic[T, S]):
@@ -496,7 +496,7 @@ class TestIsolatedModelCreation:
         assert "field_s" not in isolated.model_fields
 
         # Verify field type
-        assert isolated.model_fields["child_field"].annotation == bool
+        assert isolated.model_fields["child_field"].annotation is bool
 
     def test_model_config_preservation(self, parser: ControllerParser):
         class CustomModel(BaseModel):

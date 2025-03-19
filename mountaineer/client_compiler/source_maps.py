@@ -44,9 +44,9 @@ class SourceMapParser:
         self._common_prefix_cache: dict[frozenset[str], str | None] = {}
 
         # { (line, column) : MapMetadata }
-        self.parsed_mappings: dict[
-            tuple[int, int], mountaineer_rs.MapMetadata
-        ] | None = None
+        self.parsed_mappings: (
+            dict[tuple[int, int], mountaineer_rs.MapMetadata] | None
+        ) = None
 
     def find_common_prefix(self, paths: list[str]) -> str | None:
         """
@@ -93,13 +93,15 @@ class SourceMapParser:
 
         start_parse = monotonic_ns()
         self.source_map = SourceMapSchema.model_validate_json(text)
-        LOGGER.debug(f"Parsed source map in {(monotonic_ns() - start_parse)/1e9:.2f}s")
+        LOGGER.debug(
+            f"Parsed source map in {(monotonic_ns() - start_parse) / 1e9:.2f}s"
+        )
 
         start_parse = monotonic_ns()
         self.parsed_mappings = mountaineer_rs.parse_source_map_mappings(
             self.source_map.mappings
         )
-        LOGGER.debug(f"Parsed mappings in {(monotonic_ns() - start_parse)/1e9:.2f}s")
+        LOGGER.debug(f"Parsed mappings in {(monotonic_ns() - start_parse) / 1e9:.2f}s")
 
     def get_original_location(self, line: int, column: int):
         """

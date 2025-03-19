@@ -73,9 +73,9 @@ class AliasManager:
                     )
 
                     if isinstance(parsed_wrapper, ModelWrapper):
-                        converted_models[
-                            parsed_wrapper.model
-                        ] = parsed_wrapper.name.global_name
+                        converted_models[parsed_wrapper.model] = (
+                            parsed_wrapper.name.global_name
+                        )
 
         # Only once we update the models should we update the self references to the
         # new values - otherwise the lookup map will be empty

@@ -35,31 +35,21 @@ test: test-lib test-create-mountaineer-app test-scripts
 # Integration testing target
 test-integrations: test-lib-integrations test-create-mountaineer-app-integrations
 
-# Install all sub-project dependencies with poetry
+# Install all sub-project dependencies with uv
 install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-scripts
 
 install-deps-lib:
 	@echo "Installing dependencies for $(LIB_DIR)..."
-	@(cd $(LIB_DIR) && poetry install)
-	@(cd $(LIB_DIR) && poetry run maturin develop --release)
+	@(cd $(LIB_DIR) && uv sync)
+	@(cd $(LIB_DIR) && uv run maturin develop --release --uv)
 
 install-deps-create-mountaineer-app:
 	@echo "Installing dependencies for $(CREATE_MOUNTAINEER_APP_DIR)..."
-	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && poetry install)
+	@(cd $(CREATE_MOUNTAINEER_APP_DIR) && uv sync)
 
 install-deps-scripts:
 	@echo "Installing dependencies for $(SCRIPTS_DIR)..."
-	@(cd $(SCRIPTS_DIR) && poetry install)
-
-# Clean the current poetry.lock files, useful for remote CI machines
-# where we're running on a different base architecture than when
-# developing locally
-clean-poetry-lock:
-	@echo "Cleaning poetry.lock files..."
-	@rm -f $(LIB_DIR)/poetry.lock
-	@rm -f $(CREATE_MOUNTAINEER_APP_DIR)/poetry.lock
-	@rm -f $(DOCS_WEBSITE_DIR)/poetry.lock
-	@rm -f $(SCRIPTS_DIR)/poetry.lock
+	@(cd $(SCRIPTS_DIR) && uv sync)
 
 # Standard linting - local development, with fixing enabled
 lint-lib:
@@ -100,7 +90,7 @@ test-scripts:
 
 define test-common
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(test-args) $(2))
+	@(cd $(1) && uv run pytest -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(test-args) $(2))
 endef
 
 define test-rust-common
@@ -111,27 +101,27 @@ endef
 # Use `-n auto` to run tests in parallel
 define test-common-integrations
 	echo "Running tests for $(2)..."
-	@(cd $(1) && poetry run pytest -s -m integration_tests -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(2))
+	@(cd $(1) && uv run pytest -s -m integration_tests -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(2))
 endef
 
 define lint-common
 	echo "Running linting for $(2)..."
-	@(cd $(1) && poetry run ruff format $(2))
-	@(cd $(1) && poetry run ruff check --fix $(2))
+	@(cd $(1) && uv run ruff format $(2))
+	@(cd $(1) && uv run ruff check --fix $(2))
 	echo "Running mypy for $(2)..."
-	@(cd $(1) && poetry run mypy $(2))
+	@(cd $(1) && uv run mypy $(2))
 	echo "Running pyright for $(2)..."
-	@(cd $(1) && poetry run pyright $(2))
+	@(cd $(1) && uv run pyright $(2))
 endef
 
 define lint-validation-common
 	echo "Running lint validation for $(2)..."
-	@(cd $(1) && poetry run ruff format --check $(2))
-	@(cd $(1) && poetry run ruff check $(2))
+	@(cd $(1) && uv run ruff format --check $(2))
+	@(cd $(1) && uv run ruff check $(2))
 	echo "Running mypy for $(2)..."
-	@(cd $(1) && poetry run mypy $(2))
+	@(cd $(1) && uv run mypy $(2))
 	echo "Running pyright for $(2)..."
-	@(cd $(1) && poetry run pyright $(2))
+	@(cd $(1) && uv run pyright $(2))
 endef
 
 # Function to wait for PostgreSQL to be ready

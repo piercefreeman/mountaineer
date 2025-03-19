@@ -1,6 +1,6 @@
+from graphlib import TopologicalSorter
 from typing import Any
 
-from graphlib import TopologicalSorter
 from inflection import camelize
 
 from mountaineer.client_builder.file_generators.base import (

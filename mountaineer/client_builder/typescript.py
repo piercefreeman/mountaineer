@@ -3,6 +3,7 @@ Utilities to generate some common Typescript objects from
 Python definitions.
 
 """
+
 from typing import Any
 
 from inflection import camelize
@@ -81,7 +82,7 @@ def python_payload_to_typescript(
         return "null"
     else:
         raise ValueError(
-            f"Unknown payload type {type(payload) } for Typescript conversion."
+            f"Unknown payload type {type(payload)} for Typescript conversion."
         )
 
 
