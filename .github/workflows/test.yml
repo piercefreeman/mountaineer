@@ -445,7 +445,7 @@ jobs:
           fi
           cd ..
           cd create_mountaineer_app
-          python .github/scripts/update_version.py ${{ github.ref_name }}
+          python ../.github/scripts/update_version.py ${{ github.ref_name }}
 
       - name: Build
         run: |
