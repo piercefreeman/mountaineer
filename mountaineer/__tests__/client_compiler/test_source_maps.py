@@ -13,7 +13,8 @@ from mountaineer.test_utilities import benchmark_function
 
 
 @pytest.mark.asyncio
-@benchmark_function(0.2, time_budget_seconds=10)
+# TODO: Lower threshold once we can selectively run benchmark tests with --release
+@benchmark_function(0.7, time_budget_seconds=10)
 async def test_parse_source_map_parse(
     start_timing,
     end_timing,
