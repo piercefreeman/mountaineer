@@ -167,7 +167,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          (cd .github/scripts && uv sync && uv venv)
+          (cd .github/scripts && uv venv && uv sync)
           source .github/scripts/.venv/bin/activate
           python .github/scripts/update_version.py ${{ github.ref_name }}
 
@@ -427,7 +427,7 @@ jobs:
       - name: Update version in pyproject.toml
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          (cd .github/scripts && uv sync && uv venv)
+          (cd .github/scripts && uv venv && uv sync)
           source .github/scripts/.venv/bin/activate
 
           cd create_mountaineer_app
