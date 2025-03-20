@@ -328,11 +328,7 @@ async def get_render_parameters(
                 if not isinstance(controller, LayoutControllerBase)
                 else None
             ),
-            request=(
-                view_request
-                if not isinstance(controller, LayoutControllerBase)
-                else None
-            ),
+            request=view_request,
         ) as values:
             yield values
     except RuntimeError as e:
