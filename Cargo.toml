@@ -19,6 +19,7 @@ walkdir = "2.5.0"
 
 log = "0.4"
 env_logger = "0.11"
+chrono = "0.4"
 
 # Not currently published to crates.io
 # https://github.com/rolldown/rolldown/issues/3227

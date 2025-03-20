@@ -7,6 +7,7 @@ use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
+use log::debug;
 
 #[derive(Debug)]
 pub enum OutputType {
@@ -209,11 +210,11 @@ pub fn bundle_common(
         })
         .collect();
     
-    println!("Output type: {:?}", output_type);
-    println!("Input items: {:?}", input_items);
-    println!("Define: {:?}", define);
-    println!("Resolve: {:?}", resolve);
-    println!("Bundle mode: {:?}", mode);
+    debug!("Output type: {:?}", output_type);
+    debug!("Input items: {:?}", input_items);
+    debug!("Define: {:?}", define);
+    debug!("Resolve: {:?}", resolve);
+    debug!("Bundle mode: {:?}", mode);
 
     // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
     let bundler_options = BundlerOptions {
@@ -299,11 +300,11 @@ fn process_output_directory(
     let mut extras = HashMap::new();
 
     // Print all files in the output directory for debugging
-    println!("Files in output directory {}:", output_dir.display());
+    debug!("Files in output directory {}", output_dir.display());
     for entry in fs::read_dir(output_dir).map_err(BundleError::IoError)? {
         let entry = entry.map_err(BundleError::IoError)?;
         let path = entry.path();
-        println!("  - {}", path.display());
+        debug!("  - {}", path.display());
 
         // Skip if not a file
         if !path.is_file() {

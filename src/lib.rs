@@ -2,6 +2,7 @@ use errors::AppError;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
+use log::{debug, warn};
 
 mod bundle_common;
 mod bundle_independent;
@@ -86,11 +87,11 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
          *   something wrong with the script
          */
         if cfg!(debug_assertions) {
-            println!("Running in debug mode");
+            debug!("Running in debug mode");
         }
 
-        // init only if we haven't done so already
-        let _ = env_logger::try_init();
+        // Initialize our logger with environment-based configuration
+        logging::init_logger();
 
         let result_value = ssr::run_ssr(js_string, hard_timeout);
 

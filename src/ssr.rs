@@ -33,6 +33,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use log::{debug, info, warn};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ssr<'a> {
@@ -316,11 +317,7 @@ pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError>
     // Context: https://github.com/denoland/rusty_v8/issues/1381
     init_v8_platform();
 
-    println!("Hard timeout: {}", hard_timeout);
-
-    // Call inline, no timeout
-    // let js = Ssr::new(js_string, "SSR");
-    // return js.render_to_string(None);
+    debug!("SSR execution starting with hard timeout: {}ms", hard_timeout);
 
     if hard_timeout > 0 {
         // Seems to return a timeout error even if it was some other type of error
