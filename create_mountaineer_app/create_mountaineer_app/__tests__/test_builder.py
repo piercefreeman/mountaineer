@@ -23,6 +23,7 @@ from create_mountaineer_app.builder import (
     environment_from_metadata,
     should_copy_path,
 )
+from create_mountaineer_app.enums import PackageManager
 from create_mountaineer_app.generation import EditorType, ProjectMetadata
 from create_mountaineer_app.io import get_free_port
 from create_mountaineer_app.templates import get_template_path
@@ -86,11 +87,11 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
 
 
 @pytest.mark.parametrize(
-    "use_poetry, use_tailwind, editor_config, create_stub_files",
+    "package_manager, use_tailwind, editor_config, create_stub_files",
     list(
         product(
-            # Use poetry
-            [False, True],
+            # Package manager
+            [PackageManager.POETRY, PackageManager.UV, PackageManager.VENV],
             # Use tailwind
             [False, True],
             # Editor config
@@ -103,53 +104,27 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
 @pytest.mark.integration_tests
 def test_valid_permutations(
     tmpdir: str,
-    use_poetry: bool,
+    package_manager: PackageManager,
     use_tailwind: bool,
     editor_config: EditorType | None,
     create_stub_files: bool,
     mountaineer_wheel: Path,
 ):
     """
-    Ensures that regardless of the input parameters
-    used to generate our new project, it will successfully
-    run and return the expected endpoints.
-
+    Test that we can create a project with all valid permutations of options.
     """
-    secho(f"Building project in {tmpdir}", fg="blue")
-    secho(f"Using wheel: {mountaineer_wheel}", fg="blue")
-    secho(
-        f"Running with params:\n"
-        f"use_poetry: {use_poetry}\n"
-        f"use_tailwind: {use_tailwind}\n"
-        f"editor_config: {editor_config}\n"
-        f"create_stub_files: {create_stub_files}\n"
-        f"mountaineer_wheel: {mountaineer_wheel}",
-        fg="blue",
-    )
+    new_project_dir = Path(tmpdir) / "my_project"
+    main_mountaineer_path = Path(__file__).parent.parent.parent.parent
 
-    new_project_dir = Path(tmpdir) / str(uuid4())
-    new_project_dir.mkdir()
-
-    # Assume the create-mountaineer-app project is in the same directory as the
-    # main mountaineer package. We use a slight hack here assuming that our file
-    # directory is oriented like "mountaineer/create_mountaineer_app/create_mountaineer_app/templates"
-    # main package.
-    main_mountaineer_path = get_template_path("../../../").resolve()
-
-    # Verify this is pointing to where we expect
-    if not (main_mountaineer_path / "pyproject.toml").exists():
-        raise ValueError("Unable to find the main mountaineer package.")
-
-    app_test_port = get_free_port()
+    # Find an available port for postgres
     postgres_port = get_free_port()
-    secho(f"Found free port for test server: {app_test_port}", fg="green")
 
     metadata = ProjectMetadata(
         project_name="my_project",
         author_name="John Appleseed",
         author_email="test@email.com",
         project_path=new_project_dir,
-        use_poetry=use_poetry,
+        package_manager=package_manager,
         use_tailwind=use_tailwind,
         editor_config=editor_config,
         create_stub_files=create_stub_files,
@@ -201,7 +176,7 @@ def test_valid_permutations(
 
     # Now launch the server in the background
     process = environment.run_command(
-        ["runserver", "--port", str(app_test_port)], metadata.project_path
+        ["runserver", "--port", str(postgres_port)], metadata.project_path
     )
 
     try:
@@ -209,7 +184,7 @@ def test_valid_permutations(
         max_wait = 10
         while max_wait > 0:
             try:
-                response = get(f"http://localhost:{app_test_port}")
+                response = get(f"http://localhost:{postgres_port}")
                 if create_stub_files:
                     if response.ok:
                         break
@@ -227,13 +202,13 @@ def test_valid_permutations(
         secho("Test server started successfully", fg="green")
 
         # Perform the fetch tests
-        response = get(f"http://localhost:{app_test_port}")
+        response = get(f"http://localhost:{postgres_port}")
         if create_stub_files:
             assert response.ok
         else:
             assert response.status_code == 404
 
-        response = get(f"http://localhost:{app_test_port}/not_found")
+        response = get(f"http://localhost:{postgres_port}/not_found")
         assert not response.ok
     finally:
         if process.returncode is None:
@@ -254,16 +229,16 @@ def test_valid_permutations(
 
 
 @pytest.mark.parametrize(
-    "use_poetry",
-    [False, True],
+    "package_manager",
+    [PackageManager.POETRY, PackageManager.UV, PackageManager.VENV],
 )
-def test_build_version_number(use_poetry: bool, tmp_path: Path):
+def test_build_version_number(package_manager: PackageManager, tmp_path: Path):
     metadata = ProjectMetadata(
         project_name="my_project",
         author_name="John Appleseed",
         author_email="test@email.com",
         project_path=tmp_path,
-        use_poetry=use_poetry,
+        package_manager=package_manager,
         use_tailwind=False,
         editor_config=None,
         create_stub_files=False,

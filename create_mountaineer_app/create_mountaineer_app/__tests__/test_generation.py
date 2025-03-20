@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from create_mountaineer_app.enums import PackageManager
 from create_mountaineer_app.generation import ProjectMetadata, format_template
 from create_mountaineer_app.templates import get_template_path
 
@@ -9,8 +10,8 @@ def test_path_url_replacement():
         project_name="TEST_PROJECT_NAME",
         author_name="TEST_AUTHOR",
         author_email="TEST_EMAIL",
+        package_manager=PackageManager.POETRY,
         use_tailwind=True,
-        use_poetry=True,
         editor_config=None,
         create_stub_files=True,
         project_path=Path("fake-path"),
