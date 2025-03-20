@@ -2,8 +2,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import wraps
 from inspect import Parameter, Signature, isawaitable, isclass, signature
-from json import dumps as json_dumps
+from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
+from re import match as re_match
 from time import monotonic_ns
 from typing import Any, Callable, Optional, Type, cast, overload
 from uuid import UUID, uuid4
@@ -201,6 +202,9 @@ class AppController:
                 "You must provide either a config.package or a view_root to the AppController"
             )
 
+        # Check our view directory is valid
+        self._validate_view(self._view_root)
+
         # The act of instantiating the config should register it with the
         # global settings registry. We keep a reference to it so we can shortcut
         # to the user-defined settings later, but this is largely optional.
@@ -230,6 +234,45 @@ class AppController:
         self.hierarchy_paths: dict[Path, LayoutElement] = {}
 
         self.live_reload_port: int = 0
+
+    def _validate_view(self, view_root: ManagedViewPath):
+        """
+        Validates the view directory setup, including checking React version compatibility.
+
+        :param view_root: The root directory containing the view files
+        :raises ValueError: If any validation checks fail
+        """
+        package_json_path = view_root / "package.json"
+        if not package_json_path.exists():
+            LOGGER.warning(
+                f"package.json not found at {package_json_path}. Please ensure your project has a valid package.json file."
+            )
+            return
+
+        try:
+            package_json = json_loads(package_json_path.read_text())
+            react_version = package_json.get("dependencies", {}).get("react", "")
+            if not react_version:
+                react_version = package_json.get("devDependencies", {}).get("react", "")
+
+            if not react_version:
+                raise ValueError("React dependency not found in package.json")
+
+            # Extract version number from semver string (e.g. "^19.0.0" -> "19.0.0")
+            version_match = re_match(r"[\^~]?(\d+)\.\d+\.\d+", react_version)
+            if not version_match:
+                LOGGER.warning(f"Invalid React version format: {react_version}")
+                return
+
+            major_version = int(version_match.group(1))
+            if major_version < 19:
+                LOGGER.warning(
+                    f"React version {react_version} is not supported. This application requires React 19.0 or higher."
+                )
+        except JSONDecodeError:
+            LOGGER.warning(f"Invalid JSON in {package_json_path}")
+        except Exception as e:
+            LOGGER.warning(f"Error checking React version: {str(e)}")
 
     def register(self, controller: ControllerBase):
         """
