@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from enum import Enum, StrEnum
+from enum import Enum
 
 
-class PackageManager(StrEnum):
+class PackageManager(str, Enum):
     UV = "uv"
     POETRY = "poetry"
     VENV = "venv"

@@ -39,3 +39,11 @@ venvPath = "{{venv_name}}"
 venv = "{{venv_name}}"
 {% endif %}
 
+{% if mountaineer_dev_path %}
+# Editable dependency for development is only supported by poetry and uv
+[tool.poetry.dependencies]
+mountaineer = { path = "{{ mountaineer_dev_path }}", develop = true }
+
+[tool.uv.sources]
+mountaineer = { path = "{{ mountaineer_dev_path }}", editable = true }
+{% endif %}
