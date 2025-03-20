@@ -1,4 +1,5 @@
 use errors::AppError;
+use log::debug;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
@@ -66,6 +67,9 @@ impl BuildContextParams {
 
 #[pymodule]
 fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Initialize our logger with environment-based configuration
+    logging::init_logger();
+
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
 
@@ -86,11 +90,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
          *   something wrong with the script
          */
         if cfg!(debug_assertions) {
-            println!("Running in debug mode");
+            debug!("Running in debug mode");
         }
-
-        // init only if we haven't done so already
-        let _ = env_logger::try_init();
 
         let result_value = ssr::run_ssr(js_string, hard_timeout);
 
@@ -150,6 +151,9 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
         }
+
+        // Initialize our logger with environment-based configuration
+        logging::init_logger();
 
         bundle_independent::compile_independent_bundles(
             py,

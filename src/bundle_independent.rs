@@ -4,7 +4,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-use crate::bundle_common::{BundleError, BundleMode, bundle_common};
+use crate::bundle_common::{bundle_common, BundleError, BundleMode};
 use crate::code_gen;
 
 /// Compile independent bundles using bundle_common.
