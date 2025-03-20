@@ -1,8 +1,8 @@
 use errors::AppError;
+use log::debug;
 use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
-use log::{debug, warn};
 
 mod bundle_common;
 mod bundle_independent;

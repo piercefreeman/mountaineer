@@ -1,8 +1,8 @@
+use env_logger::Builder;
+use log::LevelFilter;
+use std::env;
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
-use log::LevelFilter;
-use env_logger::Builder;
-use std::env;
 
 pub struct StdoutWrapper(Arc<Mutex<dyn Write + Send + 'static>>);
 

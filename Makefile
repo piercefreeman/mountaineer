@@ -55,6 +55,7 @@ install-deps-scripts:
 # Standard linting - local development, with fixing enabled
 lint-lib:
 	$(call lint-common,$(LIB_DIR),$(LIB_NAME))
+	$(call lint-rust,$(LIB_DIR))
 lint-create-mountaineer-app:
 	$(call lint-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
 lint-scripts:
@@ -63,6 +64,7 @@ lint-scripts:
 # Lint validation - CI to fail on any errors
 lint-validation-lib:
 	$(call lint-validation-common,$(LIB_DIR),$(LIB_NAME))
+	$(call lint-rust,$(LIB_DIR))
 lint-validation-create-mountaineer-app:
 	$(call lint-validation-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))
 lint-validation-scripts:
@@ -70,12 +72,11 @@ lint-validation-scripts:
 
 # Tests
 test-lib:
-	(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml up -d)
+	@(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml up -d)
 	@$(call wait-for-postgres,30,5438)
-	@set -e; \
-	$(call test-common,$(LIB_DIR),$(LIB_NAME))
-	(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml down)
-	$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
+	@$(call test-common,$(LIB_DIR),$(LIB_NAME))
+	@(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml down)
+	@$(call test-rust-common,$(LIB_DIR),$(LIB_NAME))
 test-lib-integrations:
 	$(call test-common-integrations,$(LIB_DIR),$(LIB_NAME))
 test-create-mountaineer-app:
@@ -89,54 +90,84 @@ test-scripts:
 # Common helper functions
 #
 
+# Python testing functions
 define test-common
-	echo "Running tests for $(2)..."
-	@(cd $(1) && uv run pytest -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(test-args) $(2))
+	echo "\n=== Running Python tests for $(2) ==="
+	(cd $(1) && uv run pytest -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(test-args) $(2))
+	echo "=== Python tests completed successfully for $(2) ==="
 endef
 
+# Rust testing functions
 define test-rust-common
-	echo "Running rust tests for $(2)..."
-	@(cd $(1) && cargo test --all)
+	echo "\n=== Running Rust tests for $(2) ==="
+	(cd $(1) && cargo test --all)
+	echo "=== Rust tests completed successfully for $(2) ==="
 endef
 
-# Use `-n auto` to run tests in parallel
+# Integration testing functions
 define test-common-integrations
-	echo "Running tests for $(2)..."
-	@(cd $(1) && uv run pytest -s -m integration_tests -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(2))
+	echo "\n=== Running integration tests for $(2) ==="
+	(cd $(1) && uv run pytest -s -m integration_tests -vvv -W "error::Warning" -W "default::PendingDeprecationWarning" $(2))
+	echo "=== Integration tests completed successfully for $(2) ==="
 endef
 
+# Python linting functions - development mode with fixes
 define lint-common
-	echo "Running linting for $(2)..."
+	@echo "\n=== Running Python linting for $(2) ==="
 	@(cd $(1) && uv run ruff format $(2))
 	@(cd $(1) && uv run ruff check --fix $(2))
-	echo "Running mypy for $(2)..."
+	@echo "\n=== Running mypy for $(2) ==="
 	@(cd $(1) && uv run mypy $(2))
-	echo "Running pyright for $(2)..."
+	@echo "\n=== Running pyright for $(2) ==="
 	@(cd $(1) && uv run pyright $(2))
+	@echo "=== Python linting completed successfully for $(2) ==="
 endef
 
+# Python linting functions - CI validation mode
 define lint-validation-common
-	echo "Running lint validation for $(2)..."
+	@echo "\n=== Running Python lint validation for $(2) ==="
 	@(cd $(1) && uv run ruff format --check $(2))
 	@(cd $(1) && uv run ruff check $(2))
-	echo "Running mypy for $(2)..."
+	@echo "\n=== Running mypy validation for $(2) ==="
 	@(cd $(1) && uv run mypy $(2))
-	echo "Running pyright for $(2)..."
+	@echo "\n=== Running pyright validation for $(2) ==="
 	@(cd $(1) && uv run pyright $(2))
+	@echo "=== Python lint validation completed successfully for $(2) ==="
 endef
 
-# Function to wait for PostgreSQL to be ready
+# Rust linting functions
+define run-rustfmt
+	@echo "\n=== Running rustfmt on $(1) ==="
+	@(cd $(1) && cargo fmt) || { echo "FAILED: rustfmt in $(1)"; exit 1; }
+	@(cd $(1) && cargo fix --allow-dirty --allow-staged) || { echo "FAILED: rustfix in $(1)"; exit 1; }
+	@echo "=== rustfmt completed successfully for $(1) ==="
+endef
+
+define run-clippy
+	@echo "\n=== Running clippy on $(1) ==="
+	@(cd $(1) && cargo clippy -- -D warnings) || { echo "FAILED: clippy in $(1)"; exit 1; }
+	@echo "=== clippy completed successfully for $(1) ==="
+endef
+
+define lint-rust
+	@echo "\n=== Running all Rust linters on $(1) ==="
+	$(call run-rustfmt,$(1))
+	$(call run-clippy,$(1))
+	@echo "=== All Rust linters completed successfully for $(1) ==="
+endef
+
+# Database helper functions
 define wait-for-postgres
-	@echo "Waiting for PostgreSQL to be ready..."
+	@echo "\n=== Waiting for PostgreSQL to be ready ==="
 	@timeout=$(1); \
 	while ! nc -z localhost $(2) >/dev/null 2>&1; do \
 		timeout=$$((timeout-1)); \
 		if [ $$timeout -le 0 ]; then \
-			echo "Timed out waiting for PostgreSQL to start on port $(2)"; \
+			echo "FAILED: Timed out waiting for PostgreSQL to start on port $(2)"; \
 			exit 1; \
 		fi; \
 		echo "Waiting for PostgreSQL to start..."; \
 		sleep 1; \
 	done; \
-	echo "PostgreSQL is ready on port $(2)."
+	echo "=== PostgreSQL is ready on port $(2) ==="
 endef

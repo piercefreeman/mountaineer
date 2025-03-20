@@ -1,13 +1,16 @@
 use indexmap::IndexMap;
-use rolldown::{Bundler, BundlerOptions, InputItem, RawMinifyOptions, SourceMapType, OutputFormat, ResolveOptions};
+use log::debug;
+use rolldown::{
+    Bundler, BundlerOptions, InputItem, OutputFormat, RawMinifyOptions, ResolveOptions,
+    SourceMapType,
+};
 use rustc_hash::FxHasher;
 use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
 use std::fs;
+use std::hash::BuildHasherDefault;
 use std::path::Path;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
-use log::debug;
 
 #[derive(Debug)]
 pub enum OutputType {
@@ -155,12 +158,12 @@ pub fn bundle_common(
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "bundle".to_string());
             OutputType::File(output_dir.join(format!("{}.js", file_stem)))
-        },
+        }
         BundleMode::MultiClient => {
             // Iife files have to be in a directory, otherwise rolldown will return
             // a build error
             OutputType::Directory(output_dir.clone())
-        },
+        }
     };
 
     // Determine if this is server-side rendering based on mode
@@ -209,7 +212,7 @@ pub fn bundle_common(
             }
         })
         .collect();
-    
+
     debug!("Output type: {:?}", output_type);
     debug!("Input items: {:?}", input_items);
     debug!("Define: {:?}", define);
@@ -228,7 +231,7 @@ pub fn bundle_common(
             OutputType::Directory(_) => None,
         },
         // Required for inlining client-side scripts. Otherwise specifying a single file for ESM modules will
-        // crash during bundling. 
+        // crash during bundling.
         inline_dynamic_imports: Some(true),
         sourcemap: Some(SourceMapType::File),
         define: Some(define),
@@ -349,7 +352,8 @@ fn process_output_directory(
         let is_entrypoint = entrypoint_paths.iter().any(|ep| {
             Path::new(ep)
                 .file_stem()
-                .map(|s| s.to_string_lossy().to_string()).is_some_and(|s| s == file_stem)
+                .map(|s| s.to_string_lossy().to_string())
+                .is_some_and(|s| s == file_stem)
         });
 
         // Add to appropriate map
@@ -372,7 +376,11 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
-    fn create_test_js_file(dir: &Path, filename: &str, content: &str) -> Result<String, std::io::Error> {
+    fn create_test_js_file(
+        dir: &Path,
+        filename: &str,
+        content: &str,
+    ) -> Result<String, std::io::Error> {
         let file_path = dir.join(filename);
         let mut file = File::create(&file_path)?;
         file.write_all(content.as_bytes())?;
@@ -380,11 +388,11 @@ mod tests {
     }
 
     #[test]
-    fn test_SingleClient_bundle() {
+    fn test_single_client_bundle() {
         // Create a temporary directory for test files
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
-        
+
         // Create a simple JavaScript file
         let js_content = r#"
             export function greet(name) {
@@ -393,14 +401,15 @@ mod tests {
             
             console.log(greet('World'));
         "#;
-        
+
         let entry_path = create_test_js_file(temp_path, "entry.js", js_content)
             .expect("Failed to create test JS file");
-        
+
         // Create a mock node_modules path
         let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
-        fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
-        
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
         // Bundle the JavaScript
         let result = bundle_common(
             vec![entry_path],
@@ -411,34 +420,44 @@ mod tests {
             None,
             true,
         );
-        
+
         // Verify the result
-        assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Bundle operation failed: {:?}",
+            result.err()
+        );
         let bundles = result.unwrap();
         assert_eq!(bundles.entrypoints.len(), 1, "Expected 1 bundle result");
-        
+
         // Check that the output contains our greet function
         let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
-        assert!(bundle_result.script.contains("greet"), "Bundle should contain the greet function");
-        assert!(bundle_result.script.contains("Hello"), "Bundle should contain the greeting text");
+        assert!(
+            bundle_result.script.contains("greet"),
+            "Bundle should contain the greet function"
+        );
+        assert!(
+            bundle_result.script.contains("Hello"),
+            "Bundle should contain the greeting text"
+        );
     }
 
     #[test]
-    fn test_MultiClient_bundle() {
+    fn test_multi_client_bundle() {
         // Create a temporary directory for test files
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
-        
+
         // Create a module to import
         let utils_js = r#"
             export function formatName(firstName, lastName) {
                 return `${firstName} ${lastName}`;
             }
         "#;
-        
+
         let utils_path = create_test_js_file(temp_path, "utils.js", utils_js)
             .expect("Failed to create utils.js file");
-        
+
         // Create a main entry file that imports the module
         let entry_js = r#"
             import { formatName } from './utils';
@@ -450,14 +469,15 @@ mod tests {
             
             console.log(greet('John', 'Doe'));
         "#;
-        
+
         let entry_path = create_test_js_file(temp_path, "main.js", entry_js)
             .expect("Failed to create main.js file");
-        
+
         // Create a mock node_modules path
         let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
-        fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
-        
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
         // Bundle the JavaScript - pass both files as entry points
         let result = bundle_common(
             vec![entry_path, utils_path],
@@ -466,31 +486,50 @@ mod tests {
             node_modules_path,
             None,
             None,
-            false,  // Set minify to false to make it easier to inspect output
+            false, // Set minify to false to make it easier to inspect output
         );
-        
+
         // Verify the result
-        assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Bundle operation failed: {:?}",
+            result.err()
+        );
         let bundles = result.unwrap();
-        
+
         // Check that we have both entrypoints
-        assert!(!bundles.entrypoints.is_empty(), "Expected at least one bundle result");
-        
+        assert!(
+            !bundles.entrypoints.is_empty(),
+            "Expected at least one bundle result"
+        );
+
         // Check that at least one of the outputs contains our greet function
-        let has_greet = bundles.entrypoints.iter().any(|(_, bundle)| bundle.script.contains("greet"));
-        assert!(has_greet, "At least one bundle should contain the greet function");
-        
+        let has_greet = bundles
+            .entrypoints
+            .iter()
+            .any(|(_, bundle)| bundle.script.contains("greet"));
+        assert!(
+            has_greet,
+            "At least one bundle should contain the greet function"
+        );
+
         // Check that at least one of the outputs contains our formatName function
-        let has_format_name = bundles.entrypoints.iter().any(|(_, bundle)| bundle.script.contains("formatName"));
-        assert!(has_format_name, "At least one bundle should contain the formatName function");
+        let has_format_name = bundles
+            .entrypoints
+            .iter()
+            .any(|(_, bundle)| bundle.script.contains("formatName"));
+        assert!(
+            has_format_name,
+            "At least one bundle should contain the formatName function"
+        );
     }
 
     #[test]
-    fn test_SingleServer_bundle() {
+    fn test_single_server_bundle() {
         // Create a temporary directory for test files
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
-        
+
         // Create a simple server-side JavaScript file
         let server_js = r#"
             function processRequest(req) {
@@ -502,14 +541,15 @@ mod tests {
             
             module.exports = { processRequest };
         "#;
-        
+
         let entry_path = create_test_js_file(temp_path, "server.js", server_js)
             .expect("Failed to create server.js file");
-        
+
         // Create a mock node_modules path
         let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
-        fs::create_dir(temp_path.join("node_modules")).expect("Failed to create node_modules directory");
-        
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
         // Bundle the JavaScript
         let result = bundle_common(
             vec![entry_path],
@@ -520,15 +560,29 @@ mod tests {
             None,
             true,
         );
-        
+
         // Verify the result
-        assert!(result.is_ok(), "Bundle operation failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Bundle operation failed: {:?}",
+            result.err()
+        );
         let bundles = result.unwrap();
-        assert_eq!(bundles.entrypoints.len(), 1, "Expected 1 bundle result for server-side bundle");
-        
+        assert_eq!(
+            bundles.entrypoints.len(),
+            1,
+            "Expected 1 bundle result for server-side bundle"
+        );
+
         // Check that the output contains our processRequest function
         let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
-        assert!(bundle_result.script.contains("processRequest"), "Bundle should contain the processRequest function");
-        assert!(bundle_result.script.contains("module.exports"), "Bundle should have CommonJS exports");
+        assert!(
+            bundle_result.script.contains("processRequest"),
+            "Bundle should contain the processRequest function"
+        );
+        assert!(
+            bundle_result.script.contains("module.exports"),
+            "Bundle should have CommonJS exports"
+        );
     }
-} 
+}
