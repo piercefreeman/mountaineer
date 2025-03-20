@@ -67,6 +67,9 @@ impl BuildContextParams {
 
 #[pymodule]
 fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Initialize our logger with environment-based configuration
+    logging::init_logger();
+
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
 
@@ -89,9 +92,6 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         if cfg!(debug_assertions) {
             debug!("Running in debug mode");
         }
-
-        // Initialize our logger with environment-based configuration
-        logging::init_logger();
 
         let result_value = ssr::run_ssr(js_string, hard_timeout);
 
@@ -151,6 +151,9 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
         }
+
+        // Initialize our logger with environment-based configuration
+        logging::init_logger();
 
         bundle_independent::compile_independent_bundles(
             py,
