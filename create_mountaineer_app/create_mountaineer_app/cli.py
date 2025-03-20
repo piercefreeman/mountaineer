@@ -6,44 +6,69 @@ import questionary
 from click import command, option, secho
 
 from create_mountaineer_app.builder import build_project
+from create_mountaineer_app.enums import PackageManager
 from create_mountaineer_app.environments.poetry import PoetryEnvironment
+from create_mountaineer_app.environments.uv import UvEnvironment
 from create_mountaineer_app.external import (
     get_git_user_info,
 )
 from create_mountaineer_app.generation import EditorType, ProjectMetadata
 
 
-def prompt_should_use_poetry():
-    input_use_poetry = questionary.confirm(
-        "Use poetry for dependency management? [Yes]", default=True
+def prompt_package_manager() -> PackageManager:
+    """
+    Prompt the user to choose a package manager and handle its installation if needed.
+    """
+    package_manager = questionary.select(
+        "Choose a package manager:",
+        choices=[
+            PackageManager.UV,
+            PackageManager.POETRY,
+            PackageManager.VENV,
+        ],
+        default=PackageManager.UV,
     ).unsafe_ask()
 
-    if not input_use_poetry:
-        return input_use_poetry
+    if package_manager == PackageManager.POETRY:
+        # Helpful utilities to wrap poetry logic and lifecycle
+        poetry_environment = PoetryEnvironment()
 
-    # Helpful utilities to wrap poetry logic and lifecycle
-    poetry_environment = PoetryEnvironment()
-
-    # Determine if the user already has poetry
-    if not poetry_environment.has_provider():
-        input_install_poetry = questionary.confirm(
-            "Poetry is not installed. Install poetry?", default=True
-        ).unsafe_ask()
-        if input_install_poetry:
-            secho("Installing poetry...")
-            try:
-                poetry_environment.install_provider()
-            except Exception as e:
-                secho(f"Error installing poetry: {e}", fg="red")
-                raise e
-
-            input_add_to_path = questionary.confirm(
-                "Add poetry to PATH? [Yes]", default=True
+        # Determine if the user already has poetry
+        if not poetry_environment.has_provider():
+            input_install_poetry = questionary.confirm(
+                "Poetry is not installed. Install poetry?", default=True
             ).unsafe_ask()
-            if input_add_to_path:
-                poetry_environment.add_poetry_to_path()
+            if input_install_poetry:
+                secho("Installing poetry...")
+                try:
+                    poetry_environment.install_provider()
+                except Exception as e:
+                    secho(f"Error installing poetry: {e}", fg="red")
+                    raise e
 
-    return input_use_poetry
+                input_add_to_path = questionary.confirm(
+                    "Add poetry to PATH? [Yes]", default=True
+                ).unsafe_ask()
+                if input_add_to_path:
+                    poetry_environment.add_poetry_to_path()
+
+    elif package_manager == PackageManager.UV:
+        uv_environment = UvEnvironment()
+
+        # Determine if the user already has uv
+        if not uv_environment.has_provider():
+            input_install_uv = questionary.confirm(
+                "uv is not installed. Install uv?", default=True
+            ).unsafe_ask()
+            if input_install_uv:
+                secho("Installing uv...")
+                try:
+                    uv_environment.install_provider()
+                except Exception as e:
+                    secho(f"Error installing uv: {e}", fg="red")
+                    raise e
+
+    return package_manager
 
 
 def prompt_author() -> tuple[str, str]:
@@ -97,7 +122,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         questionary.text("Project name [my-project]:").unsafe_ask() or "my-project"
     )
     input_author_name, input_author_email = prompt_author()
-    input_use_poetry = prompt_should_use_poetry()
+    input_use_poetry = prompt_package_manager()
     input_create_stub_files = questionary.confirm(
         "Create stub MVC files? [Yes]", default=True
     ).unsafe_ask()
@@ -119,7 +144,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         project_name=input_project_name.replace(" ", "_").replace("-", "_"),
         author_name=input_author_name,
         author_email=input_author_email,
-        use_poetry=input_use_poetry,
+        package_manager=input_use_poetry,
         use_tailwind=input_use_tailwind,
         editor_config=(
             EditorType.from_name(input_editor_config)

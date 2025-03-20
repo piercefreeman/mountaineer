@@ -2,8 +2,10 @@ from pathlib import Path
 
 from click import secho
 
+from create_mountaineer_app.enums import PackageManager
 from create_mountaineer_app.environments.base import EnvironmentBase
 from create_mountaineer_app.environments.poetry import PoetryEnvironment
+from create_mountaineer_app.environments.uv import UvEnvironment
 from create_mountaineer_app.environments.venv import VEnvEnvironment
 from create_mountaineer_app.external import (
     has_npm,
@@ -23,8 +25,10 @@ ALLOW_HIDDEN_FILES = {
 
 
 def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
-    if metadata.use_poetry:
+    if metadata.package_manager == PackageManager.POETRY:
         return PoetryEnvironment()
+    elif metadata.package_manager == PackageManager.UV:
+        return UvEnvironment()
     else:
         return VEnvEnvironment()
 

@@ -1,35 +1,16 @@
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 
 from jinja2 import Template
 from pydantic import BaseModel
 
-
-@dataclass
-class EditorDescription:
-    name: str
-    path: str | None
-
-
-class EditorType(Enum):
-    VSCODE = EditorDescription(name="vscode", path="vscode")
-    VIM = EditorDescription(name="vim", path="vim")
-    ZED = EditorDescription(name="zed", path=None)
-
-    @classmethod
-    def from_name(cls, name: str) -> "EditorType":
-        for editor in cls:
-            if editor.value.name == name:
-                return editor
-        raise ValueError(f"Invalid editor type: {name}")
+from create_mountaineer_app.enums import EditorType, PackageManager
 
 
 class ProjectMetadata(BaseModel):
     project_name: str
     author_name: str
     author_email: str
-    use_poetry: bool
+    package_manager: PackageManager
     use_tailwind: bool
     editor_config: EditorType | None
     project_path: Path
@@ -50,6 +31,14 @@ class ProjectMetadata(BaseModel):
     # If specified, will install mountaineer in development mode pointing to a local path
     # This is useful for testing changes to mountaineer itself
     mountaineer_dev_path: Path | None = None
+
+    @property
+    def use_poetry(self) -> bool:
+        return self.package_manager == PackageManager.POETRY
+
+    @property
+    def use_uv(self) -> bool:
+        return self.package_manager == PackageManager.UV
 
 
 class TemplateOutput(BaseModel):
