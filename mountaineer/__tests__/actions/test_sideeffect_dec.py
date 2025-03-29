@@ -16,9 +16,9 @@ from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.render import RenderBase
-from mountaineer.controller_layout import LayoutControllerBase
 
 
 class ExampleRenderModel(RenderBase):
@@ -358,40 +358,41 @@ async def test_layout_controller_request_support():
     """
     Test that LayoutControllerBase controllers can now access request information in their render methods
     when called through a sideeffect.
-    
+
     This was previously not supported, but recent changes now allow request information
     to be passed to LayoutControllerBase render methods.
     """
+
     class ExampleLayoutRender(RenderBase):
         request_info: str
         cookie_value: str
 
     class TestLayoutController(LayoutControllerBase):
         view_path = "/test-layout.tsx"
-        
+
         def render(
             self,
             request: Request,
         ) -> ExampleLayoutRender:
             return ExampleLayoutRender(
                 request_info=request.url.path,
-                cookie_value=request.cookies.get("test-cookie", "no-cookie")
+                cookie_value=request.cookies.get("test-cookie", "no-cookie"),
             )
 
         @sideeffect
         def call_sideeffect(self, payload: dict) -> None:
             pass
-    
+
     # Setup the app controller with our layout controller
     app = AppController(view_root=Path())
     controller = TestLayoutController()
     app.register(controller)
-    
+
     controller_definition = app._definition_for_controller(controller)
     sideeffect_url = controller_definition.get_url_for_metadata(
         get_function_metadata(TestLayoutController.call_sideeffect)
     )
-    
+
     # Create a test client and make the request
     client = TestClient(app.app)
     response = client.post(
@@ -402,11 +403,11 @@ async def test_layout_controller_request_support():
             "referer": "http://example.com/test-page/",
         },
     )
-    
+
     # Verify the response contains the request information
     assert response.status_code == 200
     response_data = response.json()
-    
+
     assert "sideeffect" in response_data
     assert response_data["sideeffect"]["request_info"] == "/test-page/"
     assert response_data["sideeffect"]["cookie_value"] == "layout-cookie-value"
@@ -417,10 +418,11 @@ async def test_controller_and_layout_request_handling():
     """
     Test and compare both ControllerBase and LayoutControllerBase to ensure they both
     properly handle request information when called through a sideeffect.
-    
+
     This test validates the fix that allows layout controllers to access request information,
     which was previously unsupported.
     """
+
     class ExampleRenderWithRequest(RenderBase):
         path: str
         query_param: str | None
@@ -431,7 +433,7 @@ async def test_controller_and_layout_request_handling():
     class StandardController(ControllerBase):
         url: str = "/standard/{path_param}/"
         view_path = "/standard.tsx"
-        
+
         def render(
             self,
             path_param: str,
@@ -442,17 +444,17 @@ async def test_controller_and_layout_request_handling():
                 path=request.url.path,
                 query_param=query_param,
                 cookie_value=request.cookies.get("test-cookie", "no-cookie"),
-                controller_type="standard"
+                controller_type="standard",
             )
 
         @sideeffect
         def standard_sideeffect(self, request: Request, payload: dict) -> None:
             pass
-    
+
     # Layout controller implementation
     class LayoutController(LayoutControllerBase):
         view_path = "/layout.tsx"
-        
+
         def render(
             self,
             request: Request,
@@ -461,36 +463,36 @@ async def test_controller_and_layout_request_handling():
                 path=request.url.path,
                 query_param=request.query_params.get("query_param"),
                 cookie_value=request.cookies.get("test-cookie", "no-cookie"),
-                controller_type="layout"
+                controller_type="layout",
             )
 
         @sideeffect
         def layout_sideeffect(self, request: Request, payload: dict) -> None:
             pass
-    
+
     # Setup app with both controllers
     app = AppController(view_root=Path())
     standard_controller = StandardController()
     layout_controller = LayoutController()
     app.register(standard_controller)
     app.register(layout_controller)
-    
+
     # Get the sideeffect URLs for both controllers
     standard_definition = app._definition_for_controller(standard_controller)
     layout_definition = app._definition_for_controller(layout_controller)
-    
+
     standard_sideeffect_url = standard_definition.get_url_for_metadata(
         get_function_metadata(StandardController.standard_sideeffect)
     )
     layout_sideeffect_url = layout_definition.get_url_for_metadata(
         get_function_metadata(LayoutController.layout_sideeffect)
     )
-    
+
     # Create a test client and make requests to both controllers
     client = TestClient(app.app)
-    
+
     # Test standard controller
-    standard_response = client.post(
+    client.post(
         standard_sideeffect_url,
         json={},
         headers={
@@ -499,9 +501,9 @@ async def test_controller_and_layout_request_handling():
             "referer": "http://example.com/standard/param/",
         },
     )
-    
+
     # Test layout controller
-    layout_response = client.post(
+    client.post(
         layout_sideeffect_url,
         json={},
         headers={
@@ -509,57 +511,67 @@ async def test_controller_and_layout_request_handling():
             "referer": "http://example.com/some-page/",
         },
     )
-    
+
     # Use a mock to provide the query parameters correctly
-    with patch("mountaineer.actions.sideeffect_dec.get_render_parameters") as mock_get_params:
+    with patch(
+        "mountaineer.actions.sideeffect_dec.get_render_parameters"
+    ) as mock_get_params:
         # For standard controller
         @asynccontextmanager
         async def mock_standard_params(*args, **kwargs):
             yield {
                 "path_param": "param",
-                "request": Request({
-                    "type": "http",
-                    "path": "/standard/param/",
-                    "query_string": b"query_param=test-value",
-                    "headers": Headers({"cookie": "test-cookie=standard-cookie-value"}).raw,
-                    "method": "GET",
-                    "scheme": "http",
-                    "client": ("testclient", 50000),
-                    "server": ("testserver", 80),
-                }),
+                "request": Request(
+                    {
+                        "type": "http",
+                        "path": "/standard/param/",
+                        "query_string": b"query_param=test-value",
+                        "headers": Headers(
+                            {"cookie": "test-cookie=standard-cookie-value"}
+                        ).raw,
+                        "method": "GET",
+                        "scheme": "http",
+                        "client": ("testclient", 50000),
+                        "server": ("testserver", 80),
+                    }
+                ),
                 "query_param": "test-value",
             }
-        
+
         # For layout controller
         @asynccontextmanager
         async def mock_layout_params(*args, **kwargs):
             yield {
-                "request": Request({
-                    "type": "http",
-                    "path": "/some-page/", 
-                    "query_string": b"query_param=layout-value",
-                    "headers": Headers({"cookie": "test-cookie=layout-cookie-value"}).raw,
-                    "method": "GET",
-                    "scheme": "http",
-                    "client": ("testclient", 50000),
-                    "server": ("testserver", 80),
-                }),
+                "request": Request(
+                    {
+                        "type": "http",
+                        "path": "/some-page/",
+                        "query_string": b"query_param=layout-value",
+                        "headers": Headers(
+                            {"cookie": "test-cookie=layout-cookie-value"}
+                        ).raw,
+                        "method": "GET",
+                        "scheme": "http",
+                        "client": ("testclient", 50000),
+                        "server": ("testserver", 80),
+                    }
+                ),
             }
-        
+
         # First call uses standard params, second uses layout params
         mock_get_params.side_effect = [mock_standard_params(), mock_layout_params()]
-        
+
         # Call sideeffects directly to use our mocks
         standard_sideeffect_result = await standard_controller.standard_sideeffect(
             payload={},
             request=Request({"type": "http"}),
         )
-        
+
         layout_sideeffect_result = await layout_controller.layout_sideeffect(
             payload={},
             request=Request({"type": "http"}),
         )
-    
+
     # Verify standard controller result
     assert "sideeffect" in standard_sideeffect_result
     sideeffect_model = standard_sideeffect_result["sideeffect"]
@@ -568,7 +580,7 @@ async def test_controller_and_layout_request_handling():
     assert sideeffect_model.query_param == "test-value"
     assert sideeffect_model.cookie_value == "standard-cookie-value"
     assert sideeffect_model.controller_type == "standard"
-    
+
     # Verify layout controller result
     assert "sideeffect" in layout_sideeffect_result
     layout_model = layout_sideeffect_result["sideeffect"]
@@ -583,17 +595,18 @@ async def test_controller_and_layout_request_handling():
 async def test_layout_controller_session_handling():
     """
     Test that layout controllers can properly access session information from requests.
-    
+
     This test specifically focuses on session handling, which is a key aspect of the recent fix
     in the @sideeffect decorator for layout controllers.
     """
+
     class SessionRenderModel(RenderBase):
         has_session: bool
         session_value: str | None
-    
+
     class SessionLayoutController(LayoutControllerBase):
         view_path = "/session-layout.tsx"
-        
+
         def render(
             self,
             request: Request,
@@ -602,40 +615,40 @@ async def test_layout_controller_session_handling():
             session = request.scope.get("session")
             return SessionRenderModel(
                 has_session=session is not None,
-                session_value=session.get("test_key") if session else None
+                session_value=session.get("test_key") if session else None,
             )
-        
+
         @sideeffect
         def session_sideeffect(self, request: Request, payload: dict) -> None:
             pass
-    
+
     # Setup app with session middleware
     app = AppController(view_root=Path())
     controller = SessionLayoutController()
     app.register(controller)
-    
+
     # Get sideeffect URL
     controller_definition = app._definition_for_controller(controller)
     sideeffect_url = controller_definition.get_url_for_metadata(
         get_function_metadata(SessionLayoutController.session_sideeffect)
     )
-    
+
     # Create a test client
     client = TestClient(app.app)
-    
+
     # Custom middleware to inject a session into the request
     from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
-    
+
     class SessionMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             request.scope["session"] = {"test_key": "session_test_value"}
             return await call_next(request)
-    
+
     # Apply middleware manually
     app.app.user_middleware = [Middleware(SessionMiddleware)]
     app.app.build_middleware_stack()
-    
+
     # Make request with session
     response = client.post(
         sideeffect_url,
@@ -644,10 +657,10 @@ async def test_layout_controller_session_handling():
             "referer": "http://example.com/some-page/",
         },
     )
-    
+
     # Verify session was properly accessed
     assert response.status_code == 200
     response_data = response.json()
-    
-    assert response_data["sideeffect"]["has_session"] == True
+
+    assert response_data["sideeffect"]["has_session"]
     assert response_data["sideeffect"]["session_value"] == "session_test_value"
