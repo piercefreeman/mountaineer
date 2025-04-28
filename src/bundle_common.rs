@@ -360,7 +360,11 @@ fn process_output_directory(
         if is_entrypoint {
             entrypoints.insert(file_stem.to_string(), bundle_result);
         } else {
-            extras.insert(file_stem.to_string(), bundle_result);
+            // Get the file extension
+            let extension = path.extension()
+                .map(|ext| format!(".{}", ext.to_string_lossy()))
+                .unwrap_or_default();
+            extras.insert(format!("{}{}", file_stem, extension), bundle_result);
         }
     }
 
@@ -584,5 +588,96 @@ mod tests {
             bundle_result.script.contains("module.exports"),
             "Bundle should have CommonJS exports"
         );
+    }
+
+    #[test]
+    fn test_extras_file_extension() {
+        // Create a temporary directory for test files
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+
+        // Create a utility module that will be imported
+        let utils_js = r#"
+            export function formatName(firstName, lastName) {
+                return `${firstName} ${lastName}`;
+            }
+        "#;
+
+        let utils_path = create_test_js_file(temp_path, "utils.js", utils_js)
+            .expect("Failed to create utils.js file");
+
+        // Create a component module that will be imported
+        let component_js = r#"
+            import { formatName } from './utils';
+            
+            export function Greeting({ firstName, lastName }) {
+                const fullName = formatName(firstName, lastName);
+                return `Hello, ${fullName}!`;
+            }
+        "#;
+
+        let component_path = create_test_js_file(temp_path, "component.js", component_js)
+            .expect("Failed to create component.js file");
+
+        // Create a main entry file that imports both modules
+        let entry_js = r#"
+            import { Greeting } from './component';
+            import { formatName } from './utils';
+            
+            export function greet(firstName, lastName) {
+                const fullName = formatName(firstName, lastName);
+                return `Hello, ${fullName}!`;
+            }
+            
+            console.log(greet('John', 'Doe'));
+            console.log(Greeting({ firstName: 'Jane', lastName: 'Smith' }));
+        "#;
+
+        let entry_path = create_test_js_file(temp_path, "main.js", entry_js)
+            .expect("Failed to create main.js file");
+
+        // Create a mock node_modules path
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
+        // Bundle the JavaScript with both files as entry points to force chunking
+        let result = bundle_common(
+            vec![entry_path, utils_path, component_path],
+            BundleMode::MultiClient,
+            "development".to_string(),
+            node_modules_path,
+            None,
+            None,
+            false, // Set minify to false to make it easier to inspect output
+        );
+
+        // Verify the result
+        assert!(
+            result.is_ok(),
+            "Bundle operation failed: {:?}",
+            result.err()
+        );
+        let bundles = result.unwrap();
+
+        // Check that we have at least one extra file
+        assert!(
+            !bundles.extras.is_empty(),
+            "Expected at least one extra file in the bundle"
+        );
+
+        // Verify that the extras map contains files with their extensions
+        for (filename, _) in bundles.extras {
+            assert!(
+                filename.contains('.'),
+                "Extra file '{}' should have a file extension",
+                filename
+            );
+            assert!(
+                filename.ends_with(".js"),
+                "Extra file '{}' should end with .js extension",
+                filename
+            );
+        }
     }
 }
