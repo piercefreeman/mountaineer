@@ -116,8 +116,9 @@ def test_valid_permutations(
     new_project_dir = Path(tmpdir) / "my_project"
     main_mountaineer_path = Path(__file__).parent.parent.parent.parent
 
-    # Find an available port for postgres
+    # Find an available port for postgres and the webserver
     postgres_port = get_free_port()
+    webhost_port = get_free_port()
 
     metadata = ProjectMetadata(
         project_name="my_project",
@@ -176,7 +177,7 @@ def test_valid_permutations(
 
     # Now launch the server in the background
     process = environment.run_command(
-        ["runserver", "--port", str(postgres_port)], metadata.project_path
+        ["runserver", "--port", str(webhost_port)], metadata.project_path
     )
 
     try:
@@ -184,7 +185,7 @@ def test_valid_permutations(
         max_wait = 10
         while max_wait > 0:
             try:
-                response = get(f"http://localhost:{postgres_port}")
+                response = get(f"http://localhost:{webhost_port}")
                 if create_stub_files:
                     if response.ok:
                         break
@@ -202,13 +203,13 @@ def test_valid_permutations(
         secho("Test server started successfully", fg="green")
 
         # Perform the fetch tests
-        response = get(f"http://localhost:{postgres_port}")
+        response = get(f"http://localhost:{webhost_port}")
         if create_stub_files:
             assert response.ok
         else:
             assert response.status_code == 404
 
-        response = get(f"http://localhost:{postgres_port}/not_found")
+        response = get(f"http://localhost:{webhost_port}/not_found")
         assert not response.ok
     finally:
         if process.returncode is None:
