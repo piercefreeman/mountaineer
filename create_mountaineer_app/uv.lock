@@ -111,6 +111,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "pydantic" },
     { name = "questionary" },
+    { name = "toml" },
 ]
 
 [package.dev-dependencies]
@@ -135,6 +136,7 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pydantic", specifier = ">=2.10.6" },
     { name = "questionary", specifier = ">=2.1.0" },
+    { name = "toml", specifier = ">=0.10.2" },
 ]
 
 [package.metadata.requires-dev]
