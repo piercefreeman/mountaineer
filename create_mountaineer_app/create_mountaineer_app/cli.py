@@ -122,7 +122,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         questionary.text("Project name [my-project]:").unsafe_ask() or "my-project"
     )
     input_author_name, input_author_email = prompt_author()
-    input_use_poetry = prompt_package_manager()
+    package_manager = prompt_package_manager()
     input_create_stub_files = questionary.confirm(
         "Create stub MVC files? [Yes]", default=True
     ).unsafe_ask()
@@ -144,7 +144,7 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         project_name=input_project_name.replace(" ", "_").replace("-", "_"),
         author_name=input_author_name,
         author_email=input_author_email,
-        package_manager=input_use_poetry,
+        package_manager=package_manager,
         use_tailwind=input_use_tailwind,
         editor_config=(
             EditorType.from_name(input_editor_config)

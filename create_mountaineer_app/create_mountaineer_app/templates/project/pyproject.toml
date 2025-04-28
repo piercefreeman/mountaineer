@@ -8,7 +8,7 @@ requires-python = ">=3.11,<4.0"
 
 dependencies = [
     {% if mountaineer_dev_path %}
-    "mountaineer @ file://{{ mountaineer_dev_path }}",
+    "mountaineer -e @ file://{{ mountaineer_dev_path }}",
     {% else %}
     "mountaineer=={{ mountaineer_min_version }}",
     {% endif %}
@@ -37,13 +37,4 @@ plugins = ["pydantic.mypy"]
 [tool.pyright]
 venvPath = "{{venv_name}}"
 venv = "{{venv_name}}"
-{% endif %}
-
-{% if mountaineer_dev_path %}
-# Editable dependency for development is only supported by poetry and uv
-[tool.poetry.dependencies]
-mountaineer = { path = "{{ mountaineer_dev_path }}", develop = true }
-
-[tool.uv.sources]
-mountaineer = { path = "{{ mountaineer_dev_path }}", editable = true }
 {% endif %}
