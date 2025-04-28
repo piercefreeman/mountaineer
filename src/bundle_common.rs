@@ -361,7 +361,8 @@ fn process_output_directory(
             entrypoints.insert(file_stem.to_string(), bundle_result);
         } else {
             // Get the file extension
-            let extension = path.extension()
+            let extension = path
+                .extension()
                 .map(|ext| format!(".{}", ext.to_string_lossy()))
                 .unwrap_or_default();
             extras.insert(format!("{}{}", file_stem, extension), bundle_result);
