@@ -44,7 +44,7 @@ pub fn compile_independent_bundles(
         let temp_dir = TempDir::new()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
 
-        // Create the entrypoint file using your custom logic.
+        // Create the entrypoint file
         let entrypoint_path =
             create_entrypoint(&temp_dir, path_group, is_ssr, &live_reload_import)?;
 
@@ -153,7 +153,6 @@ fn create_entrypoint(
     let mut file = File::create(&entrypoint_path)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
 
-    // Replace this with your actual code generation logic.
     let entrypoint_content = code_gen::build_entrypoint(path_group, is_server, live_reload_import);
     file.write_all(entrypoint_content.as_bytes())
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
