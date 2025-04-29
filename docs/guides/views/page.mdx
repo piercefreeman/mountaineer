@@ -49,10 +49,9 @@ A controller backs a view in a 1:1 relationship. It provides the backend plumbin
 ```python title="/controllers/home.py"
 
 from mountaineer import sideeffect, ControllerBase, RenderBase
-from mountaineer.database import DatabaseDependencies
-from mountaineer.database.session import AsyncSession
 
-from sqlmodel import select
+from iceaxe import select, DBConnection
+from iceaxe.mountaineer import DatabaseDependencies
 
 from myapp.models import TodoItem
 
@@ -65,7 +64,7 @@ class HomeController(ControllerBase):
 
     async def render(
         self,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> HomeRender:
         todos = (await session.execute(select(TodoItem))).all()
 

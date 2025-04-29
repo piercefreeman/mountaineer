@@ -131,7 +131,7 @@ def sideeffect(*args, **kwargs):  # type: ignore
     :type experimental_render_reload: bool
 
     :return: The response model to use for this endpoint. If a BaseModel is not provided (you pass
-        a dictionary or a SQLModel object ofr instance), we will try to convert the response object
+        a dictionary or a database object for instance), we will try to convert the response object
         into the proper JSON response based on your typehint.
     :rtype: BaseModel | None | fastapi.JSONResponse
 

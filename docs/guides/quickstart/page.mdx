@@ -59,13 +59,13 @@ Below we go through some of the unique aspects of Mountaineer. Let's create a si
 
 For the purposes of this walkthrough we assume your project is generated with `create-mountaineer-app` and you've skipped MVC stub files. If not, you'll have to delete some of the pre-existing files.
 
-Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [SQLModel](https://github.com/tiangolo/sqlmodel).
+Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [Iceaxe](https://github.com/piercefreeman/iceaxe).
 
 ```python title="my_webapp/models/todo.py"
-from mountaineer.database import SQLModel, Field
+from iceaxe import TableBase, Field
 from uuid import UUID, uuid4
 
-class TodoItem(SQLModel, table=True):
+class TodoItem(TableBase):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
 
     description: str
@@ -90,11 +90,10 @@ Great! At this point we have our database tables created and have a basic server
 
 ```python title="my_webapp/controllers/home.py"
 from mountaineer import sideeffect, ControllerBase, RenderBase
-from mountaineer.database import DatabaseDependencies
 
 from fastapi import Request, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from iceaxe import select, DBConnection
+from iceaxe.mountaineer import DatabaseDependencies
 
 from my_webapp.models.todo import TodoItem
 
@@ -109,9 +108,9 @@ class HomeController(ControllerBase):
     async def render(
         self,
         request: Request,
-        session: AsyncSession = Depends(DatabaseDependencies.get_db_session)
+        db_connection: DBConnection = Depends(DatabaseDependencies.get_db_connection)
     ) -> HomeRender:
-        todos = (await session.exec(select(TodoItem))).all()
+        todos = await db_connection.exec(select(TodoItem))
 
         return HomeRender(
             client_ip=(
