@@ -115,7 +115,7 @@ class IsolatedAppContext:
                     LOGGER.debug(f"Will write response: {response}")
                     await broker.send_response(message_id, response)
                 except Exception as e:
-                    LOGGER.error(
+                    LOGGER.debug(
                         f"Isolated app context failed to process message: {e}, continuing...",
                         exc_info=True,
                     )

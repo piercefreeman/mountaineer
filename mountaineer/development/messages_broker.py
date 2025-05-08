@@ -13,17 +13,11 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, TypeAdapter
 
+from mountaineer.development.messages import ErrorResponse
 from mountaineer.logging import LOGGER
 
 TResponse = TypeVar("TResponse")
 AppMessageTypes = TypeVar("AppMessageTypes")
-
-
-@dataclass
-class IsolatedMessageBase(Generic[TResponse]):
-    """Base class for all messages passed between main process and isolated app context"""
-
-    pass
 
 
 class BrokerMessageFuture(Generic[TResponse], asyncio.Future[TResponse]):
@@ -105,6 +99,15 @@ class BrokerAuthenticationError(Exception):
     """Raised when the broker authentication fails."""
 
     pass
+
+
+class BrokerExecutionError(Exception):
+    """Raised when the broker execution fails."""
+
+    def __init__(self, error: str, traceback: str):
+        super().__init__(error)
+        self.error = error
+        self.traceback = traceback
 
 
 CommandTypes = (
@@ -435,11 +438,16 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
 
     async def send_and_get_response(self, job_data: AppMessageTypes) -> Any:
         """
-        Send a job to the broker server and wait for a response.
+        Send a job to the broker server and wait for a response. Will raise on a client
+        error to break out of the current loop.
+
         """
         job_id = str(uuid4())
         await self.send_job(job_id, job_data)
-        return await self.get_response(job_id)
+        response = await self.get_response(job_id)
+        if isinstance(response, ErrorResponse):
+            raise BrokerExecutionError(response.exception, response.traceback)
+        return response
 
     async def drain_queue(self) -> list[tuple[str, AppMessageTypes]]:
         """
