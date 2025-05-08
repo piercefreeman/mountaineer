@@ -93,8 +93,8 @@ async def restart_backend(
     )
 
     # Bootstrap the process and rebuild the server files
-    start = time()
     CONSOLE.print("[bold cyan]🚀 Booting server...[/bold cyan]")
+    start = time()
     await broker.send_and_get_response(BootupMessage())
 
     if isolated_context.webserver_config is not None:

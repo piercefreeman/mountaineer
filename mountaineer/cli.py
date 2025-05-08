@@ -26,6 +26,7 @@ from mountaineer.development.messages import (
 )
 from mountaineer.development.messages_broker import (
     AsyncMessageBroker,
+    BrokerExecutionError,
 )
 from mountaineer.development.packages import (
     find_packages_with_prefix,
@@ -99,19 +100,23 @@ async def handle_watch(
                     ):
                         return
 
-                    if file_changes_state.pending_python or first_run:
-                        await restart_backend(
-                            environment,
-                            broker,
-                            file_changes_state,
-                            isolated_context,
-                        )
+                    try:
+                        if file_changes_state.pending_python or first_run:
+                            await restart_backend(
+                                environment,
+                                broker,
+                                file_changes_state,
+                                isolated_context,
+                            )
 
-                    if file_changes_state.pending_js or first_run:
-                        await rebuild_frontend(
-                            broker,
-                            file_changes_state,
-                        )
+                        if file_changes_state.pending_js or first_run:
+                            await rebuild_frontend(
+                                broker,
+                                file_changes_state,
+                            )
+                    except BrokerExecutionError as e:
+                        CONSOLE.print(f"[red]Error: {e.error}\n\n{e.traceback}")
+                        return
 
                     # If we've succeeded, we should clear out the pending
                     # files so we don't rebuild them again
@@ -206,19 +211,23 @@ async def handle_runserver(
                     ):
                         return
 
-                    if file_changes_state.pending_python or first_run:
-                        await restart_backend(
-                            environment,
-                            broker,
-                            file_changes_state,
-                            isolated_context,
-                        )
+                    try:
+                        if file_changes_state.pending_python or first_run:
+                            await restart_backend(
+                                environment,
+                                broker,
+                                file_changes_state,
+                                isolated_context,
+                            )
 
-                    if file_changes_state.pending_js or first_run:
-                        await rebuild_frontend(
-                            broker,
-                            file_changes_state,
-                        )
+                        if file_changes_state.pending_js or first_run:
+                            await rebuild_frontend(
+                                broker,
+                                file_changes_state,
+                            )
+                    except BrokerExecutionError as e:
+                        CONSOLE.print(f"[red]Error: {e.error}\n\n{e.traceback}")
+                        return
 
                     # If we've succeeded, we should clear out the pending
                     # files so we don't rebuild them again
