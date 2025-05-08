@@ -91,18 +91,25 @@ class PostCSSBundler(APIBuilderBase):
             temp_dir_path = Path(temp_dir_name)
             output_path = temp_dir_path / "output.css"
 
-            command = [str(cli_path), str(css_path), "-o", str(output_path)]
+            command = [
+                str(cli_path.absolute()),
+                str(css_path.absolute()),
+                "-o",
+                str(output_path.absolute()),
+            ]
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=PIPE,
                 stderr=PIPE,
                 # postcss won't find the config file if we don't set the cwd
                 # we assume this is in each view's root directory
-                cwd=css_path.get_root_link(),
+                cwd=css_path.get_root_link().absolute(),
                 env={
                     **environ,
                     # We expect the main package root will be the one with node modules installed
-                    "NODE_PATH": str(self.metadata.package_root_link / "node_modules"),
+                    "NODE_PATH": str(
+                        self.metadata.package_root_link.absolute() / "node_modules"
+                    ),
                 },
             )
 
