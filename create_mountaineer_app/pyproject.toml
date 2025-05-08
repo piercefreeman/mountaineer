@@ -21,6 +21,11 @@ create-mountaineer-app = 'create_mountaineer_app.cli:main'
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.force-include]
+# Workaround or CI sometimes not respecting our .gitignore inclusion rule
+# to allow the template .env but disallow other .env files
+"create_mountaineer_app/templates/project/.env" = "create_mountaineer_app/templates/project/.env"
+
 [dependency-groups]
 dev = [
     "mypy>=1.15.0",
