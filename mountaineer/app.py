@@ -772,9 +772,17 @@ class AppController:
 
             # When we're running in debug mode, we just import
             # the script into each page so we can pick up on the latest changes
-            client_import = (
-                f"<script type='text/javascript'>{inline_client_script}</script>"
-            )
+
+            # Wrap client-side code in an immediately invoked function expression (IIFE)
+            # to isolate variables from the global scope and prevent conflicts with browser
+            # built-in properties (e.g., 'chrome' in Chrome browser, 'safari' in Safari).
+            # This prevents "duplicate variable" errors when client code defines variables
+            # that match browser globals.
+            client_import = f"""<script type='text/javascript'>
+                (function() {{
+                    {inline_client_script}
+                }})();
+                </script>"""
         elif external_client_imports:
             # This will point to our minified bundle that will in-turn import the other
             # common dependencies
