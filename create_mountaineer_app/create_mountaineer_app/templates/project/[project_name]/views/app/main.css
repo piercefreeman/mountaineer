@@ -1,7 +1,5 @@
 {% if use_tailwind %}
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
 {% endif %}
