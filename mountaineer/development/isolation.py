@@ -2,6 +2,7 @@ import importlib
 from pathlib import Path
 from tempfile import mkdtemp
 from traceback import format_exception
+from typing import TYPE_CHECKING
 
 from fastapi import Request
 
@@ -20,6 +21,11 @@ from mountaineer.development.messages import (
 from mountaineer.development.messages_broker import AsyncMessageBroker
 from mountaineer.development.uvicorn import UvicornThread
 from mountaineer.logging import setup_internal_logger
+
+if TYPE_CHECKING:
+    from mountaineer_exceptions.controllers.exception_controller import (
+        ExceptionController,
+    )
 
 LOGGER = setup_internal_logger(__name__)
 
@@ -53,6 +59,7 @@ class IsolatedAppContext:
         self.webservice_thread: UvicornThread | None = None
 
         self.app_controller: AppController | None = None
+        self.exception_controller: "ExceptionController | None" = None
 
         self.js_compiler: APIBuilder | None = None
         self.app_compiler: ClientCompiler | None = None
@@ -192,13 +199,7 @@ class IsolatedAppContext:
             raise ValueError("App controller not initialized")
 
         # Mount exceptions
-        try:
-            # from mountaineer_exceptions.plugin import plugin
-            # self.exception_controller = ExceptionController()
-            # self.mount_exceptions(self.app_controller)
-            print("TODO")  # noqa: T201
-        except ImportError:
-            pass
+        self.mount_exceptions(self.app_controller)
 
         # Initialize builders in isolated context
         global_build_cache = Path(mkdtemp())
@@ -255,15 +256,13 @@ class IsolatedAppContext:
 
         :param app_controller: The app controller to mount the exception controller on
         """
-        # Don't re-mount the exception controller
-        current_controllers = [
-            controller_definition.controller.__class__.__name__
-            for controller_definition in app_controller.controllers
-        ]
+        try:
+            from mountaineer_exceptions.plugin import plugin  # type: ignore
 
-        if self.exception_controller.__class__.__name__ not in current_controllers:
-            app_controller.register(self.exception_controller)
+            app_controller.register(plugin)
             app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+        except ImportError:
+            LOGGER.warning("mountaineer-exceptions plugin not found, skipping...")
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
         """
@@ -278,6 +277,9 @@ class IsolatedAppContext:
         :raises: The original exception for non-GET requests
         """
         LOGGER.error(f"Handling dev exception: {exc}")
+
+        if not self.exception_controller:
+            raise ValueError("Exception controller not initialized")
 
         if request.method == "GET":
             html = await self.exception_controller._definition.view_route(  # type: ignore
