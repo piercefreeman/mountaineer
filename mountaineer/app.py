@@ -6,7 +6,7 @@ from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from re import match as re_match
 from time import monotonic_ns
-from typing import Any, Callable, Optional, Type, cast, overload
+from typing import Any, Callable, Optional, Type, cast, overload, assert_never
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, Request
@@ -43,7 +43,7 @@ from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import Metadata, RenderBase, RenderNull
 from mountaineer.ssr import find_tsconfig, render_ssr
 from mountaineer.static import get_static_path
-
+from mountaineer.plugin import MountaineerPlugin
 
 class ControllerDefinition(BaseModel):
     controller: ControllerBase
@@ -274,7 +274,16 @@ class AppController:
         except Exception as e:
             LOGGER.warning(f"Error checking React version: {str(e)}")
 
-    def register(self, controller: ControllerBase):
+    def register(self, controller: ControllerBase | MountaineerPlugin):
+        match controller:
+            case controller if isinstance(controller, ControllerBase):
+                self._register_controller(controller)
+            case controller if isinstance(controller, MountaineerPlugin):
+                self._register_plugin(controller)
+            case _:
+                assert_never(controller)
+
+    def _register_controller(self, controller: ControllerBase):
         """
         Register a new controller. This will:
 
@@ -578,6 +587,31 @@ class AppController:
 
         self._merge_hierarchy_signatures(controller_definition)
 
+    def _register_plugin(self, plugin: MountaineerPlugin):
+        for controller in plugin.controllers:
+            if isinstance(controller.view_path, str):
+                controller.view_path = ManagedViewPath.from_view_root(
+                    plugin.build_config.view_root
+                ) / controller.view_path
+
+            # This should find our precompiled static and ssr files
+            controller.resolve_paths(plugin.build_config.view_root, force=True)
+
+            if not controller._ssr_path or not controller._bundled_scripts:
+                raise ValueError(
+                    f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
+                )
+
+            self._register_controller(controller)
+
+        # Mount the view_root / _static directory, since we'll need
+        # this for the client mounted view files
+        self.app.mount(
+            f"/static/{plugin.name}",
+            StaticFiles(directory=str(plugin.static_root)),
+            name=f"static-{plugin.name}",
+        )
+
     def _view_hierarchy_for_controller(self, controller: ControllerBase):
         """
         Determines the nested parent layouts for the given controller, according
@@ -836,7 +870,7 @@ class AppController:
         if known_view_path is None:
             if known_controller is None:
                 raise ValueError(
-                    "Either new_hierarchy or known_view_path must be provided"
+                    "Either known_controller or known_view_path must be provided"
                 )
 
             full_view_path = (

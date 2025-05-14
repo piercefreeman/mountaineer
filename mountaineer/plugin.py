@@ -9,7 +9,6 @@ from mountaineer.controller_layout import LayoutControllerBase
 
 @dataclass
 class BuildConfig:
-    view_root: Path
     custom_builders: list[APIBuilderBase] = field(default_factory=list)
 
 
@@ -18,8 +17,7 @@ class MountaineerPlugin:
     name: str
     controllers: list[Type[ControllerBase] | Type[LayoutControllerBase]]
 
-    ssr_root: Path
-    static_root: Path
+    view_root: Path
 
     build_config: BuildConfig
 
@@ -32,7 +30,7 @@ class MountaineerPlugin:
         from mountaineer.app import AppController
 
         app_controller = AppController(
-            view_root=self.build_config.view_root,
+            view_root=self.view_root,
             custom_builders=self.build_config.custom_builders,
         )
         for controller in self.controllers:
