@@ -31,6 +31,7 @@ from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
+from mountaineer.constants import DEFAULT_STATIC_DIR
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.exceptions import (
@@ -219,7 +220,7 @@ class AppController:
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
         self.app.mount(
-            "/static",
+            DEFAULT_STATIC_DIR,
             StaticFiles(directory=str(static_dir)),
             name="static",
         )
@@ -440,7 +441,7 @@ class AppController:
                     render_output,
                     inline_client_script=None,
                     external_client_imports=[
-                        f"/static/{script_name}"
+                        f"{controller._scripts_prefix}/{script_name}"
                         for script_name in controller._bundled_scripts
                     ],
                     sourcemap=controller_node.cached_server_sourcemap,
@@ -596,6 +597,7 @@ class AppController:
                 )
 
             # This should find our precompiled static and ssr files
+            controller._scripts_prefix = f"{DEFAULT_STATIC_DIR}/{plugin.name}"
             controller.resolve_paths(plugin.view_root, force=True)
 
             if not controller._ssr_path or not controller._bundled_scripts:
@@ -608,7 +610,7 @@ class AppController:
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
         self.app.mount(
-            f"/static/{plugin.name}",
+            f"{DEFAULT_STATIC_DIR}/{plugin.name}",
             StaticFiles(directory=str(plugin.view_root / "_static")),
             name=f"static-{plugin.name}",
         )
