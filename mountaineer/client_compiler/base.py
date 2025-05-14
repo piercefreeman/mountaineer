@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from mountaineer.controller import ControllerBase
+from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 
 
@@ -74,10 +75,17 @@ class APIBuilderBase(ABC):
         for path in paths:
             # Each file must be relative to one of our known view roots, otherwise
             # we ignore it
+            found_root = False
             for root in unique_roots:
                 if path.is_relative_to(root):
                     relative_path = path.relative_to(root)
                     converted_paths.append(root / relative_path)
+                    found_root = True
                     break
+
+            if not found_root:
+                LOGGER.warning(
+                    f"File {path} is not relative to any view root ({unique_roots})"
+                )
 
         return converted_paths

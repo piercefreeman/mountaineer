@@ -44,6 +44,7 @@ class PostCSSBundler(APIBuilderBase):
             raise ValueError("No metadata provided to build")
 
         if not self.dirty_files:
+            LOGGER.debug("No dirty files, skipping postcss build")
             return
 
         known_css_files = self.managed_views_from_paths(list(self.known_css_files))
@@ -97,6 +98,8 @@ class PostCSSBundler(APIBuilderBase):
                 "-o",
                 str(output_path.absolute()),
             ]
+            LOGGER.debug(f"[postcss] RUNNING COMMAND {command}")
+
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=PIPE,
