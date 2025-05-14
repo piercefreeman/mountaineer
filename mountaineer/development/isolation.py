@@ -42,6 +42,7 @@ class IsolatedAppContext:
         package_path: Path,
         module_name: str,
         controller_name: str,
+        use_dev_exceptions: bool = True,
     ):
         """
         Initialize an isolated application context in a separate process.
@@ -60,12 +61,13 @@ class IsolatedAppContext:
 
         self.app_controller: AppController | None = None
         self.exception_controller: "ExceptionController | None" = None
+        self.use_dev_exceptions = use_dev_exceptions
 
         self.js_compiler: APIBuilder | None = None
         self.app_compiler: ClientCompiler | None = None
 
     @classmethod
-    def from_webcontroller(cls, webcontroller: str):
+    def from_webcontroller(cls, webcontroller: str, use_dev_exceptions: bool = True):
         package = webcontroller.split(".")[0]
         module_name = webcontroller.split(":")[0]
         controller_name = webcontroller.split(":")[1]
@@ -75,6 +77,7 @@ class IsolatedAppContext:
             package_path=Path(package.replace(".", "/")),
             module_name=module_name,
             controller_name=controller_name,
+            use_dev_exceptions=use_dev_exceptions,
         )
 
     async def run_async(self, broker: AsyncMessageBroker[MessageTypes]):
@@ -256,6 +259,9 @@ class IsolatedAppContext:
 
         :param app_controller: The app controller to mount the exception controller on
         """
+        if not self.use_dev_exceptions:
+            return
+
         try:
             from mountaineer_exceptions.plugin import plugin  # type: ignore
 
