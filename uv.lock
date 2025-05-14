@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.10"
 
 [[package]]
@@ -270,7 +271,6 @@ dev = [
     { name = "toml" },
     { name = "tqdm" },
     { name = "types-psycopg2" },
-    { name = "types-pygments" },
     { name = "types-setuptools" },
     { name = "types-toml" },
     { name = "types-tqdm" },
@@ -305,7 +305,6 @@ dev = [
     { name = "toml", specifier = ">=0.10.2" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "types-psycopg2", specifier = ">=2.9.21.20250121" },
-    { name = "types-pygments", specifier = ">=2.19.0.20250305" },
     { name = "types-setuptools", specifier = ">=76.0.0.20250313" },
     { name = "types-toml", specifier = ">=0.10.8.20240310" },
     { name = "types-tqdm", specifier = ">=4.67.0.20250301" },
@@ -778,33 +777,12 @@ wheels = [
 ]
 
 [[package]]
-name = "types-docutils"
-version = "0.21.0.20241128"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/dd/df/64e7ab01a4fc5ce46895dc94e31cffc8b8087c8d91ee54c45ac2d8d82445/types_docutils-0.21.0.20241128.tar.gz", hash = "sha256:4dd059805b83ac6ec5a223699195c4e9eeb0446a4f7f2aeff1759a4a7cc17473", size = 26739 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/b6/10ba95739f2cbb9c5bd2f6568148d62b468afe01a94c633e8892a2936d8a/types_docutils-0.21.0.20241128-py3-none-any.whl", hash = "sha256:e0409204009639e9b0bf4521eeabe58b5e574ce9c0db08421c2ac26c32be0039", size = 34677 },
-]
-
-[[package]]
 name = "types-psycopg2"
 version = "2.9.21.20250318"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/09/29/9e86192ffa0a7ffc48d222f510026ec92aa93c7321ee24128480553661ec/types_psycopg2-2.9.21.20250318.tar.gz", hash = "sha256:eb6eac5bfb16adfd5f16b818918b9e26a40ede147e0f2bbffdf53a6ef7025a87", size = 26614 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/9c/34da1d5c2fe53c91f3382f45e18c58141cebef38e7204f676a93d1af6a1c/types_psycopg2-2.9.21.20250318-py3-none-any.whl", hash = "sha256:7296d111ad950bbd2fc979a1ab0572acae69047f922280e77db657c00d2c79c0", size = 24939 },
-]
-
-[[package]]
-name = "types-pygments"
-version = "2.19.0.20250305"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "types-docutils" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/e6/be/88f777c75022b111f9e9fe4cdb430bf92892fe90188b0fd037601ded2ea1/types_pygments-2.19.0.20250305.tar.gz", hash = "sha256:044c50e80ecd4128c00a7268f20355e16f5c55466d3d49dfda09be920af40b4b", size = 18521 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6f/c6/b6d3ad345b76425e46d25a2da1758603d80c3a59405bdcbbbaa86d8c8070/types_pygments-2.19.0.20250305-py3-none-any.whl", hash = "sha256:ca88aae5ec426f9b107c0f7adc36dc096d2882d930a49f679eaf4b8b643db35d", size = 25638 },
 ]
 
 [[package]]

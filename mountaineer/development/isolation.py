@@ -8,9 +8,6 @@ from fastapi import Request
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
-from mountaineer.controllers.exception_controller import (
-    ExceptionController,
-)
 from mountaineer.development.messages import (
     BootupMessage,
     BuildJsMessage,
@@ -195,8 +192,13 @@ class IsolatedAppContext:
             raise ValueError("App controller not initialized")
 
         # Mount exceptions
-        self.exception_controller = ExceptionController()
-        self.mount_exceptions(self.app_controller)
+        try:
+            # from mountaineer_exceptions.plugin import plugin
+            # self.exception_controller = ExceptionController()
+            # self.mount_exceptions(self.app_controller)
+            print("TODO")  # noqa: T201
+        except ImportError:
+            pass
 
         # Initialize builders in isolated context
         global_build_cache = Path(mkdtemp())
