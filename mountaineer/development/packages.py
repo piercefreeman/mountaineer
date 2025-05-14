@@ -37,7 +37,9 @@ def package_path_to_module(package: str, file_path_raw: Path) -> str:
 
     # Check if the file is within the package
     if not file_path.startswith(package_root):
-        raise ValueError(f"The file {file_path} is not in the package {package}")
+        raise ValueError(
+            f"The file {file_path} is not in the package {package} ({package_root})"
+        )
 
     # Remove the package root and the file extension
     relative_path = os.path.relpath(file_path, package_root)
