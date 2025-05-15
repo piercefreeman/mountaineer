@@ -284,7 +284,9 @@ class AppController:
         else:
             raise ValueError(f"Unknown controller type: {type(controller)}")
 
-    def _register_controller(self, controller: ControllerBase):
+    def _register_controller(
+        self, controller: ControllerBase, dev_enabled: bool = True
+    ):
         """
         Register a new controller. This will:
 
@@ -380,7 +382,7 @@ class AppController:
             # If we're in development mode, we should recompile the script on page
             # load to make sure we have the latest if there's any chance that it
             # was affected by recent code changes
-            if self.development_enabled:
+            if dev_enabled and self.development_enabled:
                 # Caching the build files saves about 0.3 on every load
                 # during development
                 start = monotonic_ns()
@@ -605,7 +607,10 @@ class AppController:
                     f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
                 )
 
-            self._register_controller(controller)
+            # Dev mode is disabled so the app is forced to load the full built javascript
+            # bundle when the pages load. This doesn't affect how the controller API endpoints
+            # are mounted or otherwise how the view controller is added to the app.
+            self._register_controller(controller, dev_enabled=False)
 
         # Mount the view_root / _static directory, since we'll need
         # this for the client mounted view files
