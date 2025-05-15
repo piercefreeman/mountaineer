@@ -295,9 +295,16 @@ async def handle_build(
     await isolated_context.js_compiler.build_use_server()
     await isolated_context.app_compiler.run_builder_plugins()
 
+    # Get the build-enabled controllers
+    build_controllers = [
+        controller_definition
+        for controller_definition in isolated_context.app_controller.controllers
+        if controller_definition.controller._build_enabled
+    ]
+
     # Get view paths for all controllers
     all_view_paths: list[list[str]] = []
-    for controller_definition in isolated_context.app_controller.controllers:
+    for controller_definition in build_controllers:
         (
             _,
             direct_hierarchy,
@@ -325,18 +332,16 @@ async def handle_build(
     ssr_output = isolated_context.app_controller._view_root.get_managed_ssr_dir()
 
     # If we don't have the same number of entrypoints as controllers, something went wrong
-    if len(client_bundle_result["entrypoints"]) != len(
-        isolated_context.app_controller.controllers
-    ):
+    if len(client_bundle_result["entrypoints"]) != len(build_controllers):
         raise ValueError(
             f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
-            f"Controllers: {len(isolated_context.app_controller.controllers)}\n"
+            f"Controllers: {len(build_controllers)}\n"
             f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
         )
 
     # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
     for controller_definition, content, map_content in zip(
-        isolated_context.app_controller.controllers,
+        build_controllers,
         client_bundle_result["entrypoints"],
         client_bundle_result["entrypoint_maps"],
     ):
@@ -363,9 +368,7 @@ async def handle_build(
     )
 
     # Write each script to disk
-    for controller_definition, script in zip(
-        isolated_context.app_controller.controllers, result_scripts
-    ):
+    for controller_definition, script in zip(build_controllers, result_scripts):
         script_root = underscore(controller_definition.controller.__class__.__name__)
         (ssr_output / f"{script_root}.js").write_text(script)
 

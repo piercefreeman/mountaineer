@@ -101,6 +101,11 @@ class ControllerBase(ABC, Generic[RenderInput]):
     Prefix for the static resolution endpoint of the bundled scripts.
     """
 
+    _build_enabled: bool = True
+    """
+    Whether the frontend build pipeline is enabled for this controller.
+    """
+
     _definition: Optional["ControllerDefinition"] = None
     """
     Upon registration, the AppController will mount a wrapper

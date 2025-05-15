@@ -326,6 +326,8 @@ class AppController:
 
             # This should find our precompiled static and ssr files
             controller._scripts_prefix = f"/static_plugins/{plugin.name}"
+            controller._build_enabled = False
+
             controller.resolve_paths(plugin.view_root, force=True)
 
             if not controller._ssr_path or not controller._bundled_scripts:
