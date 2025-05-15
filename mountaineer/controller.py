@@ -23,6 +23,7 @@ from mountaineer.actions import (
 )
 from mountaineer.client_compiler.source_maps import SourceMapParser
 from mountaineer.config import get_config
+from mountaineer.constants import DEFAULT_STATIC_DIR
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.render import (
@@ -93,6 +94,11 @@ class ControllerBase(ABC, Generic[RenderInput]):
     Client static scripts that are identified at runtime. Intended
     for internal use.
 
+    """
+
+    _scripts_prefix: str = DEFAULT_STATIC_DIR
+    """
+    Prefix for the static resolution endpoint of the bundled scripts.
     """
 
     _definition: Optional["ControllerDefinition"] = None

@@ -278,6 +278,7 @@ async def handle_build(
     # Initialize the isolated context directly
     isolated_context = IsolatedAppContext.from_webcontroller(
         webcontroller=webcontroller,
+        use_dev_exceptions=False,
     )
 
     # Initialize app state
