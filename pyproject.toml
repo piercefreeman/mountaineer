@@ -23,7 +23,7 @@ dependencies = [
     "rich>=13.7.1,<14.0.0",
     "watchfiles>=1.0.0,<2.0.0",
     "firehot>=0.4.0,<1.0.0",
-    "mountaineer-exceptions>=0.0.3",
+    "mountaineer-exceptions>=0.0.4",
 ]
 exclude = [
     "fixtures",

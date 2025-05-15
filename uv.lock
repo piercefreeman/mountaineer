@@ -283,7 +283,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.114.1,<1.0.0" },
     { name = "firehot", specifier = ">=0.4.0,<1.0.0" },
     { name = "inflection", specifier = ">=0.5.1,<1.0.0" },
-    { name = "mountaineer-exceptions", specifier = ">=0.0.3" },
+    { name = "mountaineer-exceptions", specifier = ">=0.0.4" },
     { name = "packaging", specifier = ">=23.2" },
     { name = "pydantic", specifier = ">=2.5.3,<3.0.0" },
     { name = "pydantic-settings", specifier = ">=2.1.0,<3.0.0" },
@@ -314,14 +314,14 @@ dev = [
 
 [[package]]
 name = "mountaineer-exceptions"
-version = "0.0.3"
+version = "0.0.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/98/a6/700110975f7d551283b6630bd595f8c63f47426768782ac1125a24eaa6fa/mountaineer_exceptions-0.0.3.tar.gz", hash = "sha256:6c2d82b743b41a6a4799e4d757bca28a7bffb164c1bacff58bd2bd80fb40d2ba", size = 98932 }
+sdist = { url = "https://files.pythonhosted.org/packages/26/aa/dc33d4da6777ec1529166a8b7df8ecd86e70211dcbf06c0eb92e1f2096b3/mountaineer_exceptions-0.0.4.tar.gz", hash = "sha256:864398558671020260074b9fcf1554438522940be99a4214947031f78f2fa5d6", size = 1088924 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/55/e075065283743a8166aa88187f23e4dc93b8d1137256c1e884c356e6b3ce/mountaineer_exceptions-0.0.3-py3-none-any.whl", hash = "sha256:8d3ab61e4ed9d5ef236bc06f47d8bed5881b645c76d1e2275c54129fcf1acb0e", size = 61222 },
+    { url = "https://files.pythonhosted.org/packages/3d/51/c049cd3826ec39cd5651ad0d0d2552acaa15ce3b9cc860f9b48d184efb32/mountaineer_exceptions-0.0.4-py3-none-any.whl", hash = "sha256:2fbd93713557ad9746c7111b00d309b151465536ad40be163df6acb89cc3238d", size = 346105 },
 ]
 
 [[package]]
