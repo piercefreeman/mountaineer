@@ -277,16 +277,6 @@ class AppController:
             LOGGER.warning(f"Error checking React version: {str(e)}")
 
     def register(self, controller: ControllerBase | MountaineerPlugin):
-        if isinstance(controller, ControllerBase):
-            self._register_controller(controller)
-        elif isinstance(controller, MountaineerPlugin):
-            self._register_plugin(controller)
-        else:
-            raise ValueError(f"Unknown controller type: {type(controller)}")
-
-    def _register_controller(
-        self, controller: ControllerBase, dev_enabled: bool = True
-    ):
         """
         Register a new controller. This will:
 
@@ -298,6 +288,67 @@ class AppController:
         kwarg args that you need before it's registered.
 
         """
+        if isinstance(controller, ControllerBase):
+            self._register_controller(controller)
+        elif isinstance(controller, MountaineerPlugin):
+            self._register_plugin(controller)
+        else:
+            raise ValueError(f"Unknown controller type: {type(controller)}")
+
+    def _register_controller(self, controller: ControllerBase):
+        # If we're running in production, sniff for the script files ahead of time and
+        # attach them to the controller
+        # This allows each view to avoid having to find these on disk, as well as gives
+        # a proactive error if any view will be unable to render when their script files
+        # are missing
+        if not self.development_enabled:
+            controller.resolve_paths(self._view_root, force=True)
+            if not controller._bundled_scripts:
+                raise ValueError(
+                    f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
+                )
+            if not controller._ssr_path:
+                raise ValueError(
+                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
+                )
+
+        self._register_controller_common(
+            controller, dev_enabled=self.development_enabled
+        )
+
+    def _register_plugin(self, plugin: MountaineerPlugin):
+        for controller in plugin.get_controllers():
+            if isinstance(controller.view_path, str):
+                controller.view_path = (
+                    ManagedViewPath.from_view_root(plugin.view_root)
+                    / controller.view_path
+                )
+
+            # This should find our precompiled static and ssr files
+            controller._scripts_prefix = f"/static_plugins/{plugin.name}"
+            controller.resolve_paths(plugin.view_root, force=True)
+
+            if not controller._ssr_path or not controller._bundled_scripts:
+                raise ValueError(
+                    f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
+                )
+
+            # Dev mode is disabled so the app is forced to load the full built javascript
+            # bundle when the pages load. This doesn't affect how the controller API endpoints
+            # are mounted or otherwise how the view controller is added to the app.
+            self._register_controller_common(controller, dev_enabled=False)
+
+        # Mount the view_root / _static directory, since we'll need
+        # this for the client mounted view files
+        self.app.mount(
+            f"/static_plugins/{plugin.name}",
+            StaticFiles(directory=str(plugin.view_root / "_static")),
+            name=f"static-{plugin.name}",
+        )
+
+    def _register_controller_common(
+        self, controller: ControllerBase, dev_enabled: bool = True
+    ):
         # Since the controller name is used to build dependent files, we ensure
         # that we only register one controller of a given name
         controller_name = controller.__class__.__name__
@@ -308,6 +359,12 @@ class AppController:
 
         # Update the paths now that we have access to the runtime package path
         controller_node = self.update_hierarchy(known_controller=controller)
+        if not dev_enabled:
+            if not controller._ssr_path:
+                raise ValueError(
+                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
+                )
+            controller_node.cached_server_script = controller._ssr_path.read_text()
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -382,7 +439,7 @@ class AppController:
             # If we're in development mode, we should recompile the script on page
             # load to make sure we have the latest if there's any chance that it
             # was affected by recent code changes
-            if dev_enabled and self.development_enabled:
+            if dev_enabled:
                 # Caching the build files saves about 0.3 on every load
                 # during development
                 start = monotonic_ns()
@@ -491,24 +548,6 @@ class AppController:
         )
         render_metadata.render_model = return_model
 
-        # If we're running in production, sniff for the script files ahead of time and
-        # attach them to the controller
-        # This allows each view to avoid having to find these on disk, as well as gives
-        # a proactive error if any view will be unable to render when their script files
-        # are missing
-        if not self.development_enabled:
-            controller.resolve_paths(self._view_root, force=True)
-            if not controller._bundled_scripts:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-            if not controller._ssr_path:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-
-            controller_node.cached_server_script = controller._ssr_path.read_text()
-
         # Register the rendering view to an isolated APIRoute, so we can keep track of its
         # the resulting router independently of the rest of the application
         # This is useful in cases where we need to do a render()->FastAPI lookup
@@ -589,36 +628,6 @@ class AppController:
         self._controller_names.add(controller_name)
 
         self._merge_hierarchy_signatures(controller_definition)
-
-    def _register_plugin(self, plugin: MountaineerPlugin):
-        for controller in plugin.get_controllers():
-            if isinstance(controller.view_path, str):
-                controller.view_path = (
-                    ManagedViewPath.from_view_root(plugin.view_root)
-                    / controller.view_path
-                )
-
-            # This should find our precompiled static and ssr files
-            controller._scripts_prefix = f"{DEFAULT_STATIC_DIR}/{plugin.name}"
-            controller.resolve_paths(plugin.view_root, force=True)
-
-            if not controller._ssr_path or not controller._bundled_scripts:
-                raise ValueError(
-                    f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
-                )
-
-            # Dev mode is disabled so the app is forced to load the full built javascript
-            # bundle when the pages load. This doesn't affect how the controller API endpoints
-            # are mounted or otherwise how the view controller is added to the app.
-            self._register_controller(controller, dev_enabled=False)
-
-        # Mount the view_root / _static directory, since we'll need
-        # this for the client mounted view files
-        self.app.mount(
-            f"{DEFAULT_STATIC_DIR}/{plugin.name}",
-            StaticFiles(directory=str(plugin.view_root / "_static")),
-            name=f"static-{plugin.name}",
-        )
 
     def _view_hierarchy_for_controller(self, controller: ControllerBase):
         """

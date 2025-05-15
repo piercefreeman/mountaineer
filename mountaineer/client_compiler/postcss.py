@@ -84,7 +84,7 @@ class PostCSSBundler(APIBuilderBase):
         )
         if not is_installed:
             raise EnvironmentError(
-                "postcss-cli is not installed in the specified view_root_path. Install it with:\n"
+                f"postcss-cli is not installed in the specified view_root_path ({self.metadata.package_root_link}). Install it with:\n"
                 "$ npm install -D postcss postcss-cli"
             )
 
