@@ -260,12 +260,21 @@ class IsolatedAppContext:
         :param app_controller: The app controller to mount the exception controller on
         """
         if not self.use_dev_exceptions:
+            LOGGER.debug("Dev exceptions are disabled, skipping...")
             return
 
         try:
+            from mountaineer_exceptions.controllers.exception_controller import (
+                ExceptionController,
+            )
             from mountaineer_exceptions.plugin import plugin  # type: ignore
 
             app_controller.register(plugin)
+            self.exception_controller = [
+                controller
+                for controller in plugin.get_controllers()
+                if isinstance(controller, ExceptionController)
+            ][0]
             app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
         except ImportError:
             LOGGER.warning("mountaineer-exceptions plugin not found, skipping...")
