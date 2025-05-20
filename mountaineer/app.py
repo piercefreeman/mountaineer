@@ -342,6 +342,8 @@ class AppController:
             cache_args=(
                 DevCacheConfig(
                     node_modules_path=self._view_root / "node_modules",
+                    # This will be 0 on first mount, until the build pipeline overrides
+                    # the app param
                     live_reload_port=self.live_reload_port,
                 )
                 if dev_enabled
@@ -366,7 +368,7 @@ class AppController:
         generate_controller_html = wraps(controller.render)(
             partial(
                 self._generate_controller_html,
-                dev_enabled=self.development_enabled,
+                dev_enabled=dev_enabled,
                 controller_definition=controller_definition,
             )
         )
@@ -543,6 +545,11 @@ class AppController:
         # load to make sure we have the latest if there's any chance that it
         # was affected by recent code changes
         if dev_enabled:
+            # Update the params to reflect the current host-time config
+            if not isinstance(controller_definition.cache_args, DevCacheConfig):
+                raise ValueError("Dev cache is not a DevCacheConfig")
+            controller_definition.cache_args.live_reload_port = self.live_reload_port
+
             # We delay the cache resolution until we need it, so we don't need to
             # pay the cost of building the cache if we're not in dev mode
             dev_cache = controller_definition.resolve_cache()

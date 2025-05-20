@@ -86,6 +86,9 @@ class ControllerDefinition:
         if self.cache_args is None:
             raise ValueError("Cache args are not set for this controller")
 
+        if self.cache:
+            return self.cache
+
         if isinstance(self.cache_args, DevCacheConfig):
             self.cache = ControllerDevCache.resolve_dev_cache(self, self.cache_args)
             return self.cache
