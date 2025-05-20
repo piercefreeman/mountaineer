@@ -5,12 +5,16 @@ from fastapi import APIRouter
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
 
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.controller import ControllerBase
+from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.logging import LOGGER
+from mountaineer.ssr import find_tsconfig
+from mountaineer.static import get_static_path
 
 
-class ControllerDefinition(BaseModel):
-    controller: ControllerBase
+class ControllerRoute(BaseModel):
     router: APIRouter
 
     # URL prefix to the root of the server
@@ -30,9 +34,46 @@ class ControllerDefinition(BaseModel):
 
     """
 
+    model_config = {
+        "arbitrary_types_allowed": True,
+    }
+
+
+class ControllerDevCache(BaseModel):
+    """
+    Cache of the controller definition for the given controller.
+    """
+
+    cached_server_script: str
+    cached_server_sourcemap: str | None = None
+
+    cached_client_script: str
+    cached_client_sourcemap: str | None = None
+
+
+class ControllerProdCache(BaseModel):
+    cached_server_script: str
+    cached_server_sourcemap: str | None = None
+
+
+class ControllerDefinition(BaseModel):
+    controller: ControllerBase
+    route: ControllerRoute | None
+    cache: ControllerDevCache | ControllerProdCache | None = None
+
     graph: "AppGraph"
     """
     Back-reference to the parent graph that this controller belongs to.
+    """
+
+    parent: "ControllerDefinition | None" = None
+    """
+    Parent layout controller that this controller is a child of.
+    """
+
+    children: list["ControllerDefinition"] = []
+    """
+    Child layout controllers that this layout controller modifies.
     """
 
     model_config = {
@@ -41,6 +82,95 @@ class ControllerDefinition(BaseModel):
 
     def get_url_for_metadata(self, metadata: FunctionMetadata):
         return f"{self.url_prefix}/{metadata.function_name.strip('/')}"
+
+    def get_parents(self):
+        parents: list[ControllerDefinition] = []
+        current_node: ControllerDefinition | None = self
+        while current_node is not None:
+            parents.append(current_node)
+            current_node = current_node.parent
+        return parents
+
+    def resolve_prod_cache(self) -> ControllerProdCache:
+        if isinstance(self.cache, ControllerProdCache):
+            return self.cache
+
+        if not self.controller._ssr_path:
+            raise ValueError(
+                f"Controller {self.controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
+            )
+
+        if not self.controller._ssr_path.exists():
+            raise ValueError(
+                f"Controller {self.controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
+            )
+
+        self.cache = ControllerProdCache(
+            cached_server_script=self.controller._ssr_path.read_text()
+        )
+        return self.cache
+
+    def resolve_dev_cache(self) -> ControllerDevCache:
+        layouts = self.get_parents()
+        layouts.reverse()
+        view_paths = [[str(layout.controller.view_path) for layout in layouts]]
+
+        # Find tsconfig.json in the parent directories of the view paths
+        tsconfig_path = find_tsconfig(view_paths)
+
+        cached_server_script: str
+        cached_server_sourcemap: str | None
+        cached_client_script: str
+        cached_client_sourcemap: str | None
+
+        if not self.cache.cached_server_script:
+            LOGGER.debug(
+                f"Compiling server-side bundle for {self.controller.__class__.__name__}: {view_paths}"
+            )
+            (
+                script_payloads,
+                sourcemap_payloads,
+            ) = mountaineer_rs.compile_independent_bundles(
+                view_paths,
+                str((self._view_root / "node_modules").resolve().absolute()),
+                "development",
+                0,
+                str(get_static_path("live_reload.ts").resolve().absolute()),
+                True,
+                tsconfig_path,
+            )
+            cached_server_script = script_payloads[0]
+            cached_server_sourcemap = sourcemap_payloads[0]
+        else:
+            cached_server_script = self.cache.cached_server_script
+            cached_server_sourcemap = self.cache.cached_server_sourcemap
+
+        if not self.cache.cached_client_script:
+            LOGGER.debug(
+                f"Compiling client-side bundle for {self.controller.__class__.__name__}: {view_paths}"
+            )
+            script_payloads, _ = mountaineer_rs.compile_independent_bundles(
+                view_paths,
+                str((self._view_root / "node_modules").resolve().absolute()),
+                "development",
+                self.live_reload_port,
+                str(get_static_path("live_reload.ts").resolve().absolute()),
+                False,
+                tsconfig_path,
+            )
+            cached_client_script = script_payloads[0]
+            cached_client_sourcemap = sourcemap_payloads[0]
+        else:
+            cached_client_script = self.cache.cached_client_script
+            cached_client_sourcemap = self.cache.cached_client_sourcemap
+
+        self.cache = ControllerDevCache(
+            cached_server_script=cached_server_script,
+            cached_server_sourcemap=cached_server_sourcemap,
+            cached_client_script=cached_client_script,
+            cached_client_sourcemap=cached_client_sourcemap,
+        )
+        return self.cache
 
 
 class AppGraph:
@@ -64,24 +194,41 @@ class AppGraph:
     def register(
         self,
         controller: ControllerBase,
-        controller_api: APIRouter,
-        generate_controller_html: Callable,
-        controller_url_prefix: str,
-        view_router: APIRouter,
+        route: ControllerRoute | None,
     ):
-        controller_definition = ControllerDefinition(
-            controller=controller,
-            router=controller_api,
-            view_route=generate_controller_html,
-            url_prefix=controller_url_prefix,
-            render_router=view_router,
-            graph=self,
-        )
+        controller_definition: ControllerDefinition | None = None
+
+        # Layout controllers are unique - if we're re-registering a layout controller,
+        # we need to remove any existing definitions that are children of this controller
+        if isinstance(controller, LayoutControllerBase):
+            for controller_definition in self.controllers:
+                if (
+                    controller_definition.controller.view_path.absolute()
+                    == controller.view_path.absolute()
+                ):
+                    controller_definition = controller_definition
+                    break
+
+        if not controller_definition:
+            controller_definition = ControllerDefinition(
+                controller=controller,
+                route=route,
+                graph=self,
+            )
+            self.controllers.append(controller_definition)
+        else:
+            controller_definition.controller = controller
+            controller_definition.route = route
+            controller_definition.graph = self
+
+        # Set the back-reference to the controller definition in case the controller
+        # needs to access the graph directly
         controller._definition = controller_definition
+        return controller_definition
 
-        self.controllers.append(controller_definition)
-
-    def get_definitions_for_cls(self, cls: Type[ControllerBase]):
+    def get_definitions_for_cls(
+        self, cls: Type[ControllerBase]
+    ) -> list[ControllerDefinition]:
         """
         Get all controller definitions for a given controller class. We use name here
         since a lot of dependent logic is parameterized on the name (linkGenerator, etc).
