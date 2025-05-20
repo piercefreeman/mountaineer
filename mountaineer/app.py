@@ -295,6 +295,12 @@ class AppController:
             # so we can skip the rest of the loop
             if not layout_is_new:
                 break
+        
+        updated_controllers = self.graph.merge_hierarchy_signatures(
+            controller_definition
+        )
+        for controller_definition in updated_controllers:
+            self._remount_controller(controller_definition)
 
     def _register_plugin(self, plugin: MountaineerPlugin):
         for controller in plugin.get_controllers():
@@ -474,12 +480,6 @@ class AppController:
             render_router=view_router,
         )
 
-        updated_controllers = self.graph.merge_hierarchy_signatures(
-            controller_definition
-        )
-        for controller_definition in updated_controllers:
-            self._remount_controller(controller_definition)
-        
         return controller_definition
     
     async def _generate_controller_html(
@@ -548,7 +548,10 @@ class AppController:
             # during development
             start = monotonic_ns()
 
-            cache = controller_definition.resolve_dev_cache()
+            cache = controller_definition.resolve_dev_cache(
+                live_reload_port=self.live_reload_port,
+                node_modules_path=(self._view_root / "node_modules")
+            )
 
             LOGGER.debug(
                 f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
@@ -756,7 +759,7 @@ class AppController:
         if not target_controller.route.render_router:
             return
 
-        print("REMOUNTING", target_controller)
+        print("REMOUNTING", target_controller.controller.__class__.__name__)
         # Clear the previous definition before re-adding it
         # Both the app route is required (for the actual page resolution) and the render router
         # (to avoid conflicts in the OpenAPI generation)

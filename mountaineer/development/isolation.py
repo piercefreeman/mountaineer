@@ -297,7 +297,7 @@ class IsolatedAppContext:
             raise ValueError("Exception controller not initialized")
 
         if request.method == "GET":
-            html = await self.exception_controller._definition.view_route(  # type: ignore
+            html = await self.exception_controller._definition.route.view_route(  # type: ignore
                 exception=str(exc),
                 stack="".join(format_exception(exc)),
                 parsed_exception=self.exception_controller.traceback_parser.parse_exception(

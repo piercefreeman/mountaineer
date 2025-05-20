@@ -1,5 +1,5 @@
 from inspect import Parameter, signature
-from typing import Callable, Type
+from typing import Callable, Type, cast
 
 from fastapi import APIRouter
 from fastapi.routing import APIRoute
@@ -13,6 +13,7 @@ from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.ssr import find_tsconfig
 from mountaineer.static import get_static_path
+from mountaineer.paths import ManagedViewPath
 
 @dataclass(kw_only=True)
 class ControllerRoute:
@@ -104,59 +105,57 @@ class ControllerDefinition:
         )
         return self.cache
 
-    def resolve_dev_cache(self) -> ControllerDevCache:
+    def resolve_dev_cache(
+        self,
+        *,
+        node_modules_path: ManagedViewPath,
+        live_reload_port: int,
+    ) -> ControllerDevCache:
+        # If we already have the correct cache, we can return it
+        if self.cache and isinstance(self.cache, ControllerDevCache):
+            return self.cache
+
         layouts = self.get_parents()
         layouts.reverse()
-        view_paths = [[str(layout.controller.view_path) for layout in layouts]]
+        view_paths = [[str(layout.controller.full_view_path) for layout in layouts]]
 
         # Find tsconfig.json in the parent directories of the view paths
         tsconfig_path = find_tsconfig(view_paths)
 
-        cached_server_script: str
-        cached_server_sourcemap: str | None
-        cached_client_script: str
-        cached_client_sourcemap: str | None
+        print(f"Server-side bundle paths: {self.controller.__class__.__name__} {view_paths} {node_modules_path}")
 
-        if not self.cache.cached_server_script:
-            LOGGER.debug(
-                f"Compiling server-side bundle for {self.controller.__class__.__name__}: {view_paths}"
-            )
-            (
-                script_payloads,
-                sourcemap_payloads,
-            ) = mountaineer_rs.compile_independent_bundles(
-                view_paths,
-                str((self._view_root / "node_modules").resolve().absolute()),
-                "development",
-                0,
-                str(get_static_path("live_reload.ts").resolve().absolute()),
-                True,
-                tsconfig_path,
-            )
-            cached_server_script = script_payloads[0]
-            cached_server_sourcemap = sourcemap_payloads[0]
-        else:
-            cached_server_script = self.cache.cached_server_script
-            cached_server_sourcemap = self.cache.cached_server_sourcemap
+        LOGGER.debug(
+            f"Compiling server-side bundle for {self.controller.__class__.__name__}: {view_paths}"
+        )
+        (
+            script_payloads,
+            sourcemap_payloads,
+        ) = mountaineer_rs.compile_independent_bundles(
+            view_paths,
+            str(node_modules_path.resolve().absolute()),
+            "development",
+            0,
+            str(get_static_path("live_reload.ts").resolve().absolute()),
+            True,
+            tsconfig_path,
+        )
+        cached_server_script = cast(str, script_payloads[0])
+        cached_server_sourcemap = cast(str | None, sourcemap_payloads[0])
 
-        if not self.cache.cached_client_script:
-            LOGGER.debug(
-                f"Compiling client-side bundle for {self.controller.__class__.__name__}: {view_paths}"
-            )
-            script_payloads, _ = mountaineer_rs.compile_independent_bundles(
-                view_paths,
-                str((self._view_root / "node_modules").resolve().absolute()),
-                "development",
-                self.live_reload_port,
-                str(get_static_path("live_reload.ts").resolve().absolute()),
-                False,
-                tsconfig_path,
-            )
-            cached_client_script = script_payloads[0]
-            cached_client_sourcemap = sourcemap_payloads[0]
-        else:
-            cached_client_script = self.cache.cached_client_script
-            cached_client_sourcemap = self.cache.cached_client_sourcemap
+        LOGGER.debug(
+            f"Compiling client-side bundle for {self.controller.__class__.__name__}: {view_paths}"
+        )
+        script_payloads, _ = mountaineer_rs.compile_independent_bundles(
+            view_paths,
+            str(node_modules_path.resolve().absolute()),
+            "development",
+            live_reload_port,
+            str(get_static_path("live_reload.ts").resolve().absolute()),
+            False,
+            tsconfig_path,
+        )
+        cached_client_script = cast(str, script_payloads[0])
+        cached_client_sourcemap = cast(str | None, sourcemap_payloads[0])
 
         self.cache = ControllerDevCache(
             cached_server_script=cached_server_script,
@@ -238,6 +237,8 @@ class AppGraph:
         parent.children.append(child)
         child.parent = parent
 
+        print(f"Will link {parent.controller.__class__.__name__} -> {child.controller.__class__.__name__}")
+
     def get_definitions_for_cls(
         self, cls: Type[ControllerBase]
     ) -> list[ControllerDefinition]:
@@ -257,15 +258,17 @@ class AppGraph:
         # Update _this_ controller with anything in the above hierarchy (known layout controllers)
         # Update _child_ controller with this view (in the case that this definition is
         # a layout controller)
+
+        # TODO: Improve the algorithm here - right now this is too slow in a large application
+        # since we re-traverse multiple
+
         def explore_children(current_node: ControllerDefinition):
             for child in current_node.children:
-                print("EXPLORING CHILD", child)
                 yield child
                 yield from explore_children(child)
 
         def explore_parents(current_node: ControllerDefinition):
             while current_node.parent is not None:
-                print("EXPLORING PARENT", current_node.parent)
                 yield current_node.parent
                 current_node = current_node.parent
 
@@ -274,8 +277,6 @@ class AppGraph:
 
         parent_controllers = [node.controller for node in parents if node.controller]
         children_controllers = [node.controller for node in children if node.controller]
-
-        print("PARENT CONTROLLERS", controller_definition.controller.__class__.__name__, len(parent_controllers), len(children_controllers))
 
         parent_definitions = [
             controller_definition
