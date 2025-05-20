@@ -1,6 +1,5 @@
 import traceback
 from contextlib import contextmanager
-from hashlib import md5
 from multiprocessing import get_start_method, set_start_method
 from os import getenv
 from time import time
@@ -298,21 +297,16 @@ async def handle_build(
     # Get the build-enabled controllers
     build_controllers = [
         controller_definition
-        for controller_definition in isolated_context.app_controller.controllers
+        for controller_definition in isolated_context.app_controller.graph.controllers
         if controller_definition.controller._build_enabled
     ]
 
     # Get view paths for all controllers
-    all_view_paths: list[list[str]] = []
-    for controller_definition in build_controllers:
-        (
-            _,
-            direct_hierarchy,
-        ) = isolated_context.app_controller._view_hierarchy_for_controller(
-            controller_definition.controller
-        )
-        direct_hierarchy.reverse()
-        all_view_paths.append([str(layout.path) for layout in direct_hierarchy])
+    all_view_paths: list[list[str]] = [
+        view_path
+        for controller_definition in build_controllers
+        for view_path in controller_definition.get_hierarchy_view_paths()
+    ]
 
     # Find tsconfig.json in the parent directories of the view paths
     tsconfig_path = find_tsconfig(all_view_paths)
@@ -346,9 +340,8 @@ async def handle_build(
         client_bundle_result["entrypoint_maps"],
     ):
         script_root = underscore(controller_definition.controller.__class__.__name__)
-        content_hash = md5(content.encode()).hexdigest()
-        (static_output / f"{script_root}-{content_hash}.js").write_text(content)
-        (static_output / f"{script_root}-{content_hash}.map.js").write_text(map_content)
+        (static_output / f"{script_root}.js").write_text(content)
+        (static_output / f"{script_root}.map.js").write_text(map_content)
 
     # Copy the other files 1:1 because they'll be referenced by name in the
     # entrypoints

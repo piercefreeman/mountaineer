@@ -1,23 +1,22 @@
 from collections import defaultdict
-from functools import wraps
+from functools import partial, wraps
+from hashlib import md5
 from inspect import Signature, isawaitable, isclass, signature
 from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from re import match as re_match
 from time import monotonic_ns
 from typing import Any, Callable, Type, overload
-from uuid import uuid4
 
 from fastapi import APIRouter, FastAPI, Request
-from fastapi.routing import APIRoute
 from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.routing import APIRoute
 from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
-from functools import partial
 
 from mountaineer.actions import (
     FunctionActionType,
@@ -265,7 +264,9 @@ class AppController:
 
         # If we just registered a layout controller, we need to add it to the graph
         if isinstance(controller, LayoutControllerBase):
-            self.path_to_layout[str(controller.full_view_path.absolute())] = controller_definition
+            self.path_to_layout[str(controller.full_view_path.absolute())] = (
+                controller_definition
+            )
 
         # We might have added a fresh root path to the graph with this addition, so we should
         # scan the file path for layout files that might wrap this controller
@@ -278,10 +279,19 @@ class AppController:
             if str(layout_path) not in self.path_to_layout:
                 # Synthetic layout controllers let us use the same code handling that we
                 # use for explicit controllers, but without having to define a new class.
-                print("CREATING LAYOUT", layout_path)
-                new_layout = type(f"Layout_{uuid4()}", (LayoutControllerBase,), {
-                    "view_path": layout_path,
-                })
+                # The name needs to be deterministic so it can resolve to the same path
+                # during view building and production hosting
+                layout_name = f"Layout_{md5(str(layout_path).encode()).hexdigest()}"
+                new_layout = type(
+                    layout_name,
+                    (LayoutControllerBase,),
+                    {
+                        "view_path": layout_path,
+                    },
+                )
+                LOGGER.debug(
+                    f"Creating synthetic layout {layout_name} for {layout_path}"
+                )
                 new_definition = self.graph.register(new_layout(), route=None)
                 self.path_to_layout[str(layout_path)] = new_definition
                 layout_is_new = True
@@ -295,7 +305,7 @@ class AppController:
             # so we can skip the rest of the loop
             if not layout_is_new:
                 break
-        
+
         updated_controllers = self.graph.merge_hierarchy_signatures(
             controller_definition
         )
@@ -481,7 +491,7 @@ class AppController:
         )
 
         return controller_definition
-    
+
     async def _generate_controller_html(
         self,
         *args,
@@ -521,10 +531,7 @@ class AppController:
         controller_output = render_output[controller.__class__.__name__]
         if not isinstance(controller_output, RenderBase):
             return controller_output
-        if (
-            controller_output.metadata
-            and controller_output.metadata.explicit_response
-        ):
+        if controller_output.metadata and controller_output.metadata.explicit_response:
             return controller_output.metadata.explicit_response
 
         LOGGER.debug(
@@ -550,12 +557,10 @@ class AppController:
 
             cache = controller_definition.resolve_dev_cache(
                 live_reload_port=self.live_reload_port,
-                node_modules_path=(self._view_root / "node_modules")
+                node_modules_path=(self._view_root / "node_modules"),
             )
 
-            LOGGER.debug(
-                f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
-            )
+            LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
             html = self.compile_html(
                 cache.cached_server_script,
                 controller_output,
@@ -712,7 +717,9 @@ class AppController:
 
         return HTMLResponse(page_contents)
 
-    def _collect_layouts_for_controller(self, controller: ControllerBase) -> list[ManagedViewPath]:
+    def _collect_layouts_for_controller(
+        self, controller: ControllerBase
+    ) -> list[ManagedViewPath]:
         """
         Recursively parse the parent paths to find the first layout (if any)
 
@@ -759,11 +766,15 @@ class AppController:
         if not target_controller.route.render_router:
             return
 
-        print("REMOUNTING", target_controller.controller.__class__.__name__)
+        LOGGER.debug(f"Remounting {target_controller.controller.__class__.__name__}")
+
         # Clear the previous definition before re-adding it
         # Both the app route is required (for the actual page resolution) and the render router
         # (to avoid conflicts in the OpenAPI generation)
-        for route_list in [self.app.routes, target_controller.route.render_router.routes]:
+        for route_list in [
+            self.app.routes,
+            target_controller.route.render_router.routes,
+        ]:
             for route in list(route_list):
                 if (
                     isinstance(route, APIRoute)

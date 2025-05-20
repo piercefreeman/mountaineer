@@ -1,19 +1,18 @@
+from dataclasses import dataclass, field
 from inspect import Parameter, signature
 from typing import Callable, Type, cast
 
 from fastapi import APIRouter
-from fastapi.routing import APIRoute
-from pydantic import BaseModel
-from dataclasses import dataclass, field
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.logging import LOGGER
+from mountaineer.paths import ManagedViewPath
 from mountaineer.ssr import find_tsconfig
 from mountaineer.static import get_static_path
-from mountaineer.paths import ManagedViewPath
+
 
 @dataclass(kw_only=True)
 class ControllerRoute:
@@ -36,6 +35,7 @@ class ControllerRoute:
 
     """
 
+
 @dataclass(kw_only=True)
 class ControllerDevCache:
     """
@@ -53,6 +53,7 @@ class ControllerDevCache:
 class ControllerProdCache:
     cached_server_script: str
     cached_server_sourcemap: str | None = None
+
 
 @dataclass(kw_only=True)
 class ControllerDefinition:
@@ -86,6 +87,11 @@ class ControllerDefinition:
             current_node = current_node.parent
         return parents
 
+    def get_hierarchy_view_paths(self):
+        layouts = self.get_parents()
+        layouts.reverse()
+        return [[str(layout.controller.full_view_path) for layout in layouts]]
+
     def resolve_prod_cache(self) -> ControllerProdCache:
         if isinstance(self.cache, ControllerProdCache):
             return self.cache
@@ -115,14 +121,9 @@ class ControllerDefinition:
         if self.cache and isinstance(self.cache, ControllerDevCache):
             return self.cache
 
-        layouts = self.get_parents()
-        layouts.reverse()
-        view_paths = [[str(layout.controller.full_view_path) for layout in layouts]]
-
         # Find tsconfig.json in the parent directories of the view paths
+        view_paths = self.get_hierarchy_view_paths()
         tsconfig_path = find_tsconfig(view_paths)
-
-        print(f"Server-side bundle paths: {self.controller.__class__.__name__} {view_paths} {node_modules_path}")
 
         LOGGER.debug(
             f"Compiling server-side bundle for {self.controller.__class__.__name__}: {view_paths}"
@@ -228,7 +229,9 @@ class AppGraph:
         controller._definition = controller_definition
         return controller_definition
 
-    def link_controllers(self, parent: ControllerDefinition, child: ControllerDefinition):
+    def link_controllers(
+        self, parent: ControllerDefinition, child: ControllerDefinition
+    ):
         # This doesn't guarantee that the structure won't become a cyclic graph, but it's a good
         # and fast first-pass check that future graph traversal code won't loop indefinitely.
         if parent == child:
@@ -237,7 +240,9 @@ class AppGraph:
         parent.children.append(child)
         child.parent = parent
 
-        print(f"Will link {parent.controller.__class__.__name__} -> {child.controller.__class__.__name__}")
+        LOGGER.debug(
+            f"Will link {parent.controller.__class__.__name__} -> {child.controller.__class__.__name__}"
+        )
 
     def get_definitions_for_cls(
         self, cls: Type[ControllerBase]
@@ -306,11 +311,14 @@ class AppGraph:
                 )
             )
 
-        return [
-            updated_definition
-            for updated_definition in updated_definitions
-            if updated_definition is not None
-        ]
+        # Remove duplicates by in-memory hash because the actual objects are not hashable
+        unique_updated: dict[str, ControllerDefinition] = {}
+        for updated_definition in updated_definitions:
+            if updated_definition is None:
+                continue
+            unique_updated[id(updated_definition)] = updated_definition
+
+        return list(unique_updated.values())
 
     def _merge_render_signatures(
         self,
