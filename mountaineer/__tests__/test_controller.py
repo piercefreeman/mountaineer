@@ -39,12 +39,12 @@ def test_resolve_paths(tmp_path: Path):
 
     # Our hash has to be exactly 32 digits to match the regex
     static_base.mkdir()
-    random_hash = "b5ecd0c4405374100d6ef93088b86898"
-    (static_base / f"stub_controller-{random_hash}.js").touch()
-    (static_base / f"stub_controller-{random_hash}.js.map").touch()
+    (static_base / "stub_controller.js").touch()
+    (static_base / "stub_controller.js.map").touch()
     assert controller.resolve_paths(view_base)
 
     # Now ensure that the paths are correctly set
     assert controller._view_base_path == view_base
     assert controller._ssr_path == ssr_base / "stub_controller.js"
-    assert controller._bundled_scripts == [f"stub_controller-{random_hash}.js"]
+    assert len(controller._bundled_scripts) == 1
+    assert controller._bundled_scripts[0].startswith("/static/stub_controller.js?v=")

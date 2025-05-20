@@ -98,7 +98,7 @@ class PostCSSBundler(APIBuilderBase):
                 "-o",
                 str(output_path.absolute()),
             ]
-            LOGGER.debug(f"[postcss] RUNNING COMMAND {command}")
+            LOGGER.debug(f"[postcss] Running command {command}")
 
             process = await asyncio.create_subprocess_exec(
                 *command,

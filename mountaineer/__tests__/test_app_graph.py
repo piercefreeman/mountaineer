@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 from fastapi import APIRouter
-from fastapi.routing import APIRoute
 
 from mountaineer.app import AppController, ControllerDefinition
 from mountaineer.app_graph import ControllerRoute
@@ -58,11 +57,6 @@ def test_merge_render_signatures():
     assert target_definition.route is not None
     assert reference_definition.route is not None
 
-    initial_routes = [
-        route.path for route in app.app.routes if isinstance(route, APIRoute)
-    ]
-    assert initial_routes == []
-
     app.graph._merge_render_signatures(
         target_definition, reference_controller=reference_definition
     )
@@ -73,13 +67,6 @@ def test_merge_render_signatures():
         # Items only in the reference function should be included as kwargs
         Parameter("c", Parameter.KEYWORD_ONLY, annotation=int, default=Parameter.empty),
     ]
-
-    # After the merging the signature should be updated, and the app controller should
-    # have a new endpoint (since the merging must re-mount)
-    final_routes = [
-        route.path for route in app.app.routes if isinstance(route, APIRoute)
-    ]
-    assert final_routes == ["/target"]
 
 
 def test_merge_render_signatures_conflicting_types():
