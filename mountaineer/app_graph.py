@@ -269,9 +269,6 @@ class AppGraph:
         # Update _child_ controller with this view (in the case that this definition is
         # a layout controller)
 
-        # TODO: Improve the algorithm here - right now this is too slow in a large application
-        # since we re-traverse multiple
-
         def explore_children(current_node: ControllerDefinition):
             for child in current_node.children:
                 yield child

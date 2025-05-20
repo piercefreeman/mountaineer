@@ -276,29 +276,7 @@ class AppController:
         child_controller = controller_definition
         for layout_path in layout_paths:
             layout_path = layout_path.absolute()
-            layout_is_new = False
-            if str(layout_path) not in self.path_to_layout:
-                # Synthetic layout controllers let us use the same code handling that we
-                # use for explicit controllers, but without having to define a new class.
-                # The name needs to be deterministic so it can resolve to the same path
-                # during view building and production hosting
-                layout_name = f"Layout_{md5(str(layout_path).encode()).hexdigest()}"
-                new_layout = type(
-                    layout_name,
-                    (LayoutControllerBase,),
-                    {
-                        "view_path": layout_path,
-                    },
-                )
-                LOGGER.debug(
-                    f"Creating synthetic layout {layout_name} for {layout_path}"
-                )
-                new_definition = self.graph.register(new_layout(), route=None)
-                self.path_to_layout[str(layout_path)] = new_definition
-                layout_is_new = True
-
-            # Maintain the hierarchy of layouts
-            layout = self.path_to_layout[str(layout_path)]
+            layout, layout_is_new = self._get_layout_for_path(layout_path)
             self.graph.link_controllers(layout, child_controller)
             child_controller = layout
 
@@ -758,6 +736,37 @@ class AppController:
             current_path = current_path.parent
 
         return found_layouts
+
+    def _get_layout_for_path(
+        self, layout_path: Path
+    ) -> tuple[ControllerDefinition, bool]:
+        """
+        Gets an existing layout for a given path. If no layout exists, we will
+        create a new one.
+
+        :returns: A tuple of the layout controller and a boolean indicating if it was newly created
+
+        """
+        layout_path = layout_path.resolve().absolute()
+        if str(layout_path) in self.path_to_layout:
+            return self.path_to_layout[str(layout_path)], False
+
+        # Synthetic layout controllers let us use the same code handling that we
+        # use for explicit controllers, but without having to define a new class.
+        # The name needs to be deterministic so it can resolve to the same path
+        # during view building and production hosting
+        layout_name = f"Layout_{md5(str(layout_path).encode()).hexdigest()}"
+        new_layout = type(
+            layout_name,
+            (LayoutControllerBase,),
+            {
+                "view_path": layout_path,
+            },
+        )
+        LOGGER.debug(f"Creating synthetic layout {layout_name} for {layout_path}")
+        new_definition = self.graph.register(new_layout(), route=None)
+        self.path_to_layout[str(layout_path)] = new_definition
+        return new_definition, True
 
     def _remount_controller(self, target_controller: ControllerDefinition):
         """
