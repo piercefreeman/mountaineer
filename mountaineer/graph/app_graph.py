@@ -1,17 +1,19 @@
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
-from typing import Callable, Type, cast
+from typing import Callable, Type
 
 from fastapi import APIRouter
 
-from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.graph.cache import (
+    ControllerDevCache,
+    ControllerProdCache,
+    DevCacheConfig,
+    ProdCacheConfig,
+)
 from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath
-from mountaineer.ssr import find_tsconfig
-from mountaineer.static import get_static_path
 
 
 @dataclass(kw_only=True)
@@ -37,29 +39,12 @@ class ControllerRoute:
 
 
 @dataclass(kw_only=True)
-class ControllerDevCache:
-    """
-    Cache of the controller definition for the given controller.
-    """
-
-    cached_server_script: str
-    cached_server_sourcemap: str | None = None
-
-    cached_client_script: str
-    cached_client_sourcemap: str | None = None
-
-
-@dataclass(kw_only=True)
-class ControllerProdCache:
-    cached_server_script: str
-    cached_server_sourcemap: str | None = None
-
-
-@dataclass(kw_only=True)
 class ControllerDefinition:
     controller: ControllerBase
     route: ControllerRoute | None
+
     cache: ControllerDevCache | ControllerProdCache | None = None
+    cache_args: DevCacheConfig | ProdCacheConfig | None = None
 
     graph: "AppGraph"
     """
@@ -97,79 +82,21 @@ class ControllerDefinition:
         layouts.reverse()
         return [[str(layout.controller.full_view_path) for layout in layouts]]
 
-    def resolve_prod_cache(self) -> ControllerProdCache:
-        if isinstance(self.cache, ControllerProdCache):
+    def resolve_cache(self):
+        if self.cache_args is None:
+            raise ValueError("Cache args are not set for this controller")
+
+        if self.cache:
             return self.cache
 
-        if not self.controller._ssr_path:
-            raise ValueError(
-                f"Controller {self.controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
-            )
-
-        if not self.controller._ssr_path.exists():
-            raise ValueError(
-                f"Controller {self.controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
-            )
-
-        self.cache = ControllerProdCache(
-            cached_server_script=self.controller._ssr_path.read_text()
-        )
-        return self.cache
-
-    def resolve_dev_cache(
-        self,
-        *,
-        node_modules_path: ManagedViewPath,
-        live_reload_port: int,
-    ) -> ControllerDevCache:
-        # If we already have the correct cache, we can return it
-        if self.cache and isinstance(self.cache, ControllerDevCache):
+        if isinstance(self.cache_args, DevCacheConfig):
+            self.cache = ControllerDevCache.resolve_dev_cache(self, self.cache_args)
             return self.cache
-
-        # Find tsconfig.json in the parent directories of the view paths
-        view_paths = self.get_hierarchy_view_paths()
-        tsconfig_path = find_tsconfig(view_paths)
-
-        LOGGER.debug(
-            f"Compiling server-side bundle for {self.controller.__class__.__name__}: {view_paths}"
-        )
-        (
-            script_payloads,
-            sourcemap_payloads,
-        ) = mountaineer_rs.compile_independent_bundles(
-            view_paths,
-            str(node_modules_path.resolve().absolute()),
-            "development",
-            0,
-            str(get_static_path("live_reload.ts").resolve().absolute()),
-            True,
-            tsconfig_path,
-        )
-        cached_server_script = cast(str, script_payloads[0])
-        cached_server_sourcemap = cast(str | None, sourcemap_payloads[0])
-
-        LOGGER.debug(
-            f"Compiling client-side bundle for {self.controller.__class__.__name__}: {view_paths}"
-        )
-        script_payloads, _ = mountaineer_rs.compile_independent_bundles(
-            view_paths,
-            str(node_modules_path.resolve().absolute()),
-            "development",
-            live_reload_port,
-            str(get_static_path("live_reload.ts").resolve().absolute()),
-            False,
-            tsconfig_path,
-        )
-        cached_client_script = cast(str, script_payloads[0])
-        cached_client_sourcemap = cast(str | None, sourcemap_payloads[0])
-
-        self.cache = ControllerDevCache(
-            cached_server_script=cached_server_script,
-            cached_server_sourcemap=cached_server_sourcemap,
-            cached_client_script=cached_client_script,
-            cached_client_sourcemap=cached_client_sourcemap,
-        )
-        return self.cache
+        elif isinstance(self.cache_args, ProdCacheConfig):
+            self.cache = ControllerProdCache.resolve_prod_cache(self, self.cache_args)
+            return self.cache
+        else:
+            raise ValueError("Invalid cache args")
 
     def clear_cache(self, recursive: bool = True):
         self.cache = None
@@ -201,6 +128,7 @@ class AppGraph:
         self,
         controller: ControllerBase,
         route: ControllerRoute | None,
+        cache_args: DevCacheConfig | ProdCacheConfig | None,
     ):
         controller_definition: ControllerDefinition | None = None
 
@@ -221,6 +149,7 @@ class AppGraph:
                 controller=controller,
                 route=route,
                 graph=self,
+                cache_args=cache_args,
             )
             self.controllers.append(controller_definition)
 
@@ -228,6 +157,7 @@ class AppGraph:
         controller_definition.controller = controller
         controller_definition.route = route
         controller_definition.graph = self
+        controller_definition.cache_args = cache_args
 
         # Set the back-reference to the controller definition in case the controller
         # needs to access the graph directly

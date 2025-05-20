@@ -25,7 +25,6 @@ from mountaineer.actions import (
     init_function_metadata,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.app_graph import AppGraph, ControllerDefinition, ControllerRoute
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
@@ -36,6 +35,13 @@ from mountaineer.exceptions import (
     APIException,
     RequestValidationError,
     RequestValidationFailure,
+)
+from mountaineer.graph.app_graph import AppGraph, ControllerDefinition, ControllerRoute
+from mountaineer.graph.cache import (
+    ControllerDevCache,
+    ControllerProdCache,
+    DevCacheConfig,
+    ProdCacheConfig,
 )
 from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
@@ -242,25 +248,14 @@ class AppController:
             raise ValueError(f"Unknown controller type: {type(controller)}")
 
     def _register_controller(self, controller: ControllerBase):
-        # If we're running in production, sniff for the script files ahead of time and
-        # attach them to the controller
         # This allows each view to avoid having to find these on disk, as well as gives
         # a proactive error if any view will be unable to render when their script files
         # are missing
         controller.resolve_paths(self._view_root, force=True)
 
-        if not self.development_enabled:
-            if not controller._bundled_scripts:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-            if not controller._ssr_path:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-
         controller_definition = self._register_controller_common(
-            controller, dev_enabled=self.development_enabled
+            controller,
+            dev_enabled=self.development_enabled,
         )
 
         # If we just registered a layout controller, we need to add it to the graph
@@ -307,9 +302,13 @@ class AppController:
 
             # Unlike standard controllers, plugins are expected to have precompiled scripts
             # at all times
-            if not controller._ssr_path or not controller._bundled_scripts:
+            if not controller._ssr_path:
                 raise ValueError(
-                    f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
+                    f"Controller {controller} was not able to find SSR scripts for plugin {plugin.name}"
+                )
+            if not controller._bundled_scripts:
+                raise ValueError(
+                    f"Controller {controller} was not able to find bundled scripts for plugin {plugin.name}"
                 )
 
             # Dev mode is disabled so the app is forced to load the full built javascript
@@ -337,11 +336,25 @@ class AppController:
 
         # Register a stub for the new controller, which will be updated with its
         # router preferences later
-        controller_definition = self.graph.register(controller, route=None)
+        controller_definition = self.graph.register(
+            controller,
+            route=None,
+            cache_args=(
+                DevCacheConfig(
+                    node_modules_path=self._view_root / "node_modules",
+                    # This will be 0 on first mount, until the build pipeline overrides
+                    # the app param
+                    live_reload_port=self.live_reload_port,
+                )
+                if dev_enabled
+                else ProdCacheConfig()
+            ),
+        )
 
-        # Update the paths now that we have access to the runtime package path
+        # If we're running in production, sniff for the script files ahead of time so we
+        # can fail early if they're missing
         if not dev_enabled:
-            controller_definition.resolve_prod_cache()
+            controller_definition.resolve_cache()
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -355,7 +368,7 @@ class AppController:
         generate_controller_html = wraps(controller.render)(
             partial(
                 self._generate_controller_html,
-                dev_enabled=self.development_enabled,
+                dev_enabled=dev_enabled,
                 controller_definition=controller_definition,
             )
         )
@@ -532,14 +545,16 @@ class AppController:
         # load to make sure we have the latest if there's any chance that it
         # was affected by recent code changes
         if dev_enabled:
-            # Caching the build files saves about 0.3 on every load
-            # during development
-            start = monotonic_ns()
+            # Update the params to reflect the current host-time config
+            if not isinstance(controller_definition.cache_args, DevCacheConfig):
+                raise ValueError("Dev cache is not a DevCacheConfig")
+            controller_definition.cache_args.live_reload_port = self.live_reload_port
 
-            dev_cache = controller_definition.resolve_dev_cache(
-                live_reload_port=self.live_reload_port,
-                node_modules_path=(self._view_root / "node_modules"),
-            )
+            # We delay the cache resolution until we need it, so we don't need to
+            # pay the cost of building the cache if we're not in dev mode
+            dev_cache = controller_definition.resolve_cache()
+            if not isinstance(dev_cache, ControllerDevCache):
+                raise ValueError("Dev cache is not a ControllerDevCache")
 
             LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
             html = self.compile_html(
@@ -552,7 +567,10 @@ class AppController:
             )
         else:
             # Production payload
-            prod_cache = controller_definition.resolve_prod_cache()
+            prod_cache = controller_definition.resolve_cache()
+            if not isinstance(prod_cache, ControllerProdCache):
+                raise ValueError("Prod cache is not a ControllerProdCache")
+
             html = self.compile_html(
                 prod_cache.cached_server_script,
                 controller_output,
@@ -764,7 +782,7 @@ class AppController:
             },
         )
         LOGGER.debug(f"Creating synthetic layout {layout_name} for {layout_path}")
-        new_definition = self.graph.register(new_layout(), route=None)
+        new_definition = self.graph.register(new_layout(), route=None, cache_args=None)
         self.path_to_layout[str(layout_path)] = new_definition
         return new_definition, True
 
@@ -811,11 +829,20 @@ class AppController:
         """
         path = path.resolve().absolute()
 
+        found_controllers: list[ControllerDefinition] = []
         for controller_definition in self.graph.controllers:
             if str(controller_definition.controller.full_view_path) == str(path):
                 # Clear any dependencies recursively so we update children pages if the
                 # layout has changed
-                controller_definition.clear_cache(recursive=True)
+                found_controllers.append(controller_definition)
+
+        for controller_definition in found_controllers:
+            controller_definition.clear_cache(recursive=True)
+
+        controller_names = [
+            controller.controller.__class__.__name__ for controller in found_controllers
+        ]
+        LOGGER.debug(f"Invalidated {controller_names} controllers for path {path}")
 
     async def _handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
