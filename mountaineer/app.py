@@ -25,7 +25,6 @@ from mountaineer.actions import (
     init_function_metadata,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.app_graph import AppGraph, ControllerDefinition, ControllerRoute
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
@@ -37,6 +36,7 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
+from mountaineer.graph.app_graph import AppGraph, ControllerDefinition, ControllerRoute
 from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.plugin import MountaineerPlugin
@@ -307,9 +307,13 @@ class AppController:
 
             # Unlike standard controllers, plugins are expected to have precompiled scripts
             # at all times
-            if not controller._ssr_path or not controller._bundled_scripts:
+            if not controller._ssr_path:
                 raise ValueError(
-                    f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
+                    f"Controller {controller} was not able to find SSR scripts for plugin {plugin.name}"
+                )
+            if not controller._bundled_scripts:
+                raise ValueError(
+                    f"Controller {controller} was not able to find bundled scripts for plugin {plugin.name}"
                 )
 
             # Dev mode is disabled so the app is forced to load the full built javascript
@@ -811,11 +815,20 @@ class AppController:
         """
         path = path.resolve().absolute()
 
+        found_controllers: list[ControllerDefinition] = []
         for controller_definition in self.graph.controllers:
             if str(controller_definition.controller.full_view_path) == str(path):
                 # Clear any dependencies recursively so we update children pages if the
                 # layout has changed
-                controller_definition.clear_cache(recursive=True)
+                found_controllers.append(controller_definition)
+
+        for controller_definition in found_controllers:
+            controller_definition.clear_cache(recursive=True)
+
+        controller_names = [
+            controller.controller.__class__.__name__ for controller in found_controllers
+        ]
+        LOGGER.debug(f"Invalidated {controller_names} controllers for path {path}")
 
     async def _handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
