@@ -247,8 +247,9 @@ class AppController:
         # This allows each view to avoid having to find these on disk, as well as gives
         # a proactive error if any view will be unable to render when their script files
         # are missing
+        controller.resolve_paths(self._view_root, force=True)
+
         if not self.development_enabled:
-            controller.resolve_paths(self._view_root, force=True)
             if not controller._bundled_scripts:
                 raise ValueError(
                     f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
@@ -326,6 +327,8 @@ class AppController:
 
             controller.resolve_paths(plugin.view_root, force=True)
 
+            # Unlike standard controllers, plugins are expected to have precompiled scripts
+            # at all times
             if not controller._ssr_path or not controller._bundled_scripts:
                 raise ValueError(
                     f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
