@@ -77,7 +77,12 @@ class ControllerDefinition:
     """
 
     def get_url_for_metadata(self, metadata: FunctionMetadata):
-        return f"{self.url_prefix}/{metadata.function_name.strip('/')}"
+        if not self.route:
+            raise ValueError(
+                f"Controller {self.controller} has no route. This should never happen."
+            )
+
+        return f"{self.route.url_prefix}/{metadata.function_name.strip('/')}"
 
     def get_parents(self):
         parents: list[ControllerDefinition] = []
@@ -312,7 +317,7 @@ class AppGraph:
             )
 
         # Remove duplicates by in-memory hash because the actual objects are not hashable
-        unique_updated: dict[str, ControllerDefinition] = {}
+        unique_updated: dict[int, ControllerDefinition] = {}
         for updated_definition in updated_definitions:
             if updated_definition is None:
                 continue

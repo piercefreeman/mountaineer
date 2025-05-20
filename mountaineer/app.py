@@ -555,25 +555,25 @@ class AppController:
             # during development
             start = monotonic_ns()
 
-            cache = controller_definition.resolve_dev_cache(
+            dev_cache = controller_definition.resolve_dev_cache(
                 live_reload_port=self.live_reload_port,
                 node_modules_path=(self._view_root / "node_modules"),
             )
 
             LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
             html = self.compile_html(
-                cache.cached_server_script,
+                dev_cache.cached_server_script,
                 controller_output,
                 render_output,
-                inline_client_script=cache.cached_client_script,
+                inline_client_script=dev_cache.cached_client_script,
                 external_client_imports=None,
-                sourcemap=cache.cached_server_sourcemap,
+                sourcemap=dev_cache.cached_server_sourcemap,
             )
         else:
             # Production payload
-            cache = controller_definition.resolve_prod_cache()
+            prod_cache = controller_definition.resolve_prod_cache()
             html = self.compile_html(
-                cache.cached_server_script,
+                prod_cache.cached_server_script,
                 controller_output,
                 render_output,
                 inline_client_script=None,
@@ -581,7 +581,7 @@ class AppController:
                     f"{controller._scripts_prefix}/{script_name}"
                     for script_name in controller._bundled_scripts
                 ],
-                sourcemap=cache.cached_server_sourcemap,
+                sourcemap=prod_cache.cached_server_sourcemap,
             )
 
         LOGGER.debug(
@@ -763,7 +763,7 @@ class AppController:
         to the same path twice.
 
         """
-        if not target_controller.route.render_router:
+        if not target_controller.route or not target_controller.route.render_router:
             return
 
         LOGGER.debug(f"Remounting {target_controller.controller.__class__.__name__}")
@@ -788,6 +788,22 @@ class AppController:
         )
 
         self.app.include_router(target_controller.route.render_router)
+
+    def invalidate_view(self, path: Path):
+        """
+        After an on-disk change of a given path, we should clear its current
+        script cache so we rebuild with the latest changes. We should also clear
+        out any nested children - so in the case of a layout change, we refresh
+        all of its subpages.
+
+        """
+        path = path.resolve().absolute()
+
+        for controller_definition in self.graph.controllers:
+            if str(controller_definition.controller.full_view_path) == str(path):
+                # Clear any dependencies recursively so we update children pages if the
+                # layout has changed
+                controller_definition.clear_cache(recursive=True)
 
     async def _handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
@@ -841,7 +857,7 @@ class AppController:
         #
 
         exceptions_by_url: dict[str, list[ExceptionSchema]] = {}
-        for controller_definition in self.controllers:
+        for controller_definition in self.graph.controllers:
             for (
                 _,
                 _,

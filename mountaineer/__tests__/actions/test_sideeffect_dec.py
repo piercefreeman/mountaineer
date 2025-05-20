@@ -322,7 +322,7 @@ def test_limit_codepath_experimental(
     controller = ExampleController()
     app.register(controller)
 
-    controller_definition = app._definition_for_controller(controller)
+    controller_definition = app.graph.get_definitions_for_cls(controller.__class__)[0]
     sideeffect_url = controller_definition.get_url_for_metadata(
         get_function_metadata(ExampleController.call_sideeffect)
     )
@@ -388,7 +388,7 @@ async def test_layout_controller_request_support():
     controller = TestLayoutController()
     app.register(controller)
 
-    controller_definition = app._definition_for_controller(controller)
+    controller_definition = app.graph.get_definitions_for_cls(controller.__class__)[0]
     sideeffect_url = controller_definition.get_url_for_metadata(
         get_function_metadata(TestLayoutController.call_sideeffect)
     )
@@ -478,8 +478,12 @@ async def test_controller_and_layout_request_handling():
     app.register(layout_controller)
 
     # Get the sideeffect URLs for both controllers
-    standard_definition = app._definition_for_controller(standard_controller)
-    layout_definition = app._definition_for_controller(layout_controller)
+    standard_definition = app.graph.get_definitions_for_cls(
+        standard_controller.__class__
+    )[0]
+    layout_definition = app.graph.get_definitions_for_cls(layout_controller.__class__)[
+        0
+    ]
 
     standard_sideeffect_url = standard_definition.get_url_for_metadata(
         get_function_metadata(StandardController.standard_sideeffect)
@@ -628,7 +632,7 @@ async def test_layout_controller_session_handling():
     app.register(controller)
 
     # Get sideeffect URL
-    controller_definition = app._definition_for_controller(controller)
+    controller_definition = app.graph.get_definitions_for_cls(controller.__class__)[0]
     sideeffect_url = controller_definition.get_url_for_metadata(
         get_function_metadata(SessionLayoutController.session_sideeffect)
     )

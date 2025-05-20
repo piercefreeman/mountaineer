@@ -288,7 +288,12 @@ class ControllerBase(ABC, Generic[RenderInput]):
         if isinstance(self.view_path, ManagedViewPath):
             return self.view_path
         elif isinstance(self.view_path, str):
-            return ManagedViewPath.from_view_root(
+            if self._view_base_path is None:
+                raise ValueError(
+                    f"Unable to resolve view path because of unset view_base_path: {self.view_path}"
+                )
+
+            return ManagedViewPath.from_view_root(  # type: ignore
                 self._view_base_path
             ) / self.view_path.lstrip("/")
         else:
