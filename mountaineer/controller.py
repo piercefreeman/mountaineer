@@ -274,9 +274,9 @@ class ControllerBase(ABC, Generic[RenderInput]):
         static_path = view_base / "_static" / f"{self.script_name}.js"
         if static_path.exists():
             md5_hash = md5(static_path.read_bytes()).hexdigest()
-            self._bundled_scripts = [
-                f"{self._scripts_prefix}/{static_path.name}?v={md5_hash}"
-            ]
+            # The full path to the script that's accessible to the client (ie. the  controller._scripts_prefix)
+            # will be injected by the production build pipeline
+            self._bundled_scripts = [f"{static_path.name}?v={md5_hash}"]
         else:
             LOGGER.debug(f"Static path not found for {self.script_name} {static_path}")
             found_dependencies = False

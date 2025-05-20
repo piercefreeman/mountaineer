@@ -47,4 +47,4 @@ def test_resolve_paths(tmp_path: Path):
     assert controller._view_base_path == view_base
     assert controller._ssr_path == ssr_base / "stub_controller.js"
     assert len(controller._bundled_scripts) == 1
-    assert controller._bundled_scripts[0].startswith("/static/stub_controller.js?v=")
+    assert controller._bundled_scripts[0].startswith("stub_controller.js?v=")
