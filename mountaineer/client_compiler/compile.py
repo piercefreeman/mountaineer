@@ -48,7 +48,7 @@ class ClientCompiler:
                 self.view_root.get_controller_view_path(
                     controller_definition.controller
                 )
-                for controller_definition in self.app.controllers
+                for controller_definition in self.app.graph.controllers
             ]
 
         if not limit_paths:
@@ -108,7 +108,7 @@ class ClientCompiler:
             builder.set_metadata(metadata)
 
         for builder in self.app.builders:
-            for controller_definition in self.app.controllers:
+            for controller_definition in self.app.graph.controllers:
                 builder.register_controller(
                     controller_definition.controller,
                     self.view_root.get_controller_view_path(
@@ -143,7 +143,7 @@ class ClientCompiler:
         """
         # Find the view roots
         view_roots = {self.view_root.copy()}
-        for controller_definition in self.app.controllers:
+        for controller_definition in self.app.graph.controllers:
             view_path = controller_definition.controller.view_path
             if isinstance(view_path, ManagedViewPath):
                 view_roots.add(view_path.get_root_link().copy())

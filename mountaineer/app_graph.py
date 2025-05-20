@@ -4,6 +4,7 @@ from typing import Callable, Type
 from fastapi import APIRouter
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
+from dataclasses import dataclass, field
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions.fields import FunctionMetadata
@@ -13,8 +14,8 @@ from mountaineer.logging import LOGGER
 from mountaineer.ssr import find_tsconfig
 from mountaineer.static import get_static_path
 
-
-class ControllerRoute(BaseModel):
+@dataclass(kw_only=True)
+class ControllerRoute:
     router: APIRouter
 
     # URL prefix to the root of the server
@@ -34,12 +35,8 @@ class ControllerRoute(BaseModel):
 
     """
 
-    model_config = {
-        "arbitrary_types_allowed": True,
-    }
-
-
-class ControllerDevCache(BaseModel):
+@dataclass(kw_only=True)
+class ControllerDevCache:
     """
     Cache of the controller definition for the given controller.
     """
@@ -51,12 +48,13 @@ class ControllerDevCache(BaseModel):
     cached_client_sourcemap: str | None = None
 
 
-class ControllerProdCache(BaseModel):
+@dataclass(kw_only=True)
+class ControllerProdCache:
     cached_server_script: str
     cached_server_sourcemap: str | None = None
 
-
-class ControllerDefinition(BaseModel):
+@dataclass(kw_only=True)
+class ControllerDefinition:
     controller: ControllerBase
     route: ControllerRoute | None
     cache: ControllerDevCache | ControllerProdCache | None = None
@@ -71,14 +69,10 @@ class ControllerDefinition(BaseModel):
     Parent layout controller that this controller is a child of.
     """
 
-    children: list["ControllerDefinition"] = []
+    children: list["ControllerDefinition"] = field(default_factory=list)
     """
     Child layout controllers that this layout controller modifies.
     """
-
-    model_config = {
-        "arbitrary_types_allowed": True,
-    }
 
     def get_url_for_metadata(self, metadata: FunctionMetadata):
         return f"{self.url_prefix}/{metadata.function_name.strip('/')}"
@@ -172,6 +166,13 @@ class ControllerDefinition(BaseModel):
         )
         return self.cache
 
+    def clear_cache(self, recursive: bool = True):
+        self.cache = None
+
+        if recursive:
+            for child in self.children:
+                child.clear_cache(recursive=True)
+
 
 class AppGraph:
     """
@@ -199,14 +200,15 @@ class AppGraph:
         controller_definition: ControllerDefinition | None = None
 
         # Layout controllers are unique - if we're re-registering a layout controller,
-        # we need to remove any existing definitions that are children of this controller
+        # it's likely because we have a concrete implementation of a synthetic controller that
+        # we created based on the disk hierarchy alone
         if isinstance(controller, LayoutControllerBase):
-            for controller_definition in self.controllers:
+            for definition in self.controllers:
                 if (
-                    controller_definition.controller.view_path.absolute()
-                    == controller.view_path.absolute()
+                    definition.controller.full_view_path.absolute()
+                    == controller.full_view_path.absolute()
                 ):
-                    controller_definition = controller_definition
+                    controller_definition = definition
                     break
 
         if not controller_definition:
@@ -216,15 +218,25 @@ class AppGraph:
                 graph=self,
             )
             self.controllers.append(controller_definition)
-        else:
-            controller_definition.controller = controller
-            controller_definition.route = route
-            controller_definition.graph = self
+
+        # All the attributes even if we didn't find one
+        controller_definition.controller = controller
+        controller_definition.route = route
+        controller_definition.graph = self
 
         # Set the back-reference to the controller definition in case the controller
         # needs to access the graph directly
         controller._definition = controller_definition
         return controller_definition
+
+    def link_controllers(self, parent: ControllerDefinition, child: ControllerDefinition):
+        # This doesn't guarantee that the structure won't become a cyclic graph, but it's a good
+        # and fast first-pass check that future graph traversal code won't loop indefinitely.
+        if parent == child:
+            raise ValueError("Parent and child cannot be the same controller")
+
+        parent.children.append(child)
+        child.parent = parent
 
     def get_definitions_for_cls(
         self, cls: Type[ControllerBase]
@@ -245,27 +257,25 @@ class AppGraph:
         # Update _this_ controller with anything in the above hierarchy (known layout controllers)
         # Update _child_ controller with this view (in the case that this definition is
         # a layout controller)
-        node = next(
-            node
-            for node in self.hierarchy_paths.values()
-            if node.controller == controller_definition.controller
-        )
-
-        def explore_children(node):
-            for child in node.children:
+        def explore_children(current_node: ControllerDefinition):
+            for child in current_node.children:
+                print("EXPLORING CHILD", child)
                 yield child
                 yield from explore_children(child)
 
-        def explore_parents(current_node):
+        def explore_parents(current_node: ControllerDefinition):
             while current_node.parent is not None:
+                print("EXPLORING PARENT", current_node.parent)
                 yield current_node.parent
                 current_node = current_node.parent
 
-        parents = list(explore_parents(node))
-        children = list(explore_children(node))
+        parents = list(explore_parents(controller_definition))
+        children = list(explore_children(controller_definition))
 
         parent_controllers = [node.controller for node in parents if node.controller]
         children_controllers = [node.controller for node in children if node.controller]
+
+        print("PARENT CONTROLLERS", controller_definition.controller.__class__.__name__, len(parent_controllers), len(children_controllers))
 
         parent_definitions = [
             controller_definition
@@ -313,8 +323,11 @@ class AppGraph:
         can be injected into the render function by name alone.
 
         """
-        reference_signature = signature(reference_controller.view_route)
-        target_signature = signature(target_controller.view_route)
+        if not reference_controller.route or not target_controller.route:
+            return
+
+        reference_signature = signature(reference_controller.route.view_route)
+        target_signature = signature(target_controller.route.view_route)
 
         reference_parameters = reference_signature.parameters.values()
         target_parameters = list(target_signature.parameters.values())
@@ -343,25 +356,8 @@ class AppGraph:
                         f"Conflicting types: {target_annotation_type} vs {reference_annotation_type}"
                     )
 
-        target_controller.view_route.__signature__ = target_signature.replace(  # type: ignore
+        target_controller.route.view_route.__signature__ = target_signature.replace(  # type: ignore
             parameters=target_parameters
         )
 
-        # Re-mount the controller exactly as it was first mounted
-        if target_controller.render_router:
-            # Clear the previous definition before re-adding it
-            # Both the app route is required (for the actual page resolution) and the render router
-            # (to avoid conflicts in the OpenAPI generation)
-            for route_list in [self.app.routes, target_controller.render_router.routes]:
-                for route in list(route_list):
-                    if (
-                        isinstance(route, APIRoute)
-                        and route.path == target_controller.controller.url
-                        and route.methods == {"GET"}
-                    ):
-                        route_list.remove(route)
-
-            target_controller.render_router.get(target_controller.controller.url)(
-                target_controller.view_route
-            )
-            return target_controller
+        return target_controller

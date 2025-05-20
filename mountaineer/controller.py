@@ -290,6 +290,15 @@ class ControllerBase(ABC, Generic[RenderInput]):
         return found_dependencies
 
     @property
+    def full_view_path(self) -> ManagedViewPath:
+        if isinstance(self.view_path, ManagedViewPath):
+            return self.view_path
+        elif isinstance(self.view_path, str):
+            return ManagedViewPath.from_view_root(self._view_base_path) / self.view_path.lstrip("/")
+        else:
+            return ManagedViewPath(str(self.view_path))
+
+    @property
     def script_name(self):
         """
         The short-hand name of the controller, used to resolve the SSR script and other dependencies
