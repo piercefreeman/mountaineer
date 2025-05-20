@@ -37,6 +37,12 @@ from mountaineer.exceptions import (
     RequestValidationFailure,
 )
 from mountaineer.graph.app_graph import AppGraph, ControllerDefinition, ControllerRoute
+from mountaineer.graph.cache import (
+    ControllerDevCache,
+    ControllerProdCache,
+    DevCacheConfig,
+    ProdCacheConfig,
+)
 from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.plugin import MountaineerPlugin
@@ -242,25 +248,14 @@ class AppController:
             raise ValueError(f"Unknown controller type: {type(controller)}")
 
     def _register_controller(self, controller: ControllerBase):
-        # If we're running in production, sniff for the script files ahead of time and
-        # attach them to the controller
         # This allows each view to avoid having to find these on disk, as well as gives
         # a proactive error if any view will be unable to render when their script files
         # are missing
         controller.resolve_paths(self._view_root, force=True)
 
-        if not self.development_enabled:
-            if not controller._bundled_scripts:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-            if not controller._ssr_path:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-
         controller_definition = self._register_controller_common(
-            controller, dev_enabled=self.development_enabled
+            controller,
+            dev_enabled=self.development_enabled,
         )
 
         # If we just registered a layout controller, we need to add it to the graph
@@ -341,11 +336,23 @@ class AppController:
 
         # Register a stub for the new controller, which will be updated with its
         # router preferences later
-        controller_definition = self.graph.register(controller, route=None)
+        controller_definition = self.graph.register(
+            controller,
+            route=None,
+            cache_args=(
+                DevCacheConfig(
+                    node_modules_path=self._view_root / "node_modules",
+                    live_reload_port=self.live_reload_port,
+                )
+                if dev_enabled
+                else ProdCacheConfig()
+            ),
+        )
 
-        # Update the paths now that we have access to the runtime package path
+        # If we're running in production, sniff for the script files ahead of time so we
+        # can fail early if they're missing
         if not dev_enabled:
-            controller_definition.resolve_prod_cache()
+            controller_definition.resolve_cache()
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -536,14 +543,11 @@ class AppController:
         # load to make sure we have the latest if there's any chance that it
         # was affected by recent code changes
         if dev_enabled:
-            # Caching the build files saves about 0.3 on every load
-            # during development
-            start = monotonic_ns()
-
-            dev_cache = controller_definition.resolve_dev_cache(
-                live_reload_port=self.live_reload_port,
-                node_modules_path=(self._view_root / "node_modules"),
-            )
+            # We delay the cache resolution until we need it, so we don't need to
+            # pay the cost of building the cache if we're not in dev mode
+            dev_cache = controller_definition.resolve_cache()
+            if not isinstance(dev_cache, ControllerDevCache):
+                raise ValueError("Dev cache is not a ControllerDevCache")
 
             LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
             html = self.compile_html(
@@ -556,7 +560,10 @@ class AppController:
             )
         else:
             # Production payload
-            prod_cache = controller_definition.resolve_prod_cache()
+            prod_cache = controller_definition.resolve_cache()
+            if not isinstance(prod_cache, ControllerProdCache):
+                raise ValueError("Prod cache is not a ControllerProdCache")
+
             html = self.compile_html(
                 prod_cache.cached_server_script,
                 controller_output,
@@ -768,7 +775,7 @@ class AppController:
             },
         )
         LOGGER.debug(f"Creating synthetic layout {layout_name} for {layout_path}")
-        new_definition = self.graph.register(new_layout(), route=None)
+        new_definition = self.graph.register(new_layout(), route=None, cache_args=None)
         self.path_to_layout[str(layout_path)] = new_definition
         return new_definition, True
 

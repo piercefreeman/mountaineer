@@ -12,13 +12,27 @@ if TYPE_CHECKING:
 
 
 @dataclass(kw_only=True)
-class ControllerDevCache:
+class DevCacheConfig:
+    node_modules_path: ManagedViewPath
+    live_reload_port: int
+
+
+@dataclass(kw_only=True)
+class ProdCacheConfig:
+    pass
+
+
+@dataclass(kw_only=True)
+class ControllerCacheBase:
+    cached_server_script: str
+    cached_server_sourcemap: str | None = None
+
+
+@dataclass(kw_only=True)
+class ControllerDevCache(ControllerCacheBase):
     """
     Cache of the controller definition for the given controller.
     """
-
-    cached_server_script: str
-    cached_server_sourcemap: str | None = None
 
     cached_client_script: str
     cached_client_sourcemap: str | None = None
@@ -27,9 +41,7 @@ class ControllerDevCache:
     def resolve_dev_cache(
         cls,
         definition: "ControllerDefinition",
-        *,
-        node_modules_path: ManagedViewPath,
-        live_reload_port: int,
+        config: DevCacheConfig,
     ) -> "ControllerDevCache":
         # Find tsconfig.json in the parent directories of the view paths
         view_paths = definition.get_hierarchy_view_paths()
@@ -43,9 +55,9 @@ class ControllerDevCache:
             sourcemap_payloads,
         ) = mountaineer_rs.compile_independent_bundles(
             view_paths,
-            str(node_modules_path.resolve().absolute()),
+            str(config.node_modules_path.resolve().absolute()),
             "development",
-            0,
+            config.live_reload_port,
             str(get_static_path("live_reload.ts").resolve().absolute()),
             True,
             tsconfig_path,
@@ -58,9 +70,9 @@ class ControllerDevCache:
         )
         script_payloads, _ = mountaineer_rs.compile_independent_bundles(
             view_paths,
-            str(node_modules_path.resolve().absolute()),
+            str(config.node_modules_path.resolve().absolute()),
             "development",
-            live_reload_port,
+            config.live_reload_port,
             str(get_static_path("live_reload.ts").resolve().absolute()),
             False,
             tsconfig_path,
@@ -77,17 +89,11 @@ class ControllerDevCache:
 
 
 @dataclass(kw_only=True)
-class ControllerProdCache:
-    cached_server_script: str
-    cached_server_sourcemap: str | None = None
-
+class ControllerProdCache(ControllerCacheBase):
     @classmethod
     def resolve_prod_cache(
-        cls, definition: "ControllerDefinition"
+        cls, definition: "ControllerDefinition", config: ProdCacheConfig
     ) -> "ControllerProdCache":
-        if isinstance(definition.cache, ControllerProdCache):
-            return definition.cache
-
         if not definition.controller._ssr_path:
             raise ValueError(
                 f"Controller {definition.controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
@@ -96,6 +102,11 @@ class ControllerProdCache:
         if not definition.controller._ssr_path.exists():
             raise ValueError(
                 f"Controller {definition.controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
+            )
+
+        if not definition.controller._bundled_scripts:
+            raise ValueError(
+                f"Controller {definition.controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
             )
 
         return ControllerProdCache(

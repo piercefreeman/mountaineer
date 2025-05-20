@@ -5,8 +5,8 @@ import pytest
 from fastapi import APIRouter
 
 from mountaineer.app import AppController, ControllerDefinition
-from mountaineer.app_graph import ControllerRoute
 from mountaineer.controller import ControllerBase
+from mountaineer.graph.app_graph import ControllerRoute
 
 
 class TargetController(ControllerBase):

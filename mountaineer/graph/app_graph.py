@@ -7,7 +7,12 @@ from fastapi import APIRouter
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.graph.cache import ControllerDevCache, ControllerProdCache
+from mountaineer.graph.cache import (
+    ControllerDevCache,
+    ControllerProdCache,
+    DevCacheConfig,
+    ProdCacheConfig,
+)
 from mountaineer.logging import LOGGER
 
 
@@ -37,7 +42,9 @@ class ControllerRoute:
 class ControllerDefinition:
     controller: ControllerBase
     route: ControllerRoute | None
+
     cache: ControllerDevCache | ControllerProdCache | None = None
+    cache_args: DevCacheConfig | ProdCacheConfig | None = None
 
     graph: "AppGraph"
     """
@@ -75,6 +82,19 @@ class ControllerDefinition:
         layouts.reverse()
         return [[str(layout.controller.full_view_path) for layout in layouts]]
 
+    def resolve_cache(self):
+        if self.cache_args is None:
+            raise ValueError("Cache args are not set for this controller")
+
+        if isinstance(self.cache_args, DevCacheConfig):
+            self.cache = ControllerDevCache.resolve_dev_cache(self, self.cache_args)
+            return self.cache
+        elif isinstance(self.cache_args, ProdCacheConfig):
+            self.cache = ControllerProdCache.resolve_prod_cache(self, self.cache_args)
+            return self.cache
+        else:
+            raise ValueError("Invalid cache args")
+
     def clear_cache(self, recursive: bool = True):
         self.cache = None
 
@@ -105,6 +125,7 @@ class AppGraph:
         self,
         controller: ControllerBase,
         route: ControllerRoute | None,
+        cache_args: DevCacheConfig | ProdCacheConfig | None,
     ):
         controller_definition: ControllerDefinition | None = None
 
@@ -125,6 +146,7 @@ class AppGraph:
                 controller=controller,
                 route=route,
                 graph=self,
+                cache_args=cache_args,
             )
             self.controllers.append(controller_definition)
 
@@ -132,6 +154,7 @@ class AppGraph:
         controller_definition.controller = controller
         controller_definition.route = route
         controller_definition.graph = self
+        controller_definition.cache_args = cache_args
 
         # Set the back-reference to the controller definition in case the controller
         # needs to access the graph directly
