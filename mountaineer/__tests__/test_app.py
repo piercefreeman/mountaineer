@@ -1,17 +1,16 @@
 from contextlib import asynccontextmanager
-from inspect import Parameter, signature
+from inspect import signature
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from fastapi import APIRouter, FastAPI, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
 from fastapi.responses import RedirectResponse
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
-from mountaineer.app import AppController, ControllerDefinition
+from mountaineer.app import AppController
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
@@ -143,106 +142,6 @@ def test_unique_controller_names():
 
     with pytest.raises(ValueError, match="already registered"):
         app.register(make_controller("/example2")())
-
-
-class TargetController(ControllerBase):
-    url = "/target"
-
-    async def render(self) -> None:
-        pass
-
-
-class ReferenceController(ControllerBase):
-    url = "/reference"
-
-    async def render(self) -> None:
-        pass
-
-
-def test_merge_render_signatures():
-    def target_fn(a: int, b: int):
-        pass
-
-    # Partial overlap with (a) and inclusion of a new variable
-    def reference_fn(a: int, c: int):
-        pass
-
-    app = AppController(view_root=Path(""))
-
-    target_definition = ControllerDefinition(
-        controller=TargetController(),
-        router=APIRouter(),
-        view_route=target_fn,
-        url_prefix="/target_prefix",
-        render_router=APIRouter(),
-    )
-    reference_definition = ControllerDefinition(
-        controller=ReferenceController(),
-        router=APIRouter(),
-        view_route=reference_fn,
-        url_prefix="/reference_prefix",
-        render_router=APIRouter(),
-    )
-
-    initial_routes = [
-        route.path for route in app.app.routes if isinstance(route, APIRoute)
-    ]
-    assert initial_routes == []
-
-    app.merge_render_signatures(
-        target_definition, reference_controller=reference_definition
-    )
-
-    assert list(signature(target_definition.view_route).parameters.values()) == [
-        Parameter("a", Parameter.POSITIONAL_OR_KEYWORD, annotation=int),
-        Parameter("b", Parameter.POSITIONAL_OR_KEYWORD, annotation=int),
-        # Items only in the reference function should be included as kwargs
-        Parameter("c", Parameter.KEYWORD_ONLY, annotation=int, default=Parameter.empty),
-    ]
-
-    # After the merging the signature should be updated, and the app controller should
-    # have a new endpoint (since the merging must re-mount)
-    final_routes = [
-        route.path for route in app.app.routes if isinstance(route, APIRoute)
-    ]
-    assert final_routes == ["/target"]
-
-
-def test_merge_render_signatures_conflicting_types():
-    """
-    If the two functions share a parameter, it must be typehinted with the
-    same type in both functions.
-
-    """
-
-    def target_fn(a: int, b: int):
-        pass
-
-    # Partial overlap with (a) and inclusion of a new variable
-    def reference_fn(a: str, c: int):
-        pass
-
-    app = AppController(view_root=Path(""))
-
-    target_definition = ControllerDefinition(
-        controller=TargetController(),
-        router=APIRouter(),
-        view_route=target_fn,
-        url_prefix="/target_prefix",
-        render_router=APIRouter(),
-    )
-    reference_definition = ControllerDefinition(
-        controller=ReferenceController(),
-        router=APIRouter(),
-        view_route=reference_fn,
-        url_prefix="/reference_prefix",
-        render_router=APIRouter(),
-    )
-
-    with pytest.raises(TypeError, match="Conflicting types"):
-        app.merge_render_signatures(
-            target_definition, reference_controller=reference_definition
-        )
 
 
 def test_get_value_mask_for_signature():

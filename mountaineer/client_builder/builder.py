@@ -19,6 +19,7 @@ from mountaineer.client_builder.parser import (
     ControllerParser,
 )
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
+from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 from mountaineer.static import get_static_path
 
@@ -76,7 +77,13 @@ class APIBuilder:
         parser = ControllerParser()
         parsed_controllers: list[ParsedController] = []
 
-        for controller_def in self.app.controllers:
+        for controller_def in self.app.graph.controllers:
+            if controller_def.route is None:
+                LOGGER.warning(
+                    f"Controller {controller_def.controller.__class__.__name__} has no route"
+                )
+                continue
+
             controller = controller_def.controller
 
             # Parse the controller
@@ -90,7 +97,7 @@ class APIBuilder:
                 ParsedController(
                     wrapper=parsed_wrapper,
                     view_path=view_path,
-                    url_prefix=controller_def.url_prefix,
+                    url_prefix=controller_def.route.url_prefix,
                     is_layout=isinstance(controller, LayoutControllerBase),
                 )
             )

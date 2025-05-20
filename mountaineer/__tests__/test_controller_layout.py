@@ -39,6 +39,6 @@ def test_layout_registration():
     layout_controller = ExampleLayoutController()
 
     app_controller.register(layout_controller)
-    assert len(app_controller.controllers) == 1
+    assert len(app_controller.graph.controllers) == 1
 
-    assert app_controller.controllers[0].controller == layout_controller
+    assert app_controller.graph.controllers[0].controller == layout_controller

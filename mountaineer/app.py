@@ -1,13 +1,12 @@
 from collections import defaultdict
-from dataclasses import dataclass, field
-from functools import wraps
-from inspect import Parameter, Signature, isawaitable, isclass, signature
+from functools import partial, wraps
+from hashlib import md5
+from inspect import Signature, isawaitable, isclass, signature
 from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from re import match as re_match
 from time import monotonic_ns
-from typing import Any, Callable, Optional, Type, cast, overload
-from uuid import UUID, uuid4
+from typing import Any, Callable, Type, overload
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
@@ -19,15 +18,14 @@ from inflection import underscore
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
 
-from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.actions import (
     FunctionActionType,
     fuse_metadata_to_response_typehint,
     get_function_metadata,
     init_function_metadata,
 )
-from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.annotation_helpers import MountaineerUnsetValue
+from mountaineer.app_graph import AppGraph, ControllerDefinition, ControllerRoute
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
@@ -43,28 +41,7 @@ from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import Metadata, RenderBase, RenderNull
-from mountaineer.ssr import find_tsconfig, render_ssr
-from mountaineer.static import get_static_path
-
-
-class ControllerDefinition(BaseModel):
-    controller: ControllerBase
-    router: APIRouter
-    # URL prefix to the root of the server
-    url_prefix: str
-    # Dynamically generated function that actually renders the html content
-    # This is a hybrid between render() and _generate_html()
-    view_route: Callable
-    # Render router is provided for all pages, only None for layouts that can't
-    # be independently rendered as a webpage
-    render_router: APIRouter | None
-
-    model_config = {
-        "arbitrary_types_allowed": True,
-    }
-
-    def get_url_for_metadata(self, metadata: FunctionMetadata):
-        return f"{self.url_prefix}/{metadata.function_name.strip('/')}"
+from mountaineer.ssr import render_ssr
 
 
 class ExceptionSchema(BaseModel):
@@ -76,26 +53,6 @@ class ExceptionSchema(BaseModel):
     model_config = {
         "extra": "forbid",
     }
-
-
-@dataclass
-class LayoutElement:
-    id: UUID
-
-    # Can be null if a layout doesn't have a path
-    controller: ControllerBase | None
-
-    # Absolute path to the tsx / jsx entrypoint
-    path: Path
-
-    # Only models direct parent layouts at the next highest layer
-    # Traverse these to find the full layout hierarchy
-    parent: Optional["LayoutElement"] = None
-    children: list["LayoutElement"] = field(default_factory=list)
-
-    cached_server_script: str | None = None
-    cached_server_sourcemap: str | None = None
-    cached_client_script: str | None = None
 
 
 class AppController:
@@ -146,10 +103,10 @@ class AppController:
 
     """
 
-    controllers: list[ControllerDefinition]
+    graph: AppGraph
     """
-    Mounted controllers that are used to render the web application. Add
-    a new one through `.register()`.
+    Graph of the app that represents the hierarchy of controllers and their
+    dependencies.
 
     """
 
@@ -157,14 +114,6 @@ class AppController:
     """
     URL prefix used for the action APIs that are auto-generated through @passthrough
     and @sideeffect decorators.
-
-    """
-
-    hierarchy_paths: dict[Path, LayoutElement]
-    """
-    Mapping of disk paths to file-system metadata about the controller. This internally
-    builds up a DAG of the layout hierarchy to be used for rendering nested
-    pages and layouts.
 
     """
 
@@ -180,13 +129,11 @@ class AppController:
         fastapi_args: dict[str, Any] | None = None,
     ):
         self.app = FastAPI(title=name, version=version, **(fastapi_args or {}))
-        self.controllers: list[ControllerDefinition] = []
+        self.graph = AppGraph()
         self.name = name
         self.version = version
         self.global_metadata = global_metadata
         self.builders = custom_builders if custom_builders else []
-
-        self._controller_names: set[str] = set()
 
         # If this flag is present, we will re-raise this error during render()
         # so users can see the error in the browser.
@@ -232,8 +179,7 @@ class AppController:
 
         self.app.openapi = self.generate_openapi  # type: ignore
 
-        # Edges that link the hierarchy together
-        self.hierarchy_paths: dict[Path, LayoutElement] = {}
+        self.path_to_layout: dict[str, ControllerDefinition] = {}
 
         self.live_reload_port: int = 0
 
@@ -301,8 +247,9 @@ class AppController:
         # This allows each view to avoid having to find these on disk, as well as gives
         # a proactive error if any view will be unable to render when their script files
         # are missing
+        controller.resolve_paths(self._view_root, force=True)
+
         if not self.development_enabled:
-            controller.resolve_paths(self._view_root, force=True)
             if not controller._bundled_scripts:
                 raise ValueError(
                     f"Controller {controller} was not able to find its scripts on disk. Make sure to run your `build` CLI before starting your webapp."
@@ -312,9 +259,37 @@ class AppController:
                     f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
                 )
 
-        self._register_controller_common(
+        controller_definition = self._register_controller_common(
             controller, dev_enabled=self.development_enabled
         )
+
+        # If we just registered a layout controller, we need to add it to the graph
+        if isinstance(controller, LayoutControllerBase):
+            self.path_to_layout[str(controller.full_view_path.absolute())] = (
+                controller_definition
+            )
+
+        # We might have added a fresh root path to the graph with this addition, so we should
+        # scan the file path for layout files that might wrap this controller
+        layout_paths = self._collect_layouts_for_controller(controller)
+
+        child_controller = controller_definition
+        for layout_path in layout_paths:
+            layout_path = layout_path.absolute()
+            layout, layout_is_new = self._get_layout_for_path(layout_path)
+            self.graph.link_controllers(layout, child_controller)
+            child_controller = layout
+
+            # If the layout is not new, by definition we have already linked its relationships
+            # so we can skip the rest of the loop
+            if not layout_is_new:
+                break
+
+        updated_controllers = self.graph.merge_hierarchy_signatures(
+            controller_definition
+        )
+        for controller_definition in updated_controllers:
+            self._remount_controller(controller_definition)
 
     def _register_plugin(self, plugin: MountaineerPlugin):
         for controller in plugin.get_controllers():
@@ -330,6 +305,8 @@ class AppController:
 
             controller.resolve_paths(plugin.view_root, force=True)
 
+            # Unlike standard controllers, plugins are expected to have precompiled scripts
+            # at all times
             if not controller._ssr_path or not controller._bundled_scripts:
                 raise ValueError(
                     f"Controller {controller} was not able to find compiled scripts for plugin {plugin.name}"
@@ -353,20 +330,18 @@ class AppController:
     ):
         # Since the controller name is used to build dependent files, we ensure
         # that we only register one controller of a given name
-        controller_name = controller.__class__.__name__
-        if controller_name in self._controller_names:
+        if self.graph.get_definitions_for_cls(controller.__class__):
             raise ValueError(
-                f"Controller with name {controller_name} already registered."
+                f"Controller with name {controller.__class__.__name__} already registered."
             )
 
+        # Register a stub for the new controller, which will be updated with its
+        # router preferences later
+        controller_definition = self.graph.register(controller, route=None)
+
         # Update the paths now that we have access to the runtime package path
-        controller_node = self.update_hierarchy(known_controller=controller)
         if not dev_enabled:
-            if not controller._ssr_path:
-                raise ValueError(
-                    f"Controller {controller} was not able to find its server-side script on disk. Make sure to run your `build` CLI before starting your webapp."
-                )
-            controller_node.cached_server_script = controller._ssr_path.read_text()
+            controller_definition.resolve_prod_cache()
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -377,141 +352,13 @@ class AppController:
 
         # We need to passthrough the API of the render function to the FastAPI router so it's called properly
         # with the dependency injection kwargs
-        @wraps(controller.render)
-        async def generate_controller_html(*args, **kwargs):
-            start = monotonic_ns()
-
-            # Figure out which controller we're rendering
-            controller_node, direct_hierarchy = self._view_hierarchy_for_controller(
-                controller,
+        generate_controller_html = wraps(controller.render)(
+            partial(
+                self._generate_controller_html,
+                dev_enabled=self.development_enabled,
+                controller_definition=controller_definition,
             )
-
-            direct_hierarchy.reverse()
-            view_paths = [[str(layout.path) for layout in direct_hierarchy]]
-
-            # Assemble the metadata for each controller involved in rendering this view
-            # (this includes the current page and any wrapper LayoutControllers)
-            render_overhead_by_controller = {}
-            render_output = {}
-            for node in direct_hierarchy:
-                # If not set, must be a layout-only component. In this case we don't
-                # need to do any rendering of internal data
-                if not node.controller:
-                    continue
-
-                time = monotonic_ns()
-                render_values = self._get_value_mask_for_signature(
-                    signature(node.controller.render), kwargs
-                )
-                server_data = node.controller.render(**render_values)
-                if isawaitable(server_data):
-                    server_data = await server_data
-                if server_data is None:
-                    server_data = RenderNull()
-                render_overhead_by_controller[node.controller.__class__.__name__] = (
-                    monotonic_ns() - time
-                )
-
-                render_output[node.controller.__class__.__name__] = server_data
-
-            # If the output of this controller's rendering is an explicit response, we should
-            # just return that without any rendering
-            controller_output = render_output[controller.__class__.__name__]
-            if not isinstance(controller_output, RenderBase):
-                return controller_output
-            if (
-                controller_output.metadata
-                and controller_output.metadata.explicit_response
-            ):
-                return controller_output.metadata.explicit_response
-
-            LOGGER.debug(
-                f"Controller {controller.__class__.__name__} data acquired in {(monotonic_ns() - start) / 1e9}"
-            )
-            LOGGER.debug(
-                f"Controller {controller.__class__.__name__} controller breakdown:\n"
-                + "\n".join(
-                    [
-                        f"{controller_name}: {overhead / 1e9}"
-                        for controller_name, overhead in render_overhead_by_controller.items()
-                    ]
-                )
-            )
-
-            # If we're in development mode, we should recompile the script on page
-            # load to make sure we have the latest if there's any chance that it
-            # was affected by recent code changes
-            if dev_enabled:
-                # Caching the build files saves about 0.3 on every load
-                # during development
-                start = monotonic_ns()
-
-                # Find tsconfig.json in the parent directories of the view paths
-                tsconfig_path = find_tsconfig(view_paths)
-
-                if not controller_node.cached_server_script:
-                    LOGGER.debug(
-                        f"Compiling server-side bundle for {controller_name}: {view_paths}"
-                    )
-                    (
-                        script_payloads,
-                        sourcemap_payloads,
-                    ) = mountaineer_rs.compile_independent_bundles(
-                        view_paths,
-                        str((self._view_root / "node_modules").resolve().absolute()),
-                        "development",
-                        0,
-                        str(get_static_path("live_reload.ts").resolve().absolute()),
-                        True,
-                        tsconfig_path,
-                    )
-                    controller_node.cached_server_script = script_payloads[0]
-                    controller_node.cached_server_sourcemap = sourcemap_payloads[0]
-                if not controller_node.cached_client_script:
-                    LOGGER.debug(
-                        f"Compiling client-side bundle for {controller_name}: {view_paths}"
-                    )
-                    script_payloads, _ = mountaineer_rs.compile_independent_bundles(
-                        view_paths,
-                        str((self._view_root / "node_modules").resolve().absolute()),
-                        "development",
-                        self.live_reload_port,
-                        str(get_static_path("live_reload.ts").resolve().absolute()),
-                        False,
-                        tsconfig_path,
-                    )
-                    controller_node.cached_client_script = script_payloads[0]
-                LOGGER.debug(
-                    f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}"
-                )
-                html = self.compile_html(
-                    cast(str, controller_node.cached_server_script),
-                    controller_output,
-                    render_output,
-                    inline_client_script=cast(
-                        str, controller_node.cached_client_script
-                    ),
-                    external_client_imports=None,
-                    sourcemap=controller_node.cached_server_sourcemap,
-                )
-            else:
-                # Production payload
-                html = self.compile_html(
-                    cast(str, controller_node.cached_server_script),
-                    controller_output,
-                    render_output,
-                    inline_client_script=None,
-                    external_client_imports=[
-                        f"{controller._scripts_prefix}/{script_name}"
-                        for script_name in controller._bundled_scripts
-                    ],
-                    sourcemap=controller_node.cached_server_sourcemap,
-                )
-
-            LOGGER.debug(
-                f"Controller {controller.__class__.__name__} load time took {(monotonic_ns() - start) / 1e9}"
-            )
-            return html
+        )
 
         # Strip the return annotations from the function, since we just intend to return an HTML page
         # and not a JSON response
@@ -615,130 +462,113 @@ class AppController:
             prefix=controller_url_prefix,
         )
 
-        LOGGER.debug(f"Did register controller: {controller_name}")
+        LOGGER.debug(f"Did register controller: {controller}")
 
-        controller_definition = ControllerDefinition(
-            controller=controller,
+        controller_definition.route = ControllerRoute(
             router=controller_api,
             view_route=generate_controller_html,
             url_prefix=controller_url_prefix,
             render_router=view_router,
         )
-        controller._definition = controller_definition
 
-        self.controllers.append(controller_definition)
-        self._controller_names.add(controller_name)
+        return controller_definition
 
-        self._merge_hierarchy_signatures(controller_definition)
+    async def _generate_controller_html(
+        self,
+        *args,
+        dev_enabled: bool,
+        controller_definition: ControllerDefinition,
+        **kwargs,
+    ):
+        start = monotonic_ns()
+        controller = controller_definition.controller
 
-    def _view_hierarchy_for_controller(self, controller: ControllerBase):
-        """
-        Determines the nested parent layouts for the given controller, according
-        to the currently mounted LayoutElement hierarchy.
+        # We want to render the hierarchies top-down
+        direct_hierarchy = controller_definition.get_parents()
+        direct_hierarchy.reverse()
 
-        """
-        # Figure out which controller we're rendering
-        controller_node = next(
-            node
-            for node in self.hierarchy_paths.values()
-            if node.controller == controller
-        )
-        # print("CONTROLLER", controller_node)
-
-        # We need to figure out the layout controllers that should
-        # wrap this controller
-        direct_hierarchy: list[LayoutElement] = []
-        current_node: LayoutElement | None = controller_node
-        while current_node is not None:
-            if current_node in direct_hierarchy:
-                raise ValueError(f"Recursive layout detected: {current_node.path}")
-            direct_hierarchy.append(current_node)
-            current_node = current_node.parent
-
-        return controller_node, direct_hierarchy
-
-    def _merge_hierarchy_signatures(self, controller_definition: ControllerDefinition):
-        # We should:
-        # Update _this_ controller with anything in the above hierarchy (known layout controllers)
-        # Update _child_ controller with this view (in the case that this definition is
-        # a layout controller)
-        node = next(
-            node
-            for node in self.hierarchy_paths.values()
-            if node.controller == controller_definition.controller
-        )
-
-        def explore_children(node):
-            for child in node.children:
-                yield child
-                yield from explore_children(child)
-
-        def explore_parents(current_node):
-            while current_node.parent is not None:
-                yield current_node.parent
-                current_node = current_node.parent
-
-        parents = list(explore_parents(node))
-        children = list(explore_children(node))
-
-        parent_controllers = [node.controller for node in parents if node.controller]
-        children_controllers = [node.controller for node in children if node.controller]
-
-        parent_definitions = [
-            controller_definition
-            for controller_definition in self.controllers
-            if controller_definition.controller in parent_controllers
-        ]
-        child_definitions = [
-            controller_definition
-            for controller_definition in self.controllers
-            if controller_definition.controller in children_controllers
-        ]
-
-        for parent in parent_definitions:
-            self.merge_render_signatures(
-                controller_definition,
-                reference_controller=parent,
+        # Assemble the metadata for each controller involved in rendering this view
+        # (this includes the current page and any wrapper LayoutControllers)
+        render_overhead_by_controller = {}
+        render_output = {}
+        for node in direct_hierarchy:
+            time = monotonic_ns()
+            render_values = self._get_value_mask_for_signature(
+                signature(node.controller.render), kwargs
             )
-        for child in child_definitions:
-            self.merge_render_signatures(
-                child,
-                reference_controller=controller_definition,
+            server_data = node.controller.render(**render_values)
+            if isawaitable(server_data):
+                server_data = await server_data
+            if server_data is None:
+                server_data = RenderNull()
+            render_overhead_by_controller[node.controller.__class__.__name__] = (
+                monotonic_ns() - time
             )
 
-    def invalidate_view(self, path: Path):
-        """
-        After an on-disk change of a given path, we should clear its current
-        script cache so we rebuild with the latest changes. We should also clear
-        out any nested children - so in the case of a layout change, we refresh
-        all of its subpages.
+            render_output[node.controller.__class__.__name__] = server_data
 
-        """
-        if path.resolve().absolute() not in self.hierarchy_paths:
-            # We have changed a path that isn't tracked as part of our
-            # hierarchy. This is most likely a dependent file (like a component) that
-            # is imported by some pages. Some early POC work has handled this explicitly
-            # via parsing the whole project import dependences, but this introduces unnecessary
-            # complexity when fresh-compile times are only ~0.3s and we only impact on dev.
-            #
-            # We allow components to clear all cached scripts and allow the next page
-            # refresh to handle the rebuild.
-            for path in list(self.hierarchy_paths):
-                self.invalidate_view(path)
+        # If the output of this controller's rendering is an explicit response, we should
+        # just return that without any rendering
+        controller_output = render_output[controller.__class__.__name__]
+        if not isinstance(controller_output, RenderBase):
+            return controller_output
+        if controller_output.metadata and controller_output.metadata.explicit_response:
+            return controller_output.metadata.explicit_response
 
-            return
+        LOGGER.debug(
+            f"Controller {controller.__class__.__name__} data acquired in {(monotonic_ns() - start) / 1e9}"
+        )
+        LOGGER.debug(
+            f"Controller {controller.__class__.__name__} controller breakdown:\n"
+            + "\n".join(
+                [
+                    f"{controller_name}: {overhead / 1e9}"
+                    for controller_name, overhead in render_overhead_by_controller.items()
+                ]
+            )
+        )
 
-        LOGGER.debug(f"Will invalidate path and children controllers: {path}")
+        # If we're in development mode, we should recompile the script on page
+        # load to make sure we have the latest if there's any chance that it
+        # was affected by recent code changes
+        if dev_enabled:
+            # Caching the build files saves about 0.3 on every load
+            # during development
+            start = monotonic_ns()
 
-        def _invalidate_node(node: LayoutElement):
-            node.cached_server_script = None
-            node.cached_client_script = None
+            dev_cache = controller_definition.resolve_dev_cache(
+                live_reload_port=self.live_reload_port,
+                node_modules_path=(self._view_root / "node_modules"),
+            )
 
-            for child in node.children:
-                _invalidate_node(child)
+            LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
+            html = self.compile_html(
+                dev_cache.cached_server_script,
+                controller_output,
+                render_output,
+                inline_client_script=dev_cache.cached_client_script,
+                external_client_imports=None,
+                sourcemap=dev_cache.cached_server_sourcemap,
+            )
+        else:
+            # Production payload
+            prod_cache = controller_definition.resolve_prod_cache()
+            html = self.compile_html(
+                prod_cache.cached_server_script,
+                controller_output,
+                render_output,
+                inline_client_script=None,
+                external_client_imports=[
+                    f"{controller._scripts_prefix}/{script_name}"
+                    for script_name in controller._bundled_scripts
+                ],
+                sourcemap=prod_cache.cached_server_sourcemap,
+            )
 
-        node = self.hierarchy_paths[path]
-        _invalidate_node(node)
+        LOGGER.debug(
+            f"Controller {controller.__class__.__name__} load time took {(monotonic_ns() - start) / 1e9}"
+        )
+        return html
 
     @overload
     def compile_html(
@@ -868,61 +698,26 @@ class AppController:
 
         return HTMLResponse(page_contents)
 
-    def update_hierarchy(
-        self,
-        *,
-        known_controller: ControllerBase | None = None,
-        known_view_path: ManagedViewPath | None = None,
-    ):
+    def _collect_layouts_for_controller(
+        self, controller: ControllerBase
+    ) -> list[ManagedViewPath]:
         """
-        When we register a new element, we need to:
+        Recursively parse the parent paths to find the first layout (if any)
 
-        - Find if there are any on-disk layouts that have been defined. We add these greedily, before
-        we know if they're backed by a layout controller
-        - Add the controller as a LayoutElement if it's new. Otherwise update the existing element
+        We go up until the view root.
 
-        This function is built to be invariant to the order of the updates, so we can call it multiple times
-        and call it progressively as more controllers are added. It will be valid at
-        any given state for the current webapp mounting.
+        Resolve the path to the real underlying system path, necessary for /private/var
+        and /private symlinking in tmp paths
+
+        Returns the path where result[0] is the closest layout, and result[-1] is the furthest
 
         """
-        if known_view_path is None:
-            if known_controller is None:
-                raise ValueError(
-                    "Either known_controller or known_view_path must be provided"
-                )
-
-            full_view_path = (
-                self._view_root / known_controller.view_path.lstrip("/")
-                if isinstance(known_controller.view_path, str)
-                else known_controller.view_path
-            )
-            full_view_path = full_view_path.resolve().absolute()
-        else:
-            full_view_path = known_view_path.resolve().absolute()
-
-        # We should only update the current definition, we don't need to re-parse its hierarchy since
-        # we assume the disk layout hasn't changed
-        if full_view_path in self.hierarchy_paths:
-            view_element = self.hierarchy_paths[full_view_path]
-            if known_controller is not None:
-                view_element.controller = known_controller
-            return view_element
-
-        view_element = LayoutElement(
-            id=uuid4(), controller=known_controller, path=full_view_path
-        )
-        self.hierarchy_paths[full_view_path] = view_element
-
-        # Recursively parse the parent paths to find the first layout (if any)
-        # We go up until the view root. We allow the update_hierarchy to capture
-        # the root view path, but we don't allow it to be a layout. This allows
-        # layouts to inherit other layouts
-        #
-        # Resolve the path to the real underlying system path, necessary for /private/var
-        # and /private symlinking in tmp paths
+        full_view_path = controller.full_view_path.resolve().absolute()
         current_path = full_view_path.realpath()
         package_root = full_view_path.get_root_link().realpath()
+
+        found_layouts: list[ManagedViewPath] = []
+
         while current_path != package_root:
             # We should never get to the OS root
             if str(current_path) == "/":
@@ -932,25 +727,95 @@ class AppController:
 
             layout_file = current_path / "layout.tsx"
             if layout_file.exists():
-                LOGGER.debug(
-                    f"Layout found on disk, adding link: {view_element.path} {layout_file}"
-                )
-                parent_layout = self.update_hierarchy(known_view_path=layout_file)
-
                 # Never create a self-referential layout
                 # This can happen with layout controllers that will also find their
                 # own layout.tsx file
-                if parent_layout != view_element:
-                    parent_layout.children.append(view_element)
-                    view_element.parent = parent_layout
-
-                    # We should break at the nearest level, since each page
-                    # can only have one direct parent
-                    break
+                if layout_file.absolute() != full_view_path:
+                    found_layouts.append(layout_file)
 
             current_path = current_path.parent
 
-        return view_element
+        return found_layouts
+
+    def _get_layout_for_path(
+        self, layout_path: Path
+    ) -> tuple[ControllerDefinition, bool]:
+        """
+        Gets an existing layout for a given path. If no layout exists, we will
+        create a new one.
+
+        :returns: A tuple of the layout controller and a boolean indicating if it was newly created
+
+        """
+        layout_path = layout_path.resolve().absolute()
+        if str(layout_path) in self.path_to_layout:
+            return self.path_to_layout[str(layout_path)], False
+
+        # Synthetic layout controllers let us use the same code handling that we
+        # use for explicit controllers, but without having to define a new class.
+        # The name needs to be deterministic so it can resolve to the same path
+        # during view building and production hosting
+        layout_name = f"Layout_{md5(str(layout_path).encode()).hexdigest()}"
+        new_layout = type(
+            layout_name,
+            (LayoutControllerBase,),
+            {
+                "view_path": layout_path,
+            },
+        )
+        LOGGER.debug(f"Creating synthetic layout {layout_name} for {layout_path}")
+        new_definition = self.graph.register(new_layout(), route=None)
+        self.path_to_layout[str(layout_path)] = new_definition
+        return new_definition, True
+
+    def _remount_controller(self, target_controller: ControllerDefinition):
+        """
+        Re-mount the controller exactly as it was first mounted. Works around limitations
+        in fastapi where the router is not updated if the controller is mounted
+        to the same path twice.
+
+        """
+        if not target_controller.route or not target_controller.route.render_router:
+            return
+
+        LOGGER.debug(f"Remounting {target_controller.controller.__class__.__name__}")
+
+        # Clear the previous definition before re-adding it
+        # Both the app route is required (for the actual page resolution) and the render router
+        # (to avoid conflicts in the OpenAPI generation)
+        for route_list in [
+            self.app.routes,
+            target_controller.route.render_router.routes,
+        ]:
+            for route in list(route_list):
+                if (
+                    isinstance(route, APIRoute)
+                    and route.path == target_controller.controller.url
+                    and route.methods == {"GET"}
+                ):
+                    route_list.remove(route)
+
+        target_controller.route.render_router.get(target_controller.controller.url)(
+            target_controller.route.view_route
+        )
+
+        self.app.include_router(target_controller.route.render_router)
+
+    def invalidate_view(self, path: Path):
+        """
+        After an on-disk change of a given path, we should clear its current
+        script cache so we rebuild with the latest changes. We should also clear
+        out any nested children - so in the case of a layout change, we refresh
+        all of its subpages.
+
+        """
+        path = path.resolve().absolute()
+
+        for controller_definition in self.graph.controllers:
+            if str(controller_definition.controller.full_view_path) == str(path):
+                # Clear any dependencies recursively so we update children pages if the
+                # layout has changed
+                controller_definition.clear_cache(recursive=True)
 
     async def _handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
@@ -972,71 +837,6 @@ class AppController:
                 for error in exc.errors()
             ]
         )
-
-    def merge_render_signatures(
-        self,
-        target_controller: ControllerDefinition,
-        *,
-        reference_controller: ControllerDefinition,
-    ):
-        """
-        Collects the signature from the "reference_controller" and replaces the active target_controller's
-        render endpoint with this new signature. We require all these new parameters to be kwargs so they
-        can be injected into the render function by name alone.
-
-        """
-        reference_signature = signature(reference_controller.view_route)
-        target_signature = signature(target_controller.view_route)
-
-        reference_parameters = reference_signature.parameters.values()
-        target_parameters = list(target_signature.parameters.values())
-
-        # For any additional arguments provided by the reference, inject them into
-        # the target controller
-        # For duplicate ones, the target controller should win
-        for parameter in reference_parameters:
-            if parameter.name not in target_signature.parameters:
-                target_parameters.append(
-                    parameter.replace(
-                        kind=Parameter.KEYWORD_ONLY,
-                    )
-                )
-            else:
-                # We only throw an error if the types are different. If they're the same we assume
-                # that the resolution is intended to be shared.
-                target_annotation_type = target_signature.parameters[
-                    parameter.name
-                ].annotation
-                reference_annotation_type = parameter.annotation
-
-                if target_annotation_type != reference_annotation_type:
-                    raise TypeError(
-                        f"Duplicate parameter {parameter.name} in {target_controller.controller} and {reference_controller.controller}.\n"
-                        f"Conflicting types: {target_annotation_type} vs {reference_annotation_type}"
-                    )
-
-        target_controller.view_route.__signature__ = target_signature.replace(  # type: ignore
-            parameters=target_parameters
-        )
-
-        # Re-mount the controller exactly as it was first mounted
-        if target_controller.render_router:
-            # Clear the previous definition before re-adding it
-            # Both the app route is required (for the actual page resolution) and the render router
-            # (to avoid conflicts in the OpenAPI generation)
-            for route_list in [self.app.routes, target_controller.render_router.routes]:
-                for route in list(route_list):
-                    if (
-                        isinstance(route, APIRoute)
-                        and route.path == target_controller.controller.url
-                        and route.methods == {"GET"}
-                    ):
-                        route_list.remove(route)
-
-            target_controller.render_router.get(target_controller.controller.url)(
-                target_controller.view_route
-            )
-            self.app.include_router(target_controller.render_router)
 
     def _get_value_mask_for_signature(
         self,
@@ -1069,7 +869,7 @@ class AppController:
         #
 
         exceptions_by_url: dict[str, list[ExceptionSchema]] = {}
-        for controller_definition in self.controllers:
+        for controller_definition in self.graph.controllers:
             for (
                 _,
                 _,
@@ -1188,14 +988,6 @@ class AppController:
             return [self._update_ref_path(value) for value in schema]
         else:
             return schema
-
-    def _definition_for_controller(
-        self, controller: ControllerBase
-    ) -> ControllerDefinition:
-        for controller_definition in self.controllers:
-            if controller_definition.controller == controller:
-                return controller_definition
-        raise ValueError(f"Controller {controller} not found")
 
     def get_build_metadata(self):
         """

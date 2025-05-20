@@ -1,8 +1,8 @@
 from abc import ABC
+from hashlib import md5
 from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isfunction, ismethod
 from pathlib import Path
-from re import compile as re_compile
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -260,7 +260,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # We'll update this bool if we can't find any dependencies
         found_dependencies = True
 
-        # The SSR path is going to be static
         ssr_path = view_base / "_ssr" / f"{self.script_name}.js"
         if ssr_path.exists():
             self._ssr_path = ssr_path
@@ -269,25 +268,36 @@ class ControllerBase(ABC, Generic[RenderInput]):
                 SourceMapParser(ssr_map_path) if ssr_map_path.exists() else None
             )
         else:
+            LOGGER.debug(f"SSR path not found for {self.script_name} {ssr_path}")
             found_dependencies = False
 
-        # Find the md5-converted cache path
-        md5_script_pattern = re_compile(self.script_name + "-" + "[a-f0-9]{32}" + ".js")
-        if (view_base / "_static").exists():
+        static_path = view_base / "_static" / f"{self.script_name}.js"
+        if static_path.exists():
+            md5_hash = md5(static_path.read_bytes()).hexdigest()
             self._bundled_scripts = [
-                path.name
-                for path in (view_base / "_static").iterdir()
-                if md5_script_pattern.match(path.name) and ".js.map" not in path.name
+                f"{self._scripts_prefix}/{static_path.name}?v={md5_hash}"
             ]
-            if not self._bundled_scripts:
-                found_dependencies = False
-            LOGGER.debug(
-                f"[{self.__class__.__name__}] Resolved paths... {self._bundled_scripts}"
-            )
         else:
+            LOGGER.debug(f"Static path not found for {self.script_name} {static_path}")
             found_dependencies = False
 
         return found_dependencies
+
+    @property
+    def full_view_path(self) -> ManagedViewPath:
+        if isinstance(self.view_path, ManagedViewPath):
+            return self.view_path
+        elif isinstance(self.view_path, str):
+            if self._view_base_path is None:
+                raise ValueError(
+                    f"Unable to resolve view path because of unset view_base_path: {self.view_path}"
+                )
+
+            return ManagedViewPath.from_view_root(  # type: ignore
+                self._view_base_path
+            ) / self.view_path.lstrip("/")
+        else:
+            return ManagedViewPath(str(self.view_path))
 
     @property
     def script_name(self):

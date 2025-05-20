@@ -303,8 +303,9 @@ async def get_render_parameters(
     # match non-relevant paths.
     # https://github.com/encode/starlette/blob/5c43dde0ec0917673bb280bcd7ab0c37b78061b7/starlette/routing.py#L544
     for route in (
-        controller._definition.render_router.routes
-        if controller._definition.render_router is not None
+        controller._definition.route.render_router.routes
+        if controller._definition.route
+        and controller._definition.route.render_router is not None
         else []
     ):
         match, child_scope = route.matches(view_request.scope)
