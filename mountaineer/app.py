@@ -821,28 +821,46 @@ class AppController:
 
     def invalidate_view(self, path: Path):
         """
-        After an on-disk change of a given path, we should clear its current
-        script cache so we rebuild with the latest changes. We should also clear
-        out any nested children - so in the case of a layout change, we refresh
-        all of its subpages.
+        After an on-disk change of a given path, we should clear all current
+        script caches in development so we rebuild with the latest changes.
 
+        Since we don't parse TypeScript import dependencies, we take an aggressive
+        approach and clear all development caches when any view file changes.
+        This ensures that shared components and common files are properly recompiled
+        across all controllers that might import them.
         """
         path = path.resolve().absolute()
 
-        found_controllers: list[ControllerDefinition] = []
-        for controller_definition in self.graph.controllers:
-            if str(controller_definition.controller.full_view_path) == str(path):
-                # Clear any dependencies recursively so we update children pages if the
-                # layout has changed
-                found_controllers.append(controller_definition)
+        # Only invalidate if the changed file is within our view root
+        try:
+            path.relative_to(self._view_root.resolve().absolute())
+        except ValueError:
+            # File is outside our view root, ignore it
+            LOGGER.debug(f"Ignoring file change outside view root: {path}")
+            return
 
-        for controller_definition in found_controllers:
-            controller_definition.clear_cache(recursive=True)
+        # In development mode, clear all controller caches since any view file
+        # could potentially be imported by any controller
+        if self.development_enabled:
+            cleared_controllers: list[ControllerDefinition] = []
 
-        controller_names = [
-            controller.controller.__class__.__name__ for controller in found_controllers
-        ]
-        LOGGER.debug(f"Invalidated {controller_names} controllers for path {path}")
+            for controller_definition in self.graph.controllers:
+                # Only clear caches that are in development mode
+                if isinstance(controller_definition.cache_args, DevCacheConfig):
+                    if controller_definition.cache is not None:
+                        controller_definition.clear_cache(recursive=False)
+                        cleared_controllers.append(controller_definition)
+
+            controller_names = [
+                controller.controller.__class__.__name__
+                for controller in cleared_controllers
+            ]
+            LOGGER.debug(
+                f"Invalidated all development caches for {len(cleared_controllers)} controllers due to file change: {path}"
+            )
+            LOGGER.debug(f"Cleared caches for: {controller_names}")
+        else:
+            LOGGER.debug(f"Skipping cache invalidation in production mode for: {path}")
 
     async def _handle_exception(self, request: Request, exc: APIException):
         return JSONResponse(
