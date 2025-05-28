@@ -29,9 +29,9 @@ class VEnvEnvironment(EnvironmentBase):
 
         secho(f"Virtual environment created at: {venv_path}", fg="green")
 
-        # Install packages using pip
+        # Install packages using pip, including dev dependencies
         subprocess.run(
-            [str(venv_path / "bin" / "pip"), "install", "-e", "."],
+            [str(venv_path / "bin" / "pip"), "install", "-e", ".[dev]"],
             check=True,
             cwd=project_path,
             # Install within our virtualenv
