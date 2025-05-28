@@ -311,6 +311,11 @@ async def handle_build(
     # Find tsconfig.json in the parent directories of the view paths
     tsconfig_path = find_tsconfig(all_view_paths)
 
+    if not all_view_paths:
+        LOGGER.warning("No controllers found to build. Skipping bundling steps.")
+        LOGGER.info(f"Build completed in {(time() - start):.2f}s")
+        return
+
     # Compile the final client bundle
     client_bundle_result = mountaineer_rs.compile_production_bundle(
         all_view_paths,

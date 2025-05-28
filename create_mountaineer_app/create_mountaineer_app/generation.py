@@ -32,14 +32,6 @@ class ProjectMetadata(BaseModel):
     # This is useful for testing changes to mountaineer itself
     mountaineer_dev_path: Path | None = None
 
-    @property
-    def use_poetry(self) -> bool:
-        return self.package_manager == PackageManager.POETRY
-
-    @property
-    def use_uv(self) -> bool:
-        return self.package_manager == PackageManager.UV
-
 
 class TemplateOutput(BaseModel):
     content: str

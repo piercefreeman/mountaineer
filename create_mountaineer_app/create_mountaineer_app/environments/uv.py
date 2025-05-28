@@ -52,7 +52,7 @@ class UvEnvironment(EnvironmentBase):
 
         # Install packages using uv pip
         subprocess.run(
-            ["uv", "pip", "install", "-e", "."],
+            ["uv", "sync"],
             check=True,
             cwd=project_path,
             env={

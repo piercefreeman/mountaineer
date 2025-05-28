@@ -20,7 +20,7 @@ from mountaineer.development.messages import (
 )
 from mountaineer.development.messages_broker import AsyncMessageBroker
 from mountaineer.development.uvicorn import UvicornThread
-from mountaineer.logging import setup_internal_logger
+from mountaineer.logging import log_time_duration, setup_internal_logger
 
 if TYPE_CHECKING:
     from mountaineer_exceptions.controllers.exception_controller import (
@@ -297,13 +297,17 @@ class IsolatedAppContext:
             raise ValueError("Exception controller not initialized")
 
         if request.method == "GET":
-            html = await self.exception_controller._definition.route.view_route(  # type: ignore
-                exception=str(exc),
-                stack="".join(format_exception(exc)),
-                parsed_exception=self.exception_controller.traceback_parser.parse_exception(
-                    exc
-                ),
-            )
+            with log_time_duration(
+                "Exception controller took to render the exception page",
+                warning_threshold=0.5,
+            ):
+                html = await self.exception_controller._definition.route.view_route(  # type: ignore
+                    exception=str(exc),
+                    stack="".join(format_exception(exc)),
+                    parsed_exception=self.exception_controller.traceback_parser.parse_exception(
+                        exc
+                    ),
+                )
             return html
         else:
             raise exc

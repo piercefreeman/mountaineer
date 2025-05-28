@@ -106,7 +106,7 @@ def setup_logger(name, log_level=logging.DEBUG):
 
 
 @contextmanager
-def log_time_duration(message: str):
+def log_time_duration(message: str, *, warning_threshold: float | None = None):
     """
     Context manager to time a code block at runtime.
 
@@ -119,7 +119,11 @@ def log_time_duration(message: str):
     """
     start = monotonic_ns()
     yield
-    LOGGER.debug(f"{message} : Took {(monotonic_ns() - start) / 1e9:.2f}s")
+    elapsed = (monotonic_ns() - start) / 1e9
+    if warning_threshold is not None and elapsed > warning_threshold:
+        LOGGER.warning(f"{message} : Took {elapsed:.2f}s")
+    else:
+        LOGGER.debug(f"{message} : Took {elapsed:.2f}s")
 
 
 def setup_internal_logger(name: str):

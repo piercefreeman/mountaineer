@@ -15,6 +15,21 @@ dependencies = [
     "iceaxe>=0.5.0"
 ]
 
+{% if package_manager == "poetry" %}
+[tool.poetry.group.dev.dependencies]
+pyright = ">=1.1.400"
+pytest = ">=8.3.5"
+pytest-asyncio = ">=0.26.0"
+ruff = ">=0.11.9"
+{% elif package_manager == "venv" %}
+[project.optional-dependencies]
+dev = [
+    "pyright>=1.1.400",
+    "pytest>=8.3.5",
+    "pytest-asyncio>=0.26.0",
+    "ruff>=0.11.9",
+]
+{% else %}
 [dependency-groups]
 dev = [
     "pyright>=1.1.400",
@@ -22,6 +37,7 @@ dev = [
     "pytest-asyncio>=0.26.0",
     "ruff>=0.11.9",
 ]
+{% endif %}
 
 [build-system]
 requires = ["setuptools>=61.0"]
