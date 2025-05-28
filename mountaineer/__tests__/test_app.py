@@ -19,6 +19,7 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
+from mountaineer.graph.cache import ControllerDevCache, DevCacheConfig
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -235,3 +236,197 @@ async def test_parse_validation_exception():
     assert error.location == ["age"]
     assert "input should be a valid integer" in error.message.lower()
     assert error.value_input == "not_a_number"
+
+
+def test_invalidate_view_clears_cache(tmp_path: Path):
+    """
+    Test that invalidate_view properly clears caches when files change in development.
+    This is the core logic that should trigger when JS/TS files change.
+    """
+
+    # Create a minimal view structure
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+
+    # Create a test page file
+    test_page = view_dir / "test" / "page.tsx"
+    test_page.parent.mkdir(parents=True)
+    test_page.write_text("export default function Page() { return <div>Test</div>; }")
+
+    # Create node_modules for cache config
+    node_modules = view_dir / "node_modules"
+    node_modules.mkdir()
+
+    # Create app and controller
+    app = AppController(view_root=view_dir)
+
+    class TestController(ControllerBase):
+        url = "/test"
+        view_path = "test/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    controller = TestController()
+    app.register(controller)
+
+    # Get the controller definition
+    controller_definitions = app.graph.get_definitions_for_cls(TestController)
+    assert len(controller_definitions) == 1
+    controller_definition = controller_definitions[0]
+
+    # Verify development mode cache config is set
+    assert isinstance(controller_definition.cache_args, DevCacheConfig)
+
+    # Mock the Rust compilation to avoid actual compilation
+    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
+        mock_compile.return_value = (
+            ["console.log('test script');"],  # script_payloads
+            ["// sourcemap"],  # sourcemap_payloads
+        )
+
+        # Create cache by resolving it
+        cache = controller_definition.resolve_cache()
+        assert isinstance(cache, ControllerDevCache)
+        assert controller_definition.cache is not None
+
+        # This is the key test: invalidate_view should clear the cache
+        app.invalidate_view(test_page)
+
+        # Cache should be cleared
+        assert controller_definition.cache is None
+
+
+def test_invalidate_view_clears_all_dev_caches(tmp_path: Path):
+    """
+    Test that invalidate_view clears ALL development caches when any view file changes.
+    This is the new aggressive behavior since we don't parse import dependencies.
+    """
+
+    # Create view structure
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+    node_modules = view_dir / "node_modules"
+    node_modules.mkdir()
+
+    # Create multiple files
+    test_page1 = view_dir / "test1" / "page.tsx"
+    test_page1.parent.mkdir(parents=True)
+    test_page1.write_text(
+        "export default function Page1() { return <div>Test1</div>; }"
+    )
+
+    test_page2 = view_dir / "test2" / "page.tsx"
+    test_page2.parent.mkdir(parents=True)
+    test_page2.write_text(
+        "export default function Page2() { return <div>Test2</div>; }"
+    )
+
+    # Create an unrelated component that could be imported by any page
+    component_file = view_dir / "components" / "shared.tsx"
+    component_file.parent.mkdir(parents=True)
+    component_file.write_text("export const SharedComponent = () => <div>Shared</div>;")
+
+    # Create app and controllers
+    app = AppController(view_root=view_dir)
+
+    class TestController1(ControllerBase):
+        url = "/test1"
+        view_path = "test1/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    class TestController2(ControllerBase):
+        url = "/test2"
+        view_path = "test2/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    controller1 = TestController1()
+    controller2 = TestController2()
+
+    app.register(controller1)
+    app.register(controller2)
+
+    # Get the definitions
+    controller1_def = app.graph.get_definitions_for_cls(TestController1)[0]
+    controller2_def = app.graph.get_definitions_for_cls(TestController2)[0]
+
+    # Mock compilation and create caches
+    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
+        mock_compile.return_value = (
+            ["console.log('test script');"],
+            ["// sourcemap"],
+        )
+
+        # Create caches for both controllers
+        controller1_def.resolve_cache()
+        controller2_def.resolve_cache()
+
+        assert controller1_def.cache is not None
+        assert controller2_def.cache is not None
+
+        # Change the shared component file - should clear ALL caches
+        app.invalidate_view(component_file)
+
+        # Both controller caches should be cleared even though only a shared component changed
+        assert controller1_def.cache is None
+        assert controller2_def.cache is None
+
+
+def test_invalidate_view_ignores_files_outside_view_root(tmp_path: Path):
+    """
+    Test that invalidate_view ignores files outside the view root directory.
+    """
+
+    # Create view structure
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+    node_modules = view_dir / "node_modules"
+    node_modules.mkdir()
+
+    # Create test page
+    test_page = view_dir / "test" / "page.tsx"
+    test_page.parent.mkdir(parents=True)
+    test_page.write_text("export default function Page() { return <div>Test</div>; }")
+
+    # Create file outside view root
+    outside_file = tmp_path / "outside" / "file.tsx"
+    outside_file.parent.mkdir(parents=True)
+    outside_file.write_text(
+        "export default function Outside() { return <div>Outside</div>; }"
+    )
+
+    # Create app and controller
+    app = AppController(view_root=view_dir)
+
+    class TestController(ControllerBase):
+        url = "/test"
+        view_path = "test/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    controller = TestController()
+    app.register(controller)
+
+    controller_definition = app.graph.get_definitions_for_cls(TestController)[0]
+
+    # Mock compilation and create cache
+    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
+        mock_compile.return_value = (
+            ["console.log('test script');"],
+            ["// sourcemap"],
+        )
+
+        # Create cache
+        controller_definition.resolve_cache()
+        assert controller_definition.cache is not None
+
+        # Invalidate file outside view root - should NOT clear the cache
+        app.invalidate_view(outside_file)
+
+        # Cache should still be present
+        assert controller_definition.cache is not None
