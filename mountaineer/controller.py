@@ -1,6 +1,5 @@
 from abc import ABC
 from hashlib import md5
-from importlib.metadata import PackageNotFoundError
 from inspect import getmembers, isfunction, ismethod
 from pathlib import Path
 from typing import (
@@ -22,10 +21,9 @@ from mountaineer.actions import (
     get_function_metadata,
 )
 from mountaineer.client_compiler.source_maps import SourceMapParser
-from mountaineer.config import get_config
 from mountaineer.constants import DEFAULT_STATIC_DIR
 from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath, resolve_package_path
+from mountaineer.paths import ManagedViewPath
 from mountaineer.render import (
     RenderBase,
 )
@@ -167,8 +165,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
         self._view_base_path: Path | None = None
         self._ssr_path: Path | None = None
 
-        self.resolve_paths()
-
     def render(
         self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
     ) -> RenderBase | None | Coroutine[Any, Any, RenderBase | None]:
@@ -229,7 +225,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         for name, func in getmembers(self, predicate=ismethod):
             yield from function_is_action(name, func)
 
-    def resolve_paths(self, view_base: Path | None = None, force: bool = True) -> bool:
+    def resolve_paths(self, view_base: Path, force: bool = True) -> bool:
         """
         Typically used internally by the Mountaineer build pipeline. Calling this function
         sets the active `view_base` of the frontend project, which allows us to resolve the
@@ -239,20 +235,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         """
         if not force and self._view_base_path is not None:
-            return False
-
-        # Try to resolve the view base path from the global config
-        if view_base is None:
-            try:
-                config = get_config()
-                if config.PACKAGE:
-                    view_base = Path(resolve_package_path(config.PACKAGE)) / "views"
-            except (ValueError, PackageNotFoundError):
-                # Config isn't registered yet
-                pass
-
-        if view_base is None:
-            # Unable to resolve, no-op
             return False
 
         self._view_base_path = view_base
