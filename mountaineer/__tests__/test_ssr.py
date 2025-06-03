@@ -1,4 +1,3 @@
-from re import sub as re_sub
 from time import monotonic_ns
 from uuid import UUID, uuid4
 
@@ -64,7 +63,7 @@ def test_ssr_timeout():
 
 def test_ssr_exception_context():
     """
-    Ensure we report the context of V8 runtime exceptions.
+    Ensure we report the context of V8 runtime exceptions with enhanced information.
     """
 
     class FakeModel(BaseModel):
@@ -82,22 +81,28 @@ def test_ssr_exception_context():
     };
     """
 
-    # with pytest.raises(V8RuntimeError, match="custom_error_text"):
     try:
         render_ssr(
             script=js_contents,
             render_data=FakeModel(random_id=uuid4()).model_dump(mode="json"),
             hard_timeout=0,
         )
+        assert False, "Expected V8RuntimeError to be raised"
     except V8RuntimeError as e:
-        assert re_sub(r"\s+", "", str(e)) == (
-            re_sub(
-                r"\s+",
-                "",
-                """
-            Error calling function 'x': Error: custom_error_text
-            Stack: Error: custom_error_text
-                    at Object.x (<anonymous>:4:19)
-            """,
-            )
-        )
+        error_str = str(e)
+
+        # Check that the enhanced error contains key components
+        assert "JavaScript Runtime Error:" in error_str
+        assert "custom_error_text" in error_str
+        assert "Object.x" in error_str
+        assert "<anonymous>" in error_str
+
+        # Check that code context is included
+        assert "Code Context:" in error_str
+        assert "throw new Error('custom_error_text')" in error_str
+
+        # Verify the error has the enhanced attributes
+        assert hasattr(e, "original_stack")
+        assert hasattr(e, "code_context")
+        assert "custom_error_text" in e.original_stack
+        assert len(e.code_context) > 0
