@@ -48,7 +48,6 @@ my_webapp
   /app.py
   /cli.py
 pyproject.toml
-poetry.lock
 ```
 
 Every service file is nested under the `my_webapp` root package. Views are defined in a disk-based hierarchy (`views`) where nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`. Controllers are defined nearby in a flat folder (`controllers`) where each route is a separate file. Everything else is just standard Python code for you to modify as needed.
@@ -59,7 +58,7 @@ If you're starting a new application from scratch, you'll typically want to crea
 
 ```bash
 docker compose up -d
-poetry run createdb
+uv run createdb
 ```
 
 Of course you can also use an existing database instance, simply configure it in the `.env` file in the project root.
@@ -69,7 +68,7 @@ Mountaineer relies on watching your project for changes and doing progressive co
 While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
 
 ```bash
-$ poetry run runserver
+$ uv run runserver
 
 INFO:     Started server process [93111]
 INFO:     Waiting for application startup.
@@ -82,7 +81,7 @@ Navigate to http://127.0.0.1:5006 to see your new webapp running.
 Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
 
 ```bash
-$ poetry run watch
+$ uv run watch
 ```
 
 Both of these CLI commands are specified in your project's `cli.py` file.
