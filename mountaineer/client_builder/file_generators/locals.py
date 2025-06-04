@@ -138,7 +138,7 @@ class LocalLinkGenerator(LocalGeneratorBase):
 
         # Determine appropriate types for query and path parameters
         # Use 'string | number | boolean | null | undefined' for URL parameters since that's what we support
-        url_param_type = "string | number | boolean | null | undefined"
+        url_param_type = "string | number | boolean | null | undefined | (string | number | boolean)[]"
         query_type = (
             f"Record<string, {url_param_type}>"
             if query_parameters
@@ -359,9 +359,14 @@ class LocalUseServerGenerator(LocalGeneratorBase):
 
     def _generate_interface(self, controller: ControllerWrapper, render_model: str):
         """Generate ServerState interface"""
+        server_key = controller.controller.__name__
+        
         yield CodeBlock(
             "declare global {",
-            f"  var SERVER_DATA: Record<string, {render_model}>;",
+            "  interface SERVER_DATA_INTERFACE {",
+            f"    {server_key}: {render_model};",
+            "  }",
+            "  var SERVER_DATA: SERVER_DATA_INTERFACE;",
             "}",
         )
 
