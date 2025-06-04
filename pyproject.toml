@@ -23,8 +23,8 @@ dependencies = [
     "rich>=13.7.1,<14.0.0",
     "watchfiles>=1.0.0,<2.0.0",
     "firehot>=0.4.0,<1.0.0",
-    #"mountaineer-exceptions>=0.1.1",
-    "mountaineer-exceptions",
+    "mountaineer-exceptions>=0.1.1",
+    #"mountaineer-exceptions",
 ]
 exclude = [
     "fixtures",
@@ -43,8 +43,8 @@ build-backend = "maturin"
 # NOTE: https://github.com/PyO3/maturin/issues/2314
 cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs"}]
 
-[tool.uv.sources]
-mountaineer-exceptions = { path = "../mountaineer-exceptions", editable = true }
+#[tool.uv.sources]
+#mountaineer-exceptions = { path = "../mountaineer-exceptions", editable = true }
 
 #[tool.maturin]
 #module-name = "mountaineer._core"

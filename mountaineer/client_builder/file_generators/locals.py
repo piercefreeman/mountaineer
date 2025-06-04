@@ -138,7 +138,7 @@ class LocalLinkGenerator(LocalGeneratorBase):
 
         # Determine appropriate types for query and path parameters
         # Use 'string | number | boolean | null | undefined' for URL parameters since that's what we support
-        url_param_type = "string | number | boolean | null | undefined | (string | number | boolean)[]"
+        url_param_type = "string | number | boolean | null | undefined"
         query_type = (
             f"Record<string, {url_param_type}>"
             if query_parameters
@@ -163,9 +163,11 @@ class LocalLinkGenerator(LocalGeneratorBase):
         ]
         link_logic_str = "\n".join(link_logic)
 
+        link_signature = f"{param_str} : {typehint_str}" if parameters else ""
+
         # Function signature with all parameters
         lines = [
-            f"export const getLink = ({param_str}: {typehint_str}) => {{",
+            f"export const getLink = ({link_signature}) => {{",
             CodeBlock.indent(f"  {link_logic_str}"),
             "};",
         ]
@@ -360,7 +362,7 @@ class LocalUseServerGenerator(LocalGeneratorBase):
     def _generate_interface(self, controller: ControllerWrapper, render_model: str):
         """Generate ServerState interface"""
         server_key = controller.controller.__name__
-        
+
         yield CodeBlock(
             "declare global {",
             "  interface SERVER_DATA_INTERFACE {",

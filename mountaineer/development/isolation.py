@@ -298,8 +298,8 @@ class IsolatedAppContext:
 
         if request.method == "GET":
             with log_time_duration("Exception parsing took", warning_threshold=0.5):
-                parsed_exception = self.exception_controller.traceback_parser.parse_exception(
-                    exc
+                parsed_exception = (
+                    self.exception_controller.traceback_parser.parse_exception(exc)
                 )
             with log_time_duration(
                 "Exception controller took to render the exception page",
