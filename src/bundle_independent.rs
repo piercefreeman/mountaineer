@@ -1,7 +1,8 @@
+use log::debug;
 use pyo3::prelude::*;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 use crate::bundle_common::{bundle_common, BundleError, BundleMode};
@@ -141,20 +142,97 @@ pub fn compile_independent_bundles(
     Ok((output_files, sourcemap_files))
 }
 
-/// Create an entrypoint file in the given temporary directory.
-/// The file is named "entrypoint.jsx". It is written using custom code generation logic.
+/// Validate that all paths in the group are absolute paths.
+/// Returns an error message if any relative paths are found.
+fn validate_absolute_paths(path_group: &[String]) -> Result<(), String> {
+    for path in path_group {
+        let path_buf = Path::new(path);
+        if !path_buf.is_absolute() {
+            return Err(format!(
+                "All paths must be absolute. Relative path found: {}. The entrypoint is written to a temporary directory that won't properly resolve relative paths.",
+                path
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Create an entrypoint file in the given temporary directory that wraps a core
+/// view in its layouts. See `code_gen::build_entrypoint` for the construction logic.
+/// The file is named "entrypoint.jsx".
 fn create_entrypoint(
     temp_dir: &TempDir,
     path_group: &[String],
     is_server: bool,
     live_reload_import: &str,
 ) -> PyResult<PathBuf> {
+    // Validate that all paths are absolute since the entrypoint will be written to a temporary directory
+    if let Err(error_msg) = validate_absolute_paths(path_group) {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(error_msg));
+    }
+
     let entrypoint_path = temp_dir.path().join("entrypoint.jsx");
     let mut file = File::create(&entrypoint_path)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
 
     let entrypoint_content = code_gen::build_entrypoint(path_group, is_server, live_reload_import);
+    debug!(
+        "Writing entrypoint at path {}, contents {}",
+        entrypoint_path.display(),
+        entrypoint_content
+    );
+
     file.write_all(entrypoint_content.as_bytes())
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyIOError, _>(e.to_string()))?;
     Ok(entrypoint_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_absolute_paths_with_absolute_paths() {
+        let absolute_paths = vec![
+            "/absolute/path/to/component1.tsx".to_string(),
+            "/absolute/path/to/component2.tsx".to_string(),
+        ];
+        
+        let result = validate_absolute_paths(&absolute_paths);
+        assert!(result.is_ok(), "Should succeed with absolute paths");
+    }
+
+    #[test]
+    fn test_validate_absolute_paths_with_relative_paths() {
+        let relative_paths = vec![
+            "relative/path/to/component1.tsx".to_string(),
+            "/absolute/path/to/component2.tsx".to_string(),
+        ];
+        
+        let result = validate_absolute_paths(&relative_paths);
+        assert!(result.is_err(), "Should fail with relative paths");
+        
+        let error_msg = result.unwrap_err();
+        assert!(error_msg.contains("All paths must be absolute"), "Error message should mention absolute paths requirement");
+        assert!(error_msg.contains("relative/path/to/component1.tsx"), "Error message should mention the problematic path");
+    }
+
+    #[test]
+    fn test_validate_absolute_paths_with_all_relative_paths() {
+        let relative_paths = vec![
+            "relative/path1.tsx".to_string(),
+            "another/relative/path2.tsx".to_string(),
+        ];
+        
+        let result = validate_absolute_paths(&relative_paths);
+        assert!(result.is_err(), "Should fail with all relative paths");
+    }
+
+    #[test]
+    fn test_validate_absolute_paths_with_empty_paths() {
+        let empty_paths: Vec<String> = vec![];
+        
+        let result = validate_absolute_paths(&empty_paths);
+        assert!(result.is_ok(), "Should succeed with empty paths");
+    }
 }

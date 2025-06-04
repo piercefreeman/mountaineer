@@ -297,6 +297,10 @@ class IsolatedAppContext:
             raise ValueError("Exception controller not initialized")
 
         if request.method == "GET":
+            with log_time_duration("Exception parsing took", warning_threshold=0.5):
+                parsed_exception = (
+                    self.exception_controller.traceback_parser.parse_exception(exc)
+                )
             with log_time_duration(
                 "Exception controller took to render the exception page",
                 warning_threshold=0.5,
@@ -304,9 +308,7 @@ class IsolatedAppContext:
                 html = await self.exception_controller._definition.route.view_route(  # type: ignore
                     exception=str(exc),
                     stack="".join(format_exception(exc)),
-                    parsed_exception=self.exception_controller.traceback_parser.parse_exception(
-                        exc
-                    ),
+                    parsed_exception=parsed_exception,
                 )
             return html
         else:

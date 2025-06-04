@@ -80,7 +80,9 @@ class ControllerDefinition:
     def get_hierarchy_view_paths(self):
         layouts = self.get_parents()
         layouts.reverse()
-        return [[str(layout.controller.full_view_path) for layout in layouts]]
+        return [
+            [str(layout.controller.full_view_path.absolute()) for layout in layouts]
+        ]
 
     def resolve_cache(self):
         if self.cache_args is None:

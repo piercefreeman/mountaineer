@@ -136,17 +136,38 @@ class LocalLinkGenerator(LocalGeneratorBase):
         }
         link_args_str = python_payload_to_typescript(link_args)
 
+        # Determine appropriate types for query and path parameters
+        # Use 'string | number | boolean | null | undefined' for URL parameters since that's what we support
+        url_param_type = "string | number | boolean | null | undefined"
+        query_type = (
+            f"Record<string, {url_param_type}>"
+            if query_parameters
+            else "Record<string, never>"
+        )
+        path_type = (
+            f"Record<string, {url_param_type}>"
+            if path_parameters
+            else "Record<string, never>"
+        )
+
+        # Use string literal instead of template literal if there's no interpolation
+        url_assignment = (
+            f'const url = "{url}";' if "${" not in url else f"const url = `{url}`;"
+        )
+
         link_logic = [
-            f"const url = `{url}`;\n",
-            f"const queryParameters: Record<string, any> = {query_dict_str};",
-            f"const pathParameters: Record<string, any> = {path_dict_str};\n",
+            f"{url_assignment}\n",
+            f"const queryParameters: {query_type} = {query_dict_str};",
+            f"const pathParameters: {path_type} = {path_dict_str};\n",
             CodeBlock.indent(f"return __getLink({link_args_str});"),
         ]
         link_logic_str = "\n".join(link_logic)
 
+        link_signature = f"{param_str} : {typehint_str}" if parameters else ""
+
         # Function signature with all parameters
         lines = [
-            f"export const getLink = ({param_str}: {typehint_str}) => {{",
+            f"export const getLink = ({link_signature}) => {{",
             CodeBlock.indent(f"  {link_logic_str}"),
             "};",
         ]
@@ -340,7 +361,16 @@ class LocalUseServerGenerator(LocalGeneratorBase):
 
     def _generate_interface(self, controller: ControllerWrapper, render_model: str):
         """Generate ServerState interface"""
-        yield CodeBlock("declare global {", "  var SERVER_DATA: any;", "}")
+        server_key = controller.controller.__name__
+
+        yield CodeBlock(
+            "declare global {",
+            "  interface SERVER_DATA_INTERFACE {",
+            f"    {server_key}: {render_model};",
+            "  }",
+            "  var SERVER_DATA: SERVER_DATA_INTERFACE;",
+            "}",
+        )
 
         yield CodeBlock(
             f"export interface ServerState extends {render_model}, {controller.name.global_name} {{",
@@ -370,8 +400,8 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         yield CodeBlock(f"export type {optional_model_name} = Partial<{render_model}>;")
 
         yield CodeBlock(
-            "export const useServer = () : ServerState => {",
-            f"  const [serverState, setServerState] = useState(SERVER_DATA['{server_key}'] as {render_model});\n",
+            "export const useServer = (): ServerState => {",
+            f"  const [serverState, setServerState] = useState(SERVER_DATA.{server_key} as {render_model});\n",
             f"  const setControllerState = (payload: {optional_model_name}) => {{",
             "    setServerState((state) => ({",
             "      ...state,",
