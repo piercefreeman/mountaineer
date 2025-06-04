@@ -1,0 +1,277 @@
+# Tests
+
+By convention, Mountaineer applications use **pytest** and **pytest-asyncio** for comprehensive testing. The framework provides patterns for testing controllers, sideeffects, database operations, and frontend integrations with proper isolation and setup. You can use whatever testing framework you want if you're willing to go off road.
+
+When you create a new project with `create-mountaineer-app`, it automatically sets up a complete testing environment with the necessary dependencies and configuration.
+
+## Test Structure
+
+### Project Setup
+
+Every new Mountaineer project includes a `__tests__/` directory with a pre-configured testing environment:
+
+```
+my_webapp/
+├── __tests__/
+│   ├── __init__.py
+│   ├── conftest.py          # Test configuration and fixtures
+│   └── test_*.py           # Your test files
+├── controllers/
+├── models/
+├── views/
+└── pyproject.toml
+```
+
+## Test Configuration
+
+### Base Configuration (`conftest.py`)
+
+The template provides a robust test configuration that handles database setup and dependency injection. The generated `conftest.py` includes:
+
+- **Automatic config setup** with test database configuration
+- **Database connection fixture** that provides clean isolation between tests
+- **Schema recreation** for each test to ensure isolation
+
+You can view the complete implementation in the [template conftest.py](https://github.com/piercefreeman/mountaineer/blob/main/create_mountaineer_app/create_mountaineer_app/templates/project/%5Bproject_name%5D/__tests__/conftest.py).
+
+### Key Fixtures Available
+
+The generated test configuration provides these fixtures:
+
+- `config`: Auto-used fixture that sets up test-time configuration
+- `db_connection`: Async fixture providing a clean database connection for each test
+
+### Environment Variables
+
+Create a `.env.test` file for test-specific configuration:
+
+```bash title=".env.test"
+TEST_POSTGRES_HOST=localhost
+TEST_POSTGRES_USER=my_webapp
+TEST_POSTGRES_PASSWORD=mysecretpassword
+TEST_POSTGRES_DB=my_webapp_test_db
+POSTGRES_PORT=5438
+```
+
+## Core Testing Patterns
+
+### Testing Controller Render Functions
+
+The `render()` function is the heart of every controller - it defines what data your frontend receives. Testing render functions ensures that your controllers produce the correct data structure and handle various input scenarios properly.
+
+**What we're testing**: The render function should return the expected data payload based on the current database state and request parameters. This is essentially testing your "read" operations.
+
+_Testing Render with Data_
+
+The most common scenario is testing that when a user visits a page, they see the correct data from the database. This test validates your application's "happy path" - when everything is working correctly and you have data to display.
+
+We set up some test data in the database, create a mock request (simulating a user visiting the page), call the render method, and verify both the response structure and the actual content.
+
+```python title="my_webapp/__tests__/test_render.py"
+import pytest
+from fastapi import Request
+from unittest.mock import Mock
+from my_webapp.controllers.home import HomeController, HomeRender
+from my_webapp.models.todo import TodoItem
+
+@pytest.mark.asyncio
+async def test_home_render_with_todos(db_connection):
+    """Test that the home controller renders todo data correctly."""
+    controller = HomeController()
+    
+    # Set up test data in the database - this simulates having real todos
+    await db_connection.insert([
+        TodoItem(description="Learn Mountaineer", completed=False),
+        TodoItem(description="Build awesome app", completed=True)
+    ])
+    
+    # Create a mock request (this would normally come from FastAPI)
+    mock_request = Mock(spec=Request)
+    mock_request.client = Mock()
+    mock_request.client.host = "127.0.0.1"
+    
+    # Call the render method - this is what happens when a user visits the page
+    result = await controller.render(
+        request=mock_request,
+        db_connection=db_connection
+    )
+    
+    # Verify the response structure and data
+    assert isinstance(result, HomeRender)
+    assert result.client_ip == "127.0.0.1"
+    assert len(result.todos) == 2
+    
+    # Check that both todos are present with correct data
+    todo_descriptions = [todo.description for todo in result.todos]
+    assert "Learn Mountaineer" in todo_descriptions
+    assert "Build awesome app" in todo_descriptions
+```
+
+_Testing Render with Empty State_
+
+Your application should gracefully handle empty states, which is common when users first visit your app or when they've cleared all their data. This test ensures that your render function doesn't break when there's no data to display.
+
+```python
+@pytest.mark.asyncio
+async def test_home_render_empty_state(db_connection):
+    """Test that the render function handles empty data gracefully."""
+    controller = HomeController()
+    
+    mock_request = Mock(spec=Request)
+    mock_request.client = Mock()
+    mock_request.client.host = "192.168.1.1"
+    
+    # Call render with empty database
+    result = await controller.render(
+        request=mock_request,
+        db_connection=db_connection
+    )
+    
+    # Should still return valid structure with empty todos
+    assert isinstance(result, HomeRender)
+    assert result.client_ip == "192.168.1.1"
+    assert len(result.todos) == 0
+```
+
+### Testing Action Functions (Sideeffects & Passthroughs)
+
+Action functions handle the "write" operations in your application - creating, updating, or deleting data. These tests ensure that user interactions properly modify your application state.
+
+**What we're testing**: Action functions should correctly process user input, update the database, and trigger appropriate render refreshes. Both `@sideeffect` and `@passthrough` decorated functions follow similar testing patterns.
+
+_Testing Data Creation_
+
+This test validates the most common user interaction - adding new data to your application. When users submit a form or click a button to create something new, you want to ensure that data is correctly saved to the database.
+
+Since this uses a `@sideeffect` decorator, it will also trigger a render refresh on the frontend, keeping the UI in sync with the database.
+
+```python title="my_webapp/__tests__/test_actions.py"
+import pytest
+from my_webapp.controllers.home import HomeController
+from my_webapp.models.todo import TodoItem
+from iceaxe import select
+
+@pytest.mark.asyncio
+async def test_add_todo_action(db_connection):
+    """Test adding a new todo item via sideeffect."""
+    controller = HomeController()
+    
+    # Set up initial state - maybe the user already has one todo
+    await db_connection.insert([
+        TodoItem(description="Existing task", completed=False)
+    ])
+    
+    # Simulate user action - adding a new todo
+    await controller.add_todo(
+        payload={"description": "New important task"},
+        db_connection=db_connection
+    )
+    
+    # Verify the database was updated correctly
+    todos = await db_connection.exec(select(TodoItem))
+    assert len(todos) == 2  # Original + new todo
+    
+    # Find the new todo and verify its properties
+    new_todos = [todo for todo in todos if todo.description == "New important task"]
+    assert len(new_todos) == 1
+    new_todo = new_todos[0]
+    assert new_todo.completed is False  # Should default to incomplete
+    assert new_todo.id is not None     # Should have generated ID
+```
+
+_Testing Data Updates_
+
+This test covers modification operations - when users interact with existing data to change its state. A common example is checking off a todo item to mark it complete.
+
+The test ensures that only the intended fields are modified while leaving other data unchanged.
+
+```python
+@pytest.mark.asyncio
+async def test_toggle_todo_action(db_connection):
+    """Test updating a todo's completion status."""
+    controller = HomeController()
+    
+    # Create a todo to modify
+    todo_id = "550e8400-e29b-41d4-a716-446655440000"
+    await db_connection.insert([
+        TodoItem(
+            id=todo_id,
+            description="Task to complete",
+            completed=False
+        )
+    ])
+    
+    # Simulate user toggling the todo completion
+    await controller.toggle_todo(
+        payload={"todo_id": todo_id},
+        db_connection=db_connection
+    )
+    
+    # Verify the todo was updated
+    todos = await db_connection.exec(select(TodoItem))
+    updated_todo = todos[0]
+    assert updated_todo.completed is True
+    assert updated_todo.description == "Task to complete"  # Description unchanged
+```
+
+_Testing Error Handling_
+
+Your action functions should properly handle invalid input and provide appropriate feedback to users. This test ensures that when users submit malformed or incomplete data, your application gracefully rejects it without corrupting the database.
+
+```python
+@pytest.mark.asyncio
+async def test_action_with_validation_error(db_connection):
+    """Test that action functions handle invalid input properly."""
+    controller = HomeController()
+    
+    # Test with invalid payload - missing required field
+    with pytest.raises(ValidationError):
+        await controller.add_todo(
+            payload={"invalid_field": "value"},  # Missing 'description'
+            db_connection=db_connection
+        )
+    
+    # Verify no data was created in the database
+    todos = await db_connection.exec(select(TodoItem))
+    assert len(todos) == 0
+```
+
+## Running Tests
+
+### Basic Test Execution
+
+```bash
+# Run all tests
+pytest
+
+# Run tests with verbose output
+pytest -v
+
+# Run specific test file
+pytest __tests__/test_render.py
+
+# Run tests matching a pattern
+pytest -k "render"
+```
+
+### Database Testing
+
+Make sure your test database is running before executing database tests:
+
+```bash
+# Start test database (if using Docker)
+docker compose -f docker-compose.test.yml up -d
+
+# Run database tests
+pytest __tests__/ -v
+
+# Clean up
+docker compose -f docker-compose.test.yml down
+```
+
+## Reference
+
+For more examples of testing patterns, see:
+
+- [Mountaineer's own test suite](https://github.com/piercefreeman/mountaineer/tree/main/mountaineer/__tests__)
+- [Create-mountaineer-app template tests](https://github.com/piercefreeman/mountaineer/tree/main/create_mountaineer_app/create_mountaineer_app/__tests__)

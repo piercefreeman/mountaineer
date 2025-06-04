@@ -1,0 +1,369 @@
+# Plugins
+
+<Note>
+**Beta API Notice**: The plugin system is currently in beta. While functional and actively used, the API may change in future versions as we gather feedback and improve the developer experience.
+</Note>
+
+Mountaineer plugins are essentially **reusable Mountaineer projects** that can be shared across different applications. They encapsulate controllers, views, models, and frontend components into a distributable package that can be easily integrated into any Mountaineer application.
+
+Think of plugins as mini-applications with their own:
+- **Controllers** - Backend logic and API endpoints
+- **Views** - Frontend React components and pages  
+- **Models** - Data structures and database schemas
+- **Static assets** - CSS, images, and other resources
+- **Build configuration** - Custom bundlers and compilation steps
+
+The key benefit is **dependency encapsulation** and **consistency** - plugins are compiled ahead of time, ensuring they work reliably across different projects without version conflicts.
+
+## Motivating Examples
+
+Here are some compelling use cases for Mountaineer plugins:
+
+### 1. **Development Tools & Debugging**
+- **Exception handlers** with beautiful stack traces (like `mountaineer-exceptions`)
+- **Database admin panels** for inspecting and editing data
+- **API documentation generators** that auto-update with your schemas
+- **Performance monitoring dashboards** with real-time metrics
+
+### 2. **Authentication & Security**
+- **OAuth providers** (Google, GitHub, Discord login)
+- **RBAC systems** with user management interfaces
+- **2FA/MFA implementations** with QR code generation
+- **Audit logging** with searchable activity feeds
+
+### 3. **Content Management**
+- **Blog engines** with markdown editing and publishing workflows
+- **Media galleries** with upload, resize, and organization features
+- **Comment systems** with moderation and notifications
+- **CMS blocks** for non-technical content editing
+
+### 4. **E-commerce & Payments**
+- **Shopping cart systems** with persistent sessions
+- **Payment processors** (Stripe, PayPal integrations)
+- **Inventory management** with stock tracking
+- **Order fulfillment** workflows with shipping integrations
+
+### 5. **Communication & Notifications**
+- **Email template systems** with visual editors
+- **Chat widgets** with real-time messaging
+- **Push notification services** for mobile and web
+- **SMS/Webhook** delivery systems
+
+## Plugin Structure
+
+Let's examine the structure of `mountaineer-exceptions` as a reference implementation:
+
+```
+mountaineer-exceptions/
+├── pyproject.toml                    # Package configuration
+├── mountaineer_exceptions/
+│   ├── __init__.py
+│   ├── plugin.py                     # Main plugin definition
+│   ├── cli.py                        # Build script for the plugin
+│   ├── controllers/                  # Backend controllers
+│   │   ├── __init__.py
+│   │   ├── exception_controller.py   # Main controller logic
+│   │   └── traceback.py             # Supporting utilities
+│   └── views/                        # Frontend views
+│       ├── __init__.py              # View path utilities
+│       ├── core/
+│       │   ├── main.css             # Plugin-specific styles
+│       │   ├── layout.tsx           # Layout components
+│       │   └── exception/
+│       │       ├── page.tsx         # Main exception page
+│       │       └── _server/         # Generated server hooks
+│       └── _static/                 # Compiled assets
+└── README.md
+```
+
+## Core Plugin Conventions
+
+### 1. **Plugin Definition File**
+
+Every plugin must have a `plugin.py` file that defines a `MountaineerPlugin` instance:
+
+```python title="your_plugin/plugin.py"
+from mountaineer.client_compiler.postcss import PostCSSBundler
+from mountaineer.plugin import BuildConfig, MountaineerPlugin
+
+from your_plugin.controllers.main_controller import MainController
+from your_plugin.views import get_core_view_path
+
+plugin = MountaineerPlugin(
+    name="your-plugin-name",
+    controllers=[MainController],
+    view_root=get_core_view_path(""),
+    build_config=BuildConfig(custom_builders=[PostCSSBundler()]),
+)
+```
+
+**Required fields:**
+- `name`: Unique identifier for your plugin
+- `controllers`: List of controller classes to register
+- `view_root`: Path to the plugin's view directory
+
+**Optional fields:**
+- `build_config`: Custom build configuration with bundlers, CSS processors, etc.
+
+### 2. **View Path Management**
+
+Plugins should provide a utility function for resolving view paths:
+
+```python title="your_plugin/views/__init__.py"
+from importlib.resources import as_file, files
+from pathlib import Path
+
+def get_core_view_path(asset_name: str) -> Path:
+    with as_file(files(__name__).joinpath(asset_name)) as path:
+        return Path(path)
+```
+
+This ensures your plugin's views can be located regardless of how the plugin is installed.
+
+### 3. **Controller Structure**
+
+Plugin controllers follow standard Mountaineer controller conventions:
+
+```python title="your_plugin/controllers/main_controller.py"
+from mountaineer.controller import ControllerBase
+from mountaineer.paths import ManagedViewPath
+from mountaineer.render import RenderBase
+
+from your_plugin.views import get_core_view_path
+
+class MainRender(RenderBase):
+    # Define your render data structure
+    message: str
+    items: list[dict]
+
+class MainController(ControllerBase):
+    url = "/your-plugin"  # Plugin routes should be namespaced
+    view_path = (
+        ManagedViewPath.from_view_root(get_core_view_path(""))
+        / "core/main/page.tsx"
+    )
+
+    def render(self) -> MainRender:
+        return MainRender(
+            message="Hello from plugin!",
+            items=[{"id": 1, "name": "Example"}]
+        )
+```
+
+### 4. **Frontend Views**
+
+Plugin views are standard React components with TypeScript:
+
+```typescript title="your_plugin/views/core/main/page.tsx"
+import React from "react";
+import { useServer } from "./_server/useServer";
+
+const MainPage = (): JSX.Element => {
+  const serverState = useServer();
+
+  return (
+    <div className="p-8">
+      <h1 className="text-2xl font-bold">{serverState.message}</h1>
+      <ul className="mt-4">
+        {serverState.items.map((item) => (
+          <li key={item.id} className="py-2">
+            {item.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+export default MainPage;
+```
+
+### 5. **Build Configuration**
+
+Plugins should include a CLI build script for compilation:
+
+```python title="your_plugin/cli.py"
+from mountaineer.cli import handle_build
+from your_plugin.plugin import plugin
+
+app = plugin.to_webserver()
+
+def build() -> None:
+    handle_build(webcontroller="your_plugin.cli:app")
+```
+
+And register it in `pyproject.toml`:
+
+```toml title="pyproject.toml"
+[project.scripts]
+build-your-plugin = "your_plugin.cli:build"
+```
+
+### 6. **Package Configuration**
+
+Your `pyproject.toml` should include build artifacts:
+
+```toml title="pyproject.toml"
+[tool.hatch.build]
+artifacts = ["your_plugin/views/_static", "your_plugin/views/_ssr"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+```
+
+---
+
+## Creating a Plugin
+
+### 1. **Project Setup**
+
+```bash
+mkdir my-awesome-plugin
+cd my-awesome-plugin
+
+# Initialize with uv
+uv init
+uv add mountaineer
+```
+
+### 2. **Create Plugin Structure**
+
+```bash
+mkdir -p my_awesome_plugin/{controllers,views/core/main}
+touch my_awesome_plugin/__init__.py
+touch my_awesome_plugin/plugin.py
+touch my_awesome_plugin/cli.py
+touch my_awesome_plugin/controllers/__init__.py
+touch my_awesome_plugin/views/__init__.py
+```
+
+### 3. **Implement Your Plugin**
+
+Follow the conventions outlined above to implement your controllers, views, and plugin definition.
+
+### 4. **Build Your Plugin**
+
+```bash
+# Build the frontend assets
+uv run build-my-awesome-plugin
+
+# Package for distribution
+uv build
+```
+
+---
+
+## Using a Plugin
+
+### 1. **Install the Plugin**
+
+```bash
+# From PyPI (if published)
+uv add my-awesome-plugin
+
+# From local development
+uv add --editable ../my-awesome-plugin
+
+# From Git repository
+uv add git+https://github.com/user/my-awesome-plugin.git
+```
+
+### 2. **Register in Your App**
+
+```python title="my_app/app.py"
+from mountaineer.app import AppController
+from my_awesome_plugin.plugin import plugin
+
+controller = AppController(config=AppConfig())
+
+# Mount the plugin (this registers all controllers automatically)
+controller.use(plugin)
+```
+
+<Note>
+Use `controller.use(plugin)` instead of manually looping over `plugin.controllers`. This approach ensures proper plugin initialization, dependency resolution, and future compatibility as the plugin system evolves.
+</Note>
+
+### 3. **Include Plugin Assets**
+
+If your plugin includes CSS or other static assets, make sure to include them in your app's metadata:
+
+```python title="my_app/app.py"
+from mountaineer.render import LinkAttribute, Metadata
+
+controller = AppController(
+    config=AppConfig(),
+    global_metadata=Metadata(
+        links=[
+            LinkAttribute(rel="stylesheet", href="/static/app_main.css"),
+            LinkAttribute(rel="stylesheet", href="/static/plugin_main.css"),  # Plugin CSS
+        ]
+    ),
+)
+```
+
+---
+
+## Best Practices
+
+### **Namespace Your Routes**
+
+Use descriptive URL prefixes to avoid conflicts:
+
+```python
+class PluginController(ControllerBase):
+    url = "/my-plugin/dashboard"  # Good: namespaced
+    # url = "/dashboard"          # Bad: could conflict
+```
+
+### **Encapsulate Dependencies**
+
+Include all necessary dependencies in your plugin's `pyproject.toml`:
+
+```toml
+dependencies = [
+    "mountaineer>=0.1.0",
+    "pygments>=2.19.1",  # Plugin-specific dependencies
+]
+```
+
+### **Provide Clear Documentation**
+
+Include comprehensive README with:
+- Installation instructions
+- Configuration options
+- Usage examples
+- Screenshots or demos
+
+### **Version Compatibility**
+
+Test your plugin against multiple Mountaineer versions and document compatibility:
+
+```toml
+dependencies = [
+    "mountaineer>=0.1.0,<1.0.0",  # Specify version range
+]
+```
+
+## Examples in the Wild
+
+- **[mountaineer-exceptions](https://github.com/piercefreeman/mountaineer-exceptions)**: Beautiful exception handling and debugging
+- More plugins coming soon! Consider contributing your own.
+
+## Contributing a Plugin
+
+If you've built a useful plugin, consider sharing it with the community:
+
+1. **Open source** your plugin on GitHub
+2. **Publish** to PyPI for easy installation  
+3. **Document** thoroughly with examples
+4. **Submit** to our community plugins list
+
+The Mountaineer ecosystem thrives when developers can easily share and reuse common functionality. Your plugin could save hundreds of hours for someone out there!
+
+---
+
+The plugin system opens up endless possibilities for extending Mountaineer applications. Whether you're building internal tools, commercial add-ons, or open-source utilities, plugins provide a clean, reusable way to package and distribute Mountaineer functionality.
+
+Ready to build your first plugin? Start with a simple example and gradually add more sophisticated features as you become familiar with the conventions. 
