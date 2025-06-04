@@ -190,16 +190,35 @@ fn create_entrypoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    
+
+    fn win_paths() -> Vec<String> {
+        vec![
+            r"C:\absolute\path\to\component1.tsx".into(),
+            r"C:\absolute\path\to\component2.tsx".into(),
+        ]
+    }
+
+    fn unix_paths() -> Vec<String> {
+        vec![
+            "/absolute/path/to/component1.tsx".into(),
+            "/absolute/path/to/component2.tsx".into(),
+        ]
+    }
 
     #[test]
     fn test_validate_absolute_paths_with_absolute_paths() {
-        let absolute_paths = vec![
-            "/absolute/path/to/component1.tsx".to_string(),
-            "/absolute/path/to/component2.tsx".to_string(),
-        ];
-        
+        let absolute_paths = if cfg!(windows) {
+            win_paths()
+        } else {
+            unix_paths()
+        };
+
         let result = validate_absolute_paths(&absolute_paths);
-        assert!(result.is_ok(), "Should succeed with absolute paths");
+        assert!(
+            result.is_ok(),
+            "Should succeed with absolute paths on this platform"
+        );
     }
 
     #[test]
@@ -208,13 +227,19 @@ mod tests {
             "relative/path/to/component1.tsx".to_string(),
             "/absolute/path/to/component2.tsx".to_string(),
         ];
-        
+
         let result = validate_absolute_paths(&relative_paths);
         assert!(result.is_err(), "Should fail with relative paths");
-        
+
         let error_msg = result.unwrap_err();
-        assert!(error_msg.contains("All paths must be absolute"), "Error message should mention absolute paths requirement");
-        assert!(error_msg.contains("relative/path/to/component1.tsx"), "Error message should mention the problematic path");
+        assert!(
+            error_msg.contains("All paths must be absolute"),
+            "Error message should mention absolute paths requirement"
+        );
+        assert!(
+            error_msg.contains("relative/path/to/component1.tsx"),
+            "Error message should mention the problematic path"
+        );
     }
 
     #[test]
@@ -223,7 +248,7 @@ mod tests {
             "relative/path1.tsx".to_string(),
             "another/relative/path2.tsx".to_string(),
         ];
-        
+
         let result = validate_absolute_paths(&relative_paths);
         assert!(result.is_err(), "Should fail with all relative paths");
     }
@@ -231,7 +256,7 @@ mod tests {
     #[test]
     fn test_validate_absolute_paths_with_empty_paths() {
         let empty_paths: Vec<String> = vec![];
-        
+
         let result = validate_absolute_paths(&empty_paths);
         assert!(result.is_ok(), "Should succeed with empty paths");
     }
