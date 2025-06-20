@@ -1,7 +1,7 @@
 from inspect import getsource
 from pathlib import Path
 from textwrap import dedent
-from typing import Any, AsyncIterator, Iterator, cast
+from typing import Any, AsyncIterator, Iterator, List, Sequence, Set, Tuple, cast
 
 import mypy.api
 import pytest
@@ -241,6 +241,133 @@ async def test_raw_response():
     assert response.json() == {"raw_value": "success"}
 
 
+class ExampleSequenceModel(BaseModel):
+    id: int
+    name: str
+
+    def __hash__(self):
+        return hash((self.id, self.name))
+
+
+class ExampleSequenceController(ControllerBase):
+    url = "/example-sequence"
+    view_path = "/test.tsx"
+
+    def __init__(self):
+        super().__init__()
+
+    async def render(self) -> None:
+        return None
+
+    @passthrough
+    async def get_list_data(self) -> List[ExampleSequenceModel]:
+        return [
+            ExampleSequenceModel(id=1, name="Item 1"),
+            ExampleSequenceModel(id=2, name="Item 2"),
+        ]
+
+    @passthrough  # type: ignore
+    async def get_set_data(self) -> Set[ExampleSequenceModel]:
+        # Note: Sets are unordered, so we can't guarantee the order of items
+        return {
+            ExampleSequenceModel(id=1, name="Item 1"),
+            ExampleSequenceModel(id=2, name="Item 2"),
+        }
+
+    @passthrough
+    async def get_tuple_data(self) -> Tuple[ExampleSequenceModel, ...]:
+        return (
+            ExampleSequenceModel(id=1, name="Item 1"),
+            ExampleSequenceModel(id=2, name="Item 2"),
+        )
+
+    @passthrough
+    async def get_sequence_data(self) -> Sequence[ExampleSequenceModel]:
+        return [
+            ExampleSequenceModel(id=1, name="Item 1"),
+            ExampleSequenceModel(id=2, name="Item 2"),
+        ]
+
+
+def test_extracts_sequence():
+    """
+    Check that the @passthrough decorator correctly extracts the sequence model type.
+    """
+    metadata = get_function_metadata(ExampleSequenceController.get_list_data)
+    assert metadata.action_type == FunctionActionType.PASSTHROUGH
+    assert metadata.get_passthrough_model() == ExampleSequenceModel
+
+    metadata = get_function_metadata(ExampleSequenceController.get_set_data)
+    assert metadata.action_type == FunctionActionType.PASSTHROUGH
+    assert metadata.get_passthrough_model() == ExampleSequenceModel
+
+    metadata = get_function_metadata(ExampleSequenceController.get_tuple_data)
+    assert metadata.action_type == FunctionActionType.PASSTHROUGH
+    assert metadata.get_passthrough_model() == ExampleSequenceModel
+
+    metadata = get_function_metadata(ExampleSequenceController.get_sequence_data)
+    assert metadata.action_type == FunctionActionType.PASSTHROUGH
+    assert metadata.get_passthrough_model() == ExampleSequenceModel
+
+
+@pytest.mark.asyncio
+async def test_can_call_sequence():
+    """
+    Test that we can call a passthrough function that returns a sequence of BaseModel objects.
+    """
+    app = AppController(view_root=Path())
+    controller = ExampleSequenceController()
+    app.register(controller)
+
+    # Test list response
+    list_response = await controller.get_list_data()
+    assert "passthrough" in list_response
+    assert isinstance(list_response["passthrough"], list)
+    assert len(list_response["passthrough"]) == 2
+    # Access dictionary items properly
+    assert list_response["passthrough"][0]["id"] == 1  # type: ignore
+    assert list_response["passthrough"][0]["name"] == "Item 1"  # type: ignore
+    assert list_response["passthrough"][1]["id"] == 2  # type: ignore
+    assert list_response["passthrough"][1]["name"] == "Item 2"  # type: ignore
+
+    # Test set response
+    set_response = await controller.get_set_data()
+    assert "passthrough" in set_response
+    assert isinstance(
+        set_response["passthrough"], list
+    )  # Sets are converted to lists in JSON
+    assert len(set_response["passthrough"]) == 2
+    # Since sets are unordered, we need to check that both items are in the response
+    ids = [item["id"] for item in set_response["passthrough"]]  # type: ignore
+    names = [item["name"] for item in set_response["passthrough"]]  # type: ignore
+    assert 1 in ids
+    assert 2 in ids
+    assert "Item 1" in names
+    assert "Item 2" in names
+
+    # Test tuple response
+    tuple_response = await controller.get_tuple_data()
+    assert "passthrough" in tuple_response
+    assert isinstance(
+        tuple_response["passthrough"], list
+    )  # Tuples are converted to lists in JSON
+    assert len(tuple_response["passthrough"]) == 2
+    assert tuple_response["passthrough"][0]["id"] == 1  # type: ignore
+    assert tuple_response["passthrough"][0]["name"] == "Item 1"  # type: ignore
+    assert tuple_response["passthrough"][1]["id"] == 2  # type: ignore
+    assert tuple_response["passthrough"][1]["name"] == "Item 2"  # type: ignore
+
+    # Test sequence response
+    sequence_response = await controller.get_sequence_data()
+    assert "passthrough" in sequence_response
+    assert isinstance(sequence_response["passthrough"], list)
+    assert len(sequence_response["passthrough"]) == 2
+    assert sequence_response["passthrough"][0]["id"] == 1  # type: ignore
+    assert sequence_response["passthrough"][0]["name"] == "Item 1"  # type: ignore
+    assert sequence_response["passthrough"][1]["id"] == 2  # type: ignore
+    assert sequence_response["passthrough"][1]["name"] == "Item 2"  # type: ignore
+
+
 @pytest.mark.parametrize(
     "passthrough_value, return_typehint, return_value, is_valid",
     [
@@ -273,6 +400,12 @@ async def test_raw_response():
         ("@passthrough", "HTMLResponse", 'return HTMLResponse(content="TEST")', False),
         # Iterator types are only allowed if they're async
         ("@passthrough", "AsyncIterator[InputModel]", "yield InputModel()", True),
+        # Sequence types are allowed
+        ("@passthrough", "List[InputModel]", "return [InputModel()]", True),
+        # Set test is skipped because pydantic models are not hashable by default in the mypy test
+        # ("@passthrough", "Set[InputModel]", "return {InputModel()}", True),
+        ("@passthrough", "Tuple[InputModel, ...]", "return (InputModel(),)", True),
+        ("@passthrough", "Sequence[InputModel]", "return [InputModel()]", True),
     ],
 )
 def test_passthrough_typechecking(
@@ -288,7 +421,7 @@ def test_passthrough_typechecking(
     """
 
     def run_function():
-        from typing import AsyncIterator  # noqa: F401
+        from typing import AsyncIterator, List, Sequence, Set, Tuple  # noqa: F401
 
         from fastapi.responses import HTMLResponse, JSONResponse  # noqa: F401
         from pydantic import BaseModel  # noqa: F401
@@ -297,6 +430,9 @@ def test_passthrough_typechecking(
 
         class InputModel(BaseModel):
             pass
+
+            def __hash__(self):
+                return hash(id(self))
 
         class TestController:
             @passthrough  # type: ignore
