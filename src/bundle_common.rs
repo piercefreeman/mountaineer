@@ -189,9 +189,8 @@ pub fn bundle_common(
         define.insert("process.env.SSR_RENDERING".to_string(), "false".to_string());
     }
 
-    // Set up resolve options to let Rolldown know where to find node_modules.
+    // Set up resolve options for TypeScript configuration.
     let resolve = Some(ResolveOptions {
-        modules: Some(vec![node_modules_path.clone()]),
         tsconfig_filename: tsconfig_path,
         ..Default::default()
     });
@@ -219,9 +218,16 @@ pub fn bundle_common(
     debug!("Resolve: {:?}", resolve);
     debug!("Bundle mode: {:?}", mode);
 
+    // Get the parent directory of node_modules to use as cwd
+    let cwd = Path::new(&node_modules_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::current_dir().unwrap());
+
     // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
     let bundler_options = BundlerOptions {
         input: Some(input_items),
+        cwd: Some(cwd),
         dir: match &output_type {
             OutputType::Directory(path) => Some(path.to_string_lossy().to_string()),
             OutputType::File(_) => None,
