@@ -10,8 +10,8 @@ pub enum AppError {
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            AppError::V8ExceptionError(ref err) => write!(f, "V8 Exception Error: {}", err),
-            AppError::HardTimeoutError(ref err) => write!(f, "Hard Timeout Error: {}", err),
+            AppError::V8ExceptionError(ref err) => write!(f, "V8 Exception Error: {err}"),
+            AppError::HardTimeoutError(ref err) => write!(f, "Hard Timeout Error: {err}"),
         }
     }
 }

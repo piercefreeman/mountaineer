@@ -165,9 +165,8 @@ impl SourceMapParser {
                 Ok(metadata)
             }
             _ => Err(format!(
-                "VLQ value should have 1, 4, or 5 components. Got {} instead: {:?}",
-                vlq_values.len(),
-                vlq_values
+                "VLQ value should have 1, 4, or 5 components. Got {} instead: {vlq_values:?}",
+                vlq_values.len()
             )),
         }
     }
@@ -320,7 +319,7 @@ pub fn update_source_map_path(contents: &str, new_path: &str) -> String {
 
     RE.replace_all(
         contents,
-        format!("sourceMappingURL={}.map", new_path).as_str(),
+        format!("sourceMappingURL={new_path}.map").as_str(),
     )
     .into_owned()
 }

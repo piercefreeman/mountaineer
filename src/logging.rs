@@ -52,7 +52,7 @@ pub fn init_logger() {
                 "ERROR" => LevelFilter::Error,
                 _ => {
                     // Default to warn if the level is invalid
-                    eprintln!("Invalid log level: {}. Using warn level instead.", level);
+                    eprintln!("Invalid log level: {level}. Using warn level instead.");
                     LevelFilter::Warn
                 }
             };

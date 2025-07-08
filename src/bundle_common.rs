@@ -58,11 +58,11 @@ pub enum BundleError {
 impl std::fmt::Display for BundleError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            BundleError::IoError(err) => write!(f, "IO error: {}", err),
-            BundleError::BundlingError(msg) => write!(f, "Bundling error: {}", msg),
-            BundleError::OutputError(msg) => write!(f, "Output error: {}", msg),
-            BundleError::FileNotFound(path) => write!(f, "File not found: {}", path),
-            BundleError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
+            BundleError::IoError(err) => write!(f, "IO error: {err}"),
+            BundleError::BundlingError(msg) => write!(f, "Bundling error: {msg}"),
+            BundleError::OutputError(msg) => write!(f, "Output error: {msg}"),
+            BundleError::FileNotFound(path) => write!(f, "File not found: {path}"),
+            BundleError::InvalidInput(msg) => write!(f, "Invalid input: {msg}"),
         }
     }
 }
@@ -129,8 +129,7 @@ pub fn bundle_common(
         && entrypoint_paths.len() > 1
     {
         return Err(BundleError::InvalidInput(format!(
-            "Mode {:?} only supports a single entrypoint, but {} were provided",
-            mode,
+            "Mode {mode:?} only supports a single entrypoint, but {} were provided",
             entrypoint_paths.len()
         )));
     }
@@ -157,7 +156,7 @@ pub fn bundle_common(
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or_else(|| "bundle".to_string());
-            OutputType::File(output_dir.join(format!("{}.js", file_stem)))
+            OutputType::File(output_dir.join(format!("{file_stem}.js")))
         }
         BundleMode::MultiClient => {
             // Iife files have to be in a directory, otherwise rolldown will return
@@ -174,7 +173,7 @@ pub fn bundle_common(
         IndexMap::with_hasher(BuildHasherDefault::default());
     define.insert(
         "process.env.NODE_ENV".to_string(),
-        format!("\"{}\"", environment),
+        format!("\"{environment}\""),
     );
 
     define.insert(
@@ -256,7 +255,7 @@ pub fn bundle_common(
         bundler
             .write()
             .await
-            .map_err(|err| BundleError::BundlingError(format!("Error during bundling: {:?}", err)))
+            .map_err(|err| BundleError::BundlingError(format!("Error during bundling: {err:?}")))
     })?;
 
     // Process the output directory and return the results
@@ -365,7 +364,7 @@ fn process_output_directory(
                 .extension()
                 .map(|ext| format!(".{}", ext.to_string_lossy()))
                 .unwrap_or_default();
-            extras.insert(format!("{}{}", file_stem, extension), bundle_result);
+            extras.insert(format!("{file_stem}{extension}"), bundle_result);
         }
     }
 

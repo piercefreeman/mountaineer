@@ -110,7 +110,7 @@ impl<'a> Ssr<'a> {
         // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
         let try_catch = &mut v8::TryCatch::new(scope);
 
-        let code = match v8::String::new(try_catch, &format!("{};{}", source, entry_point)) {
+        let code = match v8::String::new(try_catch, &format!("{source};{entry_point}")) {
             Some(code) => code,
             None => {
                 // This typically shouldn't fail unless there's a serious issue (like out of memory),
@@ -163,7 +163,7 @@ impl<'a> Ssr<'a> {
             if try_catch.has_caught() {
                 return Err(AppError::V8ExceptionError(Self::extract_exception_message(
                     try_catch,
-                    &format!("Error calling function '{}'", key_str),
+                    &format!("Error calling function '{key_str}'"),
                 )));
             }
 
@@ -269,7 +269,7 @@ impl<'a> Ssr<'a> {
                 format!("\nStack: {}", trace.to_rust_string_lossy(&mut scope))
             });
 
-            format!("{}: {}{}", user_msg, msg, maybe_stack)
+            format!("{user_msg}: {msg}{maybe_stack}")
         } else {
             // Return a default message or further handle the lack of exception details
             "An unknown error occurred".to_string()
