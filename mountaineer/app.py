@@ -679,7 +679,7 @@ class AppController:
             # built-in properties (e.g., 'chrome' in Chrome browser, 'safari' in Safari).
             # This prevents "duplicate variable" errors when client code defines variables
             # that match browser globals.
-            client_import = f"""<script type='text/javascript'>
+            client_import = f"""<script type='module' type='text/javascript'>
                 (function() {{
                     {inline_client_script}
                 }})();

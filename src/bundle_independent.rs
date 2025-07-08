@@ -83,8 +83,7 @@ pub fn compile_independent_bundles(
             BundleError::OutputError(msg) => PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(msg),
             BundleError::FileNotFound(path) => {
                 PyErr::new::<pyo3::exceptions::PyFileNotFoundError, _>(format!(
-                    "File not found: {}",
-                    path
+                    "File not found: {path}"
                 ))
             }
             BundleError::InvalidInput(msg) => PyErr::new::<pyo3::exceptions::PyValueError, _>(msg),
@@ -124,8 +123,7 @@ pub fn compile_independent_bundles(
 
                 return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                     format!(
-                        "Compiled file does not match expected IIFE format: (function() {{ ... }})()\n\nBeginning 50 chars: {}\nEnding 50 chars: {}",
-                        start_chars, end_chars
+                        "Compiled file does not match expected IIFE format: (function() {{ ... }})()\n\nBeginning 50 chars: {start_chars}\nEnding 50 chars: {end_chars}"
                     )
                 ));
             }
@@ -133,7 +131,7 @@ pub fn compile_independent_bundles(
             // Then we add a manual var assignment prefix
             // Replace the opening part with our SSR variable assignment
             // Newlines required to clear out any trailing comments
-            compiled_file = format!("var SSR = (() => {{\nreturn {}\n}})();", compiled_file)
+            compiled_file = format!("var SSR = (() => {{\nreturn {compiled_file}\n}})();")
         }
 
         output_files.push(compiled_file);
@@ -149,8 +147,7 @@ fn validate_absolute_paths(path_group: &[String]) -> Result<(), String> {
         let path_buf = Path::new(path);
         if !path_buf.is_absolute() {
             return Err(format!(
-                "All paths must be absolute. Relative path found: {}. The entrypoint is written to a temporary directory that won't properly resolve relative paths.",
-                path
+                "All paths must be absolute. Relative path found: {path}. The entrypoint is written to a temporary directory that won't properly resolve relative paths."
             ));
         }
     }

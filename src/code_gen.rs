@@ -11,10 +11,10 @@ pub fn build_entrypoint(
 ) -> String {
     // Generate the synthetic entrypoint content
     let mut entrypoint_content = String::from("import React from 'react';\n");
-    entrypoint_content += &format!("import mountLiveReload from '{}';\n\n", live_reload_import);
+    entrypoint_content += &format!("import mountLiveReload from '{live_reload_import}';\n\n");
 
     for (j, path) in path_group.iter().enumerate() {
-        entrypoint_content += &format!("import Layout{} from '{}';\n", j, path);
+        entrypoint_content += &format!("import Layout{j} from '{path}';\n");
     }
 
     entrypoint_content += "\nconst Entrypoint = () => {\n";
@@ -24,13 +24,13 @@ pub fn build_entrypoint(
     // Nest the layouts
     for (i, _path) in path_group.iter().enumerate() {
         entrypoint_content += &"        ".repeat(i + 1);
-        entrypoint_content += &format!("<Layout{}>\n", i);
+        entrypoint_content += &format!("<Layout{i}>\n");
     }
 
     // Close the nested layouts
     for (i, _path) in path_group.iter().enumerate().rev() {
         entrypoint_content += &"        ".repeat(i + 1);
-        entrypoint_content += &format!("</Layout{}>\n", i);
+        entrypoint_content += &format!("</Layout{i}>\n");
     }
 
     entrypoint_content += "    );\n";
