@@ -127,10 +127,16 @@ class FunctionMetadata(BaseModel):
     # that's inherited by multiple child controllers. This lookup lets us track which
     # URL is associated with which controller.
     controller_mounts: dict[Any, str] = Field(default_factory=dict)
+    _resolved_url: str | None = None
 
     model_config = {
         "arbitrary_types_allowed": True,
     }
+
+    def get_resolved_url(self) -> str:
+        if self._resolved_url is None:
+            raise ValueError(f"URL for function {self.function_name} has not been resolved yet. Ensure the controller is registered with AppController.")
+        return self._resolved_url
 
     #
     # Accessors for polymorphic variables

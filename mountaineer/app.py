@@ -462,6 +462,7 @@ class AppController:
             action_path = f"/{metadata.function_name}"
             controller_api.post(action_path)(fn)
             function_metadata = get_function_metadata(fn)
+            function_metadata._resolved_url = f"{controller_url_prefix}{action_path}"
             function_metadata.register_controller_url(
                 controller.__class__, f"{controller_url_prefix}{action_path}"
             )
