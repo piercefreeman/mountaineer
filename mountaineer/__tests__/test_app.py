@@ -21,9 +21,6 @@ from mountaineer.exceptions import (
 )
 from mountaineer.graph.cache import ControllerDevCache, DevCacheConfig
 from mountaineer.render import Metadata, RenderBase
-from mountaineer.actions.sideeffect_dec import sideeffect
-from mountaineer.actions.passthrough_dec import passthrough
-from mountaineer.actions.fields import get_function_metadata
 
 
 def test_requires_render_return_value():
@@ -96,6 +93,7 @@ def test_format_exception_model():
         "detail",
         "headers",
     }
+
 
 def test_view_root_from_config(tmp_path: Path):
     class MockConfig(ConfigBase):
