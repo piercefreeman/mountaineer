@@ -1,20 +1,13 @@
 from pathlib import Path
 
 import pytest
-from mountaineer.controller import ControllerBase
-from pathlib import Path
 
-import pytest
-from pydantic import BaseModel
-
+from mountaineer.actions.sideeffect_dec import sideeffect
+from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
 from mountaineer.render import (
     RenderBase,
 )
-from mountaineer.app import AppController
-from mountaineer.actions.sideeffect_dec import sideeffect
-from mountaineer.actions.passthrough_dec import passthrough
-from mountaineer.actions.fields import get_function_metadata
 
 
 class StubRenderBase(RenderBase):
@@ -26,6 +19,7 @@ class StubController(ControllerBase):
 
     def render(self):
         return StubRenderBase()
+
 
 def test_get_action_url(tmp_path: Path):
     class SideEffectController(ControllerBase):
@@ -46,7 +40,11 @@ def test_get_action_url(tmp_path: Path):
     controller = SideEffectController()
     app.register(controller)
 
-    assert controller.get_action_url(controller.my_sideeffect) == "/internal/api/side_effect_controller/my_sideeffect"
+    assert (
+        controller.get_action_url(controller.my_sideeffect)
+        == "/internal/api/side_effect_controller/my_sideeffect"
+    )
+
 
 def test_get_action_url_unregistered():
     class SideEffectController(ControllerBase):

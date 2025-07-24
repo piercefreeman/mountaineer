@@ -135,7 +135,9 @@ class FunctionMetadata(BaseModel):
 
     def get_resolved_url(self) -> str:
         if self._resolved_url is None:
-            raise ValueError(f"URL for function {self.function_name} has not been resolved yet. Ensure the controller is registered with AppController.")
+            raise ValueError(
+                f"URL for function {self.function_name} has not been resolved yet. Ensure the controller is registered with AppController."
+            )
         return self._resolved_url
 
     #
