@@ -290,6 +290,17 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         return underscore(self.__class__.__name__)
 
+    def get_action_url(self, action_method: Callable) -> str:
+        """
+        Returns the URL for a given @sideeffect or @passthrough action method.
+
+        :param action_method: The decorated method (e.g., `self.my_sideeffect_method`).
+        :return: The absolute URL of the action.
+        :raises ValueError: If the action method's URL has not been resolved yet (i.e., the controller has not been registered).
+        """
+        metadata = get_function_metadata(action_method)
+        return metadata.get_resolved_url()
+
 
 def class_fn_as_method(fn):
     """

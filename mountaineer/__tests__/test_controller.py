@@ -1,5 +1,9 @@
 from pathlib import Path
 
+import pytest
+
+from mountaineer.actions.sideeffect_dec import sideeffect
+from mountaineer.app import AppController
 from mountaineer.controller import ControllerBase
 from mountaineer.render import (
     RenderBase,
@@ -15,6 +19,51 @@ class StubController(ControllerBase):
 
     def render(self):
         return StubRenderBase()
+
+
+def test_get_action_url(tmp_path: Path):
+    class SideEffectController(ControllerBase):
+        url = "/test"
+        view_path = "/test.tsx"
+
+        def __init__(self):
+            super().__init__()
+
+        @sideeffect
+        def my_sideeffect(self) -> None:
+            pass
+
+        def render(self) -> StubRenderBase:
+            return StubRenderBase()
+
+    app = AppController(view_root=tmp_path)
+    controller = SideEffectController()
+    app.register(controller)
+
+    assert (
+        controller.get_action_url(controller.my_sideeffect)
+        == "/internal/api/side_effect_controller/my_sideeffect"
+    )
+
+
+def test_get_action_url_unregistered():
+    class SideEffectController(ControllerBase):
+        url = "/test"
+        view_path = "/test.tsx"
+
+        def __init__(self):
+            super().__init__()
+
+        @sideeffect
+        def my_sideeffect(self) -> None:
+            pass
+
+        def render(self) -> StubRenderBase:
+            return StubRenderBase()
+
+    controller = SideEffectController()
+    with pytest.raises(ValueError):
+        controller.get_action_url(controller.my_sideeffect)
 
 
 def test_resolve_paths(tmp_path: Path):
