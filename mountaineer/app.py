@@ -24,6 +24,7 @@ from mountaineer.actions import (
     get_function_metadata,
     init_function_metadata,
 )
+from mountaineer.actions.response_wrappers import response_strategy_registry
 from mountaineer.annotation_helpers import MountaineerUnsetValue
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.client_compiler.build_metadata import BuildMetadata
@@ -460,7 +461,20 @@ class AppController:
                 )
 
             action_path = f"/{metadata.function_name}"
-            controller_api.post(action_path)(fn)
+
+            # Get the appropriate strategy for this endpoint
+            strategy = response_strategy_registry.get_strategy(metadata)
+
+            # Use strategy to prepare the endpoint for mounting
+            prepared_fn = strategy.prepare_for_mounting(
+                controller=controller,
+                fn=fn,
+                metadata=metadata,
+            )
+
+            # Mount the prepared function
+            controller_api.post(action_path)(prepared_fn)
+
             function_metadata = get_function_metadata(fn)
             function_metadata.register_controller_url(
                 controller.__class__, f"{controller_url_prefix}{action_path}"

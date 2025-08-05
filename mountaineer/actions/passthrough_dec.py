@@ -1,11 +1,7 @@
-from functools import wraps
 from inspect import (
-    isasyncgen,
     isasyncgenfunction,
-    isawaitable,
     isgeneratorfunction,
 )
-from json import dumps as json_dumps
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -20,25 +16,24 @@ from typing import (
     overload,
 )
 
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from mountaineer.actions.fields import (
     FunctionActionType,
     ResponseModelType,
     SideeffectRawCallable,
-    SideeffectResponseBase,
     SideeffectWrappedCallable,
     create_original_fn,
     extract_response_model_from_signature,
-    format_final_action_response,
     init_function_metadata,
 )
+from mountaineer.actions.response_wrappers import response_strategy_registry
 from mountaineer.constants import STREAM_EVENT_TYPE
 from mountaineer.exceptions import APIException
 
 if TYPE_CHECKING:
-    from mountaineer.controller import ControllerBase
+    pass
 
 P = ParamSpec("P")
 R = TypeVar("R", bound=BaseModel | AsyncIterator[BaseModel] | JSONResponse | None)
@@ -150,24 +145,26 @@ def passthrough(*args, **kwargs):  # type: ignore
                     f"Async generator {func} must have a response_model of type AsyncIterator[BaseModel]"
                 )
 
-            @wraps(func)
-            async def inner(self: "ControllerBase", *func_args, **func_kwargs):
-                response = func(self, *func_args, **func_kwargs)
-                if isawaitable(response):
-                    response = await response
+            # Create temporary metadata to determine response type
+            temp_metadata = init_function_metadata(func, FunctionActionType.PASSTHROUGH)
+            temp_metadata.media_type = (
+                STREAM_EVENT_TYPE
+                if response_type == ResponseModelType.ITERATOR_RESPONSE
+                else None
+            )
 
-                if raw_response:
-                    return response
+            # Get the appropriate strategy for this response type
+            strategy = response_strategy_registry.get_strategy(temp_metadata)
 
-                if isasyncgen(response):
-                    return wrap_passthrough_generator(response)
+            # Use strategy to create the wrapper
+            inner = strategy.create_wrapper(
+                func=func,
+                metadata=temp_metadata,
+                response_type=response_type,
+                raw_response=raw_response or False,
+            )
 
-                # Following types ignored to support 3.10
-                final_payload: SideeffectResponseBase[Any] = {  # type: ignore
-                    "passthrough": response,
-                }
-                return format_final_action_response(final_payload)  # type: ignore
-
+            # Set up final metadata on the wrapper
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
             metadata.exception_models += exception_models or []
@@ -194,19 +191,3 @@ def passthrough(*args, **kwargs):  # type: ignore
             exception_models=kwargs.get("exception_models"),
             raw_response=kwargs.get("raw_response"),
         )
-
-
-def wrap_passthrough_generator(generator: AsyncIterator[BaseModel]):
-    """
-    Simple function to convert a generator of Pydantic values to a server-event-stream
-    of text payloads.
-
-    """
-
-    async def generate():
-        async for value in generator:
-            json_payload = value.model_dump(mode="json")
-            data = json_dumps(dict(passthrough=json_payload))
-            yield f"data: {data}\n"
-
-    return StreamingResponse(generate(), media_type=STREAM_EVENT_TYPE)
