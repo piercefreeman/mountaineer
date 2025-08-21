@@ -1,3 +1,4 @@
+import json
 from inspect import getsource
 from pathlib import Path
 from textwrap import dedent
@@ -324,3 +325,116 @@ def test_passthrough_typechecking(
         assert "Success" in result[0]
     else:
         assert "error" in result[0]
+
+
+@pytest.mark.asyncio
+async def test_sse_with_dependency_cleanup():
+    """
+    Test SSE streaming with dependency injection that has cleanup logic.
+    Ensures cleanup is only executed after the stream completes.
+    """
+    import asyncio
+    from contextlib import asynccontextmanager
+    from typing import Any
+
+    from fastapi import Depends
+
+    # Track cleanup state
+    cleanup_state = {"cleaned": False, "yielded_value": None}
+
+    @asynccontextmanager
+    async def dependency_with_cleanup() -> AsyncIterator[dict[str, Any]]:
+        """Dependency that yields a value and performs cleanup after."""
+        dependency_data = {"id": "dep-123", "status": "active"}
+        cleanup_state["yielded_value"] = dependency_data
+        cleanup_state["cleaned"] = False
+
+        try:
+            yield dependency_data
+        finally:
+            # Cleanup logic that should only run after stream completes
+            cleanup_state["cleaned"] = True
+            dependency_data["status"] = "cleaned"
+
+    class StreamEvent(BaseModel):
+        event_id: int
+        message: str
+        dependency_status: str
+
+    class SSEController(ControllerBase):
+        url = "/sse-test"
+        view_path = "/test.tsx"
+
+        async def render(self) -> None:
+            pass
+
+        @passthrough
+        async def stream_events(
+            self,
+            dep_data: dict[str, Any] = Depends(dependency_with_cleanup),
+        ) -> AsyncIterator[StreamEvent]:
+            """Stream events while using a dependency with cleanup."""
+            for i in range(3):
+                # During streaming, dependency should still be active
+                assert not cleanup_state["cleaned"], (
+                    f"Cleanup triggered early at event {i}"
+                )
+                assert dep_data["status"] == "active", (
+                    f"Dependency status changed during stream at event {i}"
+                )
+
+                yield StreamEvent(
+                    event_id=i,
+                    message=f"Event {i}",
+                    dependency_status=dep_data["status"],
+                )
+                await asyncio.sleep(0.01)  # Small delay between events
+
+    # Set up the app and controller
+    app = AppController(view_root=Path())
+    controller = SSEController()
+    app.register(controller)
+
+    # Get the passthrough URL
+    controller_definition = app.graph.get_definitions_for_cls(controller.__class__)[0]
+    passthrough_url = controller_definition.get_url_for_metadata(
+        get_function_metadata(controller.stream_events)
+    )
+
+    # Use TestClient to simulate ASGI server behavior
+    client = TestClient(app.app)
+    received_events: list[dict] = []
+
+    # Stream and collect events
+    with client.stream(
+        "POST",
+        passthrough_url,
+        json={},
+    ) as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
+
+        for line in response.iter_lines():
+            if line.startswith("data: "):
+                json_str = line.replace("data: ", "")
+                event_data = json.loads(json_str)
+                received_events.append(event_data)
+
+    # Verify we received all expected events
+    assert len(received_events) == 3
+
+    # Verify event content
+    for i, event in enumerate(received_events):
+        assert "passthrough" in event
+        passthrough_data = event["passthrough"]
+        assert passthrough_data["event_id"] == i
+        assert passthrough_data["message"] == f"Event {i}"
+        assert passthrough_data["dependency_status"] == "active"
+
+    # After streaming completes, cleanup should have been triggered
+    # Give it a moment for cleanup to complete
+    await asyncio.sleep(0.1)
+    assert cleanup_state["cleaned"], "Cleanup was not triggered after stream completed"
+    assert cleanup_state["yielded_value"]["status"] == "cleaned", (
+        "Cleanup did not modify dependency state"
+    )
