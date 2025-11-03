@@ -51,12 +51,12 @@ def _npm_install(package_root: Path) -> None:
             "^1.4.0",
             """\
 import React from 'react';
-import StreamDown from 'streamdown';
+import { Streamdown } from 'streamdown';
 
 const markdown = `# Hello World!\\n\\nThis is a streamdown test.`;
 
 export default function Page() {
-    return <StreamDown>{markdown}</StreamDown>;
+    return <Streamdown>{markdown}</Streamdown>;
 }
 """,
         ),
