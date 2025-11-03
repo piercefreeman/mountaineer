@@ -1,10 +1,10 @@
 use indexmap::IndexMap;
 use log::debug;
 use rolldown::{
-    Bundler, BundlerOptions, InputItem, OutputFormat, RawMinifyOptions, ResolveOptions,
+    Bundler, BundlerOptions, InputItem, ModuleType, OutputFormat, RawMinifyOptions, ResolveOptions,
     SourceMapType,
 };
-use rustc_hash::FxHasher;
+use rustc_hash::{FxHashMap, FxHasher};
 use std::collections::HashMap;
 use std::fs;
 use std::hash::BuildHasherDefault;
@@ -219,6 +219,16 @@ pub fn bundle_common(
     debug!("Bundle mode: {:?}", mode);
 
     // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
+    // Ensure binary assets such as fonts are treated appropriately to avoid UTF-8 decoding errors.
+    let mut module_types: FxHashMap<String, ModuleType> = FxHashMap::default();
+    module_types.insert(".css".to_string(), ModuleType::Css);
+    for ext in [
+        ".woff2", ".woff", ".ttf", ".otf", ".eot", ".svg", ".png", ".jpg", ".jpeg", ".gif", ".bmp",
+        ".webp",
+    ] {
+        module_types.insert(ext.to_string(), ModuleType::Binary);
+    }
+
     let bundler_options = BundlerOptions {
         input: Some(input_items),
         dir: match &output_type {
@@ -235,6 +245,7 @@ pub fn bundle_common(
         sourcemap: Some(SourceMapType::File),
         define: Some(define),
         resolve,
+        module_types: Some(module_types),
         // Choose the output format based on SSR flag
         format: if is_ssr {
             Some(OutputFormat::Iife)
@@ -324,6 +335,14 @@ fn process_output_directory(
         // Check if this is a source map file
         let is_map = path.extension().is_some_and(|ext| ext == "map");
         if is_map {
+            continue;
+        }
+
+        // Only process JavaScript bundles; skip CSS or other assets generated alongside them.
+        if path
+            .extension()
+            .is_some_and(|ext| ext != "js" && ext != "mjs" && ext != "cjs")
+        {
             continue;
         }
 

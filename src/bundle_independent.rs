@@ -187,7 +187,6 @@ fn create_entrypoint(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
 
     fn win_paths() -> Vec<String> {
         vec![
