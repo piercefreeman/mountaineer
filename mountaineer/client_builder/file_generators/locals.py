@@ -138,9 +138,13 @@ class LocalLinkGenerator(LocalGeneratorBase):
 
         # Determine appropriate types for query and path parameters
         # Use 'string | number | boolean | null | undefined' for URL parameters since that's what we support
+        # Also include array types for query parameters (e.g., ?filter=a&filter=b)
         url_param_type = "string | number | boolean | null | undefined"
+        url_param_type_with_array = (
+            f"{url_param_type} | Array<string | number | boolean>"
+        )
         query_type = (
-            f"Record<string, {url_param_type}>"
+            f"Record<string, {url_param_type_with_array}>"
             if query_parameters
             else "Record<string, never>"
         )
