@@ -76,7 +76,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]
     fn render_ssr(
-        py: Python,
+        py: Python<'_>,
         js_string: String,
         hard_timeout: u64,
     ) -> PyResult<Bound<'_, PyString>> {
@@ -109,7 +109,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "parse_source_map_mappings")]
-    fn parse_source_map_mappings(py: Python, mapping: String) -> PyResult<Bound<'_, PyDict>> {
+    fn parse_source_map_mappings(py: Python<'_>, mapping: String) -> PyResult<Bound<'_, PyDict>> {
         #[allow(clippy::print_stdout)]
         if cfg!(debug_assertions) {
             println!("Running in debug mode");
