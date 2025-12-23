@@ -1,4 +1,24 @@
 services:
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    depends_on:
+      - postgres
+    ports:
+      - "5006:5006"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: {{project_name}}
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: {{project_name}}_db
+      ENVIRONMENT: development
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - .:/usr/src/app
+      - /usr/src/app/{{project_name}}/views/node_modules
+
   postgres:
     image: postgres:latest
     environment:
@@ -8,7 +28,7 @@ services:
     ports:
       - "{{postgres_port}}:5432"
     volumes:
-      - {{project_name}}_postgres_data:/var/lib/postgresql/data
+      - {{project_name}}_postgres_data:/var/lib/postgresql
 
 volumes:
   {{project_name}}_postgres_data:
