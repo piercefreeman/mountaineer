@@ -76,16 +76,6 @@ async def get_function_dependencies(
     # Synthesize defaults
     if not url:
         url = "/synthetic"
-    if not request:
-        request = Request(
-            scope={
-                "type": "http",
-                "path": url,
-                "path_params": {},
-                "query_string": "",
-                "headers": [],
-            }
-        )
 
     # Synthetic request object as if we're coming from the original first page
     dependant = get_dependant(
@@ -94,6 +84,28 @@ async def get_function_dependencies(
     )
 
     async with AsyncExitStack() as async_exit_stack:
+        # FastAPI 0.118+ requires these exit stacks in the request scope for
+        # dependency resolution. We provide them for backwards compatibility.
+        if not request:
+            request = Request(
+                scope={
+                    "type": "http",
+                    "path": url,
+                    "path_params": {},
+                    "query_string": "",
+                    "headers": [],
+                    # FastAPI 0.118+ scope requirements
+                    "fastapi_inner_astack": async_exit_stack,
+                    "fastapi_function_astack": async_exit_stack,
+                }
+            )
+        else:
+            # Inject into existing request scope if not present
+            if "fastapi_inner_astack" not in request.scope:
+                request.scope["fastapi_inner_astack"] = async_exit_stack
+            if "fastapi_function_astack" not in request.scope:
+                request.scope["fastapi_function_astack"] = async_exit_stack
+
         payload = await solve_dependencies(
             request=request,
             dependant=dependant,
