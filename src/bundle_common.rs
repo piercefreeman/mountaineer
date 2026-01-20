@@ -246,7 +246,7 @@ pub fn bundle_common(
         // CSS imports are client-only - setting them to Empty completely removes them from the bundle
         module_types: if is_ssr {
             let mut types: HashMap<String, ModuleType, rustc_hash::FxBuildHasher> =
-                HashMap::with_hasher(rustc_hash::FxBuildHasher::default());
+                HashMap::with_hasher(rustc_hash::FxBuildHasher);
             types.insert(".css".to_string(), ModuleType::Empty);
             Some(types)
         } else {
