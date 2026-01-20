@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use log::debug;
 use rolldown::{
-    Bundler, BundlerOptions, InputItem, OutputFormat, RawMinifyOptions, ResolveOptions,
+    Bundler, BundlerOptions, InputItem, ModuleType, OutputFormat, RawMinifyOptions, ResolveOptions,
     SourceMapType,
 };
 use rustc_hash::FxHasher;
@@ -242,6 +242,16 @@ pub fn bundle_common(
             Some(OutputFormat::Esm)
         },
         minify: Some(RawMinifyOptions::Bool(minify)),
+        // For SSR, treat CSS files as empty modules since they can't be executed in V8
+        // CSS imports are client-only - setting them to Empty completely removes them from the bundle
+        module_types: if is_ssr {
+            let mut types: HashMap<String, ModuleType, rustc_hash::FxBuildHasher> =
+                HashMap::with_hasher(rustc_hash::FxBuildHasher);
+            types.insert(".css".to_string(), ModuleType::Empty);
+            Some(types)
+        } else {
+            None
+        },
         // Add additional options as needed
         ..Default::default()
     };
@@ -679,5 +689,258 @@ mod tests {
                 filename
             );
         }
+    }
+
+    #[test]
+    fn test_ssr_bundle_excludes_css_imports() {
+        // Create a temporary directory for test files
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+
+        // Create a CSS file
+        let css_content = ".test { color: red; }";
+        let css_path = temp_path.join("style.css");
+        let mut css_file = File::create(&css_path).unwrap();
+        css_file.write_all(css_content.as_bytes()).unwrap();
+
+        // Create a JavaScript file that imports CSS (side-effect import)
+        // Note: We need to export SSR so it doesn't get tree-shaken away
+        let server_js = r#"
+            import './style.css';
+
+            export var SSR = {
+                x: () => '<div>Hello World</div>'
+            };
+        "#;
+
+        let entry_path = create_test_js_file(temp_path, "server.js", server_js)
+            .expect("Failed to create server.js file");
+
+        // Create a mock node_modules path
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
+        // Bundle for SSR (SingleServer mode)
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::SingleServer,
+            "production".to_string(),
+            node_modules_path,
+            None,
+            None,
+            false,
+        );
+
+        // The bundle should succeed (CSS is external, so no error)
+        assert!(
+            result.is_ok(),
+            "SSR bundle with CSS import should succeed: {:?}",
+            result.err()
+        );
+
+        let bundles = result.unwrap();
+        let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
+
+        // The bundle should NOT contain any CSS content or __*_css variable references
+        assert!(
+            !bundle_result.script.contains("color: red"),
+            "SSR bundle should not contain CSS content"
+        );
+
+        // Check for CSS variable pattern
+        let has_css_var = bundle_result.script.contains("_css");
+        assert!(
+            !has_css_var,
+            "SSR bundle should not contain CSS variable references"
+        );
+
+        // The bundle should still contain our SSR component
+        assert!(
+            bundle_result.script.contains("Hello World"),
+            "SSR bundle should contain the component output"
+        );
+    }
+
+    #[test]
+    fn test_ssr_bundle_excludes_node_modules_css() {
+        // Test that CSS imports from node_modules are also excluded
+        // This mirrors the real-world case: import '@xyflow/react/dist/style.css'
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+
+        // Create a fake node_modules structure with CSS
+        let node_modules = temp_path.join("node_modules");
+        let fake_package = node_modules.join("@fake-lib").join("dist");
+        fs::create_dir_all(&fake_package).expect("Failed to create fake package directory");
+
+        let css_path = fake_package.join("styles.css");
+        let mut css_file = File::create(&css_path).unwrap();
+        css_file
+            .write_all(b".fake-lib { display: flex; }")
+            .unwrap();
+
+        // Create JS that imports the node_modules CSS
+        let server_js = r#"
+            import '@fake-lib/dist/styles.css';
+
+            export var SSR = {
+                x: () => '<div>Component with external CSS</div>'
+            };
+        "#;
+
+        let entry_path = create_test_js_file(temp_path, "server.js", server_js)
+            .expect("Failed to create server.js file");
+
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::SingleServer,
+            "production".to_string(),
+            node_modules.to_string_lossy().to_string(),
+            None,
+            None,
+            false,
+        );
+
+        assert!(
+            result.is_ok(),
+            "SSR bundle with node_modules CSS import should succeed: {:?}",
+            result.err()
+        );
+
+        let bundles = result.unwrap();
+        let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
+
+        // Should not contain CSS content or variable references
+        assert!(
+            !bundle_result.script.contains("display: flex"),
+            "SSR bundle should not contain node_modules CSS content"
+        );
+        assert!(
+            !bundle_result.script.contains("_css"),
+            "SSR bundle should not contain CSS variable references from node_modules"
+        );
+
+        // Should contain the component
+        assert!(
+            bundle_result.script.contains("Component with external CSS"),
+            "SSR bundle should contain the component"
+        );
+    }
+
+    #[test]
+    fn test_ssr_bundle_excludes_multiple_css_imports() {
+        // Test multiple CSS imports are all excluded
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+
+        // Create multiple CSS files
+        for (name, content) in [
+            ("reset.css", "* { margin: 0; }"),
+            ("theme.css", ":root { --color: blue; }"),
+            ("components.css", ".btn { padding: 10px; }"),
+        ] {
+            let css_path = temp_path.join(name);
+            let mut css_file = File::create(&css_path).unwrap();
+            css_file.write_all(content.as_bytes()).unwrap();
+        }
+
+        let server_js = r#"
+            import './reset.css';
+            import './theme.css';
+            import './components.css';
+
+            export var SSR = {
+                x: () => '<div>Multi-CSS Component</div>'
+            };
+        "#;
+
+        let entry_path = create_test_js_file(temp_path, "server.js", server_js)
+            .expect("Failed to create server.js file");
+
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::SingleServer,
+            "production".to_string(),
+            node_modules_path,
+            None,
+            None,
+            false,
+        );
+
+        assert!(
+            result.is_ok(),
+            "SSR bundle with multiple CSS imports should succeed: {:?}",
+            result.err()
+        );
+
+        let bundles = result.unwrap();
+        let bundle_result = bundles.entrypoints.iter().next().unwrap().1;
+
+        // None of the CSS content should be present
+        assert!(!bundle_result.script.contains("margin: 0"));
+        assert!(!bundle_result.script.contains("--color: blue"));
+        assert!(!bundle_result.script.contains("padding: 10px"));
+        assert!(!bundle_result.script.contains("_css"));
+
+        // Component should be present
+        assert!(bundle_result.script.contains("Multi-CSS Component"));
+    }
+
+    #[test]
+    fn test_client_bundle_does_not_exclude_css() {
+        // Verify that client bundles (non-SSR) don't have CSS excluded
+        // We only set module_types to Empty for SSR mode, not client mode
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let temp_path = temp_dir.path();
+
+        let css_path = temp_path.join("style.css");
+        let mut css_file = File::create(&css_path).unwrap();
+        css_file.write_all(b".client { color: green; }").unwrap();
+
+        let client_js = r#"
+            import './style.css';
+
+            export function render() {
+                return '<div class="client">Client Component</div>';
+            }
+        "#;
+
+        let entry_path = create_test_js_file(temp_path, "client.js", client_js)
+            .expect("Failed to create client.js file");
+
+        let node_modules_path = temp_path.join("node_modules").to_string_lossy().to_string();
+        fs::create_dir(temp_path.join("node_modules"))
+            .expect("Failed to create node_modules directory");
+
+        // Use SingleClient mode (not SSR)
+        let result = bundle_common(
+            vec![entry_path],
+            BundleMode::SingleClient,
+            "development".to_string(),
+            node_modules_path,
+            None,
+            None,
+            false,
+        );
+
+        // The key assertion: bundling should succeed without errors
+        // (CSS is processed by rolldown, not treated as empty)
+        assert!(
+            result.is_ok(),
+            "Client bundle with CSS import should succeed: {:?}",
+            result.err()
+        );
+
+        // Verify we got some output (rolldown may extract CSS to separate file)
+        let bundles = result.unwrap();
+        assert!(
+            !bundles.entrypoints.is_empty() || !bundles.extras.is_empty(),
+            "Client bundle should produce output"
+        );
     }
 }
