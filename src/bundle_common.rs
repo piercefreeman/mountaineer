@@ -2,13 +2,13 @@ use indexmap::IndexMap;
 use log::debug;
 use rolldown::{
     Bundler, BundlerOptions, InputItem, ModuleType, OutputFormat, RawMinifyOptions, ResolveOptions,
-    SourceMapType,
+    SourceMapType, TsConfig,
 };
 use rustc_hash::FxHasher;
 use std::collections::HashMap;
 use std::fs;
 use std::hash::BuildHasherDefault;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
@@ -191,9 +191,10 @@ pub fn bundle_common(
     // Set up resolve options to let Rolldown know where to find node_modules.
     let resolve = Some(ResolveOptions {
         modules: Some(vec![node_modules_path.clone()]),
-        tsconfig_filename: tsconfig_path,
         ..Default::default()
     });
+
+    let tsconfig = tsconfig_path.map(|path| TsConfig::Manual(PathBuf::from(path)));
 
     // Configure Rolldown bundler options with multiple inputs
     let input_items: Vec<InputItem> = entrypoint_paths
@@ -252,12 +253,14 @@ pub fn bundle_common(
         } else {
             None
         },
+        tsconfig,
         // Add additional options as needed
         ..Default::default()
     };
 
     // Create the bundler instance.
-    let mut bundler = Bundler::new(bundler_options);
+    let mut bundler = Bundler::new(bundler_options)
+        .map_err(|err| BundleError::BundlingError(format!("Failed to create bundler: {err:?}")))?;
 
     let rt = Runtime::new().map_err(|e| BundleError::BundlingError(e.to_string()))?;
 
@@ -266,6 +269,7 @@ pub fn bundle_common(
             .write()
             .await
             .map_err(|err| BundleError::BundlingError(format!("Error during bundling: {err:?}")))
+            .map(|_| ())
     })?;
 
     // Process the output directory and return the results

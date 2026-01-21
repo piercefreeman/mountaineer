@@ -23,7 +23,7 @@ chrono = "0.4"
 
 # Not currently published to crates.io
 # https://github.com/rolldown/rolldown/issues/3227
-rolldown = { git = "https://github.com/rolldown/rolldown.git", tag="v1.0.0-beta.7" }
+rolldown = { git = "https://github.com/rolldown/rolldown.git", tag="v1.0.0-beta.60" }
 tokio = { version = "1.43.0", features = ["full"] }
 indexmap = "2.7.1"
 rustc-hash = { version = "2.1" }
