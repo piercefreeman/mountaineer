@@ -2,13 +2,13 @@ use indexmap::IndexMap;
 use log::debug;
 use rolldown::{
     Bundler, BundlerOptions, InputItem, ModuleType, OutputFormat, RawMinifyOptions, ResolveOptions,
-    SourceMapType,
+    SourceMapType, TsConfig,
 };
 use rustc_hash::FxHasher;
 use std::collections::HashMap;
 use std::fs;
 use std::hash::BuildHasherDefault;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
 
@@ -191,9 +191,10 @@ pub fn bundle_common(
     // Set up resolve options to let Rolldown know where to find node_modules.
     let resolve = Some(ResolveOptions {
         modules: Some(vec![node_modules_path.clone()]),
-        tsconfig_filename: tsconfig_path,
         ..Default::default()
     });
+
+    let tsconfig = tsconfig_path.map(|path| TsConfig::Manual(PathBuf::from(path)));
 
     // Configure Rolldown bundler options with multiple inputs
     let input_items: Vec<InputItem> = entrypoint_paths
@@ -218,6 +219,8 @@ pub fn bundle_common(
     debug!("Resolve: {:?}", resolve);
     debug!("Bundle mode: {:?}", mode);
 
+    let inline_dynamic_imports = matches!(mode, BundleMode::SingleClient | BundleMode::SingleServer);
+
     // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
     let bundler_options = BundlerOptions {
         input: Some(input_items),
@@ -229,9 +232,8 @@ pub fn bundle_common(
             OutputType::File(path) => Some(path.to_string_lossy().to_string()),
             OutputType::Directory(_) => None,
         },
-        // Required for inlining client-side scripts. Otherwise specifying a single file for ESM modules will
-        // crash during bundling.
-        inline_dynamic_imports: Some(true),
+        // Required for inlining client-side scripts. For multiple inputs this must be disabled.
+        inline_dynamic_imports: Some(inline_dynamic_imports),
         sourcemap: Some(SourceMapType::File),
         define: Some(define),
         resolve,
@@ -252,12 +254,14 @@ pub fn bundle_common(
         } else {
             None
         },
+        tsconfig,
         // Add additional options as needed
         ..Default::default()
     };
 
     // Create the bundler instance.
-    let mut bundler = Bundler::new(bundler_options);
+    let mut bundler = Bundler::new(bundler_options)
+        .map_err(|err| BundleError::BundlingError(format!("Failed to create bundler: {err:?}")))?;
 
     let rt = Runtime::new().map_err(|e| BundleError::BundlingError(e.to_string()))?;
 
@@ -266,6 +270,7 @@ pub fn bundle_common(
             .write()
             .await
             .map_err(|err| BundleError::BundlingError(format!("Error during bundling: {err:?}")))
+            .map(|_| ())
     })?;
 
     // Process the output directory and return the results
@@ -606,41 +611,25 @@ mod tests {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let temp_path = temp_dir.path();
 
-        // Create a utility module that will be imported
-        let utils_js = r#"
+        // Create a lazy module that will be dynamically imported
+        let lazy_js = r#"
             export function formatName(firstName, lastName) {
                 return `${firstName} ${lastName}`;
             }
         "#;
 
-        let utils_path = create_test_js_file(temp_path, "utils.js", utils_js)
-            .expect("Failed to create utils.js file");
-
-        // Create a component module that will be imported
-        let component_js = r#"
-            import { formatName } from './utils';
-            
-            export function Greeting({ firstName, lastName }) {
-                const fullName = formatName(firstName, lastName);
-                return `Hello, ${fullName}!`;
-            }
-        "#;
-
-        let component_path = create_test_js_file(temp_path, "component.js", component_js)
-            .expect("Failed to create component.js file");
+        create_test_js_file(temp_path, "lazy.js", lazy_js)
+            .expect("Failed to create lazy.js file");
 
         // Create a main entry file that imports both modules
         let entry_js = r#"
-            import { Greeting } from './component';
-            import { formatName } from './utils';
-            
-            export function greet(firstName, lastName) {
+            export async function greet(firstName, lastName) {
+                const { formatName } = await import('./lazy');
                 const fullName = formatName(firstName, lastName);
                 return `Hello, ${fullName}!`;
             }
-            
-            console.log(greet('John', 'Doe'));
-            console.log(Greeting({ firstName: 'Jane', lastName: 'Smith' }));
+
+            greet('John', 'Doe').then(console.log);
         "#;
 
         let entry_path = create_test_js_file(temp_path, "main.js", entry_js)
@@ -651,9 +640,9 @@ mod tests {
         fs::create_dir(temp_path.join("node_modules"))
             .expect("Failed to create node_modules directory");
 
-        // Bundle the JavaScript with both files as entry points to force chunking
+        // Bundle the JavaScript with a dynamic import to force chunking
         let result = bundle_common(
-            vec![entry_path, utils_path, component_path],
+            vec![entry_path],
             BundleMode::MultiClient,
             "development".to_string(),
             node_modules_path,
