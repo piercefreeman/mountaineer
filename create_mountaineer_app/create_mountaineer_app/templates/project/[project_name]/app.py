@@ -1,4 +1,4 @@
-from mountaineer.app import AppController
+from mountaineer import Mountaineer
 from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
@@ -8,7 +8,7 @@ from {{project_name}}.controllers.home import HomeController
 {% endif %}
 from {{project_name}}.config import AppConfig
 
-controller = AppController(
+mountaineer = Mountaineer(
     config=AppConfig(), # type: ignore
     {% if use_tailwind %}
     global_metadata=Metadata(
@@ -21,6 +21,6 @@ controller = AppController(
 )
 
 {% if create_stub_files %}
-controller.register(HomeController())
-controller.register(DetailController())
+mountaineer.register(HomeController())
+mountaineer.register(DetailController())
 {% endif %}

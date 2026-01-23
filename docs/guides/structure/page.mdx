@@ -46,8 +46,8 @@ Mountaineer supports advanced layout organization patterns, including the abilit
 
 `controllers` - A controller is the python logic that backs your frontend view. You can define controllers however you like: a flat folder, nesting folders, or via no folders at all mixed in with other code. For simplicity we recommend starting with a single flat controllers folder and refactoring into sub-folders as distinct ownership areas of your code emerge.
 
-`app.py` - Instantiate your controllers and add them to an `AppController` to register them for client access.
+`app.py` - Instantiate your controllers and add them to a `Mountaineer` instance to register them for client access.
 
 `config.py` - Specify the parameters that your application needs to run, to easily customize them: database host settings, secret keys, etc. Configurations can easily read from env variables and are globally accessible throughout your webapp.
 
-`main.py` - Expose your application to [uvicorn](https://www.uvicorn.org/) or another async compatible webserver that follows the ASGI specification (Asynchronous Server Gateway Interface).
+`main.py` - Create a FastAPI host app and mount your `Mountaineer` instance for ASGI servers like [uvicorn](https://www.uvicorn.org/).

@@ -1,4 +1,7 @@
-from {{project_name}}.app import controller
+from fastapi import FastAPI
 
-# Expose for WSGI
-app = controller.app
+from {{project_name}}.app import mountaineer
+
+# Expose for ASGI
+app = FastAPI()
+app.mount(path="/", app=mountaineer, name="website")

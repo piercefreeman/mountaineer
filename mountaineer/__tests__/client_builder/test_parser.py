@@ -14,7 +14,7 @@ from mountaineer.__tests__.client_builder.interface_builders.common import (
 from mountaineer.actions.fields import FunctionActionType
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_builder.parser import (
     ActionWrapper,
     ControllerParser,
@@ -164,7 +164,7 @@ class TestControllerParser:
     @pytest.fixture
     def parser(self):
         parser = ControllerParser()
-        app_controller = AppController(view_root=Path())
+        app_controller = Mountaineer(view_root=Path())
         app_controller.register(ExampleController())
         return parser
 
@@ -299,7 +299,7 @@ class TestControllerParser:
             async def render(self) -> ResponseB:  # type: ignore
                 pass
 
-        app_controller = AppController(view_root=Path())
+        app_controller = Mountaineer(view_root=Path())
         app_controller.register(ResponseAController())
         app_controller.register(ResponseBController())
 
@@ -374,7 +374,7 @@ class TestControllerWrapperFeatures:
     @pytest.fixture
     def parser(self):
         parser = ControllerParser()
-        app_controller = AppController(view_root=Path())
+        app_controller = Mountaineer(view_root=Path())
         app_controller.register(ExampleController())
         return parser
 
@@ -530,7 +530,7 @@ class TestActionWrapper:
     @pytest.fixture
     def parser(self):
         parser = ControllerParser()
-        app_controller = AppController(view_root=Path())
+        app_controller = Mountaineer(view_root=Path())
         app_controller.register(ExampleController())
         return parser
 

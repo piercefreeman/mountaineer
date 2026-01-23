@@ -56,7 +56,7 @@ async def handle_watch(
     doesn't build the package for production use.
 
     :param package: Ex. "ci_webapp"
-    :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param webcontroller: Ex. "ci_webapp.app:mountaineer"
     :param subscribe_to_mountaineer:
         If True, will subscribe the local build server to changes in
         the `mountaineer` package. This is useful when doing concurrent
@@ -158,7 +158,7 @@ async def handle_runserver(
 
     :param package: Ex. "ci_webapp"
     :param webservice: Ex. "ci_webapp.app:app"
-    :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param webcontroller: Ex. "ci_webapp.app:mountaineer"
     :param port: Desired port for the webapp while running locally
     :param subscribe_to_mountaineer: See `handle_watch` for more details.
 
@@ -268,7 +268,7 @@ async def handle_build(
     You'll want to do it before deploying your application into production - but since a full build can take up
     to 10s, `handle_runserver` provides a better workflow for daily development.
 
-    :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param webcontroller: Ex. "ci_webapp.app:mountaineer"
     :param minify: Minify the JS bundle, strip debug symbols
 
     """
@@ -288,7 +288,7 @@ async def handle_build(
     # Type validation
     assert isolated_context.js_compiler is not None
     assert isolated_context.app_compiler is not None
-    assert isolated_context.app_controller is not None
+    assert isolated_context.mountaineer is not None
 
     # Build the frontend support bundle
     await isolated_context.js_compiler.build_use_server()
@@ -297,7 +297,7 @@ async def handle_build(
     # Get the build-enabled controllers
     build_controllers = [
         controller_definition
-        for controller_definition in isolated_context.app_controller.graph.controllers
+        for controller_definition in isolated_context.mountaineer.graph.controllers
         if controller_definition.controller._build_enabled
     ]
 
@@ -319,7 +319,7 @@ async def handle_build(
     # Compile the final client bundle
     client_bundle_result = mountaineer_rs.compile_production_bundle(
         all_view_paths,
-        str(isolated_context.app_controller._view_root / "node_modules"),
+        str(isolated_context.mountaineer._view_root / "node_modules"),
         "production",
         minify,
         str(get_static_path("live_reload.ts").resolve().absolute()),
@@ -327,8 +327,8 @@ async def handle_build(
         tsconfig_path,
     )
 
-    static_output = isolated_context.app_controller._view_root.get_managed_static_dir()
-    ssr_output = isolated_context.app_controller._view_root.get_managed_ssr_dir()
+    static_output = isolated_context.mountaineer._view_root.get_managed_static_dir()
+    ssr_output = isolated_context.mountaineer._view_root.get_managed_ssr_dir()
 
     # If we don't have the same number of entrypoints as controllers, something went wrong
     if len(client_bundle_result["entrypoints"]) != len(build_controllers):
@@ -357,7 +357,7 @@ async def handle_build(
     # into a single runnable script for ease of use by the V8 engine
     result_scripts, _ = mountaineer_rs.compile_independent_bundles(
         all_view_paths,
-        str(isolated_context.app_controller._view_root / "node_modules"),
+        str(isolated_context.mountaineer._view_root / "node_modules"),
         "production",
         0,
         str(get_static_path("live_reload.ts").resolve().absolute()),

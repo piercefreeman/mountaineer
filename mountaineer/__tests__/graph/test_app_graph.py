@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from fastapi import APIRouter
 
-from mountaineer.app import AppController, ControllerDefinition
+from mountaineer.app import Mountaineer, ControllerDefinition
 from mountaineer.controller import ControllerBase
 from mountaineer.graph.app_graph import ControllerRoute
 
@@ -31,7 +31,7 @@ def test_merge_render_signatures():
     def reference_fn(a: int, c: int):
         pass
 
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
 
     target_definition = ControllerDefinition(
         controller=TargetController(),
@@ -83,7 +83,7 @@ def test_merge_render_signatures_conflicting_types():
     def reference_fn(a: str, c: int):
         pass
 
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
 
     target_definition = ControllerDefinition(
         controller=TargetController(),

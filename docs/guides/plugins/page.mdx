@@ -272,17 +272,17 @@ uv add git+https://github.com/user/my-awesome-plugin.git
 ### 2. **Register in Your App**
 
 ```python title="my_app/app.py"
-from mountaineer.app import AppController
+from mountaineer import Mountaineer
 from my_awesome_plugin.plugin import plugin
 
-controller = AppController(config=AppConfig())
+mountaineer = Mountaineer(config=AppConfig())
 
 # Mount the plugin (this registers all controllers automatically)
-controller.use(plugin)
+mountaineer.register(plugin)
 ```
 
 <Note>
-Use `controller.use(plugin)` instead of manually looping over `plugin.controllers`. This approach ensures proper plugin initialization, dependency resolution, and future compatibility as the plugin system evolves.
+Use `mountaineer.register(plugin)` instead of manually looping over `plugin.controllers`. This approach ensures proper plugin initialization, dependency resolution, and future compatibility as the plugin system evolves.
 </Note>
 
 ### 3. **Include Plugin Assets**
@@ -292,7 +292,7 @@ If your plugin includes CSS or other static assets, make sure to include them in
 ```python title="my_app/app.py"
 from mountaineer.render import LinkAttribute, Metadata
 
-controller = AppController(
+mountaineer = Mountaineer(
     config=AppConfig(),
     global_metadata=Metadata(
         links=[

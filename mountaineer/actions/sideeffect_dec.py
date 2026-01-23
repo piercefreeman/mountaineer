@@ -294,7 +294,7 @@ async def get_render_parameters(
     if not controller._definition:
         raise RuntimeError(
             "Controller definition is not set. This might indicate you're calling a"
-            " sideeffect from outside of an AppController context."
+            " sideeffect from outside of a Mountaineer context."
         )
 
     # Follow starlette's original logic to resolve routes, since this provides us the necessary

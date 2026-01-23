@@ -4,7 +4,7 @@ from fastapi import Depends as Depends
 
 from mountaineer.actions.passthrough_dec import passthrough as passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect as sideeffect
-from mountaineer.app import AppController as AppController
+from mountaineer.app import Mountaineer as Mountaineer
 from mountaineer.client_compiler.postcss import PostCSSBundler as PostCSSBundler
 from mountaineer.config import ConfigBase as ConfigBase
 from mountaineer.controller import ControllerBase as ControllerBase

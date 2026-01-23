@@ -12,6 +12,9 @@ from create_mountaineer_app.environments.poetry import PoetryEnvironment
 
 def test_poetry_installs_dev_dependencies(tmp_path: Path) -> None:
     """Test that Poetry environment installs dev dependencies correctly."""
+    if not PoetryEnvironment().has_provider():
+        pytest.skip("Poetry not available")
+
     project_path = tmp_path / "test_project"
     project_path.mkdir()
 

@@ -69,10 +69,10 @@ the [API Docs](/mountaineer/api/render).
 ## Global Metadata
 
 For metadata that you know should appear on every page (like stylesheets or global
-scripts), you can add a metadata tag to your app controller:
+scripts), you can add a metadata tag to your Mountaineer instance:
 
 ```python
-controller = AppController(
+mountaineer = Mountaineer(
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/main.css")]
     ),

@@ -1,4 +1,4 @@
-from mountaineer import AppController, LinkAttribute, Metadata
+from mountaineer import Mountaineer, LinkAttribute, Metadata
 from mountaineer.client_compiler.postcss import PostCSSBundler
 
 from ci_webapp.config import AppConfig
@@ -8,7 +8,7 @@ from ci_webapp.controllers.home import HomeController
 from ci_webapp.controllers.root_layout import RootLayoutController
 from ci_webapp.controllers.stream import StreamController
 
-controller = AppController(
+mountaineer = Mountaineer(
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
@@ -17,8 +17,8 @@ controller = AppController(
     ],
     config=AppConfig(),
 )
-controller.register(HomeController())
-controller.register(DetailController())
-controller.register(ComplexController())
-controller.register(StreamController())
-controller.register(RootLayoutController())
+mountaineer.register(HomeController())
+mountaineer.register(DetailController())
+mountaineer.register(ComplexController())
+mountaineer.register(StreamController())
+mountaineer.register(RootLayoutController())

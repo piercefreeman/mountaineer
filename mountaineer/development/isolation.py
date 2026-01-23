@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import Request
 
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.development.messages import (
@@ -49,8 +49,8 @@ class IsolatedAppContext:
 
         :param package: Name of the main package
         :param package_path: Path to the package on disk
-        :param module_name: Module name containing the app controller
-        :param controller_name: Variable name of the app controller within the module
+        :param module_name: Module name containing the Mountaineer instance
+        :param controller_name: Variable name of the Mountaineer instance within the module
         """
         super().__init__()
         self.package = package
@@ -59,7 +59,7 @@ class IsolatedAppContext:
         self.controller_name = controller_name
         self.webservice_thread: UvicornThread | None = None
 
-        self.app_controller: AppController | None = None
+        self.mountaineer: Mountaineer | None = None
         self.exception_controller: "ExceptionController | None" = None
         self.use_dev_exceptions = use_dev_exceptions
 
@@ -167,12 +167,12 @@ class IsolatedAppContext:
         """
         if self.app_compiler is None:
             raise ValueError("App compiler not initialized")
-        if self.app_controller is None:
+        if self.mountaineer is None:
             raise ValueError("App controller not initialized")
 
         await self.app_compiler.run_builder_plugins(limit_paths=updated_js)
         for path in updated_js or []:
-            self.app_controller.invalidate_view(path)
+            self.mountaineer.invalidate_view(path)
 
         return SuccessResponse()
 
@@ -196,22 +196,22 @@ class IsolatedAppContext:
         # Import and initialize the module
         self.module = importlib.import_module(self.module_name)
         initial_state = {name: getattr(self.module, name) for name in dir(self.module)}
-        self.app_controller = initial_state[self.controller_name]
+        self.mountaineer = initial_state[self.controller_name]
 
-        if self.app_controller is None:
+        if self.mountaineer is None:
             raise ValueError("App controller not initialized")
 
         # Mount exceptions
-        self.mount_exceptions(self.app_controller)
+        self.mount_exceptions(self.mountaineer)
 
         # Initialize builders in isolated context
         global_build_cache = Path(mkdtemp())
         self.js_compiler = APIBuilder(
-            self.app_controller,
+            self.mountaineer,
             build_cache=global_build_cache,
         )
         self.app_compiler = ClientCompiler(
-            app=self.app_controller,
+            app=self.mountaineer,
         )
 
         return SuccessResponse()
@@ -229,16 +229,16 @@ class IsolatedAppContext:
             LOGGER.debug("Server is already running")
             return SuccessResponse()
 
-        if self.app_controller is None:
+        if self.mountaineer is None:
             raise ValueError("App controller not initialized")
 
         # Inject the live reload port
-        self.app_controller.live_reload_port = live_reload_port or 0
+        self.mountaineer.live_reload_port = live_reload_port or 0
 
         self.webservice_thread = UvicornThread(
             name="Dev webserver",
             emoticon="🚀",
-            app=self.app_controller.app,
+            app=self.mountaineer.app,
             host=host,
             port=port,
         )
@@ -250,14 +250,14 @@ class IsolatedAppContext:
     # Dev Hooks
     #
 
-    def mount_exceptions(self, app_controller: AppController):
+    def mount_exceptions(self, mountaineer: Mountaineer):
         """
         Mount the exception controller to the app controller for custom error pages.
 
         This adds development-friendly error pages with stack traces and debugging information.
         It ensures the exception controller is only mounted once.
 
-        :param app_controller: The app controller to mount the exception controller on
+        :param mountaineer: The Mountaineer instance to mount the exception controller on
         """
         if not self.use_dev_exceptions:
             LOGGER.debug("Dev exceptions are disabled, skipping...")
@@ -269,13 +269,13 @@ class IsolatedAppContext:
             )
             from mountaineer_exceptions.plugin import plugin  # type: ignore
 
-            app_controller.register(plugin)
+            mountaineer.register(plugin)
             self.exception_controller = [
                 controller
                 for controller in plugin.get_controllers()
                 if isinstance(controller, ExceptionController)
             ][0]
-            app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
+            mountaineer.app.exception_handler(Exception)(self.handle_dev_exception)
         except ImportError:
             LOGGER.warning("mountaineer-exceptions plugin not found, skipping...")
 

@@ -60,12 +60,12 @@ class MountaineerPlugin:
         for easy builds of the output files.
 
         """
-        from mountaineer.app import AppController
+        from mountaineer.app import Mountaineer
 
-        app_controller = AppController(
+        mountaineer = Mountaineer(
             view_root=self.view_root,
             custom_builders=self.build_config.custom_builders,
         )
         for controller in self.controllers:
-            app_controller.register(controller())
-        return app_controller
+            mountaineer.register(controller())
+        return mountaineer

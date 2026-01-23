@@ -1,8 +1,9 @@
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from re import match as re_match
 
 import questionary
+import tomllib
 from click import command, option, secho
 
 from create_mountaineer_app.builder import build_project
@@ -103,7 +104,18 @@ def get_current_version_number():
     We assume the version numbers are tied, which they are deterministically in CI.
 
     """
-    return version("create_mountaineer_app")
+    try:
+        return version("create_mountaineer_app")
+    except PackageNotFoundError:
+        pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        if not pyproject_path.exists():
+            raise
+
+        pyproject_data = tomllib.loads(pyproject_path.read_text())
+        project_version = pyproject_data.get("project", {}).get("version")
+        if not project_version:
+            raise ValueError("No project version found in pyproject.toml")
+        return project_version
 
 
 @command()

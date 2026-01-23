@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_builder.file_generators.base import CodeBlock
 from mountaineer.client_builder.file_generators.locals import (
     LocalActionGenerator,
@@ -109,7 +109,7 @@ def controller_parser() -> ControllerParser:
 
 @pytest.fixture
 def controller_wrapper(controller_parser: ControllerParser) -> ControllerWrapper:
-    app_controller = AppController(view_root=Path())
+    app_controller = Mountaineer(view_root=Path())
     app_controller.register(ExampleController())
 
     return controller_parser.parse_controller(ExampleController)

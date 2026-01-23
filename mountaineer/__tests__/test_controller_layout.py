@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.controller_layout import LayoutControllerBase
 
 
@@ -31,11 +31,11 @@ async def test_disallows_direct_rendering():
 
 def test_layout_registration():
     """
-    Layout controllers must register with the AppController for them
+    Layout controllers must register with the Mountaineer for them
     to be used by client render controllers.
 
     """
-    app_controller = AppController(view_root=Path(""))
+    app_controller = Mountaineer(view_root=Path(""))
     layout_controller = ExampleLayoutController()
 
     app_controller.register(layout_controller)

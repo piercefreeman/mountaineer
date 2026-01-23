@@ -10,7 +10,9 @@ from fastapi.responses import RedirectResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
-from mountaineer.app import AppController
+from mountaineer.actions.fields import get_function_metadata
+from mountaineer.actions.passthrough_dec import passthrough
+from mountaineer.app import Mountaineer
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
@@ -25,7 +27,7 @@ from mountaineer.render import Metadata, RenderBase
 
 def test_requires_render_return_value():
     """
-    The AppController is in charge of validating our render return value. Since renders are not
+    The Mountaineer is in charge of validating our render return value. Since renders are not
     decorated, the best place to validate is during a mount.
 
     """
@@ -44,7 +46,7 @@ def test_requires_render_return_value():
         def render(self) -> None:
             return None
 
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
     with pytest.raises(ValueError, match="must have a return type annotation"):
         app.register(TestControllerWithoutRenderMarkup())
 
@@ -67,7 +69,7 @@ def test_validates_layouts_exclude_urls():
         async def render(self) -> None:
             pass
 
-    app_controller = AppController(view_root=Path(""))
+    app_controller = Mountaineer(view_root=Path(""))
     with pytest.raises(ValueError, match="are not directly mountable to the router"):
         app_controller.register(TestLayoutController())
 
@@ -77,7 +79,7 @@ def test_format_exception_model():
         status_code = 401
         value: str
 
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
     formatted_exception = app._format_exception_model(ExampleException)
 
     assert formatted_exception.status_code == 401
@@ -105,7 +107,7 @@ def test_view_root_from_config(tmp_path: Path):
     with patch("mountaineer.app.resolve_package_path") as mock_resolve_package_path:
         mock_resolve_package_path.return_value = tmp_path
 
-        app = AppController(config=MockConfig())
+        app = Mountaineer(config=MockConfig())
         assert app._view_root == tmp_path / "views"
 
         assert mock_resolve_package_path.call_count == 1
@@ -121,7 +123,7 @@ def test_passthrough_fastapi_args():
         did_run_lifespan = True
         yield
 
-    app = AppController(view_root=Path(""), fastapi_args=dict(lifespan=app_lifespan))
+    app = Mountaineer(view_root=Path(""), fastapi_args=dict(lifespan=app_lifespan))
 
     with TestClient(app.app):
         assert did_run_lifespan
@@ -138,7 +140,7 @@ def test_unique_controller_names():
 
         return ExampleController
 
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
     app.register(make_controller("/example")())
 
     with pytest.raises(ValueError, match="already registered"):
@@ -155,7 +157,7 @@ def test_get_value_mask_for_signature():
         "c": "other",
     }
 
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
     assert app._get_value_mask_for_signature(
         signature(target_fn),
         values,
@@ -184,7 +186,7 @@ class RedirectController(ControllerBase):
 
 
 def test_explicit_response_metadata():
-    app = AppController(view_root=Path(""))
+    app = Mountaineer(view_root=Path(""))
     app.register(RedirectController())
 
     with TestClient(app.app) as client:
@@ -202,7 +204,7 @@ async def test_parse_validation_exception():
     class TestModel(BaseModel):
         age: int
 
-    app_controller = AppController(view_root=Path(""))
+    app_controller = Mountaineer(view_root=Path(""))
 
     # Create a test request with invalid data
     request = Request(
@@ -258,7 +260,7 @@ def test_invalidate_view_clears_cache(tmp_path: Path):
     node_modules.mkdir()
 
     # Create app and controller
-    app = AppController(view_root=view_dir)
+    app = Mountaineer(view_root=view_dir)
 
     class TestController(ControllerBase):
         url = "/test"
@@ -328,7 +330,7 @@ def test_invalidate_view_clears_all_dev_caches(tmp_path: Path):
     component_file.write_text("export const SharedComponent = () => <div>Shared</div>;")
 
     # Create app and controllers
-    app = AppController(view_root=view_dir)
+    app = Mountaineer(view_root=view_dir)
 
     class TestController1(ControllerBase):
         url = "/test1"
@@ -400,7 +402,7 @@ def test_invalidate_view_ignores_files_outside_view_root(tmp_path: Path):
     )
 
     # Create app and controller
-    app = AppController(view_root=view_dir)
+    app = Mountaineer(view_root=view_dir)
 
     class TestController(ControllerBase):
         url = "/test"
@@ -430,3 +432,124 @@ def test_invalidate_view_ignores_files_outside_view_root(tmp_path: Path):
 
         # Cache should still be present
         assert controller_definition.cache is not None
+
+
+def test_root_mount_routes(tmp_path: Path):
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+    (view_dir / "test").mkdir(parents=True)
+    (view_dir / "test" / "page.tsx").write_text(
+        "export default function Page() { return <div>Test</div>; }"
+    )
+
+    class EchoModel(BaseModel):
+        message: str
+
+    class TestController(ControllerBase):
+        url = "/test"
+        view_path = "test/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+        @passthrough
+        def echo(self, payload: dict) -> EchoModel:
+            return EchoModel(message=payload["message"])
+
+    mountaineer = Mountaineer(view_root=view_dir)
+    mountaineer.register(controller=TestController())
+
+    host_app = FastAPI()
+    host_app.mount(path="/", app=mountaineer, name="website")
+
+    controller_definition = mountaineer.graph.get_definitions_for_cls(
+        cls=TestController
+    )[0]
+    action_url = controller_definition.get_url_for_metadata(
+        metadata=get_function_metadata(fn=TestController.echo)
+    )
+
+    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
+        mock_compile.return_value = (["console.log('test script');"], ["// sourcemap"])
+        with patch("mountaineer.app.render_ssr", return_value=""):
+            with TestClient(app=host_app) as client:
+                response = client.get("/test")
+                assert response.status_code == status.HTTP_200_OK
+
+                action_response = client.post(
+                    url=action_url,
+                    json={"message": "hello"},
+                )
+                assert action_response.status_code == status.HTTP_200_OK
+                assert action_response.json() == {
+                    "passthrough": {"message": "hello"}
+                }
+
+
+def test_openapi_exposed_only_on_subapp(tmp_path: Path):
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+
+    class EchoModel(BaseModel):
+        status: str
+
+    class TestController(ControllerBase):
+        url = "/test"
+        view_path = "/test.tsx"
+
+        def render(self) -> None:
+            return None
+
+        @passthrough
+        def ping(self, payload: dict) -> EchoModel:
+            return EchoModel(status="ok")
+
+    mountaineer = Mountaineer(view_root=view_dir)
+    mountaineer.register(controller=TestController())
+
+    host_app = FastAPI()
+    host_app.mount(path="/sub", app=mountaineer, name="website")
+
+    controller_definition = mountaineer.graph.get_definitions_for_cls(
+        cls=TestController
+    )[0]
+    action_url = controller_definition.get_url_for_metadata(
+        metadata=get_function_metadata(fn=TestController.ping)
+    )
+
+    with TestClient(app=host_app) as client:
+        host_response = client.get(url="/openapi.json")
+        sub_response = client.get(url="/sub/openapi.json")
+
+    assert host_response.status_code == status.HTTP_200_OK
+    assert sub_response.status_code == status.HTTP_200_OK
+    assert action_url not in host_response.json()["paths"]
+    assert action_url in sub_response.json()["paths"]
+
+
+def test_root_path_injected_into_html(tmp_path: Path):
+    view_dir = tmp_path / "views"
+    view_dir.mkdir()
+    (view_dir / "test").mkdir(parents=True)
+    (view_dir / "test" / "page.tsx").write_text(
+        "export default function Page() { return <div>Test</div>; }"
+    )
+
+    class TestController(ControllerBase):
+        url = "/test"
+        view_path = "test/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    mountaineer = Mountaineer(view_root=view_dir)
+    mountaineer.register(TestController())
+
+    host_app = FastAPI()
+    host_app.mount(path="/sub", app=mountaineer, name="website")
+
+    with patch("mountaineer.app.render_ssr", return_value=""):
+        with TestClient(host_app) as client:
+            response = client.get("/sub/test")
+            assert response.status_code == status.HTTP_200_OK
+            assert 'window.__MOUNTAINEER_ROOT_PATH = "/sub"' in response.text

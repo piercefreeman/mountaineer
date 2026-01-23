@@ -1,7 +1,7 @@
 from collections import defaultdict
 from functools import partial, wraps
 from hashlib import md5
-from inspect import Signature, isawaitable, isclass, signature
+from inspect import Parameter, Signature, isawaitable, isclass, signature
 from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from re import match as re_match
@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from inflection import underscore
 from pydantic import BaseModel
 from starlette.routing import BaseRoute
+from starlette.types import Receive, Scope, Send
 
 from mountaineer.actions import (
     FunctionActionType,
@@ -61,7 +62,7 @@ class ExceptionSchema(BaseModel):
     }
 
 
-class AppController:
+class Mountaineer:
     """
     Main entrypoint of a project web application.
 
@@ -82,7 +83,7 @@ class AppController:
     The configuration object for the application. This is the main place
     to place runtime configuration values that might be changed across
     environments. One instance is registered as a global singleton and cached
-    within the AppController class as well.
+    within the Mountaineer class as well.
 
     """
 
@@ -154,7 +155,7 @@ class AppController:
             self._view_root = ManagedViewPath.from_view_root(view_root)
         else:
             raise ValueError(
-                "You must provide either a config.package or a view_root to the AppController"
+                "You must provide either a config.package or a view_root to the Mountaineer"
             )
 
         # Check our view directory is valid
@@ -227,6 +228,9 @@ class AppController:
             LOGGER.warning(f"Invalid JSON in {package_json_path}")
         except Exception as e:
             LOGGER.warning(f"Error checking React version: {str(e)}")
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await self.app(scope, receive, send)
 
     def register(self, controller: ControllerBase | MountaineerPlugin):
         """
@@ -390,9 +394,27 @@ class AppController:
 
         # Only the signature of the actual rendering function, not the original. We might
         # need to sniff render() again for its typehint
-        generate_controller_html.__signature__ = signature(  # type: ignore
-            generate_controller_html,
-        ).replace(return_annotation=None)
+        render_signature = signature(generate_controller_html)
+        if "request" not in render_signature.parameters:
+            request_param = Parameter(
+                "request",
+                kind=Parameter.KEYWORD_ONLY,
+                annotation=Request,
+            )
+            parameters = list(render_signature.parameters.values())
+            insert_at = next(
+                (
+                    index
+                    for index, param in enumerate(parameters)
+                    if param.kind == Parameter.VAR_KEYWORD
+                ),
+                len(parameters),
+            )
+            parameters.insert(insert_at, request_param)
+            render_signature = render_signature.replace(parameters=parameters)
+        generate_controller_html.__signature__ = render_signature.replace(  # type: ignore
+            return_annotation=None
+        )
 
         # Validate the return model is actually a RenderBase or explicitly marked up as None
         if not (
@@ -495,6 +517,10 @@ class AppController:
     ):
         start = monotonic_ns()
         controller = controller_definition.controller
+        request = kwargs.get("request")
+        root_path = ""
+        if isinstance(request, Request):
+            root_path = request.scope.get("root_path") or ""
 
         # We want to render the hierarchies top-down
         direct_hierarchy = controller_definition.get_parents()
@@ -563,6 +589,7 @@ class AppController:
                 render_output,
                 inline_client_script=dev_cache.cached_client_script,
                 external_client_imports=None,
+                root_path=root_path,
                 sourcemap=dev_cache.cached_server_sourcemap,
             )
         else:
@@ -580,6 +607,7 @@ class AppController:
                     f"{controller._scripts_prefix}/{script_name}"
                     for script_name in controller._bundled_scripts
                 ],
+                root_path=root_path,
                 sourcemap=prod_cache.cached_server_sourcemap,
             )
 
@@ -597,6 +625,7 @@ class AppController:
         *,
         inline_client_script: str,
         external_client_imports: None,
+        root_path: str,
         sourcemap: str | None,
     ): ...
 
@@ -609,6 +638,7 @@ class AppController:
         *,
         inline_client_script: None,
         external_client_imports: list[str],
+        root_path: str,
         sourcemap: str | None,
     ): ...
 
@@ -620,6 +650,7 @@ class AppController:
         *,
         inline_client_script: str | None = None,
         external_client_imports: list[str] | None = None,
+        root_path: str = "",
         sourcemap: str | None = None,
     ):
         """
@@ -699,6 +730,10 @@ class AppController:
         else:
             raise ValueError("Invalid client script import")
 
+        root_path_script = (
+            f"<script type=\"text/javascript\">window.__MOUNTAINEER_ROOT_PATH = {json_dumps(root_path)};</script>"
+        )
+
         page_contents = f"""
         <html>
         <head>
@@ -706,6 +741,7 @@ class AppController:
         </head>
         <body>
         <div id="root">{ssr_html}</div>
+        {root_path_script}
         <script type="text/javascript">
         var SERVER_DATA = {json_dumps(server_data_json)};
         </script>
@@ -1057,3 +1093,4 @@ class AppController:
     @property
     def development_enabled(self):
         return not self.config or self.config.ENVIRONMENT == "development"
+

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from mountaineer import AppController, ConfigBase, ControllerBase
+from mountaineer import Mountaineer, ConfigBase, ControllerBase
 
 
 class TestController(ControllerBase):
@@ -18,7 +18,7 @@ class SimpleConfig(ConfigBase):
 
 config = SimpleConfig()
 
-test_controller = AppController(
+test_controller = Mountaineer(
     view_root=Path(__file__).parent.joinpath("views"),
     config=config,
 )

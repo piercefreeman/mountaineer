@@ -14,7 +14,7 @@ from mountaineer.__tests__.common import calculate_primes
 from mountaineer.actions.fields import FunctionActionType, get_function_metadata
 from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.logging import LOGGER
@@ -75,7 +75,7 @@ class ControllerCommon(ControllerBase):
 
 
 async def call_sideeffect_common(controller: ControllerCommon):
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     app.register(controller)
 
     @asynccontextmanager
@@ -252,7 +252,7 @@ async def test_get_render_parameters(
 
     # We need to load this test controller to an actual application runtime
     # or else we don't have the render() metadata added
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = TestController()
     app.register(controller)
 
@@ -318,7 +318,7 @@ def test_limit_codepath_experimental(
 
     # We need to load this test controller to an actual application runtime
     # or else we don't have the render() metadata added
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = ExampleController()
     app.register(controller)
 
@@ -384,7 +384,7 @@ async def test_layout_controller_request_support():
             pass
 
     # Setup the app controller with our layout controller
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = TestLayoutController()
     app.register(controller)
 
@@ -471,7 +471,7 @@ async def test_controller_and_layout_request_handling():
             pass
 
     # Setup app with both controllers
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     standard_controller = StandardController()
     layout_controller = LayoutController()
     app.register(standard_controller)
@@ -627,7 +627,7 @@ async def test_layout_controller_session_handling():
             pass
 
     # Setup app with session middleware
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = SessionLayoutController()
     app.register(controller)
 

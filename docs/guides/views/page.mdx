@@ -233,11 +233,11 @@ const Layout = ({ children }: { children: ReactNode }) => {
 export default Layout;
 ```
 
-Once your controller is declared, you'll need to mount your layout into the AppController like you do for regular pages.
+Once your controller is declared, you'll need to mount your layout into the Mountaineer like you do for regular pages.
 
 ```python title="/app.py"
-app_controller = AppController(...)
-app_controller.register(RootLayoutController())
+mountaineer = Mountaineer(...)
+mountaineer.register(RootLayoutController())
 ```
 
 In general you can implement layout controllers just like you do for pages. But since they're shared across multiple child controllers, make sure the keyword arguments you use in your `render` signature don't have any conflicts. Mountaineer will merge these signatures at runtime and check for duplicate keyword names across the layout's child pages. Arguments are allowed to share the same name _and_ type, in which case they will be resolved to the same value. Arguments with conflicting types will raise a `TypeError`.

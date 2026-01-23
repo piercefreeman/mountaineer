@@ -106,7 +106,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     _definition: Optional["ControllerDefinition"] = None
     """
-    Upon registration, the AppController will mount a wrapper
+    Upon registration, the Mountaineer instance will mount a wrapper
     with state metadata. This is a back-reference to allow clients
     to access the definition directly from the controller. Intended
     for internal use.
@@ -174,7 +174,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
         instance. If you have no data to display you can also return None.
 
         This function must be explicitly typehinted with your response type, which allows the
-        AppController to generate the correct TypeScript types for the frontend:
+        Mountaineer to generate the correct TypeScript types for the frontend:
 
         ```python
         class MyServerData(RenderBase):

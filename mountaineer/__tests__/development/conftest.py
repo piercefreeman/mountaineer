@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import sys
 from json import dump as json_dump
+from os import environ
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -42,9 +43,15 @@ def setup_npm_environment(package_path: Path) -> None:
     Install npm dependencies in the package directory.
 
     """
+    cache_dir = package_path / ".npm_cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["npm", "install"],
         cwd=package_path,
+        env={
+            **environ,
+            "npm_config_cache": str(cache_dir),
+        },
         check=True,
         capture_output=True,
         text=True,
@@ -115,7 +122,7 @@ def isolated_package_dir(
 @pytest.fixture
 def app_package(isolated_package_dir: tuple[Path, str]) -> AppPackageType:
     """
-    A simple AppController, with a single component controller. Sets up a complete
+    A simple Mountaineer, with a single component controller. Sets up a complete
     React environment with necessary dependencies.
 
     """

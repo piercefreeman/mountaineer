@@ -1,7 +1,7 @@
 from pathlib import Path
 from shutil import rmtree as shutil_rmtree
 
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_builder.aliases import AliasManager
 from mountaineer.client_builder.file_generators.base import ParsedController
 from mountaineer.client_builder.file_generators.globals import (
@@ -32,7 +32,7 @@ class APIBuilder:
 
     def __init__(
         self,
-        app: AppController,
+        app: Mountaineer,
         live_reload_port: int | None = None,
         build_cache: Path | None = None,
     ):
@@ -45,7 +45,7 @@ class APIBuilder:
 
         self.update_controller(app)
 
-    def update_controller(self, controller: AppController):
+    def update_controller(self, controller: Mountaineer):
         self.app = controller
         self.view_root = ManagedViewPath.from_view_root(controller._view_root)
 

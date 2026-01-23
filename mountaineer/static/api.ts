@@ -8,6 +8,26 @@ export type UrlParamValue = string | number | boolean | Date | null | undefined;
 export type UrlParamArray = Array<string | number | boolean | Date>;
 export type UrlParam = UrlParamValue | UrlParamArray;
 
+const ROOT_PATH = (globalThis as any).__MOUNTAINEER_ROOT_PATH ?? "";
+
+const normalizeRootPath = (rootPath: string): string => {
+  if (!rootPath || rootPath === "/") {
+    return "";
+  }
+  return rootPath.endsWith("/") ? rootPath.slice(0, -1) : rootPath;
+};
+
+const withRootPath = (url: string): string => {
+  if (!url.startsWith("/")) {
+    return url;
+  }
+  const normalizedRoot = normalizeRootPath(ROOT_PATH);
+  if (!normalizedRoot) {
+    return url;
+  }
+  return `${normalizedRoot}${url}`;
+};
+
 export class FetchErrorBase<T> extends Error {
   statusCode: number;
   body: T;
@@ -129,7 +149,7 @@ export const __request = async (params: FetchParams) => {
   }
 
   // Process URL and path parameters
-  let url = new ServerURL(params.url);
+  let url = new ServerURL(withRootPath(params.url));
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.path || {})) {
@@ -298,7 +318,7 @@ interface GetLinkParams {
 
 export const __getLink = (params: GetLinkParams) => {
   // Format the URL using the standard URL API
-  const url = new ServerURL(params.rawUrl);
+  const url = new ServerURL(withRootPath(params.rawUrl));
 
   // Fill path parameters
   for (const [key, value] of Object.entries(params.pathParameters)) {

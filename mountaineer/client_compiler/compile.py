@@ -3,7 +3,7 @@ from pathlib import Path
 from shutil import move as shutil_move
 from tempfile import mkdtemp
 
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_compiler.base import ClientBundleMetadata
 from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.client_compiler.exceptions import BuildProcessException
@@ -22,13 +22,13 @@ class ClientCompiler:
 
     def __init__(
         self,
-        app: AppController,
+        app: Mountaineer,
     ):
         self.tmp_dir = Path(mkdtemp())
 
         self.update_controller(app)
 
-    def update_controller(self, controller: AppController):
+    def update_controller(self, controller: Mountaineer):
         self.app = controller
         self.view_root = controller._view_root
 

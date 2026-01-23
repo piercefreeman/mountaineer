@@ -142,14 +142,15 @@ Note that the database session is provided via dependency injection, which plug-
 Now that we've newly created this controller, we wire it up to the application. This registers it for display when you load the homepage.
 
 ```python title="my_webapp/app.py"
-from mountaineer.app import AppController
+from fastapi import FastAPI
+from mountaineer import Mountaineer
 from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
 from my_webapp.config import AppConfig
 from my_webapp.controllers.home import HomeController
 
-controller = AppController(
+mountaineer = Mountaineer(
     config=AppConfig(),
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
@@ -159,7 +160,10 @@ controller = AppController(
     ],
 )
 
-controller.register(HomeController())
+mountaineer.register(HomeController())
+
+app = FastAPI()
+app.mount(path="/", app=mountaineer, name="website")
 ```
 
 Let's move over to the frontend.

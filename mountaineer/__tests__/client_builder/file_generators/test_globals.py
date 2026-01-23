@@ -6,7 +6,7 @@ import pytest
 
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_builder.file_generators.base import ParsedController
 from mountaineer.client_builder.file_generators.globals import (
     GlobalControllerGenerator,
@@ -85,9 +85,9 @@ def controller_parser() -> ControllerParser:
 
 @pytest.fixture
 def controller_wrappers(controller_parser: ControllerParser) -> list[ControllerWrapper]:
-    # Concrete instances should be mounted to an AppController to augment
+    # Concrete instances should be mounted to an Mountaineer to augment
     # some of the runtime type information
-    app_controller = AppController(view_root=Path())
+    app_controller = Mountaineer(view_root=Path())
     app_controller.register(ChildController())
     app_controller.register(LayoutController())
 

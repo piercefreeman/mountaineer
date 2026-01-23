@@ -22,7 +22,7 @@ class ClientBundleMetadata:
 
 class APIBuilderBase(ABC):
     """
-    Base class for client builders. When mounted to an AppController, these build plugins
+    Base class for client builders. When mounted to a Mountaineer instance, these build plugins
     will be called for every file defined in the view/app directory. It's up to the plugin
     whether to handle the incoming file.
 

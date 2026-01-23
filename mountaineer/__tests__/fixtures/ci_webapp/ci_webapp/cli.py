@@ -9,7 +9,7 @@ def runserver(host: str, port: int):
     handle_runserver(
         package="ci_webapp",
         webservice="ci_webapp.main:app",
-        webcontroller="ci_webapp.app:controller",
+        webcontroller="ci_webapp.app:mountaineer",
         host=host,
         port=port,
         subscribe_to_mountaineer=True,
@@ -20,7 +20,7 @@ def runserver(host: str, port: int):
 def watch():
     handle_watch(
         package="ci_webapp",
-        webcontroller="ci_webapp.app:controller",
+        webcontroller="ci_webapp.app:mountaineer",
         subscribe_to_mountaineer=True,
     )
 
@@ -28,5 +28,5 @@ def watch():
 @command()
 def build():
     handle_build(
-        webcontroller="ci_webapp.app:controller",
+        webcontroller="ci_webapp.app:mountaineer",
     )

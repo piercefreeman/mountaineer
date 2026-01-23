@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator, Iterator, cast
 
 import mypy.api
 import pytest
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -14,7 +15,7 @@ from mountaineer.actions.passthrough_dec import (
     passthrough,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.controller import ControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.render import RenderBase
@@ -87,7 +88,7 @@ class ExampleController(ControllerBase):
 
 @pytest.mark.asyncio
 async def test_can_call_passthrough():
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = ExampleController()
     app.register(controller)
 
@@ -178,7 +179,7 @@ def test_disallows_invalid_iterables():
 
 @pytest.mark.asyncio
 async def test_can_call_iterable():
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = ExampleIterableController()
     app.register(controller)
 
@@ -208,6 +209,41 @@ async def test_can_call_iterable():
     ]
 
 
+def test_passthrough_route_via_subapp_mount():
+    class SubappController(ControllerBase):
+        url = "/test"
+        view_path = "/test.tsx"
+
+        def render(self) -> ExampleRenderModel:
+            return ExampleRenderModel(value_a="Hello", value_b="World")
+
+        @passthrough
+        def ping(self, payload: dict) -> ExamplePassthroughModel:
+            return ExamplePassthroughModel(status="ok")
+
+    mountaineer = Mountaineer(view_root=Path())
+    mountaineer.register(controller=SubappController())
+
+    host_app = FastAPI()
+    host_app.mount(path="/sub", app=mountaineer, name="website")
+
+    controller_definition = mountaineer.graph.get_definitions_for_cls(
+        cls=SubappController
+    )[0]
+    passthrough_url = controller_definition.get_url_for_metadata(
+        metadata=get_function_metadata(fn=SubappController.ping)
+    )
+
+    with TestClient(app=host_app) as client:
+        response = client.post(
+            url=f"/sub{passthrough_url}",
+            json={},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"passthrough": {"status": "ok"}}
+
+
 @pytest.mark.asyncio
 async def test_raw_response():
     class ExampleController(ControllerBase):
@@ -224,7 +260,7 @@ async def test_raw_response():
         def call_passthrough(self, payload: dict) -> JSONResponse:
             return JSONResponse(content={"raw_value": "success"})
 
-    app = AppController(view_root=Path())
+    app = Mountaineer(view_root=Path())
     controller = ExampleController()
     app.register(controller)
 

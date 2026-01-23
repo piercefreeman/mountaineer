@@ -20,7 +20,7 @@ def runserver(host: str, port: int):
     handle_runserver(
         package="{{project_name}}",
         webservice="{{project_name}}.main:app",
-        webcontroller="{{project_name}}.app:controller",
+        webcontroller="{{project_name}}.app:mountaineer",
         host=host,
         port=port,
     )
@@ -30,14 +30,14 @@ def runserver(host: str, port: int):
 def watch():
     handle_watch(
         package="{{project_name}}",
-        webcontroller="{{project_name}}.app:controller",
+        webcontroller="{{project_name}}.app:mountaineer",
     )
 
 
 @command()
 def build():
     handle_build(
-        webcontroller="{{project_name}}.app:controller",
+        webcontroller="{{project_name}}.app:mountaineer",
     )
 
 

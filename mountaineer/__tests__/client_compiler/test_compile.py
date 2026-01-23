@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from mountaineer.app import AppController
+from mountaineer.app import Mountaineer
 from mountaineer.client_compiler.compile import ClientCompiler
 
 
 def test_build_static_metadata(tmpdir: Path):
-    app = AppController(view_root=tmpdir)
+    app = Mountaineer(view_root=tmpdir)
     compiler = ClientCompiler(app=app)
 
     # Write test files to the view path to determine if we're able
