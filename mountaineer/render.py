@@ -213,12 +213,29 @@ class ScriptAttribute(HashableAttribute, BaseModel):
     )
     ```
 
+    Or with inline content:
+
+    ```python {{ sticky: True }}
+    ScriptAttribute(
+        inline="console.log('Hello, world!');",
+    )
+    ```
+
     """
 
-    src: str
+    src: str | None = None
+    inline: str | None = None
     asynchronous: bool = False
     defer: bool = False
     optional_attributes: dict[str, str] = {}
+
+    @model_validator(mode="after")
+    def validate_src_or_inline(self):
+        if self.src is None and self.inline is None:
+            raise ValueError("Either 'src' or 'inline' must be provided")
+        if self.src is not None and self.inline is not None:
+            raise ValueError("Cannot specify both 'src' and 'inline'")
+        return self
 
 
 class Metadata(BaseModel):
@@ -332,13 +349,33 @@ class Metadata(BaseModel):
             tags.append(f"<meta {format_optional_keys(meta_attributes)} />")
 
         for script_definition in self.scripts:
-            script_attributes: dict[str, str | bool] = {
-                "src": script_definition.src,
-                "async": script_definition.asynchronous,
-                "defer": script_definition.defer,
-                **script_definition.optional_attributes,
-            }
-            tags.append(f"<script {format_optional_keys(script_attributes)}></script>")
+            if script_definition.inline is not None:
+                # Inline scripts render the content directly inside the tag
+                script_attributes: dict[str, str | bool] = {
+                    "async": script_definition.asynchronous,
+                    "defer": script_definition.defer,
+                    **script_definition.optional_attributes,
+                }
+                formatted_attrs = format_optional_keys(script_attributes)
+                if formatted_attrs:
+                    tags.append(
+                        f"<script {formatted_attrs}>{script_definition.inline}</script>"
+                    )
+                else:
+                    tags.append(f"<script>{script_definition.inline}</script>")
+            else:
+                # External scripts use the src attribute
+                # src is guaranteed to be non-None here due to the model validator
+                assert script_definition.src is not None
+                script_attributes = {
+                    "src": script_definition.src,
+                    "async": script_definition.asynchronous,
+                    "defer": script_definition.defer,
+                    **script_definition.optional_attributes,
+                }
+                tags.append(
+                    f"<script {format_optional_keys(script_attributes)}></script>"
+                )
 
         for link_definition in self.links:
             if build_metadata and link_definition.add_static_sha:

@@ -219,7 +219,8 @@ pub fn bundle_common(
     debug!("Resolve: {:?}", resolve);
     debug!("Bundle mode: {:?}", mode);
 
-    let inline_dynamic_imports = matches!(mode, BundleMode::SingleClient | BundleMode::SingleServer);
+    let inline_dynamic_imports =
+        matches!(mode, BundleMode::SingleClient | BundleMode::SingleServer);
 
     // https://github.com/rolldown/rolldown/blob/cb5e05c8d9683fd5c190daaad939e5364d7060b2/crates/rolldown_common/src/inner_bundler_options/mod.rs#L41
     let bundler_options = BundlerOptions {
@@ -618,8 +619,7 @@ mod tests {
             }
         "#;
 
-        create_test_js_file(temp_path, "lazy.js", lazy_js)
-            .expect("Failed to create lazy.js file");
+        create_test_js_file(temp_path, "lazy.js", lazy_js).expect("Failed to create lazy.js file");
 
         // Create a main entry file that imports both modules
         let entry_js = r#"
@@ -765,9 +765,7 @@ mod tests {
 
         let css_path = fake_package.join("styles.css");
         let mut css_file = File::create(&css_path).unwrap();
-        css_file
-            .write_all(b".fake-lib { display: flex; }")
-            .unwrap();
+        css_file.write_all(b".fake-lib { display: flex; }").unwrap();
 
         // Create JS that imports the node_modules CSS
         let server_js = r#"
