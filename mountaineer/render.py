@@ -365,6 +365,8 @@ class Metadata(BaseModel):
                     tags.append(f"<script>{script_definition.inline}</script>")
             else:
                 # External scripts use the src attribute
+                # src is guaranteed to be non-None here due to the model validator
+                assert script_definition.src is not None
                 script_attributes = {
                     "src": script_definition.src,
                     "async": script_definition.asynchronous,
