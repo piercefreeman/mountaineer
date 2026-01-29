@@ -2,3 +2,6 @@
 **/_server
 **/_ssr
 **/_static
+**/.venv
+**/dist
+**/*.whl
