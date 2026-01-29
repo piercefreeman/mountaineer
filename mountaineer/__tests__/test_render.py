@@ -88,6 +88,34 @@ from mountaineer.render import (
                 '<script src="/script4.js" test-attr="test-value"></script>',
             ],
         ),
+        # Inline script tags
+        (
+            Metadata(
+                scripts=[
+                    ScriptAttribute(
+                        inline="console.log('Hello, world!');",
+                    ),
+                    ScriptAttribute(
+                        inline="alert('Test');",
+                        asynchronous=True,
+                    ),
+                    ScriptAttribute(
+                        inline="window.onload = function() {};",
+                        defer=True,
+                    ),
+                    ScriptAttribute(
+                        inline="var x = 1;",
+                        optional_attributes={"type": "text/javascript"},
+                    ),
+                ],
+            ),
+            [
+                "<script>console.log('Hello, world!');</script>",
+                "<script async>alert('Test');</script>",
+                "<script defer>window.onload = function() {};</script>",
+                '<script type="text/javascript">var x = 1;</script>',
+            ],
+        ),
     ],
 )
 def test_build_header(metadata: Metadata, expected_tags: list[str]):
@@ -330,6 +358,18 @@ def test_merge_metadatas(metadatas: list[Metadata], expected_metadata: Metadata)
         metadata = metadata.merge(other_metadata)
 
     assert metadata == expected_metadata
+
+
+def test_script_attribute_requires_src_or_inline():
+    """Test that ScriptAttribute requires either src or inline."""
+    with pytest.raises(ValueError, match="Either 'src' or 'inline' must be provided"):
+        ScriptAttribute()
+
+
+def test_script_attribute_cannot_have_both_src_and_inline():
+    """Test that ScriptAttribute cannot have both src and inline."""
+    with pytest.raises(ValueError, match="Cannot specify both 'src' and 'inline'"):
+        ScriptAttribute(src="/script.js", inline="console.log('test');")
 
 
 @pytest.mark.parametrize(
