@@ -23,6 +23,7 @@ from mountaineer.client_builder.parser import (
     ControllerWrapper,
 )
 from mountaineer.controller import ControllerBase
+from mountaineer.exceptions import APIException
 from mountaineer.paths import ManagedViewPath
 from mountaineer.render import RenderBase
 
@@ -51,6 +52,24 @@ class ExampleResponseModel(BaseModel):
 class ExampleRenderModel(RenderBase):
     title: str
     items: List[ExampleBaseModel]
+
+
+class SharedConflict(APIException):
+    status_code: int = 409
+    detail: str = "Conflict"
+    reason: str
+
+
+class SharedActionResponse(BaseModel):
+    ok: bool
+
+
+class SharedRenderA(RenderBase):
+    title: str
+
+
+class SharedRenderB(RenderBase):
+    title: str
 
 
 # Test Controllers
@@ -87,6 +106,30 @@ class ExampleController(ExampleBaseController):
     @sideeffect
     async def upload_file(self, file: bytes = File(...)) -> ExampleResponseModel:  # type: ignore
         """File upload endpoint"""
+        pass
+
+
+class SharedExceptionControllerA(ControllerBase):
+    url = "/shared-a"
+    view_path = "/shared-a.tsx"
+
+    async def render(self) -> SharedRenderA:  # type: ignore
+        pass
+
+    @passthrough(exception_models=[SharedConflict])
+    def execute(self) -> SharedActionResponse:  # type: ignore
+        pass
+
+
+class SharedExceptionControllerB(ControllerBase):
+    url = "/shared-b"
+    view_path = "/shared-b.tsx"
+
+    async def render(self) -> SharedRenderB:  # type: ignore
+        pass
+
+    @passthrough(exception_models=[SharedConflict])
+    def execute(self) -> SharedActionResponse:  # type: ignore
         pass
 
 
@@ -206,6 +249,61 @@ class TestLocalActionGenerator:
             "UploadFileForm",
             "UploadFileResponseWrapped",
         }
+
+    def test_script_imports_global_exceptions(
+        self, generator: LocalActionGenerator
+    ) -> None:
+        result = list(generator.script())
+        content = "\n".join(block.content for block in result)
+
+        assert "import { __request }" in content
+        assert "from '../exceptions'" in content
+        assert "export { RequestValidationError };" in content
+        assert "extends FetchErrorBase" not in content
+
+
+class TestLocalActionGeneratorSharedExceptions:
+    @pytest.fixture
+    def generators(self, tmp_path: Path):
+        parser = ControllerParser()
+        app_controller = AppController(view_root=Path())
+        app_controller.register(SharedExceptionControllerA())
+        app_controller.register(SharedExceptionControllerB())
+
+        global_root = ManagedViewPath(tmp_path / "_server")
+        generator_a = LocalActionGenerator(
+            controller=parser.parse_controller(SharedExceptionControllerA),
+            managed_path=ManagedViewPath(tmp_path / "a" / "_server" / "actions.ts"),
+            global_root=global_root,
+        )
+        generator_b = LocalActionGenerator(
+            controller=parser.parse_controller(SharedExceptionControllerB),
+            managed_path=ManagedViewPath(tmp_path / "b" / "_server" / "actions.ts"),
+            global_root=global_root,
+        )
+
+        return generator_a, generator_b
+
+    def test_shared_exception_is_imported_from_global(self, generators) -> None:
+        generator_a, generator_b = generators
+        content_a = "\n".join(block.content for block in generator_a.script())
+        content_b = "\n".join(block.content for block in generator_b.script())
+
+        assert (
+            "import { RequestValidationError, SharedConflict } "
+            "from '../../_server/exceptions';"
+        ) in content_a
+        assert (
+            "import { RequestValidationError, SharedConflict } "
+            "from '../../_server/exceptions';"
+        ) in content_b
+
+        assert "export class SharedConflict extends" not in content_a
+        assert "export class SharedConflict extends" not in content_b
+        assert "409: SharedConflict" in content_a
+        assert "409: SharedConflict" in content_b
+        assert "export { RequestValidationError, SharedConflict };" in content_a
+        assert "export { RequestValidationError, SharedConflict };" in content_b
 
 
 class TestLocalModelGenerator:

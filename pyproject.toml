@@ -81,6 +81,8 @@ combine-as-imports = true
 markers = ["integration_tests: run longer-running integration tests"]
 # Default pytest runs shouldn't execute the integration tests
 addopts = "-m 'not integration_tests'"
+testpaths = ["mountaineer/__tests__"]
+asyncio_default_fixture_loop_scope = "function"
 
 [dependency-groups]
 dev = [

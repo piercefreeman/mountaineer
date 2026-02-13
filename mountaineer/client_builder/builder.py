@@ -6,6 +6,7 @@ from mountaineer.client_builder.aliases import AliasManager
 from mountaineer.client_builder.file_generators.base import ParsedController
 from mountaineer.client_builder.file_generators.globals import (
     GlobalControllerGenerator,
+    GlobalExceptionGenerator,
     GlobalLinkGenerator,
 )
 from mountaineer.client_builder.file_generators.locals import (
@@ -117,12 +118,19 @@ class APIBuilder:
             ],
             managed_path=global_root / "controllers.ts",
         )
+        global_exception_generator = GlobalExceptionGenerator(
+            controller_wrappers=[
+                controller.wrapper for controller in parsed_controllers
+            ],
+            managed_path=global_root / "exceptions.ts",
+        )
         global_link_generator = GlobalLinkGenerator(
             parsed_controllers=parsed_controllers,
             managed_path=global_root / "links.ts",
         )
 
         global_controller_generator.build()
+        global_exception_generator.build()
         global_link_generator.build()
 
     def _generate_local_files(self, parsed_controllers: list[ParsedController]):
