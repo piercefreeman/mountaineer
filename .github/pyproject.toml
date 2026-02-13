@@ -25,6 +25,9 @@ warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
 
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
 # Disable print statements
