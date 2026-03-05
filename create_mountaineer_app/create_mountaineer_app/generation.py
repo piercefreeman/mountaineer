@@ -13,6 +13,7 @@ class ProjectMetadata(BaseModel):
     package_manager: PackageManager
     use_tailwind: bool
     editor_config: EditorType | None
+    agentic_llm_config: bool = False
     project_path: Path
 
     postgres_password: str = "mysecretpassword"

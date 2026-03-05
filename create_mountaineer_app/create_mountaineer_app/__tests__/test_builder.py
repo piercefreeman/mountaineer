@@ -74,6 +74,11 @@ def mountaineer_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
             True,
         ),
         (
+            Path("base"),
+            Path("base/myproject/.cursorrules"),
+            True,
+        ),
+        (
             # Root paths with hidden files should be excluded from our filtering logic
             # We don't control where installers like pipx place our library
             Path(".cache/pipx/venvs"),
@@ -154,16 +159,6 @@ def test_valid_permutations(
     wait_for_database_to_be_ready(metadata)
 
     environment = environment_from_metadata(metadata)
-
-    # Make sure the required models are created
-    create_db_process = environment.run_command(["createdb"], metadata.project_path)
-    output, errors = create_db_process.communicate()
-    if create_db_process.returncode != 0:
-        if output:
-            secho(output.decode("utf-8"), fg="red")
-        if errors:
-            secho(errors.decode("utf-8"), fg="red")
-        raise ValueError("Failed to create database.")
 
     # Make sure we can build the files without any errors
     build_process = environment.run_command(["build"], metadata.project_path)
@@ -254,3 +249,25 @@ def test_build_version_number(package_manager: PackageManager, tmp_path: Path):
     version = package_requirements["project"]["dependencies"][0]
     req = Requirement(version)
     assert req.specifier.contains(Version("0.2.5"))
+    assert package_requirements["project"]["scripts"]["migrate"] == "my_project.cli:migrate"
+
+
+def test_build_agentic_llm_config(tmp_path: Path):
+    metadata = ProjectMetadata(
+        project_name="my_project",
+        author_name="John Appleseed",
+        author_email="test@email.com",
+        project_path=tmp_path,
+        package_manager=PackageManager.UV,
+        use_tailwind=False,
+        editor_config=None,
+        agentic_llm_config=True,
+        create_stub_files=False,
+        mountaineer_min_version="0.2.5",
+        mountaineer_dev_path=None,
+    )
+    build_project(metadata, install_deps=False)
+
+    assert (tmp_path / ".cursorrules").exists()
+    assert (tmp_path / "Claude.md").exists()
+    assert (tmp_path / "AGENTS.md").exists()

@@ -1,3 +1,4 @@
+# Local development stack for Mountaineer + Postgres
 services:
   webapp:
     build:

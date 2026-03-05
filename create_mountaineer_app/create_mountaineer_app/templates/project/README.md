@@ -10,23 +10,11 @@ Install the dependencies with poetry:
 ```bash
 poetry install
 ```
-
-Then start your server:
-
-```bash
-poetry run runserver
-```
 {% elif package_manager == 'uv' %}
 Install the dependencies with uv:
 
 ```bash
 uv sync
-```
-
-Then start your server:
-
-```bash
-uv run runserver
 ```
 {% else %}
 Create a virtual environment to house the project dependencies. If you've already created an environment through create-mountaineer-app, you can skip this step:
@@ -36,11 +24,62 @@ python -m venv venv
 source venv/bin/activate
 pip install -e .[dev]
 ```
+{% endif %}
+
+Start a local Postgres instance:
+
+```bash
+docker compose up -d postgres
+```
+
+Create database tables (recommended migration flow):
+
+{% if package_manager == 'poetry' %}
+```bash
+poetry run migrate generate --message init
+poetry run migrate apply
+```
+{% elif package_manager == 'uv' %}
+```bash
+uv run migrate generate --message init
+uv run migrate apply
+```
+{% else %}
+```bash
+source venv/bin/activate
+migrate generate --message init
+migrate apply
+```
+{% endif %}
+
+If you prefer a one-shot bootstrap command, `createdb` is still available:
+
+{% if package_manager == 'poetry' %}
+```bash
+poetry run createdb
+```
+{% elif package_manager == 'uv' %}
+```bash
+uv run createdb
+```
+{% else %}
+```bash
+createdb
+```
+{% endif %}
 
 Then start your server:
 
+{% if package_manager == 'poetry' %}
 ```bash
-source venv/bin/activate
+poetry run runserver
+```
+{% elif package_manager == 'uv' %}
+```bash
+uv run runserver
+```
+{% else %}
+```bash
 runserver
 ```
 {% endif %}

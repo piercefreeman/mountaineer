@@ -4,14 +4,23 @@ import { useServer } from "./_server/useServer";
 
 const Home = () => {
   const serverState = useServer();
+  const setupRequired = serverState.setup_required;
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="mx-auto max-w-3xl">
         <h1 className="mb-8 text-4xl font-light tracking-tight text-gray-900">Tasks</h1>
+
+        {setupRequired && (
+          <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-900">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide">Setup Required</h2>
+            <p className="text-sm">{serverState.setup_instructions}</p>
+          </div>
+        )}
         
         <button
-          className="mb-8 inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+          className="mb-8 inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-indigo-300"
+          disabled={setupRequired}
           onClick={async () => {
             await serverState.new_detail({
               signal: undefined,
@@ -47,7 +56,11 @@ const Home = () => {
           
           {serverState.items.length === 0 && (
             <div className="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center">
-              <p className="text-gray-500">No tasks yet. Create your first task to get started!</p>
+              <p className="text-gray-500">
+                {setupRequired
+                  ? "Finish database setup, then create your first task."
+                  : "No tasks yet. Create your first task to get started!"}
+              </p>
             </div>
           )}
         </div>

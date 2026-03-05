@@ -19,6 +19,7 @@ ALLOW_HIDDEN_FILES = {
     # A template .env file is explicitly included in our build logic
     ".env",
     ".gitignore",
+    ".cursorrules",
     ".vimrc",
     ".vscode",
 }
@@ -144,3 +145,9 @@ def build_project(
             editor_template_base = get_template_path("editor_configs") / metadata_path
             copy_source_to_project(editor_template_base, metadata)
             secho(f"Editor config created at {metadata.project_path}", fg="green")
+
+    # Optionally copy agentic LLM configuration files.
+    if metadata.agentic_llm_config:
+        llm_template_base = get_template_path("agentic_configs") / "shared"
+        copy_source_to_project(llm_template_base, metadata)
+        secho(f"Agentic LLM config created at {metadata.project_path}", fg="green")

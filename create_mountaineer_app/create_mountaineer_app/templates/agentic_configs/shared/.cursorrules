@@ -1,0 +1,44 @@
+# Cursor Rules for {{project_name}}
+
+You are working in a Mountaineer app scaffold.
+
+## Codebase Context
+- Backend package: `{{project_name}}/`
+- Controllers: `{{project_name}}/controllers/`
+- Models: `{{project_name}}/models/` (Iceaxe)
+- Frontend: `{{project_name}}/views/` (React/TS)
+- Config: `.env`, `pyproject.toml`, `docker-compose.yml`
+
+## Operational Workflow
+- Start database: `docker compose up -d postgres`
+- Preferred schema flow:
+{% if package_manager == 'poetry' %}
+  - `poetry run migrate generate --message <message>`
+  - `poetry run migrate apply`
+{% elif package_manager == 'uv' %}
+  - `uv run migrate generate --message <message>`
+  - `uv run migrate apply`
+{% else %}
+  - `source venv/bin/activate`
+  - `migrate generate --message <message>`
+  - `migrate apply`
+{% endif %}
+
+## Cursor Behavior Rules
+- Keep edits scoped and avoid unrelated refactors.
+- Use `rg`/`rg --files` for search.
+- Do not run destructive git commands.
+- Preserve existing style and type hints.
+- If modifying DB models, include migration updates.
+
+## Validation
+{% if package_manager == 'poetry' %}
+- `poetry run pytest`
+- `poetry run ruff check .`
+{% elif package_manager == 'uv' %}
+- `uv run pytest`
+- `uv run ruff check .`
+{% else %}
+- `pytest`
+- `ruff check .`
+{% endif %}
