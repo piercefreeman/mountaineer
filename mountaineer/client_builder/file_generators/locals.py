@@ -337,7 +337,7 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         api_import_path = self.get_global_import_path("api.ts")
         links_import_path = self.get_global_import_path("links.ts")
         yield CodeBlock(
-            "import React, { useState } from 'react';",
+            "import React, { useCallback, useMemo, useState } from 'react';",
             f"import {{ applySideEffect }} from '{api_import_path}';",
             f"import LinkGenerator from '{links_import_path}';",
         )
@@ -388,33 +388,61 @@ class LocalUseServerGenerator(LocalGeneratorBase):
             TSLiteral("...serverState"): TSLiteral("...serverState"),
             "linkGenerator": TSLiteral("LinkGenerator"),
         }
+        sideeffect_callback_names = []
 
         for action in controller.all_actions:
-            server_response[TSLiteral(action.name)] = (
-                TSLiteral(f"applySideEffect({action.name}, setControllerState)")
-                if action.action_type == FunctionActionType.SIDEEFFECT
-                else TSLiteral(action.name)
-            )
+            if action.action_type == FunctionActionType.SIDEEFFECT:
+                callback_name = f"{action.name}_callback"
+                sideeffect_callback_names.append(callback_name)
+                server_response[TSLiteral(action.name)] = TSLiteral(callback_name)
+            else:
+                server_response[TSLiteral(action.name)] = TSLiteral(action.name)
 
         response_body = python_payload_to_typescript(server_response)
         # Special case: refactor to an explicit controller property
         server_key = controller.controller.__name__
 
         optional_model_name = f"{render_model}Optional"
+        memo_dependencies = ["serverState", *sideeffect_callback_names]
+        memo_dependencies_block = ", ".join(memo_dependencies)
+
         yield CodeBlock(f"export type {optional_model_name} = Partial<{render_model}>;")
 
-        yield CodeBlock(
+        hook_logic = [
             "export const useServer = (): ServerState => {",
             f"  const [serverState, setServerState] = useState(SERVER_DATA.{server_key} as {render_model});\n",
-            f"  const setControllerState = (payload: {optional_model_name}) => {{",
+            f"  const setControllerState = useCallback((payload: {optional_model_name}) => {{",
             "    setServerState((state) => ({",
             "      ...state,",
             "      ...payload,",
             "    }));",
-            "  };\n",
-            f"  return {response_body}",
-            "};",
+            "  }, []);\n",
+        ]
+
+        for action in controller.all_actions:
+            if action.action_type != FunctionActionType.SIDEEFFECT:
+                continue
+
+            callback_name = f"{action.name}_callback"
+            hook_logic.extend(
+                [
+                    f"  const {callback_name} = useCallback(",
+                    f"    applySideEffect({action.name}, setControllerState),",
+                    "    [setControllerState],",
+                    "  );\n",
+                ]
+            )
+
+        hook_logic.extend(
+            [
+                "  return useMemo(() => {",
+                f"    return {response_body};",
+                f"  }}, [{memo_dependencies_block}]);",
+                "};",
+            ]
         )
+
+        yield CodeBlock(*hook_logic)
 
 
 class LocalIndexGenerator(LocalGeneratorBase):

@@ -258,6 +258,8 @@ class TestLocalUseServerGenerator:
         assert "useServer" in content
         assert "ServerState" in content
         assert "useState" in content
+        assert "useCallback" in content
+        assert "useMemo" in content
         assert "applySideEffect" in content
 
 
