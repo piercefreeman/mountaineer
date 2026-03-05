@@ -1,7 +1,11 @@
+import re
+import subprocess
 import traceback
 from contextlib import contextmanager
+from dataclasses import dataclass
 from multiprocessing import get_start_method, set_start_method
 from os import getenv
+from pathlib import Path
 from time import time
 from typing import Any, Callable, Coroutine
 
@@ -449,3 +453,228 @@ def get_mountaineer_isolated_env(package: str):
 
     with isolate_imports(package, ignored_modules=ignored_modules) as environment:
         yield environment
+
+
+@dataclass
+class LintToolResult:
+    name: str
+    command: list[str]
+    return_code: int
+    stdout: str
+    stderr: str
+    duration_seconds: float
+
+
+def _run_lint_tool(
+    name: str,
+    command: list[str],
+    cwd: Path | None,
+) -> LintToolResult:
+    """
+    Execute a lint tool command and collect normalized output.
+
+    """
+    start = time()
+    try:
+        result = subprocess.run(
+            command,
+            cwd=str(cwd) if cwd else None,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return LintToolResult(
+            name=name,
+            command=command,
+            return_code=result.returncode,
+            stdout=result.stdout or "",
+            stderr=result.stderr or "",
+            duration_seconds=time() - start,
+        )
+    except FileNotFoundError as error:
+        return LintToolResult(
+            name=name,
+            command=command,
+            return_code=127,
+            stdout="",
+            stderr=str(error),
+            duration_seconds=time() - start,
+        )
+
+
+def _extract_lint_diagnostics(tool_name: str, output: str, limit: int = 3) -> list[str]:
+    """
+    Parse a tool output stream into up to `limit` concise diagnostics.
+
+    """
+    diagnostics: list[str] = []
+    seen: set[str] = set()
+    lines = output.splitlines()
+
+    patterns = {
+        "ruff": re.compile(r"^(.+?):(\d+):(\d+): ([A-Z]\d+) (.+)$"),
+        "pyright": re.compile(r"^(.+?):(\d+):(\d+) - (error|warning): (.+)$"),
+        "mypy": re.compile(r"^(.+?):(\d+): (error|note): (.+)$"),
+    }
+    pattern = patterns.get(tool_name)
+
+    if pattern:
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or not pattern.match(stripped):
+                continue
+            if stripped in seen:
+                continue
+            diagnostics.append(stripped)
+            seen.add(stripped)
+            if len(diagnostics) >= limit:
+                return diagnostics
+        if diagnostics:
+            return diagnostics
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped in seen:
+            continue
+        diagnostics.append(stripped)
+        seen.add(stripped)
+        if len(diagnostics) >= limit:
+            break
+
+    return diagnostics
+
+
+def _get_lint_hint(tool_name: str, diagnostic: str) -> str:
+    """
+    Provide action-oriented guidance for common linter errors.
+
+    """
+    normalized = diagnostic.lower()
+
+    if tool_name == "ruff":
+        if "f401" in diagnostic or "unused import" in normalized:
+            return "Remove the unused import, or use it explicitly."
+        if "i001" in diagnostic or "import block is un-sorted" in normalized:
+            return "Run `ruff check --fix` to sort imports consistently."
+        if "t201" in diagnostic:
+            return "Replace `print(...)` with structured logging or remove debug output."
+        return "Run `ruff check --fix` first, then re-run lint to confirm."
+
+    if tool_name in {"pyright", "mypy"}:
+        if "incompatible" in normalized or "cannot assign" in normalized:
+            return "Align value and annotation types, or widen the annotation."
+        if "has no attribute" in normalized:
+            return "Verify object type narrowing and imported symbols before access."
+        if "not defined" in normalized:
+            return "Import or define the symbol in the current module scope."
+        return "Review the type signature and add/adjust annotations to satisfy the checker."
+
+    return "Address the reported issue and rerun lint."
+
+
+def _print_lint_feedback(result: LintToolResult):
+    if result.return_code == 0:
+        return
+
+    if result.return_code == 127:
+        CONSOLE.print(f"[bold yellow]{result.name} guidance[/bold yellow]")
+        CONSOLE.print(f"- `{result.name}` command was not found in the active environment.")
+        CONSOLE.print(
+            f"  likely fix: add `{result.name}` to dev dependencies, then rerun `mountaineer lint`."
+        )
+        return
+
+    combined_output = result.stdout.strip() or result.stderr.strip()
+    if not combined_output:
+        return
+
+    diagnostics = _extract_lint_diagnostics(result.name, combined_output)
+    if not diagnostics:
+        return
+
+    CONSOLE.print(f"[bold yellow]{result.name} guidance[/bold yellow]")
+    for diagnostic in diagnostics:
+        CONSOLE.print(f"- {diagnostic}")
+        CONSOLE.print(f"  likely fix: {_get_lint_hint(result.name, diagnostic)}")
+
+
+def _resolve_default_lint_paths(cwd: Path | None) -> list[str]:
+    """
+    Infer useful default lint targets from package-like directories in cwd.
+
+    This avoids accidentally linting virtual environments when invoked without
+    explicit `--path` arguments.
+
+    """
+    base_path = (cwd or Path.cwd()).resolve()
+    package_paths: list[str] = []
+
+    for child in sorted(base_path.iterdir(), key=lambda path: path.name):
+        if not child.is_dir():
+            continue
+        if child.name.startswith("."):
+            continue
+        if (child / "__init__.py").exists():
+            package_paths.append(child.name)
+
+    return package_paths if package_paths else ["."]
+
+
+def handle_lint(
+    *,
+    paths: list[str] | None = None,
+    fix: bool = False,
+    fast: bool = False,
+    cwd: Path | None = None,
+) -> int:
+    """
+    Run static analysis tools with actionable feedback in a single command.
+
+    :param paths: Optional target paths. Defaults to current directory.
+    :param fix: Apply Ruff autofixes before the regular lint pass.
+    :param fast: Only run Ruff checks.
+    :param cwd: Working directory for running linter commands.
+
+    """
+    target_paths = paths if paths else _resolve_default_lint_paths(cwd)
+    lint_plan: list[tuple[str, list[str]]] = []
+
+    if fix:
+        lint_plan.append(("ruff", ["ruff", "check", "--fix", *target_paths]))
+    lint_plan.append(("ruff", ["ruff", "check", *target_paths]))
+
+    if not fast:
+        lint_plan.extend(
+            [
+                ("pyright", ["pyright", *target_paths]),
+                ("mypy", ["mypy", *target_paths]),
+            ]
+        )
+
+    CONSOLE.print(
+        f"[bold blue]Running lint pipeline[/bold blue] (targets: {', '.join(target_paths)})"
+    )
+
+    results: list[LintToolResult] = []
+    for tool_name, command in lint_plan:
+        result = _run_lint_tool(tool_name, command, cwd)
+        results.append(result)
+
+        status = "[green]PASS[/green]" if result.return_code == 0 else "[red]FAIL[/red]"
+        CONSOLE.print(
+            f"{status} {tool_name} ({result.duration_seconds:.2f}s): {' '.join(command)}"
+        )
+
+        if result.return_code != 0:
+            _print_lint_feedback(result)
+
+    failed_results = [result for result in results if result.return_code != 0]
+    if failed_results:
+        failed_tools = ", ".join(sorted({result.name for result in failed_results}))
+        CONSOLE.print(f"[bold red]Lint failed[/bold red] ({failed_tools})")
+        return 1
+
+    CONSOLE.print("[bold green]Lint passed[/bold green]")
+    return 0
