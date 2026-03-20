@@ -144,7 +144,7 @@ def test_valid_permutations(
         "COMPOSE_PROJECT_NAME": f"test_project-{uuid4()}",
     }
     subprocess.run(
-        ["docker", "compose", "up", "-d", "postgres"],
+        ["docker", "compose", "up", "-d", "--no-build", "postgres"],
         cwd=metadata.project_path,
         check=True,
         capture_output=True,
