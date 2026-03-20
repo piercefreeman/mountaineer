@@ -1,7 +1,7 @@
 import warnings
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
-from inspect import signature
+from inspect import Signature, signature
 from typing import Any, Callable
 
 from fastapi import Request, params as fastapi_params
@@ -152,3 +152,19 @@ def isolate_dependency_only_function(original_fn: Callable):
     mock_fn.__signature__ = sig.replace(parameters=dependency_params.values())  # type: ignore
 
     return mock_fn
+
+
+def strip_depends_from_signature(original_fn: Callable) -> Signature:
+    """
+    Return a copy of the function's signature with all Depends() parameters
+    removed. This is the inverse of isolate_dependency_only_function — it
+    keeps the non-dependency parameters so FastAPI only sees those.
+
+    """
+    sig = signature(original_fn)
+    non_dep_params = [
+        param
+        for name, param in sig.parameters.items()
+        if not isinstance(param.default, fastapi_params.Depends)
+    ]
+    return sig.replace(parameters=non_dep_params)

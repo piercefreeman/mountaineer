@@ -5,7 +5,6 @@ from inspect import (
     isasyncgenfunction,
     isawaitable,
     isgeneratorfunction,
-    signature,
 )
 from json import dumps as json_dumps
 from typing import (
@@ -22,7 +21,7 @@ from typing import (
     overload,
 )
 
-from fastapi import Request, params as fastapi_params
+from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -41,6 +40,7 @@ from mountaineer.constants import STREAM_EVENT_TYPE
 from mountaineer.dependencies.base import (
     get_function_dependencies,
     isolate_dependency_only_function,
+    strip_depends_from_signature,
 )
 from mountaineer.exceptions import APIException
 
@@ -274,12 +274,7 @@ def _build_streaming_signature(func: Callable):
     manual DI resolution can use it.
 
     """
-    sig = signature(func)
-    non_dep_params = [
-        param
-        for name, param in sig.parameters.items()
-        if not isinstance(param.default, fastapi_params.Depends)
-    ]
+    sig = strip_depends_from_signature(func)
 
     # Add a Request parameter that FastAPI will inject automatically.
     # We use a private name to avoid collisions with user params, and
@@ -289,6 +284,5 @@ def _build_streaming_signature(func: Callable):
         kind=Parameter.KEYWORD_ONLY,
         annotation=Request,
     )
-    non_dep_params.append(request_param)
 
-    return sig.replace(parameters=non_dep_params)
+    return sig.replace(parameters=[*sig.parameters.values(), request_param])
