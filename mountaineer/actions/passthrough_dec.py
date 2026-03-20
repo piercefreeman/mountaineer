@@ -1,9 +1,11 @@
 from functools import wraps
 from inspect import (
+    Parameter,
     isasyncgen,
     isasyncgenfunction,
     isawaitable,
     isgeneratorfunction,
+    signature,
 )
 from json import dumps as json_dumps
 from typing import (
@@ -20,6 +22,7 @@ from typing import (
     overload,
 )
 
+from fastapi import Request, params as fastapi_params
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
@@ -35,6 +38,10 @@ from mountaineer.actions.fields import (
     init_function_metadata,
 )
 from mountaineer.constants import STREAM_EVENT_TYPE
+from mountaineer.dependencies.base import (
+    get_function_dependencies,
+    isolate_dependency_only_function,
+)
 from mountaineer.exceptions import APIException
 
 if TYPE_CHECKING:
@@ -150,23 +157,55 @@ def passthrough(*args, **kwargs):  # type: ignore
                     f"Async generator {func} must have a response_model of type AsyncIterator[BaseModel]"
                 )
 
-            @wraps(func)
-            async def inner(self: "ControllerBase", *func_args, **func_kwargs):
-                response = func(self, *func_args, **func_kwargs)
-                if isawaitable(response):
-                    response = await response
+            if isasyncgenfunction(func):
+                # For async generators, we need to manually resolve Depends()
+                # parameters inside the streaming generator to keep them alive
+                # for the full iteration. If FastAPI resolves them, they'll be
+                # cleaned up before Starlette starts consuming the generator.
+                dep_fn = isolate_dependency_only_function(func)
 
-                if raw_response:
-                    return response
+                @wraps(func)
+                async def inner(self: "ControllerBase", *func_args, **func_kwargs):
+                    # Separate out the request object for dependency resolution
+                    request = func_kwargs.pop("__mountaineer_request__", None)
 
-                if isasyncgen(response):
-                    return wrap_passthrough_generator(response)
+                    async def generate():
+                        async with get_function_dependencies(
+                            callable=dep_fn,
+                            request=request,
+                        ) as dep_values:
+                            merged_kwargs = {**func_kwargs, **dep_values}
+                            async for value in func(self, *func_args, **merged_kwargs):
+                                json_payload = value.model_dump(mode="json")
+                                data = json_dumps(dict(passthrough=json_payload))
+                                yield f"data: {data}\n"
 
-                # Following types ignored to support 3.10
-                final_payload: SideeffectResponseBase[Any] = {  # type: ignore
-                    "passthrough": response,
-                }
-                return format_final_action_response(final_payload)  # type: ignore
+                    return StreamingResponse(
+                        generate(), media_type=STREAM_EVENT_TYPE
+                    )
+
+                # Rewrite the signature FastAPI sees: strip Depends() params,
+                # add a Request param so we can forward it for manual DI resolution
+                inner.__signature__ = _build_streaming_signature(func)  # type: ignore
+            else:
+
+                @wraps(func)
+                async def inner(self: "ControllerBase", *func_args, **func_kwargs):
+                    response = func(self, *func_args, **func_kwargs)
+                    if isawaitable(response):
+                        response = await response
+
+                    if raw_response:
+                        return response
+
+                    if isasyncgen(response):
+                        return wrap_passthrough_generator(response)
+
+                    # Following types ignored to support 3.10
+                    final_payload: SideeffectResponseBase[Any] = {  # type: ignore
+                        "passthrough": response,
+                    }
+                    return format_final_action_response(final_payload)  # type: ignore
 
             metadata = init_function_metadata(inner, FunctionActionType.PASSTHROUGH)
             metadata.passthrough_model = passthrough_model
@@ -210,3 +249,32 @@ def wrap_passthrough_generator(generator: AsyncIterator[BaseModel]):
             yield f"data: {data}\n"
 
     return StreamingResponse(generate(), media_type=STREAM_EVENT_TYPE)
+
+
+def _build_streaming_signature(func: Callable):
+    """
+    Build a signature for the FastAPI-facing wrapper of a streaming async generator.
+
+    Strips all Depends() parameters (they'll be resolved manually inside the generator)
+    and adds a Request parameter that gets forwarded as __mountaineer_request__ so the
+    manual DI resolution can use it.
+
+    """
+    sig = signature(func)
+    non_dep_params = [
+        param
+        for name, param in sig.parameters.items()
+        if not isinstance(param.default, fastapi_params.Depends)
+    ]
+
+    # Add a Request parameter that FastAPI will inject automatically.
+    # We use a private name to avoid collisions with user params, and
+    # alias it in the wrapper via **func_kwargs.
+    request_param = Parameter(
+        "__mountaineer_request__",
+        kind=Parameter.KEYWORD_ONLY,
+        annotation=Request,
+    )
+    non_dep_params.append(request_param)
+
+    return sig.replace(parameters=non_dep_params)
