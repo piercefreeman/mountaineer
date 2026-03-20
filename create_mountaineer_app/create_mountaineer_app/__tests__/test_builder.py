@@ -144,9 +144,10 @@ def test_valid_permutations(
         "COMPOSE_PROJECT_NAME": f"test_project-{uuid4()}",
     }
     subprocess.run(
-        ["docker", "compose", "up", "-d"],
+        ["docker", "compose", "up", "-d", "postgres"],
         cwd=metadata.project_path,
         check=True,
+        capture_output=True,
         env=docker_compose_env,
     )
 
@@ -224,6 +225,7 @@ def test_valid_permutations(
             ["docker", "compose", "down"],
             cwd=metadata.project_path,
             check=True,
+            capture_output=True,
             env=docker_compose_env,
         )
         secho("Docker shut down successfully.")
