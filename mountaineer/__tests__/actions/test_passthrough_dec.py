@@ -5,6 +5,7 @@ from typing import Any, AsyncIterator, Iterator, cast
 
 import mypy.api
 import pytest
+from fastapi import Depends
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -206,6 +207,67 @@ async def test_can_call_iterable():
         'data: {"passthrough": {"value": "Hello"}}',
         'data: {"passthrough": {"value": "World"}}',
     ]
+
+
+def test_streaming_with_depends_keeps_dependency_alive():
+    """
+    Verify that Depends() parameters in streaming async generators stay alive
+    for the full duration of iteration, not just the initial function call.
+
+    This tests the core fix: dependencies are resolved manually inside the
+    generator's context, not by FastAPI's DI (which would clean them up
+    before Starlette starts consuming the streaming response).
+    """
+    cleanup_called = False
+
+    async def get_managed_resource():
+        resource = {"alive": True, "values": [1, 2, 3]}
+        try:
+            yield resource
+        finally:
+            nonlocal cleanup_called
+            resource["alive"] = False
+            cleanup_called = True
+
+    class IterableWithDepsController(ControllerBase):
+        url = "/example_deps"
+        view_path = "/test.tsx"
+
+        async def render(self) -> None:
+            pass
+
+        @passthrough
+        async def stream_with_dep(
+            self,
+            resource: dict = Depends(get_managed_resource),
+        ) -> AsyncIterator[ExampleModel]:
+            for val in resource["values"]:
+                # The resource must still be alive during iteration
+                assert resource["alive"], "Resource was cleaned up during streaming!"
+                yield ExampleModel(value=str(val))
+
+    app = AppController(view_root=Path())
+    controller = IterableWithDepsController()
+    app.register(controller)
+
+    controller_definition = app.graph.get_definitions_for_cls(controller.__class__)[0]
+    passthrough_url = controller_definition.get_url_for_metadata(
+        get_function_metadata(controller.stream_with_dep)
+    )
+
+    client = TestClient(app.app)
+    lines: list[str] = []
+    with client.stream("POST", passthrough_url, json={}) as response:
+        for line in response.iter_lines():
+            lines.append(line)
+
+    assert lines == [
+        'data: {"passthrough": {"value": "1"}}',
+        'data: {"passthrough": {"value": "2"}}',
+        'data: {"passthrough": {"value": "3"}}',
+    ]
+    # Cleanup should have happened after streaming completed
+    assert cleanup_called
 
 
 @pytest.mark.asyncio
