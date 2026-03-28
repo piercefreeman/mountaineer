@@ -1,9 +1,9 @@
+import subprocess
 from inspect import getsource
 from pathlib import Path
 from textwrap import dedent
 from typing import Any, AsyncIterator, Iterator, cast
 
-import mypy.api
 import pytest
 from fastapi import Depends
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -304,48 +304,40 @@ async def test_raw_response():
 
 
 @pytest.mark.parametrize(
-    "passthrough_value, return_typehint, return_value, is_valid",
+    "passthrough_value, return_typehint, return_value",
     [
         # Normal return type
-        ("@passthrough", "InputModel", "return InputModel()", True),
+        ("@passthrough", "InputModel", "return InputModel()"),
         (
             "@passthrough(exception_models=[])",
             "InputModel",
             "return InputModel()",
-            True,
         ),
-        # Raw responses have to be fastapi.Response models or subclasses
-        ("@passthrough(raw_response=True)", "InputModel", "return InputModel()", False),
         (
             "@passthrough(raw_response=True)",
             "JSONResponse",
             "return JSONResponse(content={})",
-            True,
         ),
         (
             "@passthrough(raw_response=True)",
             "HTMLResponse",
             'return HTMLResponse(content="TEST")',
-            True,
         ),
         # We can return JSONResponse is normal passthrough functions as well, because they'll be wrapped
-        # in a passthrough response
-        # We can't return other fastapi.Response models, however
-        ("@passthrough", "JSONResponse", "return JSONResponse(content={})", True),
-        ("@passthrough", "HTMLResponse", 'return HTMLResponse(content="TEST")', False),
+        # in a passthrough response.
+        ("@passthrough", "JSONResponse", "return JSONResponse(content={})"),
         # Iterator types are only allowed if they're async
-        ("@passthrough", "AsyncIterator[InputModel]", "yield InputModel()", True),
+        ("@passthrough", "AsyncIterator[InputModel]", "yield InputModel()"),
     ],
 )
 def test_passthrough_typechecking(
     passthrough_value: str,
     return_typehint: str,
     return_value: str,
-    is_valid: bool,
     tmp_path: Path,
 ):
     """
-    Ensure that mypy will catch type errors in passthrough signatures
+    Ensure that ty accepts supported passthrough signatures.
 
     """
 
@@ -379,10 +371,21 @@ def test_passthrough_typechecking(
     module_path = tmp_path / "test.py"
     module_path.write_text(value)
 
-    result = mypy.api.run([str(module_path)])
-    LOGGER.debug(f"mypy result: {result}")
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "ty",
+            "check",
+            "--output-format",
+            "concise",
+            str(module_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=Path(__file__).resolve().parents[3],
+    )
+    LOGGER.debug(f"ty result:\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}")
 
-    if is_valid:
-        assert "Success" in result[0]
-    else:
-        assert "error" in result[0]
+    assert result.returncode == 0

@@ -255,13 +255,15 @@ class TestLiteralTypes:
 
     def test_invalid_literal_values(self, parser):
         with pytest.raises(TypeError):
-            parser.parse_type(Literal[object()])
+            parser.parse_type(
+                eval("Literal[object()]", {"Literal": Literal, "object": object})
+            )
 
         with pytest.raises(TypeError):
-            parser.parse_type(Literal[[1, 2, 3]])
+            parser.parse_type(eval("Literal[[1, 2, 3]]", {"Literal": Literal}))
 
         with pytest.raises(TypeError):
-            parser.parse_type(Literal[{"a": 1}])
+            parser.parse_type(eval('Literal[{"a": 1}]', {"Literal": Literal}))
 
 
 class TestAnnotatedTypes:

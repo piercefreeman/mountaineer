@@ -13,17 +13,14 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "mypy>=1.15.0",
-    "pyright>=1.1.396",
     "pytest>=8.3.5",
     "ruff>=0.10.0",
+    "ty>=0.0.26",
     "types-toml>=0.10.8.20240310",
 ]
 
-[tool.mypy]
-warn_return_any = true
-warn_unused_configs = true
-check_untyped_defs = true
+[tool.ty.src]
+include = ["scripts"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

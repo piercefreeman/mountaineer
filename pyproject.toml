@@ -51,23 +51,12 @@ cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs
 #python-packages = ["mountaineer"]
 #python-source = "src"
 
-[tool.mypy]
-warn_return_any = true
-warn_unused_configs = true
-check_untyped_defs = true
-plugins = ["pydantic.mypy"]
+[tool.ty.src]
+include = ["mountaineer"]
 
-[[tool.mypy.overrides]]
-module = "ci_webapp.*"
-ignore_missing_imports = true
-
-[tool.pydantic-mypy]
-init_forbid_extra = true
-init_typed = true
-warn_required_dynamic_aliases = true
-
-[tool.pyright]
-exclude = ["**/ci_webapp"]
+[tool.ty.rules]
+"deprecated" = "ignore"
+"unused-type-ignore-comment" = "ignore"
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
@@ -85,9 +74,7 @@ addopts = "-m 'not integration_tests'"
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
-    "mypy>=1.15.0",
     "pyinstrument>=5.0.1",
-    "pyright>=1.1.396",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.25.3",
     "python-multipart>=0.0.20",
@@ -98,5 +85,6 @@ dev = [
     "types-setuptools>=76.0.0.20250313",
     "types-toml>=0.10.8.20240310",
     "types-tqdm>=4.67.0.20250301",
+    "ty>=0.0.26",
     "maturin>=1.0,<2.0"
 ]

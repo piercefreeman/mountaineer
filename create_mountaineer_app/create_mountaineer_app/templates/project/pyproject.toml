@@ -17,25 +17,25 @@ dependencies = [
 
 {% if package_manager == "poetry" %}
 [tool.poetry.group.dev.dependencies]
-pyright = ">=1.1.400"
 pytest = ">=8.3.5"
 pytest-asyncio = ">=0.26.0"
 ruff = ">=0.11.9"
+ty = ">=0.0.26"
 {% elif package_manager == "venv" %}
 [project.optional-dependencies]
 dev = [
-    "pyright>=1.1.400",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
     "ruff>=0.11.9",
+    "ty>=0.0.26",
 ]
 {% else %}
 [dependency-groups]
 dev = [
-    "pyright>=1.1.400",
     "pytest>=8.3.5",
     "pytest-asyncio>=0.26.0",
     "ruff>=0.11.9",
+    "ty>=0.0.26",
 ]
 {% endif %}
 
@@ -48,17 +48,11 @@ build-backend = "setuptools.build_meta"
     "views/**/*"
 ]
 
+[tool.ty.src]
+include = ["{{ project_name }}"]
+
 [project.scripts]
 runserver = "{{ project_name }}.cli:runserver"
 watch = "{{ project_name }}.cli:watch"
 build = "{{ project_name }}.cli:build"
 createdb = "{{ project_name }}.cli:createdb"
-
-[tool.mypy]
-plugins = ["pydantic.mypy"]
-
-{% if editor_config == 'zed' %}
-[tool.pyright]
-venvPath = "{{venv_name}}"
-venv = "{{venv_name}}"
-{% endif %}

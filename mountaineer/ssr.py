@@ -191,7 +191,7 @@ def find_tsconfig(paths: list[list[str]]) -> str | None:
     :param paths: List of lists of file paths to search from
     :return: Path to tsconfig.json if found, None otherwise
     """
-    tsconfig_paths = set()
+    tsconfig_paths: set[str] = set()
 
     # For each group of paths
     for path_group in paths:
@@ -212,7 +212,7 @@ def find_tsconfig(paths: list[list[str]]) -> str | None:
         return None
 
     # Return the tsconfig.json closest to the original file
-    return min(tsconfig_paths, key=len)
+    return cast(str, min(tsconfig_paths, key=len))
 
 
 @extended_lru_cache(maxsize=128, max_size_mb=5)

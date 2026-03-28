@@ -116,10 +116,8 @@ define lint-common
 	@echo "\n=== Running Python linting for $(2) ==="
 	@(cd $(1) && uv run ruff format $(2))
 	@(cd $(1) && uv run ruff check --fix $(2))
-	@echo "\n=== Running mypy for $(2) ==="
-	@(cd $(1) && uv run mypy $(2))
-	@echo "\n=== Running pyright for $(2) ==="
-	@(cd $(1) && uv run pyright $(2))
+	@echo "\n=== Running ty for $(2) ==="
+	@(cd $(1) && uv run ty check --force-exclude)
 	@echo "=== Python linting completed successfully for $(2) ==="
 endef
 
@@ -128,10 +126,8 @@ define lint-validation-common
 	@echo "\n=== Running Python lint validation for $(2) ==="
 	@(cd $(1) && uv run ruff format --check $(2))
 	@(cd $(1) && uv run ruff check $(2))
-	@echo "\n=== Running mypy validation for $(2) ==="
-	@(cd $(1) && uv run mypy $(2))
-	@echo "\n=== Running pyright validation for $(2) ==="
-	@(cd $(1) && uv run pyright $(2))
+	@echo "\n=== Running ty validation for $(2) ==="
+	@(cd $(1) && uv run ty check --force-exclude)
 	@echo "=== Python lint validation completed successfully for $(2) ==="
 endef
 

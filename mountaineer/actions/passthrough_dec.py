@@ -221,6 +221,12 @@ def _build_streaming_inner(func: Callable) -> Callable:
 
     # Rewrite the signature FastAPI sees: strip Depends() params,
     # add a Request param so we can forward it for manual DI resolution
+    #
+    # FastAPI 0.135+ unwraps decorated callables when deciding whether an
+    # endpoint is an async generator. If we leave __wrapped__ in place, it sees
+    # the original async generator and bypasses this wrapper entirely, treating
+    # the StreamingResponse-producing endpoint as a JSONL stream.
+    del inner.__wrapped__
     inner.__signature__ = _build_streaming_signature(func)  # type: ignore
     return inner
 

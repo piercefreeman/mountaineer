@@ -30,7 +30,7 @@ class ReturnModelMetaclass(ModelMetaclass):
 
     if not TYPE_CHECKING:  # pragma: no branch
         # Following the lead of the pydantic superclass, we wrap with a non-TYPE_CHECKING
-        # block: "otherwise mypy allows arbitrary attribute access""
+        # block so static analyzers do not treat arbitrary class attributes as valid.
 
         def __new__(
             self,
