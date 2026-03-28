@@ -15,13 +15,7 @@ dependencies = [
     "iceaxe>=0.5.0"
 ]
 
-{% if package_manager == "poetry" %}
-[tool.poetry.group.dev.dependencies]
-pytest = ">=8.3.5"
-pytest-asyncio = ">=0.26.0"
-ruff = ">=0.11.9"
-ty = ">=0.0.26"
-{% elif package_manager == "venv" %}
+{% if package_manager == "venv" %}
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3.5",

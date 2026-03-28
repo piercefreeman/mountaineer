@@ -321,7 +321,7 @@ def resolve_package_path(package_name: str):
     def normalize_package(package: str):
         return package.replace("-", "_").lower()
 
-    # Recent versions of poetry install development packages (-e .) as direct URLs
+    # Editable installs commonly register development packages (-e .) as direct URLs
     # https://the-hitchhikers-guide-to-packaging.readthedocs.io/en/latest/introduction.html
     # "Path configuration files have an extension of .pth, and each line must
     # contain a single path that will be appended to sys.path."

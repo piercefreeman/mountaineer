@@ -89,58 +89,15 @@ def test_format_python_version(input_version, expected):
 
 def test_update_version_python(tmp_path: Path):
     pyproject_text = """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.1.0"
-        description = ""
-        readme = "README.md"
-
-        [tool.poetry.dependencies]
-        uvicorn = { extras = ["standard"], version = "^0.27.0.post1" }
-        fastapi = "^0.68.0"
-        """
-
-    pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_text(pyproject_text)
-
-    with change_pwd(tmp_path):
-        update_version_python("0.2.0")
-
-    assert toml.loads(pyproject_path.read_text()) == {
-        "tool": {
-            "poetry": {
-                "name": "mountaineer",
-                "version": "0.2.0",
-                "description": "",
-                "readme": "README.md",
-                "dependencies": {
-                    "uvicorn": {
-                        "extras": ["standard"],
-                        "version": "^0.27.0.post1",
-                    },
-                    "fastapi": "^0.68.0",
-                },
-            },
-        },
-    }
-
-
-def test_update_version_python_with_project_version(tmp_path: Path):
-    pyproject_text = """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.1.0"
-        description = ""
-        readme = "README.md"
-
         [project]
         name = "mountaineer"
         version = "0.1.0"
         description = ""
-
-        [tool.poetry.dependencies]
-        uvicorn = { extras = ["standard"], version = "^0.27.0.post1" }
-        fastapi = "^0.68.0"
+        readme = "README.md"
+        dependencies = [
+            "uvicorn[standard]>=0.27.0.post1",
+            "fastapi>=0.68.0",
+        ]
         """
 
     pyproject_path = tmp_path / "pyproject.toml"
@@ -150,25 +107,15 @@ def test_update_version_python_with_project_version(tmp_path: Path):
         update_version_python("0.2.0")
 
     assert toml.loads(pyproject_path.read_text()) == {
-        "tool": {
-            "poetry": {
-                "name": "mountaineer",
-                "version": "0.2.0",
-                "description": "",
-                "readme": "README.md",
-                "dependencies": {
-                    "uvicorn": {
-                        "extras": ["standard"],
-                        "version": "^0.27.0.post1",
-                    },
-                    "fastapi": "^0.68.0",
-                },
-            },
-        },
         "project": {
             "name": "mountaineer",
             "version": "0.2.0",
             "description": "",
+            "readme": "README.md",
+            "dependencies": [
+                "uvicorn[standard]>=0.27.0.post1",
+                "fastapi>=0.68.0",
+            ],
         },
     }
 
@@ -196,36 +143,11 @@ def test_update_version_python_only_project(tmp_path: Path):
     }
 
 
-def test_update_version_python_only_poetry(tmp_path: Path):
-    pyproject_text = """
-        [tool.poetry]
-        name = "mountaineer"
-        version = "0.1.0"
-        description = ""
-        """
-
-    pyproject_path = tmp_path / "pyproject.toml"
-    pyproject_path.write_text(pyproject_text)
-
-    with change_pwd(tmp_path):
-        update_version_python("0.2.0")
-
-    assert toml.loads(pyproject_path.read_text()) == {
-        "tool": {
-            "poetry": {
-                "name": "mountaineer",
-                "version": "0.2.0",
-                "description": "",
-            },
-        },
-    }
-
-
-def test_update_version_python_no_version_sections(tmp_path: Path, capsys):
+def test_update_version_python_missing_project_version(tmp_path: Path, capsys):
     pyproject_text = """
         [build-system]
-        requires = ["poetry-core"]
-        build-backend = "poetry.core.masonry.build"
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
         """
 
     pyproject_path = tmp_path / "pyproject.toml"
@@ -236,12 +158,12 @@ def test_update_version_python_no_version_sections(tmp_path: Path, capsys):
 
     # Verify the warning was printed
     captured = capsys.readouterr()
-    assert "Neither [tool.poetry] nor [project] sections found" in captured.out
+    assert "[project.version] not found" in captured.out
 
     # Verify the file wasn't modified
     assert toml.loads(pyproject_path.read_text()) == {
         "build-system": {
-            "requires": ["poetry-core"],
-            "build-backend": "poetry.core.masonry.build",
+            "requires": ["hatchling"],
+            "build-backend": "hatchling.build",
         },
     }

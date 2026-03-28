@@ -32,10 +32,6 @@ def create_test_pyproject_toml(project_path: Path) -> None:
             "pytest>=7.0.0",
             "black>=22.0.0",
         ]
-
-        [tool.poetry.group.dev.dependencies]
-        pytest = ">=7.0.0"
-        black = ">=22.0.0"
     """).strip()
 
     pyproject_path = project_path / "pyproject.toml"
@@ -44,7 +40,7 @@ def create_test_pyproject_toml(project_path: Path) -> None:
     # Also create a minimal setup.py for setuptools compatibility
     setup_py_content = dedent("""
         from setuptools import setup, find_packages
-        
+
         setup(
             name="test_project",
             packages=find_packages(),

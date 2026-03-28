@@ -91,7 +91,7 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         if not key.startswith("VIRTUAL_ENV")
     }
 
-    # We need to poetry install the packages at the new path
+    # Sync the packages at the new path before starting the fixture app.
     return_code = Popen(["uv", "sync"], cwd=tmp_ci_webapp, env=uv_env).wait()
     assert return_code == 0
 

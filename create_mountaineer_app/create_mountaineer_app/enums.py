@@ -4,7 +4,6 @@ from enum import Enum
 
 class PackageManager(str, Enum):
     UV = "uv"
-    POETRY = "poetry"
     VENV = "venv"
 
 

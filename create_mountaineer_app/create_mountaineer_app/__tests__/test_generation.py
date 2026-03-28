@@ -10,7 +10,7 @@ def test_path_url_replacement():
         project_name="TEST_PROJECT_NAME",
         author_name="TEST_AUTHOR",
         author_email="TEST_EMAIL",
-        package_manager=PackageManager.POETRY,
+        package_manager=PackageManager.UV,
         use_tailwind=True,
         editor_config=None,
         create_stub_files=True,

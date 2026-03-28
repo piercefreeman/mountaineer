@@ -23,8 +23,8 @@ RUN apt-get update && apt-get install -y \
 # Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
-# Install Poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install Node.js using NVM
 ENV NVM_DIR="/root/.nvm"
@@ -37,7 +37,7 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | b
     && ln -s "$NVM_DIR/versions/node/$(nvm current)/bin/node" /usr/bin/node \
     && ln -s "$NVM_DIR/versions/node/$(nvm current)/bin/npm" /usr/bin/npm
 
-# Adjust PATH to include the Cargo bin directory for Rust and local Poetry binaries
+# Adjust PATH to include the Cargo bin directory and local uv binaries
 ENV PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
 
 # Verify installations

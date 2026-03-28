@@ -60,24 +60,11 @@ def update_version_python(new_version: str):
     # Parse the new version to ensure it's valid and potentially reformat
     python_version = format_python_version(new_version)
 
-    updated = False
-
-    # Update poetry version if it exists
-    if "tool" in filedata and "poetry" in filedata["tool"]:
-        filedata["tool"]["poetry"]["version"] = python_version
-        updated = True
-
-    # Update project.version if it exists
-    if "project" in filedata and "version" in filedata["project"]:
-        filedata["project"]["version"] = python_version
-        updated = True
-
-    if not updated:
-        print(  # noqa: T201
-            "Warning: Neither [tool.poetry] nor [project] sections found in pyproject.toml"
-        )
+    if "project" not in filedata or "version" not in filedata["project"]:
+        print("Warning: [project.version] not found in pyproject.toml")  # noqa: T201
         return
 
+    filedata["project"]["version"] = python_version
     pyproject_path.write_text(toml.dumps(filedata))
 
 

@@ -94,12 +94,12 @@ ipython_config.py
 #   install all needed dependencies.
 #Pipfile.lock
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
+# uv
+#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
 #   This is especially recommended for binary packages to ensure reproducibility, and is more
 #   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
+#   https://docs.astral.sh/uv/concepts/projects/layout/#the-lockfile
+#uv.lock
 
 # pdm
 #   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
@@ -175,7 +175,7 @@ _metadata
 
 # Ignore template files that might be used locally for testing
 # but shouldn't be added to the downstream templates
-**/create_mountaineer_app/templates/poetry.lock
+**/create_mountaineer_app/templates/uv.lock
 
 .DS_Store
 
