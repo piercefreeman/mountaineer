@@ -614,7 +614,7 @@ class ControllerParser:
         # Analyze all body parameters
         for body_param in route.dependant.body_params:
             field_info = body_param.field_info
-            field_type = body_param.field_info.annotation
+            field_type = field_info.annotation
 
             # Handle Pydantic models
             if isinstance(field_type, type) and issubclass(field_type, BaseModel):
