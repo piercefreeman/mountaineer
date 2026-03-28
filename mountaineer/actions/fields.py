@@ -74,7 +74,7 @@ else:
 
 T = ParamSpec("T")
 R = TypeVar("R")
-C = TypeVar("C", covariant=True)
+C = TypeVar("C")
 
 
 class SideeffectWrappedCallable(Protocol[C, T, R]):

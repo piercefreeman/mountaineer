@@ -50,7 +50,11 @@ class SyntheticVarInserter(ast.NodeTransformer):
 
         if isinstance(node.value, ast.Dict):  # Direct dictionary returns
             for i, (key, value) in enumerate(zip(node.value.keys, node.value.values)):
-                key_str = key.value if isinstance(key, ast.Constant) else None
+                key_str = (
+                    key.value
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                    else None
+                )
                 if key_str:
                     assign, synthetic_var_name = self.create_synthetic_assign(
                         key_str, value
