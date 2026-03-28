@@ -51,9 +51,12 @@ class InterfaceBase:
             return "any"
 
     @classmethod
-    def _map_primitive_type_to_typescript(cls, py_type: type) -> str | None:
+    def _map_primitive_type_to_typescript(cls, py_type: type[Any] | None) -> str | None:
         """Map Python types to TypeScript types"""
-        type_map = {
+        if py_type is None:
+            return "null"
+
+        type_map: dict[type[Any], str] = {
             str: "string",
             int: "number",
             float: "number",
@@ -64,7 +67,6 @@ class InterfaceBase:
             time: "string",
             UploadFile: "Blob",
             UUID: "string",
-            None: "null",
             NoneType: "null",
             Any: "any",
         }

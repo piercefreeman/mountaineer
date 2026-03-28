@@ -121,7 +121,7 @@ def benchmark_function(
             except ExecutionTooLong as e:
                 LOGGER.error(f"Test function failed due to: {e}")
 
-                # This should already be true, but we want to be explicit to help mypy
+                # This should already be true, but we want the type narrowed explicitly.
                 assert average_duration is not None
 
                 profiler = pyinstrument.Profiler()

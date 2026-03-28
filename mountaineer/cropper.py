@@ -8,7 +8,8 @@ import ast
 import inspect
 from copy import copy
 from textwrap import dedent
-from typing import Any, Callable
+from types import FunctionType, MethodType
+from typing import Any, cast
 
 from pydantic import BaseModel
 
@@ -246,7 +247,9 @@ def reduce_function_to_keys(
 
 
 def crop_function_for_return_keys(
-    func: Callable, keys: list[str], locals: dict[str, Any] | None = None
+    func: FunctionType | MethodType,
+    keys: list[str],
+    locals: dict[str, Any] | None = None,
 ):
     """
     Performs static analysis on the given function. Expects this function to either return
@@ -262,11 +265,15 @@ def crop_function_for_return_keys(
             conditional input variables.
 
     """
-    source = inspect.getsource(func)
+    function = cast(
+        FunctionType,
+        func.__func__ if inspect.ismethod(func) else func,
+    )
+    source = inspect.getsource(function)
     dedented_source = dedent(source)
     tree = ast.parse(dedented_source)
 
-    isolated_namespace = func.__globals__.copy()
+    isolated_namespace = function.__globals__.copy()
     if locals:
         isolated_namespace.update(locals)
 
@@ -299,4 +306,4 @@ def crop_function_for_return_keys(
 
     exec(code, isolated_namespace)
 
-    return isolated_namespace[func.__name__]
+    return isolated_namespace[function.__name__]

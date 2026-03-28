@@ -10,6 +10,7 @@ from inspect import (
     ismethod,
 )
 from json import loads as json_loads
+from types import FunctionType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -23,6 +24,7 @@ from typing import (
     Type,
     TypedDict,
     TypeVar,
+    cast,
     get_args,
     get_origin,
 )
@@ -207,27 +209,34 @@ class FunctionMetadata(BaseModel):
 METADATA_ATTRIBUTE = "_mountaineer_metadata"
 
 
-def init_function_metadata(fn: Callable, action_type: FunctionActionType):
+def _resolve_function(fn: Callable[..., Any]) -> FunctionType:
     if ismethod(fn):
-        fn = fn.__func__  # type: ignore
+        return cast(FunctionType, fn.__func__)
+    if isinstance(fn, FunctionType):
+        return fn
+    raise TypeError(f"Expected a function or bound method, got {type(fn)!r}")
 
-    function_name = fn.__name__
-    metadata = FunctionMetadata(function_name=function_name, action_type=action_type)
-    setattr(fn, METADATA_ATTRIBUTE, metadata)
+
+def init_function_metadata(fn: Callable[..., Any], action_type: FunctionActionType):
+    function = _resolve_function(fn)
+    metadata = FunctionMetadata(
+        function_name=function.__name__,
+        action_type=action_type,
+    )
+    setattr(function, METADATA_ATTRIBUTE, metadata)
     return metadata
 
 
-def get_function_metadata(fn: Callable) -> FunctionMetadata:
-    if ismethod(fn):
-        fn = fn.__func__  # type: ignore
+def get_function_metadata(fn: Callable[..., Any]) -> FunctionMetadata:
+    function = _resolve_function(fn)
 
-    if not hasattr(fn, METADATA_ATTRIBUTE):
-        raise AttributeError(f"Function {fn.__name__} does not have metadata")
+    if not hasattr(function, METADATA_ATTRIBUTE):
+        raise AttributeError(f"Function {function.__name__} does not have metadata")
 
-    metadata = getattr(fn, METADATA_ATTRIBUTE)
+    metadata = getattr(function, METADATA_ATTRIBUTE)
 
     if not isinstance(metadata, FunctionMetadata):
-        raise AttributeError(f"Function {fn.__name__} has invalid metadata")
+        raise AttributeError(f"Function {function.__name__} has invalid metadata")
 
     return metadata
 
@@ -255,7 +264,7 @@ def fuse_metadata_to_response_typehint(
     sideeffect_model: Type[BaseModel] | None = None
 
     base_response_name = camelize(metadata.function_name) + "ResponseWrapped"
-    base_response_params = {}
+    base_response_params: dict[str, Any] = {}
 
     # Prefer the location of the concrete controller when defining the model, since a render function
     # could be imported by multiple controllers
@@ -288,14 +297,15 @@ def fuse_metadata_to_response_typehint(
                 raise ValueError(
                     f"Reload states {reload_classes} do not align to response model {render_model}"
                 )
+            sideeffect_fields: dict[str, Any] = {
+                field_name: (field_definition.annotation, field_definition)
+                for field_name, field_definition in render_model.model_fields.items()
+                if field_name in reload_keys
+            }
             sideeffect_model = create_model(
                 base_response_name + "SideEffectWrapped",
                 __module__=base_module,
-                **{
-                    field_name: (field_definition.annotation, field_definition)  # type: ignore
-                    for field_name, field_definition in render_model.model_fields.items()
-                    if field_name in reload_keys
-                },
+                **sideeffect_fields,
             )
 
     if passthrough_model:
@@ -313,7 +323,7 @@ def fuse_metadata_to_response_typehint(
     model: Type[BaseModel] = create_model(
         base_response_name,
         __module__=base_module,
-        **base_response_params,  # type: ignore
+        **base_response_params,
     )
 
     return model

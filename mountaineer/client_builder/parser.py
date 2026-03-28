@@ -7,9 +7,11 @@ from typing import (
     Callable,
     Generator,
     Optional,
+    Sequence,
     Type,
     TypeVar,
     Union,
+    cast,
 )
 
 from fastapi import APIRouter
@@ -63,7 +65,7 @@ class CoreWrapper:
 @dataclass
 class FieldWrapper:
     name: str
-    value: Union["ModelWrapper", "EnumWrapper", "TypeDefinition", type]
+    value: Union["ModelWrapper", "EnumWrapper", "TypeDefinition", "SelfReference", type]
     required: bool
 
 
@@ -248,7 +250,7 @@ class ControllerWrapper(CoreWrapper):
     def _traverse_iterator(
         cls,
         logic: Callable[[T | Any], Generator[T | Any, None, None]],
-        initial_queue: list[T],
+        initial_queue: Sequence[T],
     ):
         """
         Memory-identity traversal, only will traverse each unique object once.
@@ -271,7 +273,7 @@ class ControllerWrapper(CoreWrapper):
         ```
 
         """
-        queue = copy(initial_queue)
+        queue = list(initial_queue)
         already_seen: set[int] = set()
         while queue:
             item = queue.pop(0)
@@ -318,13 +320,16 @@ class ControllerParser:
 
         # Get all valid superclasses in MRO order. Include any controller that is either explicitly a subclass
         # of ControllerBase or has client functions defined on it.
-        controller_classes = self._get_valid_parent_classes(
-            controller,
-            base_require_predicate=lambda base: (
-                issubclass(base, ControllerBase)
-                or len(list(get_client_functions_cls(base))) > 0
+        controller_classes = cast(
+            list[type[ControllerBase]],
+            self._get_valid_parent_classes(
+                controller,
+                base_require_predicate=lambda base: (
+                    issubclass(base, ControllerBase)
+                    or len(list(get_client_functions_cls(base))) > 0
+                ),
+                base_exclude_classes=(ControllerBase, LayoutControllerBase),
             ),
-            base_exclude_classes=(ControllerBase, LayoutControllerBase),
         )
 
         # Get render model from the concrete controller
@@ -361,8 +366,13 @@ class ControllerParser:
             return self.parsed_models[model]
 
         # Get all valid superclasses in MRO order, excluding BaseModel and above
-        model_classes = self._get_valid_parent_classes(
-            model, base_require=BaseModel, base_exclude_classes=(BaseModel, RenderBase)
+        model_classes = cast(
+            list[type[BaseModel]],
+            self._get_valid_parent_classes(
+                model,
+                base_require=BaseModel,
+                base_exclude_classes=(BaseModel, RenderBase),
+            ),
         )
 
         # Parse direct superclasses (excluding the model itself)
@@ -437,7 +447,7 @@ class ControllerParser:
 
         return FieldWrapper(
             name=name,
-            value=root_definition,  # type: ignore
+            value=root_definition,
             required=field_info.is_required(),
         )
 
@@ -515,30 +525,31 @@ class ControllerParser:
             # on the synthetically created generic subclass, all of the annotations should be resolved
             # to real types by this point
             parent_owned_fields = generic_origin.__dict__.get("__annotations__", {})
+            generic_field_definitions: dict[str, Any] = {
+                # Since we're modifying the annotation types, we need to copy the full
+                # field_info since .annotation will be set on the new model. Without a copy
+                # it will affect the original model's state.
+                field_name: (field_info.annotation, copy(field_info))
+                for field_name, field_info in model.model_fields.items()
+                if field_name in parent_owned_fields
+            }
 
-            return create_model(  # type: ignore
+            return create_model(
                 model.__name__,
                 __config__=model.model_config,
-                **{
-                    # Since we're modifying the annotation types, we need to copy the full
-                    # field_info since .annotation will be set on the new model. Without a copy
-                    # it will affect the original model's state.
-                    field_name: (field_info.annotation, copy(field_info))  # type: ignore
-                    for field_name, field_info in model.model_fields.items()
-                    if field_name in parent_owned_fields
-                },
+                **generic_field_definitions,
             )
         else:
             # Regular model - use original logic
-            include_fields = {
+            include_fields: dict[str, Any] = {
                 field_name: (field_info.annotation, field_info)
                 for field_name, field_info in model.model_fields.items()
                 if field_name in model.__dict__.get("__annotations__", {})
             }
-            return create_model(  # type: ignore
+            return create_model(
                 model.__name__,
                 __config__=model.model_config,
-                **include_fields,  # type: ignore
+                **include_fields,
             )
 
     def _create_temp_route(self, func: Callable, name: str, url: str) -> APIRoute:
@@ -632,13 +643,14 @@ class ControllerParser:
 
         # Create dynamic model for the body, since forms don't otherwise
         # have a Pydantic model that wraps the values
+        body_model_fields: dict[str, Any] = {
+            field_name: (field_info.annotation, field_info)
+            for field_name, field_info in body_fields.items()
+        }
         body_model = create_model(
             f"{camelize(name)}Form",
             __module__=func.__module__,
-            **{
-                name: (field_info.annotation, field_info)  # type: ignore
-                for name, field_info in body_fields.items()
-            },
+            **body_model_fields,
         )
 
         # Determine the type of request body
