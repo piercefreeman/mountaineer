@@ -157,16 +157,19 @@ def test_plugin_to_webserver_includes_plugin_router(tmp_path: Path):
         def render(self) -> None:
             return None
 
+    router = APIRouter()
+
+    @router.get("/plugin-health")
+    def plugin_health():
+        return {"status": "ok"}
+
     plugin = MountaineerPlugin(
         name="plugin-test",
         controllers=[PluginController],
         view_root=view_root,
         build_config=BuildConfig(),
+        router=router,
     )
-
-    @plugin.router.get("/plugin-health")
-    def plugin_health():
-        return {"status": "ok"}
 
     with TestClient(plugin.to_webserver().app) as client:
         response = client.get("/plugin-health")

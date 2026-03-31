@@ -112,22 +112,7 @@ plugin = MountaineerPlugin(
 
 **Optional fields:**
 - `build_config`: Custom build configuration with bundlers, CSS processors, etc.
-- `router`: FastAPI `APIRouter` for plugin-owned API endpoints that are not tied to a controller action
-
-If you prefer to declare endpoints directly on the plugin instance, `MountaineerPlugin` also exposes a default router:
-
-```python
-plugin = MountaineerPlugin(
-    name="your-plugin-name",
-    controllers=[MainController],
-    view_root=get_core_view_path(""),
-    build_config=BuildConfig(custom_builders=[PostCSSBundler()]),
-)
-
-@plugin.router.get("/your-plugin/api/health")
-def healthcheck():
-    return {"status": "ok"}
-```
+- `router`: Optional FastAPI `APIRouter` for plugin-owned API endpoints that are not tied to a controller action
 
 ### 2. **View Path Management**
 

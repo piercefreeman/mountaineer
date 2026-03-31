@@ -26,7 +26,7 @@ class MountaineerPlugin:
     view_root: Path
 
     build_config: BuildConfig
-    router: APIRouter = field(default_factory=APIRouter)
+    router: APIRouter | None = None
 
     _concrete_controllers: dict[Type[CONTROLLER_TYPE], CONTROLLER_TYPE] = field(
         default_factory=dict
@@ -71,5 +71,6 @@ class MountaineerPlugin:
         )
         for controller in self.controllers:
             app_controller.register(controller())
-        app_controller.app.include_router(self.router)
+        if self.router is not None:
+            app_controller.app.include_router(self.router)
         return app_controller
