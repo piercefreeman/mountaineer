@@ -323,6 +323,7 @@ class AppController:
             StaticFiles(directory=str(plugin.view_root / "_static")),
             name=f"static-{plugin.name}",
         )
+        self.app.include_router(plugin.router)
 
     def _register_controller_common(
         self, controller: ControllerBase, dev_enabled: bool = True

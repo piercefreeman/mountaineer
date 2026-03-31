@@ -83,17 +83,25 @@ mountaineer-exceptions/
 Every plugin must have a `plugin.py` file that defines a `MountaineerPlugin` instance:
 
 ```python title="your_plugin/plugin.py"
+from fastapi import APIRouter
 from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.plugin import BuildConfig, MountaineerPlugin
 
 from your_plugin.controllers.main_controller import MainController
 from your_plugin.views import get_core_view_path
 
+router = APIRouter()
+
+@router.get("/your-plugin/api/health")
+def healthcheck():
+    return {"status": "ok"}
+
 plugin = MountaineerPlugin(
     name="your-plugin-name",
     controllers=[MainController],
     view_root=get_core_view_path(""),
     build_config=BuildConfig(custom_builders=[PostCSSBundler()]),
+    router=router,
 )
 ```
 
@@ -104,6 +112,22 @@ plugin = MountaineerPlugin(
 
 **Optional fields:**
 - `build_config`: Custom build configuration with bundlers, CSS processors, etc.
+- `router`: FastAPI `APIRouter` for plugin-owned API endpoints that are not tied to a controller action
+
+If you prefer to declare endpoints directly on the plugin instance, `MountaineerPlugin` also exposes a default router:
+
+```python
+plugin = MountaineerPlugin(
+    name="your-plugin-name",
+    controllers=[MainController],
+    view_root=get_core_view_path(""),
+    build_config=BuildConfig(custom_builders=[PostCSSBundler()]),
+)
+
+@plugin.router.get("/your-plugin/api/health")
+def healthcheck():
+    return {"status": "ok"}
+```
 
 ### 2. **View Path Management**
 

@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Type, TypeAlias
 
+from fastapi import APIRouter
+
 from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
@@ -24,6 +26,7 @@ class MountaineerPlugin:
     view_root: Path
 
     build_config: BuildConfig
+    router: APIRouter = field(default_factory=APIRouter)
 
     _concrete_controllers: dict[Type[CONTROLLER_TYPE], CONTROLLER_TYPE] = field(
         default_factory=dict
@@ -68,4 +71,5 @@ class MountaineerPlugin:
         )
         for controller in self.controllers:
             app_controller.register(controller())
+        app_controller.app.include_router(self.router)
         return app_controller
