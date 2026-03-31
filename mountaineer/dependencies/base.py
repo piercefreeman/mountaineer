@@ -1,11 +1,10 @@
 import warnings
-from contextlib import AsyncExitStack, asynccontextmanager
-from dataclasses import dataclass
-from inspect import Signature, signature
-from typing import Any, Callable
 
-from fastapi import Request, params as fastapi_params
-from fastapi.dependencies.utils import get_dependant, solve_dependencies
+from mountaineer_di import (
+    get_function_dependencies as get_function_dependencies,
+    isolate_dependency_only_function as isolate_dependency_only_function,
+    strip_depends_from_signature as strip_depends_from_signature,
+)
 
 
 class DependenciesBaseMeta(type):
@@ -46,125 +45,3 @@ class DependenciesBaseMeta(type):
 
 class DependenciesBase(metaclass=DependenciesBaseMeta):
     pass
-
-
-@dataclass
-class DependencyOverrideProvider:
-    # Internally FastAPI uses a property accessor to access the dependency_overrides, so we
-    # reproduce this with a simple dataclass
-    dependency_overrides: dict[Callable, Callable]
-
-
-@asynccontextmanager
-async def get_function_dependencies(
-    *,
-    callable: Callable,
-    url: str | None = None,
-    request: Request | None = None,
-    dependency_overrides: dict[Callable, Callable] | None = None,
-):
-    """
-    Get the dependencies of a function. This will return the values that should
-    be injected into the function. Provide as much metadata as possible, so we can
-    resolve more accurate dependencies. If not provided, we will synthesize some values.
-
-    :param dependency_overrides: Specify functions that should be swapped-in when resolving
-    the dependency chains. This is useful during testing or when you need to override one value
-    in a dependency pipeline (like a user session) with a deterministic value.
-
-    """
-    # Synthesize defaults
-    if not url:
-        url = "/synthetic"
-
-    # Synthetic request object as if we're coming from the original first page
-    dependant = get_dependant(
-        call=callable,
-        path=url,
-    )
-
-    async with AsyncExitStack() as async_exit_stack:
-        # FastAPI 0.118+ requires these exit stacks in the request scope for
-        # dependency resolution. We provide them for backwards compatibility.
-        if not request:
-            request = Request(
-                scope={
-                    "type": "http",
-                    "path": url,
-                    "path_params": {},
-                    "query_string": "",
-                    "headers": [],
-                    # FastAPI 0.118+ scope requirements
-                    "fastapi_inner_astack": async_exit_stack,
-                    "fastapi_function_astack": async_exit_stack,
-                }
-            )
-        else:
-            # Inject into existing request scope if not present
-            if "fastapi_inner_astack" not in request.scope:
-                request.scope["fastapi_inner_astack"] = async_exit_stack
-            if "fastapi_function_astack" not in request.scope:
-                request.scope["fastapi_function_astack"] = async_exit_stack
-
-        payload = await solve_dependencies(
-            request=request,
-            dependant=dependant,
-            async_exit_stack=async_exit_stack,
-            dependency_overrides_provider=(
-                DependencyOverrideProvider(dependency_overrides=dependency_overrides)
-                if dependency_overrides
-                else None
-            ),
-            embed_body_fields=False,
-        )
-        if payload.background_tasks:
-            raise RuntimeError(
-                "Background tasks are not supported when calling a static function, due to undesirable side-effects."
-            )
-        if payload.errors:
-            raise RuntimeError(
-                f"Errors encountered while resolving dependencies: {payload.errors}"
-            )
-
-        yield payload.values
-
-
-def isolate_dependency_only_function(original_fn: Callable):
-    """
-    Create and return a mocked function that only includes the Depends parameters
-    from the original function. This allows fastapi to resolve dependencies that are
-    specified while allowing our logic to provide other non-dependency injected args.
-
-    """
-    sig = signature(original_fn)
-    parameters = sig.parameters
-
-    dependency_params = {
-        name: param
-        for name, param in parameters.items()
-        if isinstance(param.default, fastapi_params.Depends)
-    }
-
-    # Construct a new function dynamically accepting only the dependencies
-    async def mock_fn(**deps: Any) -> Any:
-        pass
-
-    mock_fn.__signature__ = sig.replace(parameters=dependency_params.values())  # type: ignore
-
-    return mock_fn
-
-
-def strip_depends_from_signature(original_fn: Callable) -> Signature:
-    """
-    Return a copy of the function's signature with all Depends() parameters
-    removed. This is the inverse of isolate_dependency_only_function — it
-    keeps the non-dependency parameters so FastAPI only sees those.
-
-    """
-    sig = signature(original_fn)
-    non_dep_params = [
-        param
-        for name, param in sig.parameters.items()
-        if not isinstance(param.default, fastapi_params.Depends)
-    ]
-    return sig.replace(parameters=non_dep_params)

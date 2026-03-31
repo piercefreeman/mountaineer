@@ -1,4 +1,5 @@
 from inspect import signature
+from typing import Annotated
 
 import pytest
 from fastapi import Depends, Request
@@ -8,6 +9,7 @@ from mountaineer.dependencies.base import (
     DependenciesBase,
     get_function_dependencies,
     isolate_dependency_only_function,
+    strip_depends_from_signature,
 )
 
 
@@ -99,6 +101,31 @@ async def test_isolate_dependency_only_function():
     assert set(new_signature.parameters.keys()) == {"resolved_dep"}
 
     # Now try to execute the dependencies
+    async with get_function_dependencies(
+        callable=modified_function,
+    ) as values:
+        assert values == {"resolved_dep": 1}
+
+
+@pytest.mark.asyncio
+async def test_resolves_annotated_depends_and_strips_signature():
+    def test_dependency():
+        return 1
+
+    def test_complex_function(
+        payload: ExamplePayload,
+        request: Request,
+        resolved_dep: Annotated[int, Depends(test_dependency)],
+    ):
+        return resolved_dep
+
+    modified_function = isolate_dependency_only_function(test_complex_function)
+    new_signature = signature(modified_function)
+    assert set(new_signature.parameters.keys()) == {"resolved_dep"}
+
+    stripped_signature = strip_depends_from_signature(test_complex_function)
+    assert set(stripped_signature.parameters.keys()) == {"payload", "request"}
+
     async with get_function_dependencies(
         callable=modified_function,
     ) as values:
