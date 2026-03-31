@@ -30,86 +30,63 @@ COPY {my_webapp}/views/package.json {my_webapp}/views/package-lock.json ./
 RUN npm install
 ```
 
-### Image 2: Python Dependencies Base
+### Image 2: Python Builder
 
-Our build pipeline requires Poetry and a basic Python configuration in multiple stages. This initial stage sets up the Poetry CLI and a Python 3.11 environment. By default we make use of Docker's `buildx` to compile for linux/amd64 (Intel) since this is what most servers run on. It also lets us leverage our prebuild Mountaineer wheels.
+This stage installs `uv`, resolves your Python dependencies into a project virtual environment, and builds the frontend artifacts. Copying `pyproject.toml`, `uv.lock`, and `README.md` before the app source lets Docker cache dependency resolution separately from application code changes.
 
 ```docker
-FROM --platform=linux/amd64 python:3.11-slim as poetry-base
+FROM --platform=linux/amd64 python:3.11-slim-bookworm AS builder
 
-WORKDIR /usr/src/app
+WORKDIR /app
 
 # You only need `nodejs` here if you are using the postcss plugin
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends pipx nodejs
+    && apt-get install -y --no-install-recommends nodejs curl \
+    && rm -rf /var/lib/apt/lists/*
 
-ENV PATH="/root/.local/bin:${PATH}"
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-RUN pipx install poetry
-```
+RUN uv venv /app/.venv
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
+ENV UV_LINK_MODE=copy
 
-### Image 3: Python Dependencies
+# Copy dependency definitions first for better layer caching
+COPY pyproject.toml uv.lock README.md ./
 
-Fetch Python dependencies and package them into a virtualenv.
-
-```docker
-FROM poetry-base as venv-dependencies
-
-RUN pipx inject poetry poetry-plugin-bundle
-
-# Only copy package requirements to cache them in docker layer
-# We don't copy poetry.lock since this is tied to the specific architecture
-# of our dev machines
-COPY pyproject.toml ./
-
-# Poetry requires a README.md to be present in the project
-COPY README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-install-project
 
 # Copy the application code
 COPY {my_webapp} ./{my_webapp}
-
-# Gather dependencies and place into a new virtualenv
-RUN poetry -vvv bundle venv --python=/usr/local/bin/python --only=main /venv
-```
-
-### Image 4: Build Frontend to Javascript
-
-Static frontend plugins, provided by Mountaineer.
-
-```docker
-FROM poetry-base as server-hooks-builder
-
-COPY pyproject.toml ./
-COPY README.md ./
-
-COPY {my_webapp} ./{my_webapp}
 COPY --from=node-dependencies /usr/src/app/node_modules ./{my_webapp}/views/node_modules
 
-# Mount the application CLI handlers and build the artifacts
-RUN poetry install
-RUN poetry run build
+# Build the frontend/script files
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv run build
 ```
 
-### Image 5: Final Layer
+### Image 3: Final Layer
 
-Combines the raw python files, python dependencies, and the built frontend.
+Combines the raw Python files, virtual environment, and the built frontend.
 
 ```docker
-FROM --platform=linux/amd64 python:3.11-slim as final
+FROM --platform=linux/amd64 python:3.11-slim-bookworm AS final
 
 # Create and switch to a new user
 RUN useradd --create-home appuser
+WORKDIR /app
+
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
+COPY --from=builder --chown=appuser:appuser /app/{my_webapp} ./{my_webapp}
+
 USER appuser
 
-ENV PATH="/venv/bin:$PATH"
-
-WORKDIR /usr/src/app
-
-COPY --from=venv-dependencies /venv /venv
-COPY --from=server-hooks-builder /usr/src/app/{my_webapp}/views /venv/lib/python3.11/site-packages/{my_webapp}/views
+ENV VIRTUAL_ENV=/app/.venv
+ENV PATH="/app/.venv/bin:${PATH}"
 
 # Run the application
-CMD ["/venv/bin/uvicorn", "{my_webapp}.main:app", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["uvicorn", "{my_webapp}.main:app", "--host", "0.0.0.0", "--port", "3000"]
 ```
 
 ## Local Testing
@@ -118,8 +95,8 @@ Once your Docker image is built, the best way to test it is to run it locally wi
 However you can also simulate what the production service is doing by running:
 
 ```bash
-poetry run build
-ENVIRONMENT=PRODUCTION poetry run uvicorn {my_webapp}.main:app --host localhost --port 5006
+uv run build
+ENVIRONMENT=PRODUCTION uv run uvicorn {my_webapp}.main:app --host localhost --port 5006
 ```
 
 This runs with production-minified assets and the same configuration as the production server.

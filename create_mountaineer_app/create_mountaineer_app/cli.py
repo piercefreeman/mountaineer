@@ -7,7 +7,6 @@ from click import command, option, secho
 
 from create_mountaineer_app.builder import build_project
 from create_mountaineer_app.enums import PackageManager
-from create_mountaineer_app.environments.poetry import PoetryEnvironment
 from create_mountaineer_app.environments.uv import UvEnvironment
 from create_mountaineer_app.external import (
     get_git_user_info,
@@ -23,36 +22,12 @@ def prompt_package_manager() -> PackageManager:
         "Choose a package manager:",
         choices=[
             PackageManager.UV,
-            PackageManager.POETRY,
             PackageManager.VENV,
         ],
         default=PackageManager.UV,
     ).unsafe_ask()
 
-    if package_manager == PackageManager.POETRY:
-        # Helpful utilities to wrap poetry logic and lifecycle
-        poetry_environment = PoetryEnvironment()
-
-        # Determine if the user already has poetry
-        if not poetry_environment.has_provider():
-            input_install_poetry = questionary.confirm(
-                "Poetry is not installed. Install poetry?", default=True
-            ).unsafe_ask()
-            if input_install_poetry:
-                secho("Installing poetry...")
-                try:
-                    poetry_environment.install_provider()
-                except Exception as e:
-                    secho(f"Error installing poetry: {e}", fg="red")
-                    raise e
-
-                input_add_to_path = questionary.confirm(
-                    "Add poetry to PATH? [Yes]", default=True
-                ).unsafe_ask()
-                if input_add_to_path:
-                    poetry_environment.add_poetry_to_path()
-
-    elif package_manager == PackageManager.UV:
+    if package_manager == PackageManager.UV:
         uv_environment = UvEnvironment()
 
         # Determine if the user already has uv

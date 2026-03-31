@@ -91,7 +91,7 @@ def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
     list(
         product(
             # Package manager
-            [PackageManager.POETRY, PackageManager.UV, PackageManager.VENV],
+            [PackageManager.UV, PackageManager.VENV],
             # Use tailwind
             [False, True],
             # Editor config
@@ -233,7 +233,7 @@ def test_valid_permutations(
 
 @pytest.mark.parametrize(
     "package_manager",
-    [PackageManager.POETRY, PackageManager.UV, PackageManager.VENV],
+    [PackageManager.UV, PackageManager.VENV],
 )
 def test_build_version_number(package_manager: PackageManager, tmp_path: Path):
     metadata = ProjectMetadata(

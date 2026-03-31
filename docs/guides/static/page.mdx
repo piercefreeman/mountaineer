@@ -31,7 +31,7 @@ uv run ty check
 
 ## Typescript
 
-Typescript's main goal as a language extension to Javascript is to provide typechecking and static analysis. These features are built into the default compiler `tsc`. As such, most frontend issues in your Mountaineer project are typically caught when we compile your typescript code with `poetry run build` or progressively with `runserver` or `watch`. However there are some cases where you don't want to perform a full build, like in CI where you just want to validate the current state of your project.
+Typescript's main goal as a language extension to Javascript is to provide typechecking and static analysis. These features are built into the default compiler `tsc`. As such, most frontend issues in your Mountaineer project are typically caught when we compile your typescript code with `uv run build` or progressively with `runserver` or `watch`. However there are some cases where you don't want to perform a full build, like in CI where you just want to validate the current state of your project.
 
 ```bash
 npm install typescript --save-dev

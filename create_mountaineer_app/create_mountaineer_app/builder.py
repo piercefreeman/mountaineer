@@ -4,7 +4,6 @@ from click import secho
 
 from create_mountaineer_app.enums import PackageManager
 from create_mountaineer_app.environments.base import EnvironmentBase
-from create_mountaineer_app.environments.poetry import PoetryEnvironment
 from create_mountaineer_app.environments.uv import UvEnvironment
 from create_mountaineer_app.environments.venv import VEnvEnvironment
 from create_mountaineer_app.external import (
@@ -25,12 +24,10 @@ ALLOW_HIDDEN_FILES = {
 
 
 def environment_from_metadata(metadata: ProjectMetadata) -> EnvironmentBase:
-    if metadata.package_manager == PackageManager.POETRY:
-        return PoetryEnvironment()
-    elif metadata.package_manager == PackageManager.UV:
+    if metadata.package_manager == PackageManager.UV:
         return UvEnvironment()
-    else:
-        return VEnvEnvironment()
+
+    return VEnvEnvironment()
 
 
 def should_copy_path(root_path: Path, path: Path):
