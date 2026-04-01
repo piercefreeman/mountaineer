@@ -1,6 +1,35 @@
+import asyncio
+
 import pytest
 
-from mountaineer.io import lru_cache_async
+from mountaineer.io import async_to_sync, lru_cache_async
+
+
+def test_async_to_sync_without_current_event_loop(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    created_loops: list[asyncio.AbstractEventLoop] = []
+    original_new_event_loop = asyncio.new_event_loop
+
+    @async_to_sync
+    async def get_value(value: int):
+        await asyncio.sleep(0)
+        return value
+
+    def raise_no_current_loop():
+        raise RuntimeError("There is no current event loop in thread 'MainThread'.")
+
+    def track_new_event_loop():
+        loop = original_new_event_loop()
+        created_loops.append(loop)
+        return loop
+
+    monkeypatch.setattr(asyncio, "get_event_loop", raise_no_current_loop)
+    monkeypatch.setattr(asyncio, "new_event_loop", track_new_event_loop)
+
+    assert get_value(42) == 42
+    assert len(created_loops) == 1
+    assert created_loops[0].is_closed()
 
 
 @pytest.mark.asyncio

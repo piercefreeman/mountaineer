@@ -29,9 +29,16 @@ P = ParamSpec("P")
 def async_to_sync(async_fn: Callable[P, Coroutine[Any, Any, T]]) -> Callable[P, T]:
     @wraps(async_fn)
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-        loop = asyncio.get_event_loop()
-        result = loop.run_until_complete(async_fn(*args, **kwargs))
-        return result
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            temporary_loop = asyncio.new_event_loop()
+            try:
+                return temporary_loop.run_until_complete(async_fn(*args, **kwargs))
+            finally:
+                temporary_loop.close()
+        else:
+            return loop.run_until_complete(async_fn(*args, **kwargs))
 
     return wrapper
 

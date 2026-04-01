@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y \
 RUN apt-get update && apt-get install -y \
     curl \
     make \
-    python3.12 \
-    python3.12-venv \
+    python3.14 \
+    python3.14-venv \
     build-essential \
     vim \
     && rm -rf /var/lib/apt/lists/* # clean up

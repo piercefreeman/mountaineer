@@ -35,7 +35,7 @@ RUN npm install
 This stage installs `uv`, resolves your Python dependencies into a project virtual environment, and builds the frontend artifacts. Copying `pyproject.toml`, `uv.lock`, and `README.md` before the app source lets Docker cache dependency resolution separately from application code changes.
 
 ```docker
-FROM --platform=linux/amd64 python:3.11-slim-bookworm AS builder
+FROM --platform=linux/amd64 python:3.14-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -71,7 +71,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 Combines the raw Python files, virtual environment, and the built frontend.
 
 ```docker
-FROM --platform=linux/amd64 python:3.11-slim-bookworm AS final
+FROM --platform=linux/amd64 python:3.14-slim-bookworm AS final
 
 # Create and switch to a new user
 RUN useradd --create-home appuser
@@ -116,19 +116,19 @@ $ ls -ls /venv/bin
 4 -rw-r--r-- 1 root root 1337 Mar 29 00:26 activate_this.py
 4 -rwxr-xr-x 1 root root  212 Mar 29 00:27 dotenv
 4 -rwxr-xr-x 1 root root  204 Mar 29 00:27 httpx
-0 lrwxrwxrwx 1 root root   25 Mar 29 00:26 python -> /usr/local/bin/python3.11
+0 lrwxrwxrwx 1 root root   25 Mar 29 00:26 python -> /usr/local/bin/python3.14
 0 lrwxrwxrwx 1 root root    6 Mar 29 00:26 python3 -> python
-0 lrwxrwxrwx 1 root root    6 Mar 29 00:26 python3.11 -> python
+0 lrwxrwxrwx 1 root root    6 Mar 29 00:26 python3.14 -> python
 4 -rwxr-xr-x 1 root root  207 Mar 29 00:27 tqdm
 4 -rwxr-xr-x 1 root root  211 Mar 29 00:27 uvicorn
 4 -rwxr-xr-x 1 root root  211 Mar 29 00:27 watchfiles
 4 -rwxr-xr-x 1 root root  217 Mar 29 00:27 watchmedo
 ```
 
-The path `python -> /usr/local/bin/python3.11` should be executable and run the interpreter:
+The path `python -> /usr/local/bin/python3.14` should be executable and run the interpreter:
 
 ```bash
 $ /venv/bin/python --version
 
-Python 3.11.8
+Python 3.14.3
 ```

@@ -2,7 +2,7 @@
 #
 # Keeps code in editable mode so volume mounts can be used for live reload.
 
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs npm curl \
