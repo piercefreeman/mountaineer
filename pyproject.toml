@@ -12,11 +12,9 @@ dependencies = [
     "fastapi>=0.114.1,<1.0.0",
     "inflection>=0.5.1,<1.0.0",
     "click>=8.1.7,<9.0.0",
-    "uvicorn[standard]>=0.27.0.post1,<1.0.0",
+    "uvicorn[standard]>=0.40.0,<1.0.0",
     "packaging>=23.2",
     "pydantic-settings>=2.1.0,<3.0.0",
-    # NOTE: Pinned until uvicorn is upgraded: https://github.com/encode/uvicorn/issues/1908
-    "websockets<14.0",
     # These are technically optional dependencies, since release configurations will not need these, but we
     # include them by default since we don't want to force regular dev builds to install an extras
     # for basic CLI functionality.
@@ -42,12 +40,14 @@ build-backend = "maturin"
 
 [tool.uv]
 # NOTE: https://github.com/PyO3/maturin/issues/2314
-cache-keys = [{file = "pyproject.toml"}, {file = "Cargo.toml"}, {file = "**/*.rs"}]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "Cargo.toml" }, { file = "Cargo.lock" }]
+
 
 #[tool.uv.sources]
 #mountaineer-exceptions = { path = "../mountaineer-exceptions", editable = true }
 
-#[tool.maturin]
+[tool.maturin]
+exclude = ["**/__tests__/**"]
 #module-name = "mountaineer._core"
 #python-packages = ["mountaineer"]
 #python-source = "src"
