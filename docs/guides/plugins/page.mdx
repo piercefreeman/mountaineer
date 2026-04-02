@@ -107,10 +107,10 @@ plugin = MountaineerPlugin(
 
 **Required fields:**
 - `name`: Unique identifier for your plugin
-- `controllers`: List of controller classes to register
-- `view_root`: Path to the plugin's view directory
 
 **Optional fields:**
+- `controllers`: List of controller classes to register
+- `view_root`: Path to the plugin's view directory. Required when plugin controllers use relative `view_path` values or when calling `plugin.to_webserver()`.
 - `build_config`: Custom build configuration with bundlers, CSS processors, etc.
 - `router`: Optional FastAPI `APIRouter` for plugin-owned API endpoints that are not tied to a controller action
 
