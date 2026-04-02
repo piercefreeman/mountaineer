@@ -116,3 +116,49 @@ async def test_file_notification(tmp_path: Path):
         CallbackType.MODIFIED,
         CallbackType.DELETED,
     ]
+
+
+@pytest.mark.asyncio
+async def test_file_events_queue_during_callback(tmp_path: Path):
+    callback_batches: list[list[str]] = []
+    first_callback_started = asyncio.Event()
+    release_first_callback = asyncio.Event()
+    second_callback_completed = asyncio.Event()
+    first_callback_cancelled = False
+
+    async def receive_callback(metadata: CallbackMetadata):
+        nonlocal first_callback_cancelled
+
+        callback_batches.append([event.path.name for event in metadata.events])
+        if len(callback_batches) == 1:
+            first_callback_started.set()
+            try:
+                await release_first_callback.wait()
+            except asyncio.CancelledError:
+                first_callback_cancelled = True
+                raise
+        else:
+            second_callback_completed.set()
+
+    watcher = FileWatcher(
+        callbacks=[
+            CallbackDefinition(
+                action=CallbackType.MODIFIED,
+                callback=receive_callback,
+            )
+        ],
+        debounce_interval=0.05,
+    )
+
+    await watcher.process_changes([(Change.modified, str(tmp_path / "first.py"))])
+    await asyncio.wait_for(first_callback_started.wait(), timeout=1.0)
+
+    await watcher.process_changes([(Change.modified, str(tmp_path / "second.py"))])
+    release_first_callback.set()
+
+    await asyncio.wait_for(second_callback_completed.wait(), timeout=1.0)
+    if watcher.processing_task is not None:
+        await asyncio.wait_for(watcher.processing_task, timeout=1.0)
+
+    assert not first_callback_cancelled
+    assert callback_batches == [["first.py"], ["second.py"]]
