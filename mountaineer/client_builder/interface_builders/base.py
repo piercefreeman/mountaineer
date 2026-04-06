@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from inspect import isclass
 from json import dumps as json_dumps
 from types import NoneType
 from typing import Any
@@ -21,6 +22,38 @@ from mountaineer.client_builder.types import (
     TypeDefinition,
 )
 from mountaineer.logging import LOGGER
+
+PRIMITIVE_TYPE_TO_TYPESCRIPT: dict[Any, str] = {
+    str: "string",
+    int: "number",
+    float: "number",
+    bool: "boolean",
+    # TODO: We should cast this to a Date internally
+    datetime: "string",
+    date: "string",
+    time: "string",
+    UploadFile: "Blob",
+    UUID: "string",
+    None: "null",
+    NoneType: "null",
+    Any: "any",
+}
+
+
+# TODO: Consolidate this simple-subclass/root-type resolution with iceaxe so both
+# packages share one typehint normalization path.
+def get_root_primitive_type(py_type: type[Any] | None) -> Any | None:
+    if not isclass(py_type):
+        return None
+
+    return next(
+        (
+            candidate
+            for candidate in py_type.__mro__[1:]
+            if candidate in PRIMITIVE_TYPE_TO_TYPESCRIPT
+        ),
+        None,
+    )
 
 
 class InterfaceBase:
@@ -53,24 +86,13 @@ class InterfaceBase:
     @classmethod
     def _map_primitive_type_to_typescript(cls, py_type: type[Any] | None) -> str | None:
         """Map Python types to TypeScript types"""
-        if py_type is None:
-            return "null"
+        if py_type in PRIMITIVE_TYPE_TO_TYPESCRIPT:
+            return PRIMITIVE_TYPE_TO_TYPESCRIPT[py_type]
 
-        type_map: dict[type[Any], str] = {
-            str: "string",
-            int: "number",
-            float: "number",
-            bool: "boolean",
-            # TODO: We should cast this to a Date internally
-            datetime: "string",
-            date: "string",
-            time: "string",
-            UploadFile: "Blob",
-            UUID: "string",
-            NoneType: "null",
-            Any: "any",
-        }
-        return type_map.get(py_type)
+        root_type = get_root_primitive_type(py_type)
+        if root_type is None:
+            return None
+        return PRIMITIVE_TYPE_TO_TYPESCRIPT[root_type]
 
     @classmethod
     def _handle_complex_type(

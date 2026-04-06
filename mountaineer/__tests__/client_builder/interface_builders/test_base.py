@@ -77,6 +77,22 @@ class TypeConverter(InterfaceBase):
         return cast(str, cls._get_annotated_value(value))
 
 
+class CustomString(str):
+    pass
+
+
+class CustomInteger(int):
+    pass
+
+
+class CustomUUID(UUID):
+    pass
+
+
+class CustomDate(date):
+    pass
+
+
 # Test Fixtures
 @pytest.fixture
 def model_wrapper() -> ModelWrapper:
@@ -131,6 +147,21 @@ class TestPrimitiveTypeMapping:
     def test_none_type_variations(self) -> None:
         assert TypeConverter.convert(None) == "null"
         assert TypeConverter.convert(type(None)) == "null"
+
+    @pytest.mark.parametrize(
+        "py_type,ts_type",
+        [
+            (CustomString, "string"),
+            (CustomInteger, "number"),
+            (CustomUUID, "string"),
+            (CustomDate, "string"),
+        ],
+    )
+    def test_simple_subclass_type_mapping(
+        self, py_type: Type[Any], ts_type: str
+    ) -> None:
+        result: str = TypeConverter.convert(py_type)
+        assert result == ts_type
 
     def test_any_type_fallback(self) -> None:
         class CustomType:

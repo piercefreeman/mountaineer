@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Any, Type
+from uuid import UUID
 
 import pytest
 from pydantic import BaseModel
@@ -14,6 +15,10 @@ from mountaineer.__tests__.client_builder.interface_builders.test_enum import (
 )
 from mountaineer.client_builder.interface_builders.model import ModelInterface
 from mountaineer.client_builder.types import Or
+
+
+class CustomUUID(UUID):
+    pass
 
 
 class TestBasicInterfaceGeneration:
@@ -73,6 +78,16 @@ class TestBasicInterfaceGeneration:
 
         interface = ModelInterface.from_model(wrapper)
         assert f"{field_name}: {expected_ts}" in interface.to_js()
+
+    def test_simple_subclass_field_type_conversion(self):
+        wrapper = create_model_wrapper(
+            BaseModel,
+            "DynamicModel",
+            [create_field_wrapper("identifier", CustomUUID)],
+        )
+
+        interface = ModelInterface.from_model(wrapper)
+        assert "identifier: string" in interface.to_js()
 
 
 class TestInheritanceHandling:
