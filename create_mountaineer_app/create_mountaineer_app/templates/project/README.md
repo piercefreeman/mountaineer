@@ -32,3 +32,12 @@ Then start your server:
 uv run runserver
 ```
 {% endif %}
+
+For local Docker-based development, the generated project includes `docker-compose.yml` and `Dockerfile.local`:
+
+```bash
+docker compose up --build -d
+docker compose exec webapp uv run createdb
+```
+
+Use `Dockerfile.local` for local iteration and `Dockerfile` for the production image.
