@@ -89,5 +89,6 @@ Both of these CLI commands are specified in your project's `cli.py` file.
 ### Documentation
 
 - [Mountaineer Tutorial](https://mountaineer.sh/mountaineer/guides/quickstart)
+- [Philosophy & Tradeoffs](https://mountaineer.sh/mountaineer/guides/philosophy)
 - [Concepts](https://mountaineer.sh/mountaineer/guides/views)
 - [API](https://mountaineer.sh/mountaineer/api/actions)
