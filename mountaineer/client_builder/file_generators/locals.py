@@ -337,7 +337,7 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         api_import_path = self.get_global_import_path("api.ts")
         links_import_path = self.get_global_import_path("links.ts")
         yield CodeBlock(
-            "import React, { useState } from 'react';",
+            "import React, { useCallback, useMemo, useState } from 'react';",
             f"import {{ applySideEffect }} from '{api_import_path}';",
             f"import LinkGenerator from '{links_import_path}';",
         )
@@ -397,6 +397,9 @@ class LocalUseServerGenerator(LocalGeneratorBase):
             )
 
         response_body = python_payload_to_typescript(server_response)
+        memoized_response_body = "\n".join(
+            f"  {line}" if line else line for line in response_body.splitlines()[1:-1]
+        )
         # Special case: refactor to an explicit controller property
         server_key = controller.controller.__name__
 
@@ -406,13 +409,13 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         yield CodeBlock(
             "export const useServer = (): ServerState => {",
             f"  const [serverState, setServerState] = useState(SERVER_DATA.{server_key} as {render_model});\n",
-            f"  const setControllerState = (payload: {optional_model_name}) => {{",
+            f"  const setControllerState = useCallback((payload: {optional_model_name}) => {{",
             "    setServerState((state) => ({",
             "      ...state,",
             "      ...payload,",
             "    }));",
-            "  };\n",
-            f"  return {response_body}",
+            "  }, []);\n",
+            f"  return useMemo((): ServerState => ({{\n{memoized_response_body}\n  }}), [serverState, setControllerState]);",
             "};",
         )
 
