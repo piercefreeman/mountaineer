@@ -9,7 +9,12 @@ from watchfiles import Change, awatch
 
 from mountaineer.console import CONSOLE
 from mountaineer.logging import LOGGER, pluralize
-from mountaineer.paths import resolve_package_path
+from mountaineer.paths import ManagedViewPath, resolve_package_path
+
+DEFAULT_IGNORE_LIST = [
+    "__pycache__",
+    *ManagedViewPath.get_managed_artifact_dir_names(),
+]
 
 
 class CallbackType(Flag):
@@ -41,7 +46,7 @@ class FileWatcher:
     def __init__(
         self,
         callbacks: list[CallbackDefinition],
-        ignore_list=["__pycache__", "_ssr", "_static", "_server", "_metadata"],
+        ignore_list: list[str] | None = None,
         ignore_hidden=True,
         debounce_interval=0.1,
     ):
@@ -50,7 +55,9 @@ class FileWatcher:
         interval to avoid saturating clients with one action that results in many files.
         """
         self.callbacks = callbacks
-        self.ignore_list = ignore_list
+        self.ignore_list = (
+            ignore_list if ignore_list is not None else DEFAULT_IGNORE_LIST
+        )
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
         self.debounce_task: asyncio.Task | None = None

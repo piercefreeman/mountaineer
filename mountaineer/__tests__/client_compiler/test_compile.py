@@ -25,3 +25,18 @@ def test_build_static_metadata(tmpdir: Path):
         metadata.static_artifact_shas["test_css.css"]
         == metadata.static_artifact_shas["nested/test_nested.css"]
     )
+
+
+def test_get_static_files_ignores_managed_artifact_dirs(tmp_path: Path):
+    app = AppController(view_root=tmp_path)
+    compiler = ClientCompiler(app=app)
+
+    (tmp_path / "app.tsx").write_text("export const app = true;")
+    (tmp_path / "_server").mkdir()
+    (tmp_path / "_server" / "generated.ts").write_text("export const generated = true;")
+    (tmp_path / "_metadata").mkdir()
+    (tmp_path / "_metadata" / "metadata.json").write_text("{}")
+
+    static_files = list(compiler._get_static_files())
+
+    assert static_files == [tmp_path / "app.tsx"]
