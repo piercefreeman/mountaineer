@@ -1,0 +1,88 @@
+# Philosophy & Tradeoffs
+
+Mountaineer is opinionated about the seam between the backend and frontend, and deliberately less opinionated about many of the tools around that seam.
+
+The goal is not to replace every tool in your stack; instead we aim to make the common path for Python + React webapps feel coherent from first render to long-term maintenance.
+
+## What Mountaineer Optimizes For
+
+- Out-of-the-box projects that boot locally and deploy in a container without a lot of incidental setup
+- A single typed data flow from Python models and render payloads to generated TypeScript hooks and links
+- Server-first page development, where most business logic lives in Python and the frontend focuses on presentation and client interactivity
+- Server-side rendering and hydration without maintaining a separate API layer or Node server just to move data into React
+- Development ergonomics that still hold up once a project grows past a toy app
+
+## Compared With Django + React
+
+Mountaineer is best thought of as a tighter integration between a Python backend and a React frontend, not as a kitchen-sink replacement for Django.
+
+Django + React gives you more freedom to assemble each layer independently, but that flexibility usually means more plumbing: defining API contracts twice, keeping routes and types in sync, and building your local workflow around multiple moving pieces. Mountaineer trades some of that flexibility for a more integrated loop.
+
+| Area | Mountaineer Bias | Tradeoff |
+| --- | --- | --- |
+| Frontend/backend interface | Generate hooks, links, and action wrappers from controller signatures | You adopt Mountaineer's controller and action conventions instead of hand-rolling every API surface |
+| Views | React and TSX with server-side rendering | Mountaineer is not centered on Jinja or DTL-style templates |
+| Project structure | Disk-based routing and a dedicated `views` project | The filesystem layout is more opinionated than a fully bespoke Django + React setup |
+| Performance | FastAPI/Starlette HTTP handling plus Rust-backed build and render infrastructure | Performance work supports DX and SSR, not "benchmark first at any cost" design |
+
+## Separate Webapps
+
+One of the most natural entry points into Mountaineer is realizing that your FastAPI app is no longer just an API.
+
+Maybe it started as a clean backend service. Then you add an internal dashboard, a customer-facing settings page, some authenticated flows, or a richer frontend than server templates really want to carry. At that point, the default move is often to create a separate React app and wire the two together over a hand-maintained API boundary.
+
+That works, but it also creates a second application to develop, deploy, and keep in sync. You now have two routing systems, two sets of types, another build toolchain, and one more place where the contract between backend and frontend can drift.
+
+Mountaineer is meant to be attractive exactly at that point. If you already enjoy FastAPI's model of typed request handling, dependency injection, and explicit Python functions for your application logic, Mountaineer extends that style into fullstack development instead of asking you to bolt on a completely separate webapp.
+
+It is also a good fit if you like FastAPI philosophically and want something with a similar feel for product work, where the frontend is not an afterthought but you also do not want to spend most of your energy maintaining the seam between two codebases.
+
+## What Is Configurable
+
+Most code you write is still ordinary Python and ordinary React.
+
+### Backend
+
+Controllers are normal Python classes. Dependencies use FastAPI's dependency injection system. Mountaineer's HTTP layer sits on FastAPI, which in turn sits on Starlette. The `AppController` also exposes the underlying FastAPI app, so you can still add routers, middleware, and surrounding application services in the usual way.
+
+### Frontend
+
+The `views` directory is a normal React and TypeScript project. Mountaineer reads your `package.json` and `tsconfig.json`, so aliases and compiler settings remain yours. Additional build steps can be added through builder plugins such as `PostCSSBundler`.
+
+### Data Layer
+
+Mountaineer does not ship with a required ORM or default database layer in its core runtime. Iceaxe is the default in `create-mountaineer-app` and in many examples, but it is not a hard dependency of the framework itself. If you prefer SQLAlchemy, SQLModel, peewee, asyncpg, or another async-friendly data layer, you can wire that through your own dependencies and project configuration.
+
+In practice, switching away from Iceaxe mostly means replacing the generated project scaffolding and database-specific helpers in your own app, not replacing Mountaineer itself.
+
+## What Is Intentionally Opinionated
+
+Some pieces are deliberately not a dropdown setting.
+
+- The contract between controllers and the frontend is built around `render`, `@sideeffect`, `@passthrough`, generated `_server` helpers, and disk-based view discovery
+- The frontend build pipeline is part of the framework rather than a generic "bring any bundler" adapter
+- Mountaineer assumes React is the primary view layer rather than server templates
+
+That means you can customize a lot inside the Python and TypeScript projects, but swapping the core bundler or replacing the controller-to-frontend contract is not currently a first-class configuration knob.
+
+## What Mountaineer Is Not Trying To Be
+
+Mountaineer is not trying to be the most batteries-included framework in Python, and it is not trying to hide ordinary Python or ordinary React behind a giant abstraction layer.
+
+The design target is closer to "everything you need, but not the kitchen sink":
+
+- Keep the integration points between backend and frontend tight
+- Leave adjacent decisions, like your database layer and a lot of your project architecture, in user space
+- Add performance-oriented implementation details when they materially improve the developer and runtime experience
+
+## Roadmap
+
+Mountaineer does not currently treat a long static roadmap page as the main source of truth.
+
+In practice, the best live signal is the GitHub [issue tracker](https://github.com/piercefreeman/mountaineer/issues) and the areas where the development loop still feels rough. That tends to push polish work toward build reliability, developer tooling, extension points, and documentation, rather than expanding the framework into a full batteries-included platform.
+
+If you are evaluating whether Mountaineer is a good fit, the simplest rule of thumb is this:
+
+- Use it when you want Python business logic and a React UI without hand-maintaining the contract between them
+- Expect some opinionated conventions around routing, generated client helpers, and the build pipeline that make your life easier
+- Look elsewhere if your main priority is template-driven views or independently swapping every layer of the frontend toolchain

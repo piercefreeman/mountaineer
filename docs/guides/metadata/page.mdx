@@ -13,6 +13,7 @@ class Metadata(BaseModel):
     title: str | None = None
     metas: list[MetaAttribute] = []
     links: list[LinkAttribute] = []
+    scripts: list[ScriptAttribute] = []
 ```
 
 ## Title
@@ -53,10 +54,12 @@ class MyRender(RenderBase):
 def render() -> MyRender:
     return MyRender(
         metadata=Metadata(
-            metas=MetaAttribute(
-                "og:meta",
-                content="Some meta content",
-            )
+            metas=[
+                MetaAttribute(
+                    name="og:meta",
+                    content="Some meta content",
+                )
+            ]
         )
     )
 ```
@@ -64,7 +67,44 @@ def render() -> MyRender:
 We have a limited number of helper `<meta>` constructors, particularly in
 cases where there are standard definitions of complex meta values. For
 more details on the supported Metadata and rendering options, check out
-the [API Docs](/mountaineer/api/render).
+the [Controller API docs](/mountaineer/api/controllers).
+
+## Scripts
+
+You can also inject `<script>` tags through metadata. This is useful for analytics, third-party widgets, or small bits of bootstrap logic that need to run before your app hydrates.
+
+For external scripts, use `src`:
+
+```python
+def render() -> MyRender:
+    return MyRender(
+        metadata=Metadata(
+            scripts=[
+                ScriptAttribute(
+                    src="https://example.com/widget.js",
+                    defer=True,
+                )
+            ]
+        )
+    )
+```
+
+For inline scripts, use `inline`:
+
+```python
+def render() -> MyRender:
+    return MyRender(
+        metadata=Metadata(
+            scripts=[
+                ScriptAttribute(
+                    inline="window.APP_BOOTSTRAPPED = true;",
+                )
+            ]
+        )
+    )
+```
+
+`ScriptAttribute` requires exactly one of `src` or `inline`. You can also pass standard attributes like `defer`, `asynchronous`, or extra values through `optional_attributes`.
 
 ## Global Metadata
 
@@ -74,7 +114,8 @@ scripts), you can add a metadata tag to your app controller:
 ```python
 controller = AppController(
     global_metadata=Metadata(
-        links=[LinkAttribute(rel="stylesheet", href="/static/main.css")]
+        links=[LinkAttribute(rel="stylesheet", href="/static/main.css")],
+        scripts=[ScriptAttribute(src="https://example.com/app.js", defer=True)],
     ),
 )
 ```

@@ -1,6 +1,8 @@
 # Views & Layouts
 
-Your React app should be initialized in the `/views` folder of your Mountaineer project. This is the directory where we look for package.json and tsconfig.json, and where esbuild looks for specific build-time overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger Mountaineer project and rendered separately.
+Your React app should be initialized in the `/views` folder of your Mountaineer project. This is the directory where we look for `package.json` and `tsconfig.json`, and where the frontend build pipeline looks for project-specific overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger Mountaineer project and rendered separately.
+
+If you want the architectural rationale for this Python + React split, see [Philosophy & Tradeoffs](../philosophy).
 
 We expect that all controller views will be labeled as a `page.tsx`, so they'll typically sit in a folder with themselves and other tightly connected React components. These views should have one default export, which is your page constructor:
 

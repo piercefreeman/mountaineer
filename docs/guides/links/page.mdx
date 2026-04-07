@@ -46,3 +46,26 @@ There are two types of dynamic URL parameters:
 - Query Variables: `/posts?page=[page_num]`
 
 Both path variables and query variables are exposed as interface definitions within the link generator.
+
+Query parameters can also be arrays of simple values. Mountaineer will serialize these as repeated key-value pairs in the URL.
+
+```python
+class SearchController:
+    url = "/search"
+
+    def render(
+        self,
+        query: str,
+        tags: list[str] | None = None,
+    ) -> SearchRender:
+        ...
+```
+
+```typescript
+const href = serverState.linkGenerator.searchController({
+  query: "mountaineer",
+  tags: ["docs", "plugins"],
+});
+
+// /search?query=mountaineer&tags=docs&tags=plugins
+```
