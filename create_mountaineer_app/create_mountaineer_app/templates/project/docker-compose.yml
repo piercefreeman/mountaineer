@@ -34,7 +34,7 @@ services:
     ports:
       - "{{postgres_port}}:5432"
     volumes:
-      - {{project_name}}_postgres_data:/var/lib/postgresql/data
+      - {{project_name}}_postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U {{project_name}} -d {{project_name}}_db"]
       interval: 5s
