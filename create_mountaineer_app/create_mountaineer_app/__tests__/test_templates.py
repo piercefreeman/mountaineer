@@ -171,4 +171,4 @@ def test_project_template_build_adds_database_setup_guard(tmp_path: Path):
     assert "get_database_setup_required" in home_controller
     assert "DatabaseSetupPage" in home_view
     assert 'CREATEDB_COMMAND = "uv run createdb"' in database_setup_helper
-    assert "Run this command from the project root" in database_setup_view
+    assert "Then refresh this page." in database_setup_view
