@@ -36,8 +36,13 @@ uv run runserver
 Database workflows are exposed through the generated CLI entrypoints:
 
 ```bash
+{% if package_manager == 'venv' %}
+createdb
+migrate apply
+{% else %}
 uv run createdb
 uv run migrate apply
+{% endif %}
 ```
 
 For local Docker-based development, the generated project includes `docker-compose.yml` and `Dockerfile.local`:

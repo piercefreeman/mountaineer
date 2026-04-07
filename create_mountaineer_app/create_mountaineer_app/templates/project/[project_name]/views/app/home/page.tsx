@@ -1,9 +1,18 @@
 {% if create_stub_files %}
 import React from "react";
+import DatabaseSetupPage from "../_common/database-setup-page";
 import { useServer } from "./_server/useServer";
 
 const Home = () => {
   const serverState = useServer();
+
+  if (serverState.database_setup_required) {
+    return (
+      <DatabaseSetupPage
+        createdbCommand={serverState.database_setup_required.createdb_command}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
