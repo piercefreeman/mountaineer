@@ -52,4 +52,17 @@ docker compose up --build -d
 docker compose exec webapp uv run createdb
 ```
 
+The `webapp` service preserves container-managed `{{project_name}}/views/node_modules` in an anonymous Docker volume so host-installed binaries do not leak into the container. If you change `Dockerfile.local`, frontend dependencies, or the Node/Tailwind/PostCSS toolchain, refresh that volume before restarting:
+
+```bash
+docker compose up -d --build --renew-anon-volumes
+```
+
+If you want a full reset of local Docker state for the project, use:
+
+```bash
+docker compose down -v
+docker compose up -d --build
+```
+
 Use `Dockerfile.local` for local iteration and `Dockerfile` for the production image.
