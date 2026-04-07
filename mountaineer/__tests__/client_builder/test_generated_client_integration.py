@@ -164,6 +164,7 @@ def _run_uvicorn_server(app):
             host="127.0.0.1",
             port=port,
             log_level="error",
+            ws="none",
         )
     )
 
