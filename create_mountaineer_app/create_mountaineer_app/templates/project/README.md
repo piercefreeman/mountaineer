@@ -33,6 +33,13 @@ uv run runserver
 ```
 {% endif %}
 
+Database workflows are exposed through the generated CLI entrypoints:
+
+```bash
+uv run createdb
+uv run migrate apply
+```
+
 For local Docker-based development, the generated project includes `docker-compose.yml` and `Dockerfile.local`:
 
 ```bash
