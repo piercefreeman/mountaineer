@@ -257,8 +257,12 @@ class TestLocalUseServerGenerator:
         content: str = "\n".join(block.content for block in result)
         assert "useServer" in content
         assert "ServerState" in content
+        assert "useCallback" in content
+        assert "useMemo" in content
         assert "useState" in content
         assert "applySideEffect" in content
+        assert "const setControllerState = useCallback" in content
+        assert "return useMemo((): ServerState => ({" in content
 
 
 class TestLocalIndexGenerator:
