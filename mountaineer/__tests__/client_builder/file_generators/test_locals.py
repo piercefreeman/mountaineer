@@ -262,6 +262,10 @@ class TestLocalUseServerGenerator:
         assert "useState" in content
         assert "applySideEffect" in content
         assert "const setControllerState = useCallback" in content
+        assert "const update_dataWithSideEffect = useMemo(" in content
+        assert "const upload_fileWithSideEffect = useMemo(" in content
+        assert "update_data: update_dataWithSideEffect" in content
+        assert "upload_file: upload_fileWithSideEffect" in content
         assert "return useMemo((): ServerState => ({" in content
 
 

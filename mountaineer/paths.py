@@ -294,14 +294,17 @@ def is_path_file(path: Path):
     if path.exists():
         return path.is_file()
 
-    # If the file doesn't actually exist (common in unit tests), we guess the path
-    LOGGER.warning(f"File {path} does not exist. Guessing file status.")
-
     # Only use is_file if the current path is ambiguous
     dot_components = [
         component for component in path.name.split(".") if component.strip()
     ]
-    return len(dot_components) > 1
+    if len(dot_components) > 1:
+        return True
+
+    # If the file doesn't actually exist and there's no file-like suffix to disambiguate,
+    # fall back to treating it as a directory and log the guess for debugging.
+    LOGGER.warning(f"File {path} does not exist. Guessing file status.")
+    return False
 
 
 def generate_relative_import(

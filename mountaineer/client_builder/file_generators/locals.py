@@ -388,17 +388,31 @@ class LocalUseServerGenerator(LocalGeneratorBase):
             TSLiteral("...serverState"): TSLiteral("...serverState"),
             "linkGenerator": TSLiteral("LinkGenerator"),
         }
+        memoized_sideeffect_wrappers: list[str] = []
+        memoized_sideeffect_wrapper_names: list[str] = []
 
         for action in controller.all_actions:
-            server_response[TSLiteral(action.name)] = (
-                TSLiteral(f"applySideEffect({action.name}, setControllerState)")
-                if action.action_type == FunctionActionType.SIDEEFFECT
-                else TSLiteral(action.name)
-            )
+            if action.action_type == FunctionActionType.SIDEEFFECT:
+                wrapper_name = f"{action.name}WithSideEffect"
+                memoized_sideeffect_wrapper_names.append(wrapper_name)
+                memoized_sideeffect_wrappers.extend(
+                    [
+                        f"  const {wrapper_name} = useMemo(",
+                        f"    () => applySideEffect({action.name}, setControllerState),",
+                        "    [setControllerState],",
+                        "  );\n",
+                    ]
+                )
+                server_response[TSLiteral(action.name)] = TSLiteral(wrapper_name)
+            else:
+                server_response[TSLiteral(action.name)] = TSLiteral(action.name)
 
         response_body = python_payload_to_typescript(server_response)
         memoized_response_body = "\n".join(
             f"  {line}" if line else line for line in response_body.splitlines()[1:-1]
+        )
+        memoized_response_dependencies = ", ".join(
+            ["serverState", *memoized_sideeffect_wrapper_names]
         )
         # Special case: refactor to an explicit controller property
         server_key = controller.controller.__name__
@@ -415,7 +429,8 @@ class LocalUseServerGenerator(LocalGeneratorBase):
             "      ...payload,",
             "    }));",
             "  }, []);\n",
-            f"  return useMemo((): ServerState => ({{\n{memoized_response_body}\n  }}), [serverState, setControllerState]);",
+            *memoized_sideeffect_wrappers,
+            f"  return useMemo((): ServerState => ({{\n{memoized_response_body}\n  }}), [{memoized_response_dependencies}]);",
             "};",
         )
 
