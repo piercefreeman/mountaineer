@@ -22,7 +22,6 @@ dependencies = [
     "watchfiles>=1.0.0,<2.0.0",
     "firehot>=0.4.0,<1.0.0",
     "mountaineer-exceptions>=0.1.1",
-    #"mountaineer-exceptions",
     "mountaineer-di>=0.1.2,<1.0.0",
 ]
 exclude = [
