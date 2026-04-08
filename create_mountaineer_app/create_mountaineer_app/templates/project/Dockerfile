@@ -21,7 +21,7 @@ RUN npm install
 #
 # Python builder stage
 #
-FROM python:3.11-slim-bookworm AS builder
+FROM python:3.14-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -59,7 +59,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 #
 # Final stage
 #
-FROM python:3.11-slim-bookworm as final
+FROM python:3.14-slim-bookworm as final
 
 ARG ENVIRONMENT=development
 ENV ENVIRONMENT=${ENVIRONMENT}

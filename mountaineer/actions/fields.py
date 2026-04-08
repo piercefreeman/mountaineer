@@ -3,10 +3,10 @@ import collections.abc
 import sys
 import typing
 import warnings
-from asyncio import iscoroutinefunction
 from enum import Enum
 from inspect import (
     isclass,
+    iscoroutinefunction,
     ismethod,
 )
 from json import loads as json_loads

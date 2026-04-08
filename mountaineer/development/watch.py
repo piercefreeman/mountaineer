@@ -3,6 +3,7 @@ import importlib.metadata
 from dataclasses import dataclass
 from enum import Flag, auto
 from pathlib import Path
+from time import monotonic
 from typing import Any, Callable, Coroutine, Iterable
 
 from watchfiles import Change, awatch
@@ -60,8 +61,9 @@ class FileWatcher:
         )
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
-        self.debounce_task: asyncio.Task | None = None
+        self.processing_task: asyncio.Task | None = None
         self.pending_events: list[CallbackEvent] = []
+        self.last_event_at: float | None = None
 
     def should_ignore_path(self, path: Path | str) -> bool:
         path_str = str(path)
@@ -87,31 +89,38 @@ class FileWatcher:
         return CallbackType.MODIFIED
 
     async def _debounce(self, action: CallbackType, path: Path):
-        if self.debounce_task is not None:
-            self.debounce_task.cancel()
-
         self.pending_events.append(CallbackEvent(action=action, path=path))
+        self.last_event_at = monotonic()
 
-        self.debounce_task = asyncio.create_task(self._handle_callbacks_after_delay())
+        if self.processing_task is None or self.processing_task.done():
+            self.processing_task = asyncio.create_task(self._process_pending_events())
 
-    async def _handle_callbacks_after_delay(self):
-        await asyncio.sleep(self.debounce_interval)
-        await self.handle_callbacks()
+    async def _process_pending_events(self):
+        while self.pending_events:
+            if self.last_event_at is None:
+                break
 
-    async def handle_callbacks(self):
+            wait_time = self.debounce_interval - (monotonic() - self.last_event_at)
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+                continue
+
+            pending_events = self.pending_events
+            self.pending_events = []
+            await self.handle_callbacks(pending_events)
+
+        self.processing_task = None
+
+    async def handle_callbacks(self, events: list[CallbackEvent]):
         """
         Runs all callbacks for the given action.
         """
         for callback in self.callbacks:
             valid_events = [
-                event
-                for event in self.pending_events
-                if event.action in callback.action
+                event for event in events if event.action in callback.action
             ]
             if valid_events:
                 await callback.callback(CallbackMetadata(events=valid_events))
-
-        self.pending_events = []
 
     async def process_changes(self, changes: Iterable[tuple[Change, str]]):
         """

@@ -1,7 +1,7 @@
 from copy import copy
 from dataclasses import dataclass
 from enum import Enum
-from inspect import isclass
+from inspect import get_annotations, isclass
 from typing import (
     Any,
     Callable,
@@ -524,7 +524,7 @@ class ControllerParser:
             # were defined directly on the superclass. Since we're iterating with model_fields
             # on the synthetically created generic subclass, all of the annotations should be resolved
             # to real types by this point
-            parent_owned_fields = generic_origin.__dict__.get("__annotations__", {})
+            parent_owned_fields = get_annotations(generic_origin, eval_str=False)
             generic_field_definitions: dict[str, Any] = {
                 # Since we're modifying the annotation types, we need to copy the full
                 # field_info since .annotation will be set on the new model. Without a copy
@@ -541,10 +541,11 @@ class ControllerParser:
             )
         else:
             # Regular model - use original logic
+            owned_fields = get_annotations(model, eval_str=False)
             include_fields: dict[str, Any] = {
                 field_name: (field_info.annotation, field_info)
                 for field_name, field_info in model.model_fields.items()
-                if field_name in model.__dict__.get("__annotations__", {})
+                if field_name in owned_fields
             }
             return create_model(
                 model.__name__,

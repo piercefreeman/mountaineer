@@ -4,7 +4,7 @@
 
 FROM node:20-bookworm-slim AS node-runtime
 
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
