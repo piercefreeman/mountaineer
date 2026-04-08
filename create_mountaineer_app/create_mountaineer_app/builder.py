@@ -17,6 +17,7 @@ IGNORE_FILES = {"__pycache__", "node_modules"}
 ALLOW_HIDDEN_FILES = {
     # A template .env file is explicitly included in our build logic
     ".env",
+    ".dockerignore",
     ".gitignore",
     ".vimrc",
     ".vscode",

@@ -287,10 +287,21 @@ class AppController:
             self._remount_controller(controller_definition)
 
     def _register_plugin(self, plugin: MountaineerPlugin):
+        plugin_view_root = plugin.get_view_root()
+
         for controller in plugin.get_controllers():
+            controller_view_root = plugin_view_root
+            if controller_view_root is None:
+                if isinstance(controller.view_path, ManagedViewPath):
+                    controller_view_root = controller.view_path.get_root_link()
+                else:
+                    raise ValueError(
+                        f"Plugin {plugin.name} must define view_root when controller {controller.__class__.__name__} uses a relative view_path"
+                    )
+
             if isinstance(controller.view_path, str):
                 controller.view_path = (
-                    ManagedViewPath.from_view_root(plugin.view_root)
+                    ManagedViewPath.from_view_root(controller_view_root)
                     / controller.view_path
                 )
 
@@ -298,7 +309,7 @@ class AppController:
             controller._scripts_prefix = f"/static_plugins/{plugin.name}"
             controller._build_enabled = False
 
-            controller.resolve_paths(plugin.view_root, force=True)
+            controller.resolve_paths(controller_view_root, force=True)
 
             # Unlike standard controllers, plugins are expected to have precompiled scripts
             # at all times
@@ -316,13 +327,14 @@ class AppController:
             # are mounted or otherwise how the view controller is added to the app.
             self._register_controller_common(controller, dev_enabled=False)
 
-        # Mount the view_root / _static directory, since we'll need
-        # this for the client mounted view files
-        self.app.mount(
-            f"/static_plugins/{plugin.name}",
-            StaticFiles(directory=str(plugin.view_root / "_static")),
-            name=f"static-{plugin.name}",
-        )
+        static_dir = plugin_view_root / "_static" if plugin_view_root else None
+        if static_dir and static_dir.exists():
+            # Mount the plugin static directory when the plugin ships frontend assets.
+            self.app.mount(
+                f"/static_plugins/{plugin.name}",
+                StaticFiles(directory=str(static_dir)),
+                name=f"static-{plugin.name}",
+            )
         if plugin.router is not None:
             self.app.include_router(plugin.router)
 

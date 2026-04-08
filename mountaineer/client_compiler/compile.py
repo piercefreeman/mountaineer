@@ -32,6 +32,10 @@ class ClientCompiler:
         self.app = controller
         self.view_root = controller._view_root
 
+    def clear_managed_artifacts(self):
+        for view_root in self._get_all_root_views():
+            view_root.clear_managed_artifact_dirs()
+
     async def run_builder_plugins(
         self,
         limit_paths: list[Path] | None = None,
@@ -117,17 +121,15 @@ class ClientCompiler:
                 )
 
     def _get_static_files(self):
-        ignore_directories = ["_ssr", "_static", "_server", "_metadata", "node_modules"]
+        ignore_directories = {
+            *ManagedViewPath.get_managed_artifact_dir_names(),
+            "node_modules",
+        }
 
         for view_root in self._get_all_root_views():
             for dir_path, _, filenames in view_root.walk():
                 for filename in filenames:
-                    if any(
-                        [
-                            directory in dir_path.parts
-                            for directory in ignore_directories
-                        ]
-                    ):
+                    if ignore_directories.intersection(dir_path.parts):
                         continue
                     yield dir_path / filename
 

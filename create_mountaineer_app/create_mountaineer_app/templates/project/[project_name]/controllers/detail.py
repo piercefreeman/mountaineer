@@ -7,6 +7,10 @@ from fastapi import Depends
 from pydantic import BaseModel
 
 from {{project_name}} import models
+from {{project_name}}.database_setup import (
+    DatabaseSetupRequired,
+    get_database_setup_required,
+)
 
 class NotFoundException(APIException):
     status_code = 404
@@ -18,8 +22,9 @@ class UpdateTextRequest(BaseModel):
 
 
 class DetailRender(RenderBase):
-    id: int
-    description: str
+    id: int | None = None
+    description: str | None = None
+    database_setup_required: DatabaseSetupRequired | None = None
 
 
 class DetailController(ControllerBase):
@@ -32,8 +37,16 @@ class DetailController(ControllerBase):
     async def render(
         self,
         detail_id: int,
-        session: DBConnection = Depends(DatabaseDependencies.get_db_connection)
+        session: DBConnection = Depends(DatabaseDependencies.get_db_connection),
+        database_setup_required: DatabaseSetupRequired
+        | None = Depends(get_database_setup_required),
     ) -> DetailRender:
+        if database_setup_required:
+            return DetailRender(
+                database_setup_required=database_setup_required,
+                metadata=Metadata(title="Database Setup Required"),
+            )
+
         detail_item = await session.get(models.DetailItem, detail_id)
         if not detail_item:
             raise NotFoundException()

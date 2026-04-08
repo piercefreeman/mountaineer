@@ -1,5 +1,4 @@
 from pathlib import Path
-from shutil import rmtree as shutil_rmtree
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.aliases import AliasManager
@@ -50,14 +49,8 @@ class APIBuilder:
         self.view_root = ManagedViewPath.from_view_root(controller._view_root)
 
     async def build_all(self):
-        # Totally clear away the old build cache, so we start fresh
-        # and don't have additional files hanging around
-        for clear_dir in [
-            self.view_root.get_managed_ssr_dir(),
-            self.view_root.get_managed_static_dir(),
-        ]:
-            if clear_dir.exists():
-                shutil_rmtree(clear_dir)
+        for view_root in self._get_all_root_views():
+            view_root.clear_managed_artifact_dirs()
 
         await self.build_use_server()
         # await self.build_fe_diff(None)
@@ -103,6 +96,18 @@ class APIBuilder:
             )
 
         return parser, parsed_controllers
+
+    def _get_all_root_views(self) -> list[ManagedViewPath]:
+        view_roots = {self.view_root.copy()}
+        for controller_definition in self.app.graph.controllers:
+            view_path = controller_definition.controller.view_path
+            if isinstance(view_path, ManagedViewPath):
+                view_roots.add(view_path.get_root_link().copy())
+
+        for view_root in view_roots:
+            view_root.package_root_link = self.view_root.package_root_link
+
+        return list(view_roots)
 
     def _assign_unique_names(self, parser: ControllerParser):
         self.alias_manager.assign_global_names(parser)

@@ -4,7 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile.local
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "5006:5006"
     environment:
@@ -17,10 +18,15 @@ services:
       WATCHFILES_FORCE_POLLING: "true"
     volumes:
       - .:/usr/src/app
+      # Preserve container node_modules rather than using host binaries.
       - /usr/src/app/{{project_name}}/views/node_modules
+    command:
+      - bash
+      - -lc
+      - exec uv run runserver --host 0.0.0.0 --port 5006
 
   postgres:
-    image: postgres:latest
+    image: postgres:18
     environment:
       POSTGRES_USER: {{project_name}}
       POSTGRES_PASSWORD: mysecretpassword
@@ -29,6 +35,11 @@ services:
       - "{{postgres_port}}:5432"
     volumes:
       - {{project_name}}_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{project_name}} -d {{project_name}}_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   {{project_name}}_postgres_data:

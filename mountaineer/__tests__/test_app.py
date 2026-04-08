@@ -20,7 +20,8 @@ from mountaineer.exceptions import (
     RequestValidationFailure,
 )
 from mountaineer.graph.cache import ControllerDevCache, DevCacheConfig
-from mountaineer.plugin import BuildConfig, MountaineerPlugin
+from mountaineer.paths import ManagedViewPath
+from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import Metadata, RenderBase
 
 
@@ -167,7 +168,6 @@ def test_plugin_to_webserver_includes_plugin_router(tmp_path: Path):
         name="plugin-test",
         controllers=[PluginController],
         view_root=view_root,
-        build_config=BuildConfig(),
         router=router,
     )
 
@@ -209,7 +209,6 @@ def test_register_plugin_includes_plugin_router(tmp_path: Path):
         name="plugin-test",
         controllers=[PluginController],
         view_root=plugin_view_root,
-        build_config=BuildConfig(),
         router=router,
     )
 
@@ -220,6 +219,66 @@ def test_register_plugin_includes_plugin_router(tmp_path: Path):
         response = client.get("/plugin-api")
         assert response.status_code == 200
         assert response.json() == {"plugin": "ok"}
+
+
+def test_register_router_only_plugin_without_view_root(tmp_path: Path):
+    host_view_root = tmp_path / "host_views"
+    host_view_root.mkdir()
+
+    router = APIRouter()
+
+    @router.get("/plugin-api")
+    def plugin_api():
+        return {"plugin": "ok"}
+
+    plugin = MountaineerPlugin(
+        name="plugin-test",
+        router=router,
+    )
+
+    app = AppController(view_root=host_view_root)
+    app.register(plugin)
+
+    with TestClient(app.app) as client:
+        response = client.get("/plugin-api")
+        assert response.status_code == 200
+        assert response.json() == {"plugin": "ok"}
+
+
+def test_register_plugin_infers_view_root_from_controller_paths(tmp_path: Path):
+    host_view_root = tmp_path / "host_views"
+    host_view_root.mkdir()
+
+    plugin_view_root = tmp_path / "plugin_views"
+    plugin_view_root.mkdir()
+    (plugin_view_root / "_static").mkdir()
+    (plugin_view_root / "_ssr").mkdir()
+    (plugin_view_root / "_static" / "plugin_controller.js").write_text(
+        "console.log('plugin');"
+    )
+    (plugin_view_root / "_ssr" / "plugin_controller.js").write_text(
+        "export default null;"
+    )
+
+    class PluginController(ControllerBase):
+        url = "/plugin"
+        view_path = ManagedViewPath.from_view_root(plugin_view_root) / "plugin/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    plugin = MountaineerPlugin(
+        name="plugin-test",
+        controllers=[PluginController],
+    )
+
+    app = AppController(view_root=host_view_root)
+    app.register(plugin)
+
+    with TestClient(app.app) as client:
+        response = client.get("/static_plugins/plugin-test/plugin_controller.js")
+        assert response.status_code == 200
+        assert "console.log('plugin');" in response.text
 
 
 def test_get_value_mask_for_signature():

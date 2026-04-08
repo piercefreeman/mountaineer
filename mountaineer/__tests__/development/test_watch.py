@@ -70,6 +70,20 @@ def test_change_mapping():
     assert watcher._map_change_to_callback_type(Change.deleted) == CallbackType.DELETED
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "myproject/_server/generated.ts",
+        "myproject/_static/app.css",
+        "myproject/_ssr/app.js",
+        "myproject/_metadata/metadata.json",
+    ],
+)
+def test_default_ignore_path_uses_managed_artifact_dirs(path: str):
+    watcher = FileWatcher([])
+    assert watcher.should_ignore_path(Path(path)) is True
+
+
 @pytest.mark.asyncio
 async def test_file_notification(tmp_path: Path):
     callback_events: list[CallbackEvent] = []

@@ -1,9 +1,16 @@
 #
+# Node runtime stage
+# We copy the Node 20 runtime into Python stages so Tailwind/PostCSS can load
+# the correct native bindings when builds run inside Debian-based images.
+#
+FROM node:20-bookworm-slim as node-runtime
+
+#
 # Node dependencies stage
 # This stage is only used to install the dependencies that will be used
 # by our frontend bundler in later stages.
 #
-FROM node:20-slim as node-dependencies
+FROM node-runtime as node-dependencies
 
 WORKDIR /usr/src/app
 
@@ -19,8 +26,14 @@ FROM python:3.14-slim-bookworm AS builder
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends nodejs jq curl \
+    && apt-get install -y --no-install-recommends jq curl \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=node-runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-runtime /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && ln -sf ../lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 

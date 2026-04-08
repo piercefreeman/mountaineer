@@ -10,7 +10,12 @@ from watchfiles import Change, awatch
 
 from mountaineer.console import CONSOLE
 from mountaineer.logging import LOGGER, pluralize
-from mountaineer.paths import resolve_package_path
+from mountaineer.paths import ManagedViewPath, resolve_package_path
+
+DEFAULT_IGNORE_LIST = [
+    "__pycache__",
+    *ManagedViewPath.get_managed_artifact_dir_names(),
+]
 
 
 class CallbackType(Flag):
@@ -42,7 +47,7 @@ class FileWatcher:
     def __init__(
         self,
         callbacks: list[CallbackDefinition],
-        ignore_list=["__pycache__", "_ssr", "_static", "_server", "_metadata"],
+        ignore_list: list[str] | None = None,
         ignore_hidden=True,
         debounce_interval=0.1,
     ):
@@ -51,7 +56,9 @@ class FileWatcher:
         interval to avoid saturating clients with one action that results in many files.
         """
         self.callbacks = callbacks
-        self.ignore_list = ignore_list
+        self.ignore_list = (
+            ignore_list if ignore_list is not None else DEFAULT_IGNORE_LIST
+        )
         self.ignore_hidden = ignore_hidden
         self.debounce_interval = debounce_interval
         self.processing_task: asyncio.Task | None = None
@@ -93,9 +100,7 @@ class FileWatcher:
             if self.last_event_at is None:
                 break
 
-            wait_time = self.debounce_interval - (
-                monotonic() - self.last_event_at
-            )
+            wait_time = self.debounce_interval - (monotonic() - self.last_event_at)
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
                 continue
@@ -112,9 +117,7 @@ class FileWatcher:
         """
         for callback in self.callbacks:
             valid_events = [
-                event
-                for event in events
-                if event.action in callback.action
+                event for event in events if event.action in callback.action
             ]
             if valid_events:
                 await callback.callback(CallbackMetadata(events=valid_events))

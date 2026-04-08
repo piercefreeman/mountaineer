@@ -107,12 +107,16 @@ plugin = MountaineerPlugin(
 
 **Required fields:**
 - `name`: Unique identifier for your plugin
-- `controllers`: List of controller classes to register
-- `view_root`: Path to the plugin's view directory
 
 **Optional fields:**
+- `controllers`: List of controller classes to register
+- `view_root`: Path to the plugin's view directory. Required when plugin controllers use relative `view_path` values. If every controller already uses a `ManagedViewPath` under one shared root, Mountaineer can infer it.
 - `build_config`: Custom build configuration with bundlers, CSS processors, etc.
 - `router`: Optional FastAPI `APIRouter` for plugin-owned API endpoints that are not tied to a controller action
+
+<Note>
+Plugins can be view-backed, router-only, or a mix of both. If your plugin only exposes a FastAPI router, you can omit both `controllers` and `view_root`.
+</Note>
 
 ### 2. **View Path Management**
 
@@ -287,11 +291,11 @@ from my_awesome_plugin.plugin import plugin
 controller = AppController(config=AppConfig())
 
 # Mount the plugin (this registers all controllers automatically)
-controller.use(plugin)
+controller.register(plugin)
 ```
 
 <Note>
-Use `controller.use(plugin)` instead of manually looping over `plugin.controllers`. This approach ensures proper plugin initialization, dependency resolution, and future compatibility as the plugin system evolves.
+Use `controller.register(plugin)` instead of manually looping over `plugin.controllers`. This ensures plugin routers, static assets, and controller initialization all get wired up consistently.
 </Note>
 
 ### 3. **Include Plugin Assets**
@@ -306,11 +310,16 @@ controller = AppController(
     global_metadata=Metadata(
         links=[
             LinkAttribute(rel="stylesheet", href="/static/app_main.css"),
-            LinkAttribute(rel="stylesheet", href="/static/plugin_main.css"),  # Plugin CSS
+            LinkAttribute(
+                rel="stylesheet",
+                href="/static_plugins/my-awesome-plugin/plugin_main.css",
+            ),
         ]
     ),
 )
 ```
+
+If your plugin ships compiled frontend assets, they are mounted under `/static_plugins/{plugin.name}` rather than the host app's `/static` namespace.
 
 ---
 
@@ -354,6 +363,8 @@ dependencies = [
     "mountaineer>=0.1.0,<1.0.0",  # Specify version range
 ]
 ```
+
+If your plugin depends on specific integration behavior, be explicit about that in your README as well. For example, note whether it works as a router-only plugin, whether it requires compiled view assets, and whether its controllers use relative `view_path` values or inferred `ManagedViewPath` roots.
 
 ## Examples in the Wild
 

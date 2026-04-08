@@ -1,10 +1,19 @@
 {% if create_stub_files %}
 import React, { useState } from "react";
+import DatabaseSetupPage from "../_common/database-setup-page";
 import { useServer } from "./_server/useServer";
 
 const Page = () => {
   const serverState = useServer();
   const [text, setText] = useState("");
+
+  if (serverState.database_setup_required) {
+    return (
+      <DatabaseSetupPage
+        createdbCommand={serverState.database_setup_required.createdb_command}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
@@ -42,7 +51,7 @@ const Page = () => {
                 className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
                 onClick={async () => {
                   await serverState.update_text({
-                    detail_id: serverState.id,
+                    detail_id: serverState.id!,
                     requestBody: {
                       description: text,
                     },

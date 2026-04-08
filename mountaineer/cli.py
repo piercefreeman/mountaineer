@@ -290,6 +290,10 @@ async def handle_build(
     assert isolated_context.app_compiler is not None
     assert isolated_context.app_controller is not None
 
+    # Fresh builds should remove all framework-managed artifacts so we do not
+    # preserve stale files across branch switches or deleted controllers.
+    isolated_context.app_compiler.clear_managed_artifacts()
+
     # Build the frontend support bundle
     await isolated_context.js_compiler.build_use_server()
     await isolated_context.app_compiler.run_builder_plugins()

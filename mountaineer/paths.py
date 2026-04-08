@@ -5,6 +5,7 @@ from os import PathLike, walk as os_walk
 from os.path import realpath, relpath
 from pathlib import Path
 from re import search as re_search
+from shutil import rmtree as shutil_rmtree
 from typing import TYPE_CHECKING, Optional
 
 from mountaineer.annotation_helpers import MountaineerUnsetValue
@@ -28,6 +29,8 @@ class ManagedViewPath(type(Path())):  # type: ignore
     # Typically this is the same thing as the root_link, but in the case of plugins
     # they may be different
     package_root_link: Optional["ManagedViewPath"]
+
+    MANAGED_ARTIFACT_DIRS = ("_server", "_static", "_ssr", "_metadata")
 
     def __new__(cls, *args, **kwargs):
         # Ensure instances are created properly by using the __new__ method of the Path class
@@ -148,6 +151,34 @@ class ManagedViewPath(type(Path())):  # type: ignore
             managed_code_dir.mkdir(exist_ok=True)
         return managed_code_dir
 
+    @classmethod
+    def get_managed_artifact_dir_names(cls):
+        return cls.MANAGED_ARTIFACT_DIRS
+
+    def get_managed_artifact_dirs(self):
+        if not self.is_root_link:
+            raise ValueError(
+                "Cannot get managed artifact directories from a non-root linked view path"
+            )
+
+        managed_paths: list[ManagedViewPath] = []
+        managed_dir_names = set(self.get_managed_artifact_dir_names())
+
+        for dir_path, dir_names, _ in self.walk():
+            for dir_name in list(dir_names):
+                if dir_name not in managed_dir_names:
+                    continue
+
+                managed_paths.append(dir_path / dir_name)
+                # Prevent walk() from traversing into directories we will delete.
+                dir_names.remove(dir_name)
+
+        return managed_paths
+
+    def clear_managed_artifact_dirs(self):
+        for managed_dir in self.get_managed_artifact_dirs():
+            shutil_rmtree(managed_dir)
+
     def get_controller_view_path(self, controller: "ControllerBase"):
         """
         Assume all paths are specified in terms of their relative root
@@ -263,14 +294,17 @@ def is_path_file(path: Path):
     if path.exists():
         return path.is_file()
 
-    # If the file doesn't actually exist (common in unit tests), we guess the path
-    LOGGER.warning(f"File {path} does not exist. Guessing file status.")
-
     # Only use is_file if the current path is ambiguous
     dot_components = [
         component for component in path.name.split(".") if component.strip()
     ]
-    return len(dot_components) > 1
+    if len(dot_components) > 1:
+        return True
+
+    # If the file doesn't actually exist and there's no file-like suffix to disambiguate,
+    # fall back to treating it as a directory and log the guess for debugging.
+    LOGGER.warning(f"File {path} does not exist. Guessing file status.")
+    return False
 
 
 def generate_relative_import(

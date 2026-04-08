@@ -173,6 +173,33 @@ def test_managed_view_paths_get_controller(tmpdir):
     assert controller_path.root_link == root_path
 
 
+def test_clear_managed_artifact_dirs(tmpdir):
+    root_path = ManagedViewPath.from_view_root(tmpdir)
+
+    managed_dirs = [
+        root_path / "_server",
+        root_path / "_static",
+        root_path / "_ssr",
+        root_path / "_metadata",
+        root_path / "app" / "home" / "_server",
+    ]
+    for managed_dir in managed_dirs:
+        managed_dir.mkdir(parents=True, exist_ok=True)
+        (managed_dir / "artifact.txt").write_text("stale")
+
+    preserved_dir = root_path / "_private"
+    preserved_dir.mkdir()
+    (preserved_dir / "keep.txt").write_text("keep")
+
+    root_path.clear_managed_artifact_dirs()
+
+    for managed_dir in managed_dirs:
+        assert not managed_dir.exists()
+
+    assert preserved_dir.exists()
+    assert (preserved_dir / "keep.txt").read_text() == "keep"
+
+
 def test_copy():
     path = ManagedViewPath.from_view_root("root_view", package_root_link="package_root")
     new_path = path.copy()
