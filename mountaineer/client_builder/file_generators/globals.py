@@ -15,6 +15,7 @@ from mountaineer.client_builder.interface_builders.model import ModelInterface
 from mountaineer.client_builder.parser import (
     ControllerWrapper,
     EnumWrapper,
+    ExceptionWrapper,
     ModelWrapper,
 )
 from mountaineer.client_builder.typescript import (
@@ -193,3 +194,45 @@ class GlobalLinkGenerator(FileGeneratorBase):
         yield CodeBlock(*imports)
         yield CodeBlock(f"const linkGenerator = {link_generator};")
         yield CodeBlock("export default linkGenerator;")
+
+
+class GlobalExceptionGenerator(FileGeneratorBase):
+    def __init__(
+        self,
+        *,
+        controller_wrappers: list[ControllerWrapper],
+        managed_path: ManagedViewPath,
+    ):
+        super().__init__(managed_path=managed_path)
+        self.controller_wrappers = controller_wrappers
+
+    def script(self):
+        exceptions = self._get_exceptions(self.controller_wrappers)
+        if not exceptions:
+            return
+
+        yield CodeBlock("import { FetchErrorBase } from './api';")
+
+        controllers_import_path = generate_relative_import(
+            self.managed_path, self.managed_path.parent / "controllers.ts"
+        )
+        yield CodeBlock(
+            *[
+                f"import type {{ {exception.name.global_name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
+                for exception in exceptions
+            ]
+        )
+
+        for exception in exceptions:
+            yield CodeBlock(
+                f"export class {exception.name.global_name} extends FetchErrorBase<{self._get_exception_import_name(exception)}> {{}}"
+            )
+
+    def _get_exceptions(self, controllers: list[ControllerWrapper]):
+        embedded_types = ControllerWrapper.get_all_embedded_types(
+            controllers, include_superclasses=True
+        )
+        return embedded_types.exceptions
+
+    def _get_exception_import_name(self, exception: ExceptionWrapper):
+        return f"{exception.name.global_name}Base"

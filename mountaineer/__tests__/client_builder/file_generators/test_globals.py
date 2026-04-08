@@ -10,6 +10,7 @@ from mountaineer.app import AppController
 from mountaineer.client_builder.file_generators.base import ParsedController
 from mountaineer.client_builder.file_generators.globals import (
     GlobalControllerGenerator,
+    GlobalExceptionGenerator,
     GlobalLinkGenerator,
 )
 from mountaineer.client_builder.parser import (
@@ -20,6 +21,7 @@ from mountaineer.client_builder.parser import (
 )
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.exceptions import APIException
 from mountaineer.paths import ManagedViewPath
 from mountaineer.render import RenderBase
 
@@ -47,6 +49,12 @@ class DependentModel(MainModel):
     current_status: StatusEnum
 
 
+class CustomError(APIException):
+    status_code: int = 409
+    detail: str = "Conflict"
+    reason: str
+
+
 # Controllers
 class BaseController(ControllerBase):
     @passthrough
@@ -63,6 +71,10 @@ class ChildController(BaseController):
 
     @sideeffect
     def update(self, data: ChildModel) -> DependentModel:  # type: ignore
+        pass
+
+    @passthrough(exception_models=[CustomError])
+    def create_item(self) -> MainModel:  # type: ignore
         pass
 
 
@@ -232,3 +244,25 @@ class TestGlobalLinkGenerator:
         assert "const linkGenerator = {" in content
         assert "childController: ChildControllerGetLinks" in content
         assert "export default linkGenerator" in content
+
+
+class TestGlobalExceptionGenerator:
+    @pytest.fixture
+    def generator(
+        self,
+        managed_path: ManagedViewPath,
+        controller_wrappers: List[ControllerWrapper],
+    ) -> GlobalExceptionGenerator:
+        return GlobalExceptionGenerator(
+            managed_path=managed_path, controller_wrappers=controller_wrappers
+        )
+
+    def test_script_generation(self, generator: GlobalExceptionGenerator) -> None:
+        blocks = list(generator.script())
+        content = "\n".join(block.content for block in blocks)
+
+        assert "import { FetchErrorBase } from './api';" in content
+        assert "import type { RequestValidationError as RequestValidationErrorBase }" in content
+        assert "import type { CustomError as CustomErrorBase }" in content
+        assert "export class RequestValidationError extends FetchErrorBase<RequestValidationErrorBase> {}" in content
+        assert "export class CustomError extends FetchErrorBase<CustomErrorBase> {}" in content
