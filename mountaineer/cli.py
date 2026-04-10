@@ -6,7 +6,6 @@ from time import time
 from typing import Any, Callable, Coroutine
 
 from firehot import isolate_imports
-from inflection import underscore
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
@@ -311,6 +310,10 @@ async def handle_build(
         for controller_definition in build_controllers
         for view_path in controller_definition.get_hierarchy_view_paths()
     ]
+    entrypoint_names = [
+        controller_definition.controller.script_name
+        for controller_definition in build_controllers
+    ]
 
     # Find tsconfig.json in the parent directories of the view paths
     tsconfig_path = find_tsconfig(all_view_paths)
@@ -329,6 +332,7 @@ async def handle_build(
         str(get_static_path("live_reload.ts").resolve().absolute()),
         False,
         tsconfig_path,
+        entrypoint_names,
     )
 
     static_output = isolated_context.app_controller._view_root.get_managed_static_dir()
@@ -343,14 +347,13 @@ async def handle_build(
         )
 
     # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
-    for controller_definition, content, map_content in zip(
-        build_controllers,
+    for entrypoint_name, content, map_content in zip(
+        entrypoint_names,
         client_bundle_result["entrypoints"],
         client_bundle_result["entrypoint_maps"],
     ):
-        script_root = underscore(controller_definition.controller.__class__.__name__)
-        (static_output / f"{script_root}.js").write_text(content)
-        (static_output / f"{script_root}.map.js").write_text(map_content)
+        (static_output / f"{entrypoint_name}.js").write_text(content)
+        (static_output / f"{entrypoint_name}.map.js").write_text(map_content)
 
     # Copy the other files 1:1 because they'll be referenced by name in the
     # entrypoints
@@ -371,8 +374,9 @@ async def handle_build(
 
     # Write each script to disk
     for controller_definition, script in zip(build_controllers, result_scripts):
-        script_root = underscore(controller_definition.controller.__class__.__name__)
-        (ssr_output / f"{script_root}.js").write_text(script)
+        (ssr_output / f"{controller_definition.controller.script_name}.js").write_text(
+            script
+        )
 
     LOGGER.info(f"Build completed in {(time() - start):.2f}s")
 
