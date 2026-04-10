@@ -36,13 +36,15 @@ pub fn compile_production_bundle(
 ) -> PyResult<Py<PyDict>> {
     let bundle_output = compile_production_bundle_rust(
         &paths,
-        entrypoint_names.as_deref(),
-        &node_modules_path,
-        &environment,
-        minify,
-        &live_reload_import,
-        is_server,
-        tsconfig_path.as_deref(),
+        ProductionBundleConfig {
+            entrypoint_names: entrypoint_names.as_deref(),
+            node_modules_path: &node_modules_path,
+            environment: &environment,
+            minify,
+            live_reload_import: &live_reload_import,
+            is_server,
+            tsconfig_path: tsconfig_path.as_deref(),
+        },
     )
     .map_err(|e| match e {
         BundleError::IoError(err) => pyo3::exceptions::PyIOError::new_err(err.to_string()),
@@ -89,15 +91,19 @@ struct ProductionBundleOutput {
     supporting_paths: Vec<String>,
 }
 
+struct ProductionBundleConfig<'a> {
+    entrypoint_names: Option<&'a [String]>,
+    node_modules_path: &'a str,
+    environment: &'a str,
+    minify: bool,
+    live_reload_import: &'a str,
+    is_server: bool,
+    tsconfig_path: Option<&'a str>,
+}
+
 fn compile_production_bundle_rust(
     paths: &[Vec<String>],
-    entrypoint_names: Option<&[String]>,
-    node_modules_path: &str,
-    environment: &str,
-    minify: bool,
-    live_reload_import: &str,
-    is_server: bool,
-    tsconfig_path: Option<&str>,
+    config: ProductionBundleConfig<'_>,
 ) -> Result<ProductionBundleOutput, BundleError> {
     let temp_dir = TempDir::new().map_err(BundleError::IoError)?;
     let temp_dir_path = temp_dir.path();
@@ -105,12 +111,12 @@ fn compile_production_bundle_rust(
     let entrypoint_paths = create_synthetic_entrypoints_rust(
         temp_dir_path,
         paths,
-        entrypoint_names,
-        is_server,
-        live_reload_import,
+        config.entrypoint_names,
+        config.is_server,
+        config.live_reload_import,
     )?;
 
-    let bundle_mode = if is_server {
+    let bundle_mode = if config.is_server {
         BundleMode::SingleServer
     } else {
         BundleMode::MultiClient
@@ -119,11 +125,11 @@ fn compile_production_bundle_rust(
     let bundle_results = bundle_common::bundle_common(
         entrypoint_paths.clone(),
         bundle_mode,
-        environment.to_string(),
-        node_modules_path.to_string(),
+        config.environment.to_string(),
+        config.node_modules_path.to_string(),
         None, // production: no live-reload port
-        tsconfig_path.map(str::to_owned),
-        minify,
+        config.tsconfig_path.map(str::to_owned),
+        config.minify,
     )?;
 
     let mut entrypoints = Vec::new();
@@ -262,13 +268,15 @@ mod tests {
 
         let out = compile_production_bundle_rust(
             &input_paths,
-            None,
-            node_modules_path.to_string_lossy().as_ref(),
-            "production",
-            false,
-            live_reload_path.to_string_lossy().as_ref(),
-            false,
-            None,
+            ProductionBundleConfig {
+                entrypoint_names: None,
+                node_modules_path: node_modules_path.to_string_lossy().as_ref(),
+                environment: "production",
+                minify: false,
+                live_reload_import: live_reload_path.to_string_lossy().as_ref(),
+                is_server: false,
+                tsconfig_path: None,
+            },
         )
         .unwrap();
 
@@ -326,13 +334,15 @@ mod tests {
 
         let out = compile_production_bundle_rust(
             &input_paths,
-            Some(&entrypoint_names),
-            node_modules_path.to_string_lossy().as_ref(),
-            "production",
-            false,
-            live_reload_path.to_string_lossy().as_ref(),
-            false,
-            None,
+            ProductionBundleConfig {
+                entrypoint_names: Some(&entrypoint_names),
+                node_modules_path: node_modules_path.to_string_lossy().as_ref(),
+                environment: "production",
+                minify: false,
+                live_reload_import: live_reload_path.to_string_lossy().as_ref(),
+                is_server: false,
+                tsconfig_path: None,
+            },
         )
         .unwrap();
 
