@@ -40,7 +40,19 @@ install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-
 
 install-deps-lib:
 	@echo "Installing dependencies for $(LIB_DIR)..."
-	@(cd $(LIB_DIR) && uv sync)
+	@(cd $(LIB_DIR) && uv sync --no-install-project)
+	@(cd $(LIB_DIR) && \
+		target_dir="$${CARGO_TARGET_DIR:-target}"; \
+		if [ -d "$$target_dir" ]; then \
+			find "$$target_dir" -type f \( -name 'librusty_v8.sum' -o -name 'rusty_v8.sum' \) -print0 | \
+			while IFS= read -r -d '' sum; do \
+				dir=$$(dirname "$$sum"); \
+				if [ ! -f "$$dir/librusty_v8.a" ] && [ ! -f "$$dir/rusty_v8.lib" ]; then \
+					echo "Removing stale $$sum"; \
+					rm -f "$$sum"; \
+				fi; \
+			done; \
+		fi)
 	@(cd $(LIB_DIR) && uv run maturin develop --uv)
 
 install-deps-create-mountaineer-app:
