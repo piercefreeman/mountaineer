@@ -1,16 +1,19 @@
 use indexmap::IndexMap;
 use log::debug;
 use rolldown::{
-    Bundler, BundlerOptions, InputItem, ModuleType, OutputFormat, RawMinifyOptions, ResolveOptions,
-    SourceMapType, TsConfig,
+    plugin::__inner::SharedPluginable, Bundler, BundlerOptions, InputItem, ModuleType,
+    OutputFormat, RawMinifyOptions, ResolveOptions, SourceMapType, TsConfig,
 };
 use rustc_hash::FxHasher;
 use std::collections::HashMap;
 use std::fs;
 use std::hash::BuildHasherDefault;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::runtime::Runtime;
+
+use crate::use_client::UseClientPlugin;
 
 #[derive(Debug)]
 pub enum OutputType {
@@ -261,7 +264,9 @@ pub fn bundle_common(
     };
 
     // Create the bundler instance.
-    let mut bundler = Bundler::new(bundler_options)
+    let plugins: Vec<SharedPluginable> = vec![Arc::new(UseClientPlugin::new(is_ssr))];
+
+    let mut bundler = Bundler::with_plugins(bundler_options, plugins)
         .map_err(|err| BundleError::BundlingError(format!("Failed to create bundler: {err:?}")))?;
 
     let rt = Runtime::new().map_err(|e| BundleError::BundlingError(e.to_string()))?;

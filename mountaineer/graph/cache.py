@@ -68,17 +68,19 @@ class ControllerDevCache(ControllerCacheBase):
         LOGGER.debug(
             f"Compiling client-side bundle for {definition.controller.__class__.__name__}: {view_paths}"
         )
-        script_payloads, _ = mountaineer_rs.compile_independent_bundles(
-            view_paths,
-            str(config.node_modules_path.resolve().absolute()),
-            "development",
-            config.live_reload_port,
-            str(get_static_path("live_reload.ts").resolve().absolute()),
-            False,
-            tsconfig_path,
+        script_payloads, client_sourcemap_payloads = (
+            mountaineer_rs.compile_independent_bundles(
+                view_paths,
+                str(config.node_modules_path.resolve().absolute()),
+                "development",
+                config.live_reload_port,
+                str(get_static_path("live_reload.ts").resolve().absolute()),
+                False,
+                tsconfig_path,
+            )
         )
         cached_client_script = cast(str, script_payloads[0])
-        cached_client_sourcemap = cast(str | None, sourcemap_payloads[0])
+        cached_client_sourcemap = cast(str | None, client_sourcemap_payloads[0])
 
         return ControllerDevCache(
             cached_server_script=cached_server_script,
