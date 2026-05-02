@@ -357,8 +357,15 @@ fn process_output_directory(
             _ => BundleError::IoError(e),
         })?;
 
-        // Read the source map if it exists
-        let map_path = path.with_extension("js.map");
+        // Read the sibling source map if it exists, preserving the asset extension
+        let map_path = path.with_file_name(format!(
+            "{}.map",
+            path.file_name()
+                .ok_or_else(|| {
+                    BundleError::OutputError(format!("Invalid filename: {}", path.display()))
+                })?
+                .to_string_lossy()
+        ));
         let map = if map_path.exists() {
             Some(fs::read_to_string(&map_path).map_err(BundleError::IoError)?)
         } else {
@@ -368,23 +375,23 @@ fn process_output_directory(
         // Create bundle result
         let bundle_result = BundleResult { script, map };
 
-        // Check if this is an entrypoint file
+        let extension = path
+            .extension()
+            .map(|ext| format!(".{}", ext.to_string_lossy()))
+            .unwrap_or_default();
+
+        // Check if this is an entrypoint JavaScript file
         let is_entrypoint = entrypoint_paths.iter().any(|ep| {
             Path::new(ep)
                 .file_stem()
                 .map(|s| s.to_string_lossy().to_string())
                 .is_some_and(|s| s == file_stem)
-        });
+        }) && extension == ".js";
 
         // Add to appropriate map
         if is_entrypoint {
             entrypoints.insert(file_stem.to_string(), bundle_result);
         } else {
-            // Get the file extension
-            let extension = path
-                .extension()
-                .map(|ext| format!(".{}", ext.to_string_lossy()))
-                .unwrap_or_default();
             extras.insert(format!("{file_stem}{extension}"), bundle_result);
         }
     }
@@ -928,11 +935,18 @@ mod tests {
             result.err()
         );
 
-        // Verify we got some output (rolldown may extract CSS to separate file)
         let bundles = result.unwrap();
         assert!(
-            !bundles.entrypoints.is_empty() || !bundles.extras.is_empty(),
-            "Client bundle should produce output"
+            bundles.entrypoints.contains_key("client"),
+            "Client bundle should keep the JavaScript entrypoint even when CSS is emitted"
         );
+        let bundle_result = bundles.entrypoints.get("client").unwrap();
+        assert!(bundle_result.script.contains("Client Component"));
+        assert!(
+            bundles.extras.contains_key("client.css"),
+            "Extracted CSS should be returned as an extra asset"
+        );
+        let css_bundle = bundles.extras.get("client.css").unwrap();
+        assert!(css_bundle.script.contains(".client { color: green; }"));
     }
 }

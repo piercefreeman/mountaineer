@@ -372,7 +372,11 @@ mod tests {
             "#,
         )?;
 
-        let directive = if mark_use_client { "'use client';\n" } else { "" };
+        let directive = if mark_use_client {
+            "'use client';\n"
+        } else {
+            ""
+        };
         let client_graph_source = format!(
             r#"
             {directive}import React from 'react';
