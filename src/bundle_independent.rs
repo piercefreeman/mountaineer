@@ -187,6 +187,7 @@ fn create_entrypoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::errors::AppError;
     use crate::ssr::run_ssr;
     use std::fs;
     use tempfile::TempDir;
@@ -336,10 +337,23 @@ mod tests {
         Ok(dir.join("node_modules").to_string_lossy().to_string())
     }
 
-    fn create_use_client_fixture(
+    fn create_browser_dependency_fixture(
         dir: &Path,
+        mark_use_client: bool,
     ) -> Result<(Vec<String>, String, String), std::io::Error> {
         let node_modules_path = create_react_test_runtime(dir)?;
+        create_test_file(
+            dir,
+            "node_modules/browser-only-lib/index.js",
+            r#"
+            const marker = document.createElement('canvas').nodeName;
+
+            export default function browserValue() {
+                return marker;
+            }
+            "#,
+        )?;
+
         let live_reload_path = create_test_file(
             dir,
             "live_reload.ts",
@@ -358,17 +372,29 @@ mod tests {
             "#,
         )?;
 
-        let _client_boundary_path = create_test_file(
-            dir,
-            "client-graph.jsx",
+        let directive = if mark_use_client { "'use client';\n" } else { "" };
+        let client_graph_source = format!(
             r#"
-            'use client';
-            import React from 'react';
+            {directive}import React from 'react';
+            import getBrowserMarker from './client-inner';
 
-            const browserMarker = window.__CLIENT_ONLY_MARKER__ ?? 'CLIENT_ONLY_GRAPH';
+            export default function Graph({{ children }}) {{
+                const browserMarker = getBrowserMarker();
+                return <section data-graph={{browserMarker}}>{{children}}</section>;
+            }}
+            "#
+        );
+        let _client_boundary_path =
+            create_test_file(dir, "client-graph.jsx", &client_graph_source)?;
 
-            export default function Graph({ children }) {
-                return <section data-graph={browserMarker}>{children}</section>;
+        create_test_file(
+            dir,
+            "client-inner.js",
+            r#"
+            import browserValue from 'browser-only-lib';
+
+            export default function getBrowserMarker() {
+                return browserValue();
             }
             "#,
         )?;
@@ -527,7 +553,7 @@ mod tests {
     fn test_use_client_ssr_pipeline_renders_children_only() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let (path_group, node_modules_path, live_reload_path) =
-            create_use_client_fixture(temp_dir.path())
+            create_browser_dependency_fixture(temp_dir.path(), true)
                 .expect("Failed to create use-client fixture");
 
         let (compiled_script, sourcemap) = compile_fixture_bundle(
@@ -548,8 +574,8 @@ mod tests {
             "SSR bundle should include the client boundary passthrough stub"
         );
         assert!(
-            !compiled_script.contains("CLIENT_ONLY_GRAPH"),
-            "SSR bundle should not include the browser-only client module body"
+            !compiled_script.contains("document.createElement"),
+            "SSR bundle should not include poisoned browser-only dependencies"
         );
 
         let html = run_ssr(compiled_script, 0).expect("SSR bundle should render");
@@ -563,7 +589,7 @@ mod tests {
     fn test_use_client_client_pipeline_keeps_browser_module() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let (path_group, node_modules_path, live_reload_path) =
-            create_use_client_fixture(temp_dir.path())
+            create_browser_dependency_fixture(temp_dir.path(), true)
                 .expect("Failed to create use-client fixture");
 
         let (compiled_script, sourcemap) = compile_fixture_bundle(
@@ -588,8 +614,40 @@ mod tests {
             "Client bundle should preserve SSR children until the client boundary mounts"
         );
         assert!(
-            compiled_script.contains("CLIENT_ONLY_GRAPH"),
-            "Client bundle should include the browser-only client module implementation"
+            compiled_script.contains("document.createElement"),
+            "Client bundle should include the browser-only dependency graph"
         );
+    }
+
+    #[test]
+    fn test_browser_only_dependency_without_use_client_fails_ssr() {
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let (path_group, node_modules_path, live_reload_path) =
+            create_browser_dependency_fixture(temp_dir.path(), false)
+                .expect("Failed to create browser dependency fixture");
+
+        let (compiled_script, _sourcemap) = compile_fixture_bundle(
+            &temp_dir,
+            &path_group,
+            &node_modules_path,
+            &live_reload_path,
+            true,
+        )
+        .expect("SSR bundle compilation should succeed");
+
+        assert!(
+            compiled_script.contains("document.createElement"),
+            "Control bundle should include the poisoned dependency when no boundary is present"
+        );
+
+        let error = run_ssr(compiled_script, 0).expect_err(
+            "SSR should fail without a 'use client' boundary around browser-only dependencies",
+        );
+
+        assert!(matches!(
+            error,
+            AppError::V8ExceptionError(ref message)
+                if message.contains("document is not defined")
+        ));
     }
 }
