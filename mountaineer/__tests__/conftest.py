@@ -1,3 +1,4 @@
+import asyncio
 from warnings import filterwarnings
 
 import pytest
@@ -32,3 +33,35 @@ def ignore_pluggy_warnings():
 @pytest.fixture(autouse=True)
 def clear_config_cache():
     unregister_config()
+
+
+def _cleanup_main_thread_event_loop() -> None:
+    """
+    pytest-asyncio on Python 3.10 may leave the main thread's default loop attached to the
+    event loop policy after async tests finish. Close that loop explicitly so pytest doesn't
+    surface it later as an unraisable ResourceWarning for the loop's socketpair.
+    """
+
+    policy = asyncio.get_event_loop_policy()
+    event_loop = getattr(getattr(policy, "_local", None), "_loop", None)
+    if event_loop is None:
+        return
+
+    if not event_loop.is_closed():
+        if event_loop.is_running():
+            return
+        event_loop.close()
+
+    asyncio.set_event_loop(None)
+
+
+@pytest.fixture(autouse=True)
+def cleanup_main_thread_event_loop():
+    yield
+    _cleanup_main_thread_event_loop()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_main_thread_event_loop_session():
+    yield
+    _cleanup_main_thread_event_loop()
