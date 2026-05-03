@@ -76,12 +76,12 @@ mod tests {
         if n <= 3 {
             return true;
         }
-        if n % 2 == 0 || n % 3 == 0 {
+        if n.is_multiple_of(2) || n.is_multiple_of(3) {
             return false;
         }
         let mut i = 5;
         while i * i <= n {
-            if n % i == 0 || n % (i + 2) == 0 {
+            if n.is_multiple_of(i) || n.is_multiple_of(i + 2) {
                 return false;
             }
             i += 6;
@@ -93,9 +93,9 @@ mod tests {
     fn test_is_prime() {
         // The correctness of this function doesn't matter as much as the
         // fact that it is doing some CPU-bounded computation
-        assert_eq!(is_prime(2), true);
-        assert_eq!(is_prime(3), true);
-        assert_eq!(is_prime(4), false);
+        assert!(is_prime(2));
+        assert!(is_prime(3));
+        assert!(!is_prime(4));
     }
 
     #[test]
@@ -131,10 +131,8 @@ mod tests {
     #[test]
     fn test_run_thread_valid() {
         let start = std::time::Instant::now();
-        let result = run_thread_with_timeout(
-            || return Ok("returns instantly"),
-            Duration::from_millis(500),
-        );
+        let result =
+            run_thread_with_timeout(|| Ok("returns instantly"), Duration::from_millis(500));
 
         assert_eq!(result, Ok("returns instantly"));
         assert!(start.elapsed() < Duration::from_millis(500));

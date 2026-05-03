@@ -67,11 +67,11 @@ impl UseClientPlugin {
         format!("{CLIENT_ACTUAL_PREFIX}{path}")
     }
 
-    fn parse_wrapper_virtual_id<'a>(id: &'a str) -> Option<&'a str> {
+    fn parse_wrapper_virtual_id(id: &str) -> Option<&str> {
         id.strip_prefix(CLIENT_WRAPPER_PREFIX)
     }
 
-    fn parse_actual_virtual_id<'a>(id: &'a str) -> Option<&'a str> {
+    fn parse_actual_virtual_id(id: &str) -> Option<&str> {
         id.strip_prefix(CLIENT_ACTUAL_PREFIX)
     }
 
