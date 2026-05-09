@@ -24,6 +24,7 @@ dependencies = [
     "mountaineer-exceptions>=0.1.1",
     "mountaineer-di>=0.1.2,<1.0.0",
 ]
+
 exclude = [
     "fixtures",
     "ci_webapp",
@@ -32,6 +33,9 @@ exclude = [
     "docs_website",
     "benchmarking",
 ]
+
+[project.scripts]
+mountaineer = "mountaineer.entrypoint:main"
 
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
