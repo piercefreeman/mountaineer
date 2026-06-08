@@ -14,6 +14,7 @@ mod logging;
 mod source_map;
 mod ssr;
 mod timeout;
+mod use_client;
 
 #[macro_use]
 extern crate lazy_static;

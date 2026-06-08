@@ -286,3 +286,17 @@ A common convention is importing all your view paths with absolute paths (like `
   "exclude": ["node_modules"]
 }
 ```
+
+## Client-Only Modules
+
+If a component depends on browser-only APIs or third-party libraries that cannot execute during SSR, add the exact directive below at the top of the file:
+
+```tsx
+'use client';
+```
+
+Mountaineer will scan the import graph during bundling. If a page, layout, or imported local module contains `'use client'`, that module becomes a client boundary.
+
+Mountaineer treats these as client boundaries during bundling. The server bundle never executes the marked module. During SSR the boundary renders its `children` passthrough or `null`, and after hydration the browser swaps in the real client component. That preserves SSR for the surrounding tree without importing browser-only packages into the server bundle.
+
+The recommended pattern is to wrap browser-only libraries in a small local component marked with `'use client'`, then import that wrapper from your page or layout. Modules marked `'use client'` should export React components rather than shared utilities.

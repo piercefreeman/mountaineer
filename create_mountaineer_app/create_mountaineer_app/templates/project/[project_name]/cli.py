@@ -5,11 +5,11 @@ from mountaineer.dependencies import get_function_dependencies
 from mountaineer import Depends, CoreDependencies
 
 from iceaxe import DBConnection
-from iceaxe.mountaineer import DatabaseConfig, DatabaseDependencies
 from iceaxe.migrations.cli import handle_apply, handle_generate, handle_rollback
+from iceaxe.mountaineer import DatabaseDependencies
 from iceaxe.schemas.cli import create_all
 
-from {{project_name}} import models
+from {{project_name}} import models as models  # noqa: F401
 from {{project_name}}.config import AppConfig
 
 
@@ -62,14 +62,20 @@ def migrate():
 
 @migrate.command()
 @option("--message", required=False)
+@option("--ignore-table", "ignore_tables", multiple=True)
 @async_to_sync
-async def generate(message: str | None):
+async def generate(message: str | None, ignore_tables: tuple[str, ...]):
     async def _inner(
         config: AppConfig = Depends(CoreDependencies.get_config_with_type(AppConfig)),
         db_connection: DBConnection = Depends(DatabaseDependencies.get_db_connection),
     ):
         assert config.PACKAGE
-        await handle_generate(config.PACKAGE, db_connection, message=message)
+        await handle_generate(
+            config.PACKAGE,
+            db_connection,
+            message=message,
+            ignore_tables=list(ignore_tables),
+        )
 
     _ = AppConfig()  # type: ignore
     async with get_function_dependencies(callable=_inner) as deps:
