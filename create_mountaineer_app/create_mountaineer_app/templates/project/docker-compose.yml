@@ -21,7 +21,7 @@ services:
       # Preserve container node_modules rather than using host binaries.
       - /usr/src/app/{{project_name}}/views/node_modules
     command:
-      - bash
+      - sh
       - -lc
       - exec uv run runserver --host 0.0.0.0 --port 5006
 
@@ -35,6 +35,7 @@ services:
       - "{{postgres_port}}:5432"
     volumes:
       - {{project_name}}_postgres_data:/var/lib/postgresql
+      - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-bootstrap.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U {{project_name}} -d {{project_name}}_db"]
       interval: 5s
