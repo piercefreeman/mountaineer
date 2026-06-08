@@ -35,6 +35,7 @@ services:
       - "{{postgres_port}}:5432"
     volumes:
       - {{project_name}}_postgres_data:/var/lib/postgresql
+      - ./bootstrap.sql:/docker-entrypoint-initdb.d/001-bootstrap.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U {{project_name}} -d {{project_name}}_db"]
       interval: 5s
