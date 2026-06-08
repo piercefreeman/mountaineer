@@ -15,6 +15,34 @@ def test_project_template_exposes_migrate_script():
     assert 'migrate = "{{ project_name }}.cli:migrate"' in template_contents
 
 
+def test_project_template_generates_migration_entrypoints(tmp_path: Path):
+    metadata = ProjectMetadata(
+        project_name="my_project",
+        author_name="John Appleseed",
+        author_email="test@email.com",
+        project_path=tmp_path,
+        package_manager=PackageManager.UV,
+        use_tailwind=False,
+        editor_config=None,
+        create_stub_files=False,
+        mountaineer_min_version="0.2.5",
+        mountaineer_dev_path=None,
+    )
+
+    build_project(metadata, install_deps=False)
+
+    cli_path = tmp_path / "my_project" / "cli.py"
+    cli = cli_path.read_text()
+    compile(cli, str(cli_path), "exec")
+
+    assert "from iceaxe.migrations.cli import" not in cli
+    assert "async def handle_generate(" in cli
+    assert "async def handle_apply(" in cli
+    assert "async def handle_rollback(" in cli
+    assert '@option("--ignore-table", "ignore_tables", multiple=True)' in cli
+    assert "from my_project import models as models  # noqa: F401" in cli
+
+
 def test_project_template_readme_mentions_renewing_node_modules_volume():
     template_path = (
         Path(__file__).parent / ".." / "templates" / "project" / "README.md"
