@@ -1,6 +1,8 @@
 {% if create_stub_files %}
+{% raw %}
 import React, { useState } from "react";
 import DatabaseSetupPage from "../_common/database-setup-page";
+import { Background, Masthead } from "../_common/field-guide";
 import { useServer } from "./_server/useServer";
 
 const Page = () => {
@@ -15,63 +17,83 @@ const Page = () => {
     );
   }
 
+  const homeHref = serverState.linkGenerator.homeController({});
+
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-8 flex items-center justify-between">
-          <h1 className="text-4xl font-light tracking-tight text-gray-900">Task Details</h1>
-          <a
-            className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
-            href={serverState.linkGenerator.homeController({})}
-          >
-            <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Tasks
-          </a>
-        </div>
+    <>
+      <Background />
+      <div className="fg-wrap">
+        <Masthead homeHref={homeHref} />
 
-        <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-6">
-            <h2 className="mb-2 text-sm font-medium text-gray-500">Current Description</h2>
-            <p className="text-lg text-gray-800">{serverState.description}</p>
+        <main className="fg-hero-main">
+          <div className="fg-eyebrow fg-rise" style={{ animationDelay: "0.05s" }}>
+            <span className="fg-dot" />
+            <span>Task{serverState.id != null ? ` #${serverState.id}` : ""}</span>
           </div>
 
-          <div className="space-y-4">
-            <h2 className="text-sm font-medium text-gray-500">Update Description</h2>
-            <div className="flex gap-3">
-              <input
-                className="flex-1 rounded-lg border border-gray-200 px-4 py-2.5 text-gray-800 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                type="text"
-                value={text}
-                placeholder="Enter new description..."
-                onChange={(e) => setText(e.target.value)}
-              />
-              <button
-                className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50"
-                onClick={async () => {
-                  await serverState.update_text({
-                    detail_id: serverState.id!,
-                    requestBody: {
-                      description: text,
-                    },
-                  });
-                  setText("");
-                }}
-                disabled={!text.trim()}
-              >
-                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Update
-              </button>
-            </div>
+          <h1 className="fg-display fg-rise" style={{ animationDelay: "0.1s", fontSize: "clamp(40px, 6vw, 72px)" }}>
+            Task <span className="fg-pine">details</span>
+          </h1>
+
+          <div className="fg-rise" style={{ animationDelay: "0.2s", marginTop: "26px" }}>
+            <a className="fg-back" href={homeHref}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+              Back to the route
+            </a>
           </div>
-        </div>
+        </main>
+
+        <section className="fg-panel fg-rise" style={{ animationDelay: "0.28s", marginBottom: "40px" }}>
+          <div style={{ marginBottom: "28px" }}>
+            <span className="fg-tag">Current description</span>
+            <p className="fg-current">{serverState.description}</p>
+          </div>
+
+          <div className="fg-rule" style={{ marginBottom: "24px" }} />
+
+          <span className="fg-tag">Update description</span>
+          <div className="fg-input-row">
+            <input
+              className="fg-input"
+              type="text"
+              value={text}
+              placeholder="Write a new description…"
+              onChange={(e) => setText(e.target.value)}
+            />
+            <button
+              className="fg-btn fg-primary"
+              type="button"
+              disabled={!text.trim()}
+              onClick={async () => {
+                await serverState.update_text({
+                  detail_id: serverState.id!,
+                  requestBody: { description: text },
+                });
+                setText("");
+              }}
+            >
+              Save
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
+            </button>
+          </div>
+        </section>
+
+        <div className="fg-rule" />
+        <footer className="fg-foot">
+          <span className="fg-foot-l">
+            Edit <code>views/app/detail/page.tsx</code>
+          </span>
+          <span className="fg-foot-r">37.9235° N · 122.5965° W</span>
+        </footer>
       </div>
-    </div>
+    </>
   );
 };
 
 export default Page;
+{% endraw %}
 {% endif %}
