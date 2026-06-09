@@ -438,9 +438,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         Get a response for a job from the broker server.
         If the response is not available, wait for it.
         """
-        cmd = GetResponseCommand(
-            job_id=job_id, timeout=timeout, auth_key=self.auth_key
-        )
+        cmd = GetResponseCommand(job_id=job_id, timeout=timeout, auth_key=self.auth_key)
         response = await self._send_message(self.host, self.port, cmd)
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)

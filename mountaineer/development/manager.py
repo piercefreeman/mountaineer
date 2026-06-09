@@ -173,9 +173,7 @@ async def _bootstrap_backend(
         )
 
     CONSOLE.print("[bold yellow]⚙️  Building useServer components...[/bold yellow]")
-    await broker.send_and_get_response(
-        BuildUseServerMessage(), timeout=message_timeout
-    )
+    await broker.send_and_get_response(BuildUseServerMessage(), timeout=message_timeout)
     build_time = time() - start
     CONSOLE.print(
         f"[bold green]✨ Backend build complete in {build_time:.2f}s![/bold green]"

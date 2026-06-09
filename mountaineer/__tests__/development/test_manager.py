@@ -1,4 +1,7 @@
+from typing import cast
+
 import pytest
+from firehot import Environment
 
 from mountaineer.development.manager import (
     FileChangesState,
@@ -12,6 +15,7 @@ from mountaineer.development.messages import (
     StartServerMessage,
 )
 from mountaineer.development.messages_broker import (
+    AsyncMessageBroker,
     BrokerExecutionError,
     BrokerServerConfig,
     BrokerTimeoutError,
@@ -81,8 +85,8 @@ async def test_restart_backend_retries_timed_out_boot():
     state = FileChangesState()
 
     await restart_backend(
-        environment,  # type: ignore[arg-type]
-        broker,  # type: ignore[arg-type]
+        cast(Environment, environment),
+        cast(AsyncMessageBroker, broker),
         state,
         isolated_context(),
         message_timeout=0.01,
@@ -108,8 +112,8 @@ async def test_restart_backend_stops_context_after_exhausting_timeouts():
 
     with pytest.raises(BrokerExecutionError):
         await restart_backend(
-            environment,  # type: ignore[arg-type]
-            broker,  # type: ignore[arg-type]
+            cast(Environment, environment),
+            cast(AsyncMessageBroker, broker),
             state,
             isolated_context(),
             message_timeout=0.01,
