@@ -5,7 +5,7 @@ import signal
 from os import environ
 from pathlib import Path
 from random import uniform
-from shutil import copytree
+from shutil import copytree, ignore_patterns
 from subprocess import Popen
 from time import sleep, time
 
@@ -23,7 +23,11 @@ def tmp_ci_webapp(tmp_path: Path):
     # just within this test
     raw_package = get_fixture_path("ci_webapp")
     mutable_package = tmp_path / "ci_webapp"
-    copytree(raw_package, mutable_package)
+    copytree(
+        raw_package,
+        mutable_package,
+        ignore=ignore_patterns("node_modules", ".venv", ".mypy_cache", "__pycache__"),
+    )
 
     pyproject_path = mutable_package / "pyproject.toml"
     base_package_path = (get_fixture_path("") / "../../../").resolve()

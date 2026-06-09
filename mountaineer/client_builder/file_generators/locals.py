@@ -250,7 +250,7 @@ class LocalActionGenerator(LocalGeneratorBase):
         )
 
         imports = [
-            f"import {{ {exception.name.global_name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
+            f"import type {{ {exception.name.global_name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
             for exception in embedded_types.exceptions
         ]
 

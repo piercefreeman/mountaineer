@@ -96,3 +96,39 @@ async def test_process_css_uses_absolute_paths(css_path_str: str):
             env = kwargs.get("env", {})
             assert "NODE_PATH" in env
             assert str(package_root.absolute() / "node_modules") == env["NODE_PATH"]
+
+
+@pytest.mark.asyncio
+async def test_process_css_resolves_cli_symlink(tmp_path: Path):
+    package_root = ManagedViewPath.from_view_root(tmp_path / "root")
+    view_root = ManagedViewPath.from_view_root(tmp_path / "root" / "views")
+    css_path = view_root / "styles.css"
+    cli_target = package_root / "node_modules" / "postcss-cli" / "index.js"
+    cli_path = package_root / "node_modules" / ".bin" / "postcss"
+
+    cli_target.parent.mkdir(parents=True)
+    cli_target.write_text("#!/usr/bin/env node\n")
+    cli_path.parent.mkdir(parents=True)
+    cli_path.symlink_to("../postcss-cli/index.js")
+
+    bundler = PostCSSBundler()
+    bundler.metadata = MagicMock()
+    bundler.metadata.package_root_link = package_root
+
+    mock_process = AsyncMock()
+    mock_process.communicate.return_value = (b"", b"")
+    mock_process.returncode = 0
+
+    with (
+        TemporaryDirectory() as temp_dir_name,
+        patch.object(bundler, "postcss_is_installed", return_value=(True, cli_path)),
+        patch("asyncio.create_subprocess_exec", return_value=mock_process) as mock_exec,
+        patch("tempfile.TemporaryDirectory") as mock_temp_dir,
+    ):
+        mock_temp_dir.return_value.__enter__.return_value = temp_dir_name
+
+        with patch.object(Path, "read_text", return_value="processed CSS"):
+            await bundler.process_css(css_path)
+
+    args, _ = mock_exec.call_args
+    assert args[0] == str(cli_target.resolve().absolute())
