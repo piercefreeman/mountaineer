@@ -13,12 +13,8 @@ import httpx
 import pytest
 import toml
 
-from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.cli import find_packages_with_prefix
-from mountaineer.development.isolation import IsolatedAppContext
-from mountaineer.ssr import find_tsconfig
-from mountaineer.static import get_static_path
+from mountaineer.cli import find_packages_with_prefix, handle_build
 
 
 @pytest.fixture
@@ -66,53 +62,19 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
     package_dir = _create_client_only_fixture(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
 
-    isolated_context = IsolatedAppContext.from_webcontroller(
-        webcontroller="client_only_fixture.app:controller",
-        use_dev_exceptions=False,
-    )
-    asyncio.run(isolated_context.initialize_app_state())
-
-    assert isolated_context.app_controller is not None
-
-    build_controllers = [
-        controller_definition
-        for controller_definition in isolated_context.app_controller.graph.controllers
-        if controller_definition.controller._build_enabled
-    ]
-    all_view_paths = [
-        view_path
-        for controller_definition in build_controllers
-        for view_path in controller_definition.get_hierarchy_view_paths()
-    ]
-    entrypoint_names = [
-        controller_definition.controller.script_name
-        for controller_definition in build_controllers
-    ]
-
-    client_bundle_result = mountaineer_rs.compile_production_bundle(
-        all_view_paths,
-        str(isolated_context.app_controller._view_root / "node_modules"),
-        "production",
-        False,
-        str(get_static_path("live_reload.ts").resolve().absolute()),
-        False,
-        find_tsconfig(all_view_paths),
-        entrypoint_names,
-    )
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+    try:
+        handle_build(
+            webcontroller="client_only_fixture.app:controller",
+            minify=False,
+        )
+    finally:
+        if not event_loop.is_closed():
+            event_loop.close()
+        asyncio.set_event_loop(None)
 
     static_dir = package_dir / "views" / "_static"
-    static_dir.mkdir(exist_ok=True)
-
-    for entrypoint_name, content, map_content in zip(
-        entrypoint_names,
-        client_bundle_result["entrypoints"],
-        client_bundle_result["entrypoint_maps"],
-    ):
-        (static_dir / f"{entrypoint_name}.js").write_text(content)
-        (static_dir / f"{entrypoint_name}.map.js").write_text(map_content)
-
-    for path, content in client_bundle_result["supporting"].items():
-        (static_dir / path).write_text(content)
 
     _assert_relative_js_imports_resolve(static_dir)
 
@@ -245,11 +207,13 @@ controller.register(ClientOnlyController())
         """
 import React from "react";
 import ClientOnlyWrapper from "./ClientOnlyWrapper";
+import { sharedClientValue } from "./sharedClientValue";
 
 const ClientOnlyPage = () => {
   return (
     <div>
       <h1>Client Only Test</h1>
+      <span>{sharedClientValue}</span>
       <ClientOnlyWrapper />
     </div>
   );
@@ -291,14 +255,22 @@ export default ClientOnlyWrapper;
 import React from "react";
 import queueMicrotask from "queue-microtask";
 import { browserOnlyValue } from "./browserOnlyDom";
+import { sharedClientValue } from "./sharedClientValue";
 
 queueMicrotask(() => undefined);
 
 const BrowserOnlyClient = () => {
-  return <div>{browserOnlyValue}</div>;
+  return <div>{browserOnlyValue}:{sharedClientValue}</div>;
 };
 
 export default BrowserOnlyClient;
+""".strip()
+        + "\n"
+    )
+
+    (app_dir / "sharedClientValue.ts").write_text(
+        """
+export const sharedClientValue = "shared-client-value";
 """.strip()
         + "\n"
     )
