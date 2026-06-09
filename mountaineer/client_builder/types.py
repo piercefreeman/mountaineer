@@ -129,7 +129,8 @@ class SetOf(TypeDefinition):
         return [self.type]
 
     def update_children(self, children):
-        self.types = tuple(children)
+        assert len(children) == 1
+        self.type = children[0]
 
 
 class LiteralOf(TypeDefinition):
