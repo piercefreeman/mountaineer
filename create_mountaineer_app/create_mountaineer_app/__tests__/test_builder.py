@@ -207,6 +207,7 @@ def test_valid_permutations(
         response = get(f"http://localhost:{webhost_port}")
         if create_stub_files:
             assert response.ok
+            assert "Explore the generated Mountaineer app" in response.text
         else:
             assert response.status_code == 404
 

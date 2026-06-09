@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from warnings import filterwarnings
 
 import pytest
@@ -42,8 +43,15 @@ def _cleanup_main_thread_event_loop() -> None:
     surface it later as an unraisable ResourceWarning for the loop's socketpair.
     """
 
-    policy = asyncio.get_event_loop_policy()
-    event_loop = getattr(getattr(policy, "_local", None), "_loop", None)
+    if sys.version_info >= (3, 14):
+        try:
+            event_loop = asyncio.get_event_loop()
+        except RuntimeError:
+            return
+    else:
+        policy = asyncio.get_event_loop_policy()
+        event_loop = getattr(getattr(policy, "_local", None), "_loop", None)
+
     if event_loop is None:
         return
 

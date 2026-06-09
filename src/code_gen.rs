@@ -11,10 +11,13 @@ pub fn build_entrypoint(
 ) -> String {
     // Generate the synthetic entrypoint content
     let mut entrypoint_content = String::from("import React from 'react';\n");
-    entrypoint_content += &format!("import mountLiveReload from '{live_reload_import}';\n\n");
+    entrypoint_content += &format!(
+        "import mountLiveReload from {};\n\n",
+        js_string_literal(live_reload_import)
+    );
 
     for (j, path) in path_group.iter().enumerate() {
-        entrypoint_content += &format!("import Layout{j} from '{path}';\n");
+        entrypoint_content += &format!("import Layout{j} from {};\n", js_string_literal(path));
     }
 
     entrypoint_content += "\nconst Entrypoint = () => {\n";
@@ -47,4 +50,30 @@ pub fn build_entrypoint(
     }
 
     entrypoint_content
+}
+
+fn js_string_literal(value: &str) -> String {
+    serde_json::to_string(value).expect("path import specifiers are valid JS strings")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_entrypoint_escapes_windows_paths() {
+        let entrypoint = build_entrypoint(
+            &[
+                r"C:\absolute\path\layout.jsx".to_string(),
+                r"C:\absolute\path\page.jsx".to_string(),
+            ],
+            true,
+            r"C:\absolute\path\live_reload.ts",
+        );
+
+        assert!(entrypoint
+            .contains(r#"import mountLiveReload from "C:\\absolute\\path\\live_reload.ts";"#));
+        assert!(entrypoint.contains(r#"import Layout0 from "C:\\absolute\\path\\layout.jsx";"#));
+        assert!(entrypoint.contains(r#"import Layout1 from "C:\\absolute\\path\\page.jsx";"#));
+    }
 }
