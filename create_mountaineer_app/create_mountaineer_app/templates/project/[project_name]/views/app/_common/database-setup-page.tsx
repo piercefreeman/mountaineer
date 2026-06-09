@@ -27,7 +27,7 @@ const DatabaseSetupPage = ({ createdbCommand }: DatabaseSetupPageProps) => {
 
           <p className="fg-lede fg-rise" style={{ animationDelay: "0.24s" }}>
             Your Postgres schema isn&apos;t built yet. Run one command to create
-            the tables from your Iceaxe models, then refresh this page.
+            the tables from your Iceaxe models. Then refresh this page.
           </p>
 
           <div className="fg-rise" style={{ animationDelay: "0.32s", marginTop: "32px", maxWidth: "640px" }}>
