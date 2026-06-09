@@ -450,7 +450,7 @@ mod tests {
 
         assert_eq!(result, Ok("<html></html>".to_string()));
         assert_eq!(
-            String::from_utf8_lossy(&*result_vector),
+            String::from_utf8_lossy(&result_vector),
             "ssr console [log]: test log\n"
         );
     }

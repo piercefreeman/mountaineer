@@ -31,9 +31,10 @@ COPY . .
 # Install Python dependencies (editable install for mounted code)
 RUN uv sync
 
-# Install frontend dependencies
+# Install frontend dependencies. If host node_modules entered the context, remove
+# it so native optional packages are resolved for the container architecture.
 WORKDIR /usr/src/app/{{project_name}}/views
-RUN npm install
+RUN rm -rf node_modules && npm install --include=optional
 
 WORKDIR /usr/src/app
 
