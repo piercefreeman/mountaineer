@@ -63,6 +63,7 @@ class GetResponseCommand(BaseCommand):
 
     item_type: Literal["get_response"] = "get_response"
     job_id: str
+    timeout: float | None = None
 
 
 class GetJobCommand(BaseCommand):
@@ -95,8 +96,21 @@ class UnauthorizedResponse(BaseResponse):
     message: str = "Invalid authentication key"
 
 
+class TimeoutResponse(BaseResponse):
+    """Response indicating a broker wait timed out"""
+
+    item_type: Literal["timeout"] = "timeout"
+    message: str
+
+
 class BrokerAuthenticationError(Exception):
     """Raised when the broker authentication fails."""
+
+    pass
+
+
+class BrokerTimeoutError(Exception):
+    """Raised when a broker response does not arrive within the requested timeout."""
 
     pass
 
@@ -117,7 +131,7 @@ CommandTypes = (
     | GetJobCommand
     | DrainQueueCommand
 )
-ResponseTypes = OKResponse | UnauthorizedResponse
+ResponseTypes = OKResponse | UnauthorizedResponse | TimeoutResponse
 
 # Create type adapters for polymorphic validation
 command_type_adapter = TypeAdapter(  # type: ignore
@@ -314,8 +328,26 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
                             self.pending_futures.setdefault(cmd_obj.job_id, []).append(
                                 fut
                             )
-                            response_data = await fut
-                            response = OKResponse(response_data=response_data)
+                            try:
+                                if cmd_obj.timeout is None:
+                                    response_data = await fut
+                                else:
+                                    response_data = await asyncio.wait_for(
+                                        fut, timeout=cmd_obj.timeout
+                                    )
+                                response = OKResponse(response_data=response_data)
+                            except asyncio.TimeoutError:
+                                futures = self.pending_futures.get(cmd_obj.job_id, [])
+                                if fut in futures:
+                                    futures.remove(fut)
+                                if not futures:
+                                    self.pending_futures.pop(cmd_obj.job_id, None)
+                                response = TimeoutResponse(
+                                    message=(
+                                        f"Timed out waiting for response to job "
+                                        f"{cmd_obj.job_id}"
+                                    )
+                                )
                     elif isinstance(cmd_obj, GetJobCommand):
                         if self.job_queue:
                             # Get next job from queue
@@ -401,15 +433,19 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             raise BrokerAuthenticationError(response.message)
         return response
 
-    async def get_response(self, job_id: str) -> Any:
+    async def get_response(self, job_id: str, timeout: float | None = None) -> Any:
         """
         Get a response for a job from the broker server.
         If the response is not available, wait for it.
         """
-        cmd = GetResponseCommand(job_id=job_id, auth_key=self.auth_key)
+        cmd = GetResponseCommand(
+            job_id=job_id, timeout=timeout, auth_key=self.auth_key
+        )
         response = await self._send_message(self.host, self.port, cmd)
         if isinstance(response, UnauthorizedResponse):
             raise BrokerAuthenticationError(response.message)
+        if isinstance(response, TimeoutResponse):
+            raise BrokerTimeoutError(response.message)
         if not isinstance(response, OKResponse):
             raise ValueError(f"Failed to get response: {response}")
         if response.response_data is None:
@@ -436,7 +472,9 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
             b64decode(response.response_data["job_data"])
         )
 
-    async def send_and_get_response(self, job_data: AppMessageTypes) -> Any:
+    async def send_and_get_response(
+        self, job_data: AppMessageTypes, timeout: float | None = None
+    ) -> Any:
         """
         Send a job to the broker server and wait for a response. Will raise on a client
         error to break out of the current loop.
@@ -444,7 +482,7 @@ class AsyncMessageBroker(Thread, Generic[AppMessageTypes]):
         """
         job_id = str(uuid4())
         await self.send_job(job_id, job_data)
-        response = await self.get_response(job_id)
+        response = await self.get_response(job_id, timeout=timeout)
         if isinstance(response, ErrorResponse):
             raise BrokerExecutionError(response.exception, response.traceback)
         return response

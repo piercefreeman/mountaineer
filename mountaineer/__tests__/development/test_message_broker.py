@@ -11,6 +11,7 @@ from mountaineer.development.messages_broker import (
     AsyncMessageBroker,
     BrokerAuthenticationError,
     BrokerServerConfig,
+    BrokerTimeoutError,
     OKResponse,
 )
 
@@ -150,6 +151,20 @@ async def test_nonexistent_job():
             # Now the get_response should complete
             result = await get_response_task
             assert result == "late response"
+
+
+@pytest.mark.asyncio
+async def test_send_and_get_response_timeout_removes_waiter():
+    async with AsyncMessageBroker.start_server() as (server_broker, config):
+        with pytest.raises(BrokerTimeoutError):
+            await server_broker.send_and_get_response(
+                DummyMessage("no worker"), timeout=0.01
+            )
+
+        assert len(server_broker.pending_futures) == 0
+
+        async with AsyncMessageBroker.new_client(config) as client_broker:
+            await client_broker.send_response("unrelated-job", "late response")
 
 
 @pytest.mark.asyncio
