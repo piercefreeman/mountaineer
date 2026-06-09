@@ -7,7 +7,6 @@ from mountaineer.client_builder.interface_builders.controller import ControllerI
 from mountaineer.client_builder.parser import (
     ControllerWrapper,
     EnumWrapper,
-    ExceptionWrapper,
     FieldWrapper,
     TypeDefinition,
 )
@@ -193,7 +192,7 @@ class LocalActionGenerator(LocalGeneratorBase):
     def script(self):
         action_js = self._generate_controller_actions(self.controller)
         dependencies = self._get_dependent_imports(self.controller)
-        exception_imports, exception_definitions = self._generate_exceptions(
+        exception_imports, exception_exports = self._generate_exceptions(
             self.controller
         )
 
@@ -201,7 +200,7 @@ class LocalActionGenerator(LocalGeneratorBase):
         api_import_path = self.get_global_import_path("api.ts")
         controller_import_path = self.get_global_import_path("controllers.ts")
         yield CodeBlock(
-            f"import {{ __request, FetchErrorBase }} from '{api_import_path}';",
+            f"import {{ __request }} from '{api_import_path}';",
             f"import type {{ {', '.join(dependencies)} }} from '{controller_import_path}';",
             *exception_imports,
         )
@@ -210,8 +209,8 @@ class LocalActionGenerator(LocalGeneratorBase):
         for action in action_js:
             yield CodeBlock(action)
 
-        for exception in exception_definitions:
-            yield CodeBlock(exception)
+        if exception_exports:
+            yield CodeBlock(f"export {{ {', '.join(exception_exports)} }};")
 
     def _generate_controller_actions(self, controller: ControllerWrapper):
         """
@@ -243,26 +242,18 @@ class LocalActionGenerator(LocalGeneratorBase):
         return deps
 
     def _generate_exceptions(self, parsed_controller: ControllerWrapper):
-        """Wrapper around the model to create a concrete Exception class"""
-        controllers_import_path = self.get_global_import_path("controllers.ts")
+        """Import globally shared exception classes for this controller"""
         embedded_types = ControllerWrapper.get_all_embedded_types(
             [parsed_controller], include_superclasses=True
         )
+        exception_names = [exception.name.global_name for exception in embedded_types.exceptions]
+        if not exception_names:
+            return [], []
 
-        imports = [
-            f"import {{ {exception.name.global_name} as {self._get_exception_import_name(exception)} }} from '{controllers_import_path}';"
-            for exception in embedded_types.exceptions
-        ]
-
-        definitions = [
-            f"export class {exception.name.local_name} extends FetchErrorBase<{self._get_exception_import_name(exception)}> {{}}"
-            for exception in embedded_types.exceptions
-        ]
-
-        return imports, definitions
-
-    def _get_exception_import_name(self, exception: ExceptionWrapper):
-        return f"{exception.name.local_name}Base"
+        exceptions_import_path = self.get_global_import_path("exceptions.ts")
+        return [
+            f"import {{ {', '.join(exception_names)} }} from '{exceptions_import_path}';"
+        ], exception_names
 
 
 class LocalModelGenerator(LocalGeneratorBase):
