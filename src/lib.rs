@@ -170,7 +170,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     #[pyfn(m)]
     #[pyo3(name = "compile_production_bundle")]
-    #[pyo3(signature = (paths, node_modules_path, environment, minify, live_reload_import, is_server, tsconfig_path=None))]
+    #[pyo3(signature = (paths, node_modules_path, environment, minify, live_reload_import, is_server, tsconfig_path=None, entrypoint_names=None))]
     #[allow(clippy::too_many_arguments)]
     fn compile_production_bundle(
         py: Python,
@@ -181,6 +181,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
         live_reload_import: String,
         is_server: bool,
         tsconfig_path: Option<String>,
+        entrypoint_names: Option<Vec<String>>,
     ) -> PyResult<Py<PyDict>> {
         /*
          * Builds a full production bundle from multiple JavaScript files. Uses
@@ -200,6 +201,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             live_reload_import,
             is_server,
             tsconfig_path,
+            entrypoint_names,
         )
     }
 

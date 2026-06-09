@@ -166,9 +166,12 @@ def test_project_template_build_adds_database_setup_guard(tmp_path: Path):
         / "_common"
         / "database-setup-page.tsx"
     ).read_text()
+    bootstrap_sql = (tmp_path / "bootstrap.sql").read_text().lower()
 
     assert "database_setup_required" in home_controller
     assert "get_database_setup_required" in home_controller
     assert "DatabaseSetupPage" in home_view
     assert 'CREATEDB_COMMAND = "uv run createdb"' in database_setup_helper
     assert "Then refresh this page." in database_setup_view
+    assert "create table" not in bootstrap_sql
+    assert "insert into" not in bootstrap_sql

@@ -51,7 +51,7 @@ For local Docker-based development, the generated project includes `docker-compo
 docker compose up --build -d
 ```
 
-For projects generated with stub MVC files, Postgres runs `bootstrap.sql` on first database boot to create the starter `detailitem` table and seed example rows.
+For projects generated with stub MVC files, `createdb` creates the starter `detailitem` table and seeds example rows.
 
 The `webapp` service preserves container-managed `{{project_name}}/views/node_modules` in an anonymous Docker volume so host-installed binaries do not leak into the container. If you change `Dockerfile.local`, frontend dependencies, or the Node/Tailwind/PostCSS toolchain, refresh that volume before restarting:
 

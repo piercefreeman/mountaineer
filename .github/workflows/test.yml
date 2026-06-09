@@ -162,6 +162,7 @@ jobs:
           os: ${{ matrix.os }}
           target: ${{ matrix.target }}
           python-architecture: ${{ matrix.python-architecture || 'x64' }}
+          cache-targets: 'false'
 
       - name: Update version
         if: startsWith(github.ref, 'refs/tags/v')

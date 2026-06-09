@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 import signal
 from os import environ
 from pathlib import Path
@@ -13,9 +14,7 @@ import pytest
 import toml
 
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.cli import (
-    find_packages_with_prefix,
-)
+from mountaineer.cli import find_packages_with_prefix, handle_build
 
 
 @pytest.fixture
@@ -54,6 +53,30 @@ def test_find_packages_with_prefix():
         "pydantic_core",
         "pydantic-settings",
     }
+
+
+def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    package_dir = _create_client_only_fixture(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
+    try:
+        handle_build(
+            webcontroller="client_only_fixture.app:controller",
+            minify=False,
+        )
+    finally:
+        if not event_loop.is_closed():
+            event_loop.close()
+        asyncio.set_event_loop(None)
+
+    static_dir = package_dir / "views" / "_static"
+
+    _assert_relative_js_imports_resolve(static_dir)
 
 
 async def check_server_bound(port: int, timeout=8):
@@ -129,3 +152,172 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         # Terminate the processes after test
         os.kill(server_process.pid, signal.SIGKILL)
         server_process.wait()
+
+
+def _create_client_only_fixture(tmp_path: Path) -> Path:
+    package_name = "client_only_fixture"
+    package_dir = tmp_path / package_name
+    views_dir = package_dir / "views"
+    app_dir = views_dir / "app" / "client_only"
+
+    app_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("")
+
+    (package_dir / "app.py").write_text(
+        """
+from pathlib import Path
+
+from mountaineer import AppController, ControllerBase, Metadata, RenderBase
+
+
+class ClientOnlyRender(RenderBase):
+    pass
+
+
+class ClientOnlyController(ControllerBase):
+    url = "/client-only"
+    view_path = "/app/client_only/page.tsx"
+
+    def render(self) -> ClientOnlyRender:
+        return ClientOnlyRender(metadata=Metadata(title="Client Only"))
+
+
+controller = AppController(view_root=Path(__file__).parent / "views")
+controller.register(ClientOnlyController())
+""".strip()
+        + "\n"
+    )
+
+    fixture_views_dir = (
+        get_fixture_path("ci_webapp") / "ci_webapp" / "views"
+    ).resolve()
+    (views_dir / "package.json").write_text(
+        (fixture_views_dir / "package.json").read_text()
+    )
+    (views_dir / "tsconfig.json").write_text(
+        (fixture_views_dir / "tsconfig.json").read_text()
+    )
+
+    _symlink_or_copy_dir(
+        fixture_views_dir / "node_modules",
+        views_dir / "node_modules",
+    )
+
+    (app_dir / "page.tsx").write_text(
+        """
+import React from "react";
+import ClientOnlyWrapper from "./ClientOnlyWrapper";
+import { sharedClientValue } from "./sharedClientValue";
+
+const ClientOnlyPage = () => {
+  return (
+    <div>
+      <h1>Client Only Test</h1>
+      <span>{sharedClientValue}</span>
+      <ClientOnlyWrapper />
+    </div>
+  );
+};
+
+export default ClientOnlyPage;
+""".strip()
+        + "\n"
+    )
+
+    (app_dir / "ClientOnlyWrapper.tsx").write_text(
+        """
+import React, { type ComponentType, useEffect, useState } from "react";
+
+const ClientOnlyWrapper = () => {
+  const [ClientOnlyComponent, setClientOnlyComponent] =
+    useState<ComponentType | null>(null);
+
+  useEffect(() => {
+    import("./BrowserOnlyClient").then((module) => {
+      setClientOnlyComponent(() => module.default);
+    });
+  }, []);
+
+  if (!ClientOnlyComponent) {
+    return <div>Loading browser-only component...</div>;
+  }
+
+  return <ClientOnlyComponent />;
+};
+
+export default ClientOnlyWrapper;
+""".strip()
+        + "\n"
+    )
+
+    (app_dir / "BrowserOnlyClient.tsx").write_text(
+        """
+import React from "react";
+import queueMicrotask from "queue-microtask";
+import { browserOnlyValue } from "./browserOnlyDom";
+import { sharedClientValue } from "./sharedClientValue";
+
+queueMicrotask(() => undefined);
+
+const BrowserOnlyClient = () => {
+  return <div>{browserOnlyValue}:{sharedClientValue}</div>;
+};
+
+export default BrowserOnlyClient;
+""".strip()
+        + "\n"
+    )
+
+    (app_dir / "sharedClientValue.ts").write_text(
+        """
+export const sharedClientValue = "shared-client-value";
+""".strip()
+        + "\n"
+    )
+
+    (app_dir / "browserOnlyDom.ts").write_text(
+        """
+document.createElement("i");
+
+export const browserOnlyValue = "browser-only-client";
+""".strip()
+        + "\n"
+    )
+
+    return package_dir
+
+
+def _symlink_or_copy_dir(source: Path, target: Path) -> None:
+    try:
+        target.symlink_to(source, target_is_directory=True)
+    except OSError:
+        copytree(source, target)
+
+
+def _assert_relative_js_imports_resolve(static_dir: Path) -> None:
+    import_patterns = (
+        re.compile(r'from\s+["\'](\./[^"\']+\.js)["\']'),
+        re.compile(r'import\s*\(\s*["\'](\./[^"\']+\.js)["\']\s*\)'),
+        re.compile(r'import\s*["\'](\./[^"\']+\.js)["\']'),
+    )
+
+    missing_references: list[str] = []
+
+    for bundle_path in sorted(static_dir.glob("*.js")):
+        if bundle_path.name.endswith(".map.js"):
+            continue
+
+        contents = bundle_path.read_text()
+        relative_imports = {
+            match for pattern in import_patterns for match in pattern.findall(contents)
+        }
+
+        for relative_import in sorted(relative_imports):
+            target_path = bundle_path.parent / relative_import
+            if not target_path.exists():
+                missing_references.append(f"{bundle_path.name} -> {relative_import}")
+
+    assert not missing_references, (
+        "Unresolved relative JavaScript imports in built static output:\\n"
+        + "\\n".join(missing_references)
+    )

@@ -20,6 +20,10 @@ inputs:
     description: 'Python architecture'
     required: false
     default: 'x64'
+  cache-targets:
+    description: 'Whether to cache Cargo target build artifacts'
+    required: false
+    default: 'true'
 
 runs:
   using: "composite"
@@ -36,13 +40,13 @@ runs:
     - name: Cache Rust dependencies and build artifacts
       uses: Swatinem/rust-cache@v2
       with:
-        key: v1-${{ inputs.cache-prefix }}-${{ inputs.os }}-${{ inputs.target }}-${{ inputs.python-version }}
+        key: v2-${{ inputs.cache-prefix }}-${{ inputs.os }}-${{ inputs.target }}-${{ inputs.python-version }}-targets-${{ inputs.cache-targets }}
         cache-directories: |
           ~/.cargo/registry/index
           ~/.cargo/registry/cache
           ~/.cargo/git
-          target/
-        shared-key: "rust-${{ inputs.cache-prefix }}-cache"
+        cache-targets: ${{ inputs.cache-targets }}
+        shared-key: "rust-v2-${{ inputs.cache-prefix }}-targets-${{ inputs.cache-targets }}-cache"
         save-if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/') }}
 
     - name: Install uv

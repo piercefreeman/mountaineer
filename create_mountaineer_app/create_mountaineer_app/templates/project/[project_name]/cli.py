@@ -5,12 +5,31 @@ from mountaineer.dependencies import get_function_dependencies
 from mountaineer import Depends, CoreDependencies
 
 from iceaxe import DBConnection
+{% if create_stub_files %}
+from iceaxe import select
+{% endif %}
 from iceaxe.migrations.cli import handle_apply, handle_generate, handle_rollback
 from iceaxe.mountaineer import DatabaseDependencies
 from iceaxe.schemas.cli import create_all
 
 from {{project_name}} import models as models  # noqa: F401
 from {{project_name}}.config import AppConfig
+
+{% if create_stub_files %}
+
+async def seed_starter_data(db_connection: DBConnection):
+    existing_items = await db_connection.exec(select(models.DetailItem).limit(1))
+    if existing_items:
+        return
+
+    await db_connection.insert(
+        [
+            models.DetailItem(description="Explore the generated Mountaineer app"),
+            models.DetailItem(description="Edit this item from the detail page"),
+            models.DetailItem(description="Add a new item from the home page"),
+        ]
+    )
+{% endif %}
 
 
 @command()
@@ -50,6 +69,9 @@ async def createdb():
         db_connection: DBConnection = Depends(DatabaseDependencies.get_db_connection),
     ):
         await create_all(db_connection=db_connection)
+        {% if create_stub_files %}
+        await seed_starter_data(db_connection)
+        {% endif %}
 
     async with get_function_dependencies(callable=run_bootstrap) as values:
         await run_bootstrap(**values)
