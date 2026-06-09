@@ -207,6 +207,25 @@ class TestLocalActionGenerator:
             "UploadFileResponseWrapped",
         }
 
+    def test_exception_payload_imports_are_type_only(
+        self, generator: LocalActionGenerator
+    ) -> None:
+        content = "\n".join(block.content for block in generator.script())
+
+        assert "import { __request, FetchErrorBase }" in content
+        assert (
+            "import type { RequestValidationError as RequestValidationErrorBase }"
+            in content
+        )
+        assert (
+            "import { RequestValidationError as RequestValidationErrorBase }"
+            not in content
+        )
+        assert (
+            "export class RequestValidationError extends "
+            "FetchErrorBase<RequestValidationErrorBase>"
+        ) in content
+
 
 class TestLocalModelGenerator:
     @pytest.fixture

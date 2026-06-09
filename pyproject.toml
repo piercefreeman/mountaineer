@@ -39,7 +39,14 @@ build-backend = "maturin"
 
 [tool.uv]
 # NOTE: https://github.com/PyO3/maturin/issues/2314
-cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.rs" }, { file = "Cargo.toml" }, { file = "Cargo.lock" }]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "mountaineer/**/*.py" },
+    { file = "mountaineer/static/**/*" },
+    { file = "src/**/*.rs" },
+    { file = "Cargo.toml" },
+    { file = "Cargo.lock" },
+]
 
 
 #[tool.uv.sources]

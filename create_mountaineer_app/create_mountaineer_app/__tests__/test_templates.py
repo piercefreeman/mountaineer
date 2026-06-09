@@ -157,21 +157,30 @@ def test_project_template_build_adds_database_setup_guard(tmp_path: Path):
     home_view = (
         tmp_path / "my_project" / "views" / "app" / "home" / "page.tsx"
     ).read_text()
+    detail_view = (
+        tmp_path / "my_project" / "views" / "app" / "detail" / "page.tsx"
+    ).read_text()
     database_setup_helper = (tmp_path / "my_project" / "database_setup.py").read_text()
-    database_setup_view = (
+    database_setup_view_path = (
         tmp_path
         / "my_project"
         / "views"
         / "app"
         / "_common"
         / "database-setup-page.tsx"
-    ).read_text()
+    )
     bootstrap_sql = (tmp_path / "bootstrap.sql").read_text().lower()
 
     assert "database_setup_required" in home_controller
     assert "get_database_setup_required" in home_controller
     assert "DatabaseSetupPage" in home_view
+    assert "database_setup_required.createdb_command" in home_view
+    assert "DatabaseSetupPage" in detail_view
+    assert "database_setup_required.createdb_command" in detail_view
     assert 'CREATEDB_COMMAND = "uv run createdb"' in database_setup_helper
-    assert "Then refresh this page." in database_setup_view
+    assert database_setup_view_path.exists()
+    database_setup_view = database_setup_view_path.read_text()
+    assert "{createdbCommand}" in database_setup_view
+    assert "refresh this page" in database_setup_view.lower()
     assert "create table" not in bootstrap_sql
     assert "insert into" not in bootstrap_sql

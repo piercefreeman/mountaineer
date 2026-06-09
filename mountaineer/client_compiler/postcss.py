@@ -111,7 +111,7 @@ class PostCSSBundler(APIBuilderBase):
             output_path = temp_dir_path / "output.css"
 
             command = [
-                str(cli_path.absolute()),
+                str(cli_path.resolve().absolute()),
                 str(css_path.absolute()),
                 "-o",
                 str(output_path.absolute()),
