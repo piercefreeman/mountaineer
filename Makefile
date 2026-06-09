@@ -40,7 +40,7 @@ install-deps: install-deps-lib install-deps-create-mountaineer-app install-deps-
 
 install-deps-lib:
 	@echo "Installing dependencies for $(LIB_DIR)..."
-	@(cd $(LIB_DIR) && uv sync)
+	@(cd $(LIB_DIR) && uv sync --no-install-project)
 	@(cd $(LIB_DIR) && uv run maturin develop --uv)
 
 install-deps-create-mountaineer-app:
