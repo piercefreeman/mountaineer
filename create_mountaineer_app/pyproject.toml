@@ -31,7 +31,7 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "psycopg[binary]>=3.2.6",
-    "pytest>=8.3.5",
+    "pytest>=9.0.3",
     "pytest-asyncio>=0.25.3",
     "pytest-xdist>=3.6.1",
     "requests>=2.32.3",
