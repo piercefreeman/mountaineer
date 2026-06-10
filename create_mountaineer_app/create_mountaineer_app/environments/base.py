@@ -4,7 +4,8 @@ from pathlib import Path
 from subprocess import Popen
 
 import toml
-from click import secho
+
+from create_mountaineer_app import ui
 
 
 class EnvironmentBase(ABC):
@@ -77,9 +78,9 @@ class EnvironmentBase(ABC):
             f"{package_name} @ {wheel_path_str}"
         )
 
-        secho(
+        ui.detail(
+            "Wheel override",
             f"Updated pyproject.toml to use local wheel: {pyproject['project']['dependencies']}",
-            fg="blue",
         )
 
         # Write the updated pyproject.toml

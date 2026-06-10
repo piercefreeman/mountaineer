@@ -3,7 +3,7 @@ from pathlib import Path
 from re import match as re_match
 
 import questionary
-from click import command, option, secho
+from click import command, option
 
 from create_mountaineer_app.builder import build_project
 from create_mountaineer_app.enums import PackageManager
@@ -12,6 +12,7 @@ from create_mountaineer_app.external import (
     get_git_user_info,
 )
 from create_mountaineer_app.generation import EditorType, ProjectMetadata
+from create_mountaineer_app.ui import error, section
 
 
 def prompt_package_manager() -> PackageManager:
@@ -36,11 +37,11 @@ def prompt_package_manager() -> PackageManager:
                 "uv is not installed. Install uv?", default=True
             ).unsafe_ask()
             if input_install_uv:
-                secho("Installing uv...")
+                section("Installing uv")
                 try:
                     uv_environment.install_provider()
                 except Exception as e:
-                    secho(f"Error installing uv: {e}", fg="red")
+                    error(f"Error installing uv: {e}")
                     raise e
 
     return package_manager
@@ -61,9 +62,8 @@ def prompt_author() -> tuple[str, str]:
         matched_obj = re_match(r"(.*) <(.*)>", author_combined)
 
         if not matched_obj:
-            secho(
+            error(
                 f"Author must be in the format 'Name <email>', not '{author_combined}'",
-                fg="red",
             )
             continue
 
@@ -110,8 +110,6 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         default="vscode",
     ).unsafe_ask()
 
-    secho("\nCreating project...", fg="green")
-
     project_path = Path(output_path) if output_path else Path.cwd() / input_project_name
     project_path = project_path.resolve()
 
@@ -134,7 +132,11 @@ def main(output_path: str | None, mountaineer_dev_path: str | None):
         ),
     )
 
-    build_project(metadata)
+    try:
+        build_project(metadata)
+    except Exception as e:
+        error(str(e))
+        raise SystemExit(1) from e
 
 
 if __name__ == "__main__":

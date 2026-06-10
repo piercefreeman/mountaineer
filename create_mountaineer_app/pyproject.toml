@@ -10,6 +10,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "pydantic>=2.10.6",
     "questionary>=2.1.0",
+    "rich>=13.7.1,<14.0.0",
     "toml>=0.10.2",
 ]
 
@@ -25,6 +26,7 @@ build-backend = "hatchling.build"
 # Workaround or CI sometimes not respecting our .gitignore inclusion rule
 # to allow the template .env but disallow other .env files
 "create_mountaineer_app/templates/project/.env" = "create_mountaineer_app/templates/project/.env"
+"create_mountaineer_app/templates/project/.dockerignore" = "create_mountaineer_app/templates/project/.dockerignore"
 
 [dependency-groups]
 dev = [

@@ -1,4 +1,10 @@
+import sys
 from pathlib import Path
+
+if sys.version_info >= (3, 11):
+    from tomllib import loads as toml_loads
+else:
+    from toml import loads as toml_loads
 
 from create_mountaineer_app.builder import build_project
 from create_mountaineer_app.enums import PackageManager
@@ -65,11 +71,22 @@ def test_project_template_build_copies_dockerignore(tmp_path: Path):
 
     build_project(metadata, install_deps=False)
 
-    assert (tmp_path / ".dockerignore").read_text().rstrip() == (
-        (Path(__file__).parent / ".." / "templates" / "project" / ".dockerignore")
-        .resolve()
-        .read_text()
-        .rstrip()
+    dockerignore = (tmp_path / ".dockerignore").read_text().splitlines()
+    assert ".venv" in dockerignore
+    assert "**/.venv" in dockerignore
+    assert "node_modules" in dockerignore
+    assert "**/node_modules" in dockerignore
+
+
+def test_project_package_force_includes_hidden_dockerignore():
+    pyproject_path = (Path(__file__).parent / ".." / ".." / "pyproject.toml").resolve()
+    pyproject = toml_loads(pyproject_path.read_text())
+
+    force_included_files = pyproject["tool"]["hatch"]["build"]["force-include"]
+
+    assert (
+        force_included_files["create_mountaineer_app/templates/project/.dockerignore"]
+        == "create_mountaineer_app/templates/project/.dockerignore"
     )
 
 

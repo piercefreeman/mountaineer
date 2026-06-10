@@ -49,7 +49,7 @@ class APIBuilder:
         self.view_root = ManagedViewPath.from_view_root(controller._view_root)
 
     async def build_all(self):
-        for view_root in self._get_all_root_views():
+        for view_root in self._get_all_root_views(build_enabled_only=True):
             view_root.clear_managed_artifact_dirs()
 
         await self.build_use_server()
@@ -97,9 +97,16 @@ class APIBuilder:
 
         return parser, parsed_controllers
 
-    def _get_all_root_views(self) -> list[ManagedViewPath]:
+    def _get_all_root_views(
+        self, *, build_enabled_only: bool = False
+    ) -> list[ManagedViewPath]:
         view_roots = {self.view_root.copy()}
         for controller_definition in self.app.graph.controllers:
+            if (
+                build_enabled_only
+                and not controller_definition.controller._build_enabled
+            ):
+                continue
             view_path = controller_definition.controller.view_path
             if isinstance(view_path, ManagedViewPath):
                 view_roots.add(view_path.get_root_link().copy())
