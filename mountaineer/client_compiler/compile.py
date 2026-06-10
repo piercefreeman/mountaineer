@@ -33,7 +33,7 @@ class ClientCompiler:
         self.view_root = controller._view_root
 
     def clear_managed_artifacts(self):
-        for view_root in self._get_all_root_views():
+        for view_root in self._get_all_root_views(build_enabled_only=True):
             view_root.clear_managed_artifact_dirs()
 
     async def run_builder_plugins(
@@ -133,7 +133,9 @@ class ClientCompiler:
                         continue
                     yield dir_path / filename
 
-    def _get_all_root_views(self) -> list[ManagedViewPath]:
+    def _get_all_root_views(
+        self, *, build_enabled_only: bool = False
+    ) -> list[ManagedViewPath]:
         """
         The self.view_root variable is the root of the current user project. We may have other
         "view roots" that store view for plugins.
@@ -146,6 +148,11 @@ class ClientCompiler:
         # Find the view roots
         view_roots = {self.view_root.copy()}
         for controller_definition in self.app.graph.controllers:
+            if (
+                build_enabled_only
+                and not controller_definition.controller._build_enabled
+            ):
+                continue
             view_path = controller_definition.controller.view_path
             if isinstance(view_path, ManagedViewPath):
                 view_roots.add(view_path.get_root_link().copy())

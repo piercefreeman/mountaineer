@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from click import secho
+from create_mountaineer_app import ui
 
 
 def has_npm():
@@ -21,16 +21,14 @@ def has_npm():
 
 def npm_install(path: Path):
     try:
-        subprocess.run(
+        ui.run_command(
             ["npm", "install"],
-            check=True,
             cwd=str(path),
         )
         return True
     except Exception as e:
-        secho(
+        ui.error(
             f"An unexpected error occurred while installing npm dependencies: {e}",
-            fg="red",
         )
         return False
 

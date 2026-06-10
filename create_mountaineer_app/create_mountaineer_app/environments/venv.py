@@ -3,8 +3,7 @@ from os import environ
 from pathlib import Path
 from shutil import which
 
-from click import secho
-
+from create_mountaineer_app import ui
 from create_mountaineer_app.environments.base import EnvironmentBase
 
 
@@ -25,20 +24,19 @@ class VEnvEnvironment(EnvironmentBase):
     def install_project(self, project_path: Path):
         # Create a virtual environment
         venv_path = project_path / self.venv_name
-        subprocess.run(["python3", "-m", "venv", str(venv_path)], check=True)
+        ui.run_command(["python3", "-m", "venv", str(venv_path)])
 
-        secho(f"Virtual environment created at: {venv_path}", fg="green")
+        ui.success(f"Virtual environment created at {venv_path}")
 
         # Install packages using pip, including dev dependencies
-        subprocess.run(
+        ui.run_command(
             [str(venv_path / "bin" / "pip"), "install", "-e", ".[dev]"],
-            check=True,
             cwd=project_path,
             # Install within our virtualenv
             env={"PATH": f"{venv_path}/bin:{environ['PATH']}", **self.global_env},
         )
 
-        secho("Packages installed.", fg="green")
+        ui.success("Python packages installed")
 
     def run_command(self, command: list[str], path: Path):
         venv_path = path / self.venv_name

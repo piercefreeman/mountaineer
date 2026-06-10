@@ -20,6 +20,7 @@ else:
 from create_mountaineer_app.__tests__.common import wait_for_database_to_be_ready
 from create_mountaineer_app.builder import (
     build_project,
+    copy_source_to_project,
     environment_from_metadata,
     should_copy_path,
 )
@@ -84,6 +85,39 @@ def mountaineer_wheel(tmp_path_factory: pytest.TempPathFactory) -> Path:
 )
 def test_copy_path(root_path: Path, input_path: Path, expected_copy: bool):
     assert should_copy_path(root_path, input_path) == expected_copy
+
+
+def test_copy_source_to_project_returns_copy_summary(tmp_path: Path):
+    template_base = tmp_path / "templates"
+    template_base.mkdir()
+    output_path = tmp_path / "project"
+    (template_base / "[project_name]").mkdir()
+    (template_base / "[project_name]" / "created.py").write_text(
+        "PROJECT = '{{ project_name }}'"
+    )
+    (template_base / "[project_name]" / "empty.py").write_text("   \n")
+
+    metadata = ProjectMetadata(
+        project_name="my_project",
+        author_name="John Appleseed",
+        author_email="test@email.com",
+        project_path=output_path,
+        package_manager=PackageManager.UV,
+        use_tailwind=False,
+        editor_config=None,
+        create_stub_files=False,
+        mountaineer_min_version="0.2.5",
+        mountaineer_dev_path=None,
+    )
+
+    created_count, skipped_files = copy_source_to_project(template_base, metadata)
+
+    assert created_count == 1
+    assert skipped_files == ["my_project/empty.py"]
+    assert (output_path / "my_project" / "created.py").read_text() == (
+        "PROJECT = 'my_project'"
+    )
+    assert not (output_path / "my_project" / "empty.py").exists()
 
 
 @pytest.mark.parametrize(
@@ -257,3 +291,38 @@ def test_build_version_number(package_manager: PackageManager, tmp_path: Path):
     version = package_requirements["project"]["dependencies"][0]
     req = Requirement(version)
     assert req.specifier.contains(Version("0.2.5"))
+
+
+@pytest.mark.parametrize(
+    "package_manager",
+    [PackageManager.UV, PackageManager.VENV],
+)
+def test_build_mountaineer_dev_path_is_pep508(
+    package_manager: PackageManager, tmp_path: Path
+):
+    mountaineer_dev_path = tmp_path / "mountaineer"
+    mountaineer_dev_path.mkdir()
+    project_path = tmp_path / "my_project"
+    metadata = ProjectMetadata(
+        project_name="my_project",
+        author_name="John Appleseed",
+        author_email="test@email.com",
+        project_path=project_path,
+        package_manager=package_manager,
+        use_tailwind=False,
+        editor_config=None,
+        create_stub_files=False,
+        mountaineer_min_version="0.2.5",
+        mountaineer_dev_path=mountaineer_dev_path,
+    )
+    build_project(metadata, install_deps=False)
+
+    pyproject_contents = (project_path / "pyproject.toml").read_text()
+    package_requirements = toml_loads(pyproject_contents)
+
+    mountaineer_requirement = Requirement(
+        package_requirements["project"]["dependencies"][0]
+    )
+
+    assert mountaineer_requirement.name == "mountaineer"
+    assert mountaineer_requirement.url == mountaineer_dev_path.resolve().as_uri()

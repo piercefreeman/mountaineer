@@ -1,7 +1,6 @@
 from pathlib import Path
 
-from click import secho
-
+from create_mountaineer_app import ui
 from create_mountaineer_app.enums import PackageManager
 from create_mountaineer_app.environments.base import EnvironmentBase
 from create_mountaineer_app.environments.uv import UvEnvironment
@@ -51,41 +50,52 @@ def should_copy_path(root_path: Path, path: Path):
     return True
 
 
-def copy_source_to_project(template_base: Path, metadata: ProjectMetadata):
+def copy_source_to_project(
+    template_base: Path, metadata: ProjectMetadata, label: str = "Writing files"
+) -> tuple[int, list[str]]:
     template_paths = list(template_base.glob("**/*"))
 
     if not template_paths:
         all_template_paths = list(get_template_path("").glob("**/*"))
-        secho(
+        ui.error(
             f"No templates found in {template_base}.\n"
             f"Local found: {template_paths}\n"
             f"All found: {all_template_paths}\n"
             "This might indicate an issue with your install or the pypi packaging pipeline.",
-            fg="red",
         )
         raise Exception("No templates found.")
 
-    for template_path in template_paths:
-        if template_path.is_dir() or not should_copy_path(template_base, template_path):
-            continue
+    created_files = 0
+    skipped_empty_files: list[str] = []
 
-        try:
-            # Internally, format_template will re-look up the template
-            output_bundle = format_template(template_path, template_base, metadata)
-        except Exception as e:
-            secho(f"Error formatting {template_path}: {e}", fg="red")
-            raise e
+    with ui.status(label):
+        for template_path in template_paths:
+            if template_path.is_dir() or not should_copy_path(
+                template_base, template_path
+            ):
+                continue
 
-        if not output_bundle.content.strip():
-            secho(
-                f"No content detected in {output_bundle.path}, skipping...", fg="yellow"
-            )
-            continue
+            try:
+                # Internally, format_template will re-look up the template
+                output_bundle = format_template(template_path, template_base, metadata)
+            except Exception as e:
+                ui.error(f"Error formatting {template_path}: {e}")
+                raise e
 
-        secho(f"Creating {output_bundle.path}")
-        full_output = metadata.project_path / output_bundle.path
-        full_output.parent.mkdir(parents=True, exist_ok=True)
-        full_output.write_text(output_bundle.content)
+            if not output_bundle.content.strip():
+                skipped_empty_files.append(output_bundle.path)
+                continue
+
+            full_output = metadata.project_path / output_bundle.path
+            full_output.parent.mkdir(parents=True, exist_ok=True)
+            full_output.write_text(output_bundle.content)
+            created_files += 1
+
+    ui.success(f"Wrote {created_files} files")
+    if skipped_empty_files:
+        ui.warning(f"Skipped {len(skipped_empty_files)} empty templates")
+
+    return created_files, skipped_empty_files
 
 
 def build_project(
@@ -95,36 +105,39 @@ def build_project(
 ):
     template_base = get_template_path("project")
 
-    copy_source_to_project(template_base, metadata)
-    secho(f"Project created at {metadata.project_path}", fg="green")
+    ui.section("Creating project")
+    ui.detail("Name", metadata.project_name)
+    ui.detail("Location", metadata.project_path)
+    ui.detail("Package manager", metadata.package_manager.value)
+
+    copy_source_to_project(template_base, metadata, "Writing project files")
+    ui.success("Project created")
 
     if install_deps:
         environment = environment_from_metadata(metadata)
 
-        try:
-            # If we have a pre-built wheel, configure it in the project dependencies
-            if mountaineer_wheel is not None:
-                environment.insert_wheel(
-                    "mountaineer", mountaineer_wheel, metadata.project_path
-                )
-                secho("Pre-built mountaineer wheel configured.", fg="green")
+        ui.section("Installing Python dependencies")
+        # If we have a pre-built wheel, configure it in the project dependencies
+        if mountaineer_wheel is not None:
+            environment.insert_wheel(
+                "mountaineer", mountaineer_wheel, metadata.project_path
+            )
+            ui.success("Pre-built mountaineer wheel configured")
 
-            environment.install_project(metadata.project_path)
-        except Exception as e:
-            secho(f"Error installing python dependencies: {e}", fg="red")
+        environment.install_project(metadata.project_path)
 
         if has_npm():
+            ui.section("Installing frontend dependencies")
             success = npm_install(
                 metadata.project_path / metadata.project_name / "views"
             )
             if success:
-                secho("npm dependencies installed successfully.", fg="green")
+                ui.success("npm dependencies installed")
             else:
-                secho("npm dependencies installation failed.", fg="red")
+                ui.error("npm dependencies installation failed")
         else:
-            secho(
+            ui.error(
                 "npm is not installed and is required to install React dependencies.",
-                fg="red",
             )
 
         # Update the metadata now that we have a valid environment
@@ -132,13 +145,16 @@ def build_project(
         metadata.venv_base = str(env_path.parent)
         metadata.venv_name = env_path.name
 
-        secho("Environment created successfully", fg="green")
+        ui.success("Environment created successfully")
 
     # Now copy the editor-specific files. Some editors don't need a config file so we can
     # optionally skip them if their path is not provided.
     if metadata.editor_config:
         metadata_path = metadata.editor_config.value.path
         if metadata_path:
+            ui.section("Configuring editor")
             editor_template_base = get_template_path("editor_configs") / metadata_path
-            copy_source_to_project(editor_template_base, metadata)
-            secho(f"Editor config created at {metadata.project_path}", fg="green")
+            copy_source_to_project(
+                editor_template_base, metadata, "Writing editor files"
+            )
+            ui.success("Editor config created")

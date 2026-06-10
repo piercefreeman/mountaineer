@@ -2,8 +2,7 @@ import subprocess
 from os import environ
 from pathlib import Path
 
-from click import secho
-
+from create_mountaineer_app import ui
 from create_mountaineer_app.environments.base import EnvironmentBase
 
 
@@ -41,19 +40,17 @@ class UvEnvironment(EnvironmentBase):
     def install_project(self, project_path: Path) -> None:
         # Create a virtual environment using uv
         venv_path = project_path / self.venv_name
-        subprocess.run(
+        ui.run_command(
             ["uv", "venv", str(venv_path)],
-            check=True,
             cwd=str(project_path),
             env=self.limited_scope_env,
         )
 
-        secho(f"Virtual environment created at: {venv_path}", fg="green")
+        ui.success(f"Virtual environment created at {venv_path}")
 
         # Install packages using uv pip
-        subprocess.run(
+        ui.run_command(
             ["uv", "sync"],
-            check=True,
             cwd=project_path,
             env={
                 "VIRTUAL_ENV": str(venv_path),
@@ -62,7 +59,7 @@ class UvEnvironment(EnvironmentBase):
             },
         )
 
-        secho("Packages installed.", fg="green")
+        ui.success("Python packages installed")
 
     def install_provider(self) -> None:
         """
@@ -71,12 +68,13 @@ class UvEnvironment(EnvironmentBase):
 
         Raises an exception if the installation fails.
         """
+        ui.command(["curl", "-LsSf", "https://astral.sh/uv/install.sh", "|", "sh"])
         subprocess.run(
             ["curl", "-LsSf", "https://astral.sh/uv/install.sh", "|", "sh"],
             check=True,
             shell=True,  # Required for pipe operation
         )
-        secho("uv installed successfully.", fg="green")
+        ui.success("uv installed successfully")
 
     def run_command(self, command: list[str], path: Path):
         venv_path = path / self.venv_name
