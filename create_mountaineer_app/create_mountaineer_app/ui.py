@@ -60,7 +60,7 @@ def run_command(
     env: Mapping[str, str] | None = None,
 ) -> None:
     command(command_parts)
-    process = subprocess.Popen(
+    with subprocess.Popen(
         command_parts,
         cwd=cwd,
         env=env,
@@ -68,14 +68,13 @@ def run_command(
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
-    )
+    ) as process:
+        if process.stdout is not None:
+            for raw_line in process.stdout:
+                for line in raw_line.rstrip("\n").split("\r"):
+                    command_output(line)
 
-    if process.stdout is not None:
-        for raw_line in process.stdout:
-            for line in raw_line.rstrip("\n").split("\r"):
-                command_output(line)
-
-    returncode = process.wait()
+        returncode = process.wait()
     if returncode:
         raise subprocess.CalledProcessError(returncode, command_parts)
 
