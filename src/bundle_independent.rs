@@ -258,7 +258,7 @@ mod tests {
                 return {
                     type,
                     key,
-                    props: props ?? {},
+                    props,
                 };
             }
 
@@ -316,7 +316,7 @@ mod tests {
                 }
 
                 if (typeof node.type === 'function') {
-                    return renderNode(node.type(node.props ?? {}));
+                    return renderNode(node.type(node.props));
                 }
 
                 const { children, ...attrs } = node.props ?? {};
@@ -386,6 +386,11 @@ mod tests {
                 const browserMarker = getBrowserMarker();
                 return <section data-graph={{browserMarker}}>{{children}}</section>;
             }}
+
+            export function Widget() {{
+                const browserMarker = getBrowserMarker();
+                return <aside data-widget={{browserMarker}} />;
+            }}
             "#
         );
         let _client_boundary_path =
@@ -408,12 +413,13 @@ mod tests {
             "page.jsx",
             r#"
             import React from 'react';
-            import Graph from './client-graph';
+            import Graph, { Widget } from './client-graph';
 
             export default function Page() {
                 return (
                     <Graph>
                         <span>Server Child</span>
+                        <Widget />
                     </Graph>
                 );
             }
@@ -574,7 +580,7 @@ mod tests {
             "Expected SSR pipeline to produce a sourcemap"
         );
         assert!(
-            compiled_script.contains("props.children ?? null"),
+            compiled_script.contains("props?.children ?? null"),
             "SSR bundle should include the client boundary passthrough stub"
         );
         assert!(
@@ -614,7 +620,7 @@ mod tests {
             "Client bundle should hydrate the pre-rendered markup"
         );
         assert!(
-            compiled_script.contains("props.children ?? null"),
+            compiled_script.contains("props?.children ?? null"),
             "Client bundle should preserve SSR children until the client boundary mounts"
         );
         assert!(

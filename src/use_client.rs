@@ -338,7 +338,7 @@ fn generate_ssr_boundary_module(surface: &ExportSurface) -> String {
     }
 
     let mut output = String::from(
-        "const createClientBoundary = (exportName) => {\n  const Boundary = (props) => props.children ?? null;\n  Boundary.displayName = `ClientBoundary(${exportName})`;\n  return Boundary;\n};\n",
+        "const createClientBoundary = (exportName) => {\n  const Boundary = (props) => props?.children ?? null;\n  Boundary.displayName = `ClientBoundary(${exportName})`;\n  return Boundary;\n};\n",
     );
 
     if surface.has_default {
@@ -363,7 +363,7 @@ fn generate_client_boundary_module(path: &str, surface: &ExportSurface) -> Resul
     }
 
     let mut output = format!(
-        "import React, {{ useEffect, useState }} from 'react';\nimport * as actual from {};\nconst createClientBoundary = (Actual, exportName) => {{\n  const Boundary = (props) => {{\n    const [isMounted, setIsMounted] = useState(false);\n    useEffect(() => {{\n      setIsMounted(true);\n    }}, []);\n    if (!isMounted) {{\n      return props.children ?? null;\n    }}\n    return React.createElement(Actual, props);\n  }};\n  Boundary.displayName = `ClientBoundary(${{exportName}})`;\n  return Boundary;\n}};\n",
+        "import React, {{ useEffect, useState }} from 'react';\nimport * as actual from {};\nconst createClientBoundary = (Actual, exportName) => {{\n  const Boundary = (props) => {{\n    const [isMounted, setIsMounted] = useState(false);\n    useEffect(() => {{\n      setIsMounted(true);\n    }}, []);\n    if (!isMounted) {{\n      return props?.children ?? null;\n    }}\n    return React.createElement(Actual, props ?? {{}});\n  }};\n  Boundary.displayName = `ClientBoundary(${{exportName}})`;\n  return Boundary;\n}};\n",
         actual_id
     );
 
@@ -436,11 +436,12 @@ mod tests {
         };
 
         let ssr_output = generate_ssr_boundary_module(&surface);
-        assert!(ssr_output.contains("props.children ?? null"));
+        assert!(ssr_output.contains("props?.children ?? null"));
 
         let client_output = generate_client_boundary_module("/tmp/client.tsx", &surface).unwrap();
         assert!(client_output.contains("if (!isMounted)"));
-        assert!(client_output.contains("return props.children ?? null;"));
+        assert!(client_output.contains("return props?.children ?? null;"));
+        assert!(client_output.contains("React.createElement(Actual, props ?? {})"));
         assert!(client_output.contains("actual.default"));
         assert!(client_output.contains("actual.Graph"));
     }
