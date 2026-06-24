@@ -1,0 +1,121 @@
+# Auth
+
+[mountaineer-auth](https://github.com/piercefreeman/mountaineer-auth) is an opinionated authentication plugin. It ships login, signup, logout, password reset, and email verification flows. The React views are included and pre-built, so a working auth system is a few registrations away.
+
+Other ecosystems sell auth as a hosted add-on. This one is open source, free, and runs inside your app.
+
+Key features:
+
+- **Full auth flows**: login, signup, logout, password reset, and email verification with pre-built React views
+- **JWT sessions**: cookie-based bearer tokens with configurable expiration
+- **Authorization dependencies**: `require_valid_user`, `require_admin_user`, and `peek_user` for gating your own actions
+- **Admin users**: a first-class primitive for marking and requiring administrators
+- **Self-hosted**: passwords hashed with bcrypt, sessions verified locally. No third-party auth service in your request path.
+
+## Installation
+
+```bash
+uv add mountaineer-auth
+```
+
+## Models
+
+Subclass the model mixins into your own concrete tables. The mixins carry the columns the plugin needs, and you stay free to add your own:
+
+```python title="models/auth.py"
+from mountaineer_auth.models import UserAuthMixin, VerificationState as VerificationStateBase
+
+class User(UserAuthMixin):
+    pass
+
+class VerificationState(VerificationStateBase):
+    pass
+```
+
+## Controllers
+
+Register the flows you want. Each controller brings its own route and pre-built view:
+
+```python title="app.py"
+from mountaineer_auth import controllers as auth_controllers
+
+controller = AppController(...)
+controller.register(auth_controllers.LoginController(post_login_redirect="/app"))
+controller.register(auth_controllers.SignupController(post_signup_redirect="/app"))
+controller.register(auth_controllers.LogoutController(post_logout_redirect="/"))
+controller.register(auth_controllers.ForgotPasswordController())
+controller.register(auth_controllers.VerifyController())
+```
+
+If you want transactional auth emails (verification, password reset), register the email controllers too:
+
+```python title="app.py"
+from mountaineer_auth import emails as auth_emails
+
+controller.register(auth_emails.VerifyEmailController())
+controller.register(auth_emails.ForgotPasswordEmailController())
+```
+
+## Configuration
+
+Inherit `AuthConfig` in your app config and point it at your concrete models:
+
+```python title="config.py"
+from mountaineer_auth import AuthConfig, AuthEmailConfig
+
+class AppConfig(AuthConfig, DatabaseConfig, ConfigBase):
+    API_SECRET_KEY: str = "development-secret-key"
+
+    AUTH_USER: type[models.User] = models.User
+    AUTH_VERIFICATION_STATE: type[models.VerificationState] = models.VerificationState
+
+    AUTH_EMAIL_ENABLED: bool = False
+    AUTH_EMAIL: AuthEmailConfig | None = AuthEmailConfig(
+        unsubscribe_url="http://localhost:3000/unsubscribe",
+        from_email="onboarding@resend.dev",
+        from_name="Example App",
+        server_host="http://localhost:3000",
+        project_name="Example App",
+        project_address="123 Example Street, San Francisco, CA 94107",
+    )
+```
+
+## Protecting your routes
+
+Gate any of your own controllers or actions with the bundled dependencies:
+
+```python
+from mountaineer_auth.dependencies import require_valid_user
+
+@sideeffect
+async def update_profile(
+    self,
+    payload: ProfileUpdate,
+    user: User = Depends(require_valid_user),
+):
+    ...
+```
+
+There are three levels of access:
+
+- `peek_user`: returns the user if logged in, `None` otherwise. For pages that adapt to auth state.
+- `require_valid_user`: raises `UnauthorizedError` if not logged in.
+- `require_admin_user`: raises unless the user is an administrator.
+
+## Handling unauthorized requests
+
+Decide what happens when an anonymous user hits a protected route. The common pattern is a redirect to login that returns them where they started:
+
+```python title="app.py"
+from fastapi import Request, status
+from fastapi.responses import RedirectResponse
+from mountaineer_auth.exceptions import UnauthorizedError
+
+async def handle_unauthorized(request: Request, exc: UnauthorizedError):
+    return RedirectResponse(
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+        url=f"/auth/login?after_login={request.url}",
+    )
+
+controller.app.exception_handler(UnauthorizedError)(handle_unauthorized)
+```

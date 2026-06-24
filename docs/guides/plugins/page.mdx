@@ -15,6 +15,29 @@ Think of plugins as mini-applications with their own:
 
 The key benefit is **dependency encapsulation** and **consistency** - plugins are compiled ahead of time, ensuring they work reliably across different projects without version conflicts.
 
+## First-Party Plugins
+
+We maintain open source plugins for the features every app rebuilds. Other ecosystems sell these as paid add-ons. Ours are free:
+
+| Plugin | What you get |
+| --- | --- |
+| [Auth](/guides/plugins/auth) | Email/password auth, sessions, password reset, admin users |
+| [Billing](/guides/plugins/billing) | Stripe subscriptions, metered usage, webhooks, checkout |
+| [Cloud](/guides/plugins/cloud) | File storage and email across AWS, Cloudflare, DigitalOcean, and Resend |
+
+Each plugin follows the same Mountaineer conventions: config mixins you inherit in your `AppConfig`, model mixins you subclass into concrete tables, and dependency injection through `Depends`. They also compose. A common production setup uses all three, with one `User` table carrying both auth and billing state:
+
+```python title="models/user.py"
+from iceaxe import TableBase
+from mountaineer_auth.models import UserAuthMixin
+from mountaineer_billing.models import UserBillingMixin
+
+class User(UserBillingMixin, UserAuthMixin, TableBase):
+    pass
+```
+
+The rest of this guide covers how the plugin system itself works, and how to build and distribute your own.
+
 ## Motivating Examples
 
 Here are some compelling use cases for Mountaineer plugins:
@@ -368,8 +391,10 @@ If your plugin depends on specific integration behavior, be explicit about that 
 
 ## Examples in the Wild
 
+- **[mountaineer-auth](/guides/plugins/auth)**: Login, signup, sessions, and password reset with pre-built views
+- **[mountaineer-billing](/guides/plugins/billing)**: Stripe subscriptions, metered usage, and webhook handling
+- **[mountaineer-cloud](/guides/plugins/cloud)**: File storage and email across AWS, Cloudflare, DigitalOcean, and Resend
 - **[mountaineer-exceptions](https://github.com/piercefreeman/mountaineer-exceptions)**: Beautiful exception handling and debugging
-- More plugins coming soon! Consider contributing your own.
 
 ## Contributing a Plugin
 
@@ -386,4 +411,4 @@ The Mountaineer ecosystem thrives when developers can easily share and reuse com
 
 The plugin system opens up endless possibilities for extending Mountaineer applications. Whether you're building internal tools, commercial add-ons, or open-source utilities, plugins provide a clean, reusable way to package and distribute Mountaineer functionality.
 
-Ready to build your first plugin? Start with a simple example and gradually add more sophisticated features as you become familiar with the conventions. 
+Ready to build your first plugin? Start with a simple example and gradually add more sophisticated features as you become familiar with the conventions.

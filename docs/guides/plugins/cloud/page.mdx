@@ -1,0 +1,102 @@
+# Cloud
+
+[mountaineer-cloud](https://github.com/piercefreeman/mountaineer-cloud) gives you typed primitives for object storage and email that work across providers. Write against `CloudFile` and `EmailMessage`, and swap the backing provider by changing a type annotation.
+
+It works with any Mountaineer app, and with plain FastAPI services too.
+
+Key features:
+
+- **Storage**: AWS S3, Cloudflare R2, and DigitalOcean Spaces behind one interface
+- **Email**: AWS SES and Resend with the same message primitives
+- **Typed provider cores**: `CloudFile[AWSCore]` versus `CloudFile[CloudflareCore]` is the whole migration
+- **Database-backed fields**: `CloudFileField` and `CloudEmailField` store references right on your Iceaxe models
+- **Async streaming**: efficient reads and writes for large files, with optional gzip compression
+- **Local mocks**: install the `[mocks]` extra to develop and test without real cloud credentials
+
+## Installation
+
+```bash
+uv add mountaineer-cloud
+uv add --dev "mountaineer-cloud[mocks]"
+```
+
+## File storage
+
+Attach a file to a model with `CloudFileField`, then read and write it through the injected provider core:
+
+```python title="models/asset.py"
+from mountaineer_cloud import CloudMixin, CloudFile, CloudFileField
+from mountaineer_cloud.providers.aws import AWSCore, AWSDependencies
+from iceaxe import Field, TableBase
+
+class Asset(CloudMixin, TableBase):
+    id: int = Field(primary_key=True)
+    file_url: CloudFile[AWSCore] | None = CloudFileField(
+        bucket="my-bucket",
+        prefix="assets",
+    )
+
+async def upload_asset(
+    asset: Asset,
+    aws: AWSCore = Depends(AWSDependencies.get_aws_core),
+) -> bytes:
+    await asset.file_url.put_content(aws, b"hello world")
+    return await asset.file_url.get_content(aws)
+```
+
+The file reference lives on the row. The bytes live in your bucket. Large files stream instead of loading into memory.
+
+## Email
+
+Email follows the same shape. Build an `EmailMessage` and send it through the provider core:
+
+```python
+from mountaineer_cloud import EmailBody, EmailMessage, EmailRecipient
+from mountaineer_cloud.providers.resend import ResendCore, ResendDependencies
+
+async def send_welcome(
+    resend: ResendCore = Depends(ResendDependencies.get_resend_core),
+):
+    message = EmailMessage[ResendCore](
+        sender=EmailRecipient(email="noreply@example.com", display_name="Example App"),
+        recipient=EmailRecipient(email="user@example.com"),
+        subject="Welcome",
+        body=EmailBody(
+            text="Welcome to Example App",
+            html="<p>Welcome to Example App</p>",
+        ),
+    )
+    return await message.send(resend)
+```
+
+## Providers
+
+Each provider ships three pieces: a `Config` mixin for your app config, a `Core` object that holds credentials and clients, and a `Dependencies` class for injection.
+
+| Provider | Storage | Email |
+| --- | --- | --- |
+| AWS | S3 | SES |
+| Cloudflare | R2 | No |
+| DigitalOcean | Spaces | No |
+| Resend | No | Yes |
+
+Wiring one up is two steps. Inherit the config, then inject the core where you need it:
+
+```python title="config.py"
+from mountaineer_cloud.providers.aws import AWSConfig
+
+class AppConfig(AWSConfig, ConfigBase):
+    # AWS settings load from environment variables
+    pass
+```
+
+```python
+from mountaineer_cloud.providers.aws import AWSCore, AWSDependencies
+
+async def my_action(
+    aws: AWSCore = Depends(AWSDependencies.get_aws_core),
+):
+    ...
+```
+
+To move from S3 to R2, switch `AWSConfig` to `CloudflareConfig` and `CloudFile[AWSCore]` to `CloudFile[CloudflareCore]`. The call sites don't change.
