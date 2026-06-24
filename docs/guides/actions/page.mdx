@@ -139,9 +139,9 @@ const response = await serverState.server_action({});
 console.log(response.passthrough);
 ```
 
-### Server Events
+### Streaming Responses
 
-[Server-event](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events) streams are a useful paradigm in webapp design, and increasing utilized to provide realtime Server->Client data for use in user notifications, CI feedback, and model inference.
+Streaming responses are a useful paradigm in webapp design, and increasingly utilized to provide realtime Server->Client data for use in user notifications, CI feedback, and model inference.
 
 Mountaineer supports these natively on the server and client side. Simply decorate your response_model with a `typing.AsyncIterator` annotation and implement an async generator like you normally do:
 
@@ -163,7 +163,7 @@ class MyController(ControllerBase):
         yield MyMetadata(state=2)
 ```
 
-For the time being we only support server-events in `@passthrough` functions, not `@sideeffect`. It's ill-defined whether we should re-render() content every yield or when the iterator has finished. Yielding in passthrough makes it clear that you just want to stream the yielded value to the client.
+For the time being we only support streaming responses in `@passthrough` functions, not `@sideeffect`. It's ill-defined whether we should re-render() content every yield or when the iterator has finished. Yielding in passthrough makes it clear that you just want to stream the yielded value to the client.
 
 In your frontend, you can iterate over these responses with an async generator loop. Each response object will be parsed into your typed schema for you, so you can see typehints like you would for any regular Mountaineer action.
 

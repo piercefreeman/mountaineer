@@ -1,0 +1,165 @@
+# Billing
+
+[mountaineer-billing](https://github.com/piercefreeman/mountaineer-billing) handles the full Stripe lifecycle: products, prices, checkout, subscriptions, webhooks, and metered usage. You define your product catalog in typed Python and sync it to Stripe with a CLI.
+
+Stripe objects are mirrored into your own Postgres tables. Your app reads fast local data instead of calling the Stripe API on every request.
+
+Key features:
+
+- **Catalog as code**: define products, prices, and entitlements in typed Python, then `billing-sync up` to push them to Stripe
+- **Subscriptions and one-time purchases**: licensed products with entitlements and billing intervals
+- **Metered usage**: countdown allocations with `verify_capacity` and `record_metered_usage` dependencies to gate consumption
+- **Webhook handling**: a mountable router that processes Stripe events automatically
+- **Local-first reads**: subscription state is materialized into projection tables for fast lookups
+
+## Installation
+
+```bash
+uv add mountaineer-billing
+```
+
+## Define your catalog
+
+Products, prices, and metered assets are typed enums and dataclasses. Your editor autocompletes them everywhere they're used:
+
+```python title="billing.py"
+from mountaineer_billing import (
+    CountDownMeteredAllocation, LicensedProduct, MeteredDefinition,
+    MeteredIDBase, Price, PriceBillingInterval, PriceIDBase,
+    ProductIDBase, RollupType,
+)
+
+class ProductID(ProductIDBase):
+    PRO = "PRO"
+
+class PriceID(PriceIDBase):
+    DEFAULT = "DEFAULT"
+
+class MeteredID(MeteredIDBase):
+    ITEM_GENERATION = "ITEM_GENERATION"
+
+BILLING_PRODUCTS = [
+    LicensedProduct(
+        id=ProductID.PRO,
+        name="Pro",
+        entitlements=[
+            CountDownMeteredAllocation(asset=MeteredID.ITEM_GENERATION, quantity=20),
+        ],
+        prices=[
+            Price(id=PriceID.DEFAULT, cost=2999, frequency=PriceBillingInterval.MONTH),
+        ],
+    ),
+]
+
+BILLING_METERED = {
+    MeteredID.ITEM_GENERATION: MeteredDefinition(
+        usage_rollup=RollupType.AGGREGATE,
+    ),
+}
+```
+
+## Models and configuration
+
+The plugin provides generic model mixins. Subclass them into concrete tables, then register them in your config:
+
+```python title="models/billing.py"
+from iceaxe import TableBase
+from mountaineer_billing import models as billing_models
+
+class User(billing_models.UserBillingMixin, TableBase): ...
+class ProductPrice(billing_models.ProductPrice[ProductID, PriceID], TableBase): ...
+class ResourceAccess(billing_models.ResourceAccess[ProductID], TableBase): ...
+class Subscription(billing_models.Subscription, TableBase): ...
+class MeteredUsage(billing_models.MeteredUsage[MeteredID], TableBase): ...
+class Payment(billing_models.Payment, TableBase): ...
+class CheckoutSession(billing_models.CheckoutSession, TableBase): ...
+class StripeEvent(billing_models.StripeEvent, TableBase): ...
+class StripeObject(billing_models.StripeObject, TableBase): ...
+class BillingProjectionState(billing_models.BillingProjectionState, TableBase): ...
+```
+
+```python title="config.py"
+from mountaineer_billing import BillingConfig, BillingModels
+
+class AppConfig(BillingConfig, DatabaseConfig, ConfigBase):
+    STRIPE_API_KEY: str
+    STRIPE_WEBHOOK_SECRET: str
+
+    BILLING_MODELS: BillingModels = BillingModels(
+        USER=User,
+        PRODUCT_PRICE=ProductPrice,
+        RESOURCE_ACCESS=ResourceAccess,
+        SUBSCRIPTION=Subscription,
+        METERED_USAGE=MeteredUsage,
+        PAYMENT=Payment,
+        CHECKOUT_SESSION=CheckoutSession,
+        STRIPE_EVENT=StripeEvent,
+        STRIPE_OBJECT=StripeObject,
+        PROJECTION_STATE=BillingProjectionState,
+    )
+    BILLING_PRODUCTS = BILLING_PRODUCTS
+    BILLING_METERED = BILLING_METERED
+```
+
+## Webhooks
+
+Mount the webhook router and the plugin processes Stripe events at `/external/billing/webhooks/stripe`:
+
+```python title="app.py"
+from mountaineer_billing.webhook import router as billing_router
+
+controller.app.include_router(billing_router)
+```
+
+## Checkout
+
+Send users to Stripe checkout with the injected builder:
+
+```python
+from mountaineer_billing import BillingDependencies
+
+async def start_checkout(
+    build_checkout = Depends(BillingDependencies.checkout_builder),
+) -> str:
+    return await build_checkout(
+        products=[(ProductID.PRO, PriceID.DEFAULT)],
+        success_url="https://myapp.com/billing/success",
+        cancel_url="https://myapp.com/billing",
+        allow_promotion_codes=True,
+    )
+```
+
+## Metered usage
+
+Gate an action on remaining quota and record the usage, all through dependencies:
+
+```python
+from mountaineer_billing import BillingDependencies
+
+@action
+async def generate_item(
+    self,
+    request: GenerateItemRequest,
+    _: bool = Depends(BillingDependencies.verify_capacity(MeteredID.ITEM_GENERATION, 1)),
+    __: bool = Depends(BillingDependencies.record_metered_usage(MeteredID.ITEM_GENERATION, 1)),
+) -> str:
+    return await actually_generate_item(request.prompt)
+```
+
+If the user has no capacity left, `verify_capacity` rejects the request before your handler runs.
+
+## CLI
+
+Two commands keep your catalog and your local mirror in sync:
+
+```bash
+# Push your local product catalog to Stripe
+billing-sync up --config your_app.config:AppConfig
+billing-sync up --dry-run   # preview changes only
+
+# Mirror Stripe data into your local tables
+billing-sync down --config your_app.config:AppConfig
+
+# Rebuild the billing projections
+stripe-sync materialize --config your_app.config:AppConfig
+```

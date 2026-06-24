@@ -102,6 +102,53 @@ jobs:
         with:
           jobs: ${{ toJSON(needs) }}
 
+  trigger-docs-sync:
+    runs-on: ubuntu-latest
+    needs: [check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check for docs changes
+        id: docs
+        shell: bash
+        run: |
+          before="${{ github.event.before }}"
+          sha="${{ github.sha }}"
+
+          if [[ "$before" =~ ^0+$ ]]; then
+            changed_files="$(git diff-tree --no-commit-id --name-only -r "$sha" -- docs)"
+          else
+            changed_files="$(git diff --name-only "$before" "$sha" -- docs)"
+          fi
+
+          if [ -n "$changed_files" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            printf 'Changed docs files:\n%s\n' "$changed_files"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No docs changes detected."
+          fi
+
+      - name: Trigger Mountaineer Web docs sync
+        if: steps.docs.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.MOUNTAINEER_WEB_WORKFLOW_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::MOUNTAINEER_WEB_WORKFLOW_TOKEN is required to dispatch the Mountaineer Web docs sync workflow."
+            exit 1
+          fi
+
+          gh workflow run sync-mountaineer-docs.yml \
+            --repo piercefreeman/mountaineer-web \
+            --ref main \
+            --field mountaineer_ref="${GITHUB_SHA}" \
+            --field source_run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
   rust-tests:
     # Test the OS specific rust hooks
     name: rust-tests os=${{ matrix.os }} release=${{ matrix.release || 'latest' }}
