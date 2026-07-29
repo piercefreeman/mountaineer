@@ -221,6 +221,7 @@ def render_ssr(
     render_data: dict[str, Any],
     hard_timeout: int | float | None = None,
     sourcemap: str | None = None,
+    collect_props: bool = False,
 ) -> str:
     """
     Render the React component in the provided SSR javascript bundle. This file will
@@ -243,7 +244,15 @@ def render_ssr(
     polyfill_script = get_static_path("ssr_polyfills.js").read_text()
     data_json = json_dumps(render_data)
 
-    injected_script = f"var SERVER_DATA = {data_json};\n{polyfill_script}\n"
+    collect_script = (
+        "globalThis.__MOUNTAINEER_COLLECT_PROPS__ = true;\n"
+        "globalThis.__MOUNTAINEER_COLLECTED_PROPS__ = [];\n"
+        if collect_props
+        else ""
+    )
+    injected_script = (
+        f"var SERVER_DATA = {data_json};\n{collect_script}{polyfill_script}\n"
+    )
     full_script = f"{injected_script}{script}"
 
     debug_log_artifact("ssr_script", "js", full_script)

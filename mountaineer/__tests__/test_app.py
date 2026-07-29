@@ -1,16 +1,23 @@
+import asyncio
+import importlib
+import sys
 from contextlib import asynccontextmanager
 from inspect import signature
 from pathlib import Path
+from shutil import copytree, ignore_patterns
 from unittest.mock import patch
 
 import pytest
 from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, ValidationError
 
+from mountaineer.actions.fields import get_function_metadata
+from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.app import AppController
+from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.config import ConfigBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
@@ -145,6 +152,197 @@ def test_unique_controller_names():
 
     with pytest.raises(ValueError, match="already registered"):
         app.register(make_controller("/example2")())
+
+
+def test_embeddable_controller_registers_action_without_page_route():
+    class PingResponse(BaseModel):
+        ok: bool
+
+    class EmbeddedController(ControllerBase):
+        view_path = "/embedded.tsx"
+
+        def render(self) -> None:
+            return None
+
+        @passthrough
+        def ping(self) -> PingResponse:
+            return PingResponse(ok=True)
+
+    app = AppController(view_root=Path(""))
+    app.register(EmbeddedController())
+
+    definition = app.graph.get_definitions_for_cls(EmbeddedController)[0]
+    assert definition.route is not None
+    assert definition.route.render_router is None
+
+    action_url = definition.get_url_for_metadata(
+        get_function_metadata(EmbeddedController.ping)
+    )
+    with TestClient(app.app) as client:
+        response = client.post(action_url)
+
+    assert response.status_code == 200
+    assert response.json() == {"passthrough": {"ok": True}}
+
+
+@pytest.mark.asyncio
+async def test_embeddable_controller_data_is_included_in_page_render():
+    class PageRender(RenderBase):
+        page_value: str
+
+    class EmbeddedRender(RenderBase):
+        embedded_value: str
+        request_path: str
+
+    class PageController(ControllerBase):
+        url = "/"
+        view_path = "/page.tsx"
+
+        def render(self) -> PageRender:
+            return PageRender(page_value="page")
+
+    class EmbeddedController(ControllerBase):
+        view_path = "/embedded.tsx"
+
+        def render(
+            self, request: Request, embedded_value: str = "default"
+        ) -> EmbeddedRender:
+            return EmbeddedRender(
+                embedded_value=embedded_value,
+                request_path=request.url.path,
+            )
+
+    app = AppController(view_root=Path(""))
+    app.register(PageController())
+    app.register(EmbeddedController())
+
+    page_definition = app.graph.get_definitions_for_cls(PageController)[0]
+    embedded_definition = app.graph.get_definitions_for_cls(EmbeddedController)[0]
+    assert embedded_definition.route is not None
+    with TestClient(app.app) as client:
+        response = client.get(
+            f"{embedded_definition.route.url_prefix}/render",
+            params={"embedded_value": "client"},
+            headers={"referer": "http://testserver/"},
+        )
+    assert response.status_code == 200
+    assert response.json()["embedded_value"] == "client"
+    assert response.json()["request_path"] == "/"
+
+    page_definition.cache = ControllerDevCache(
+        cached_server_script="",
+        cached_client_script="",
+    )
+    captured_render: dict[str, RenderBase] = {}
+
+    def fake_compile_html(
+        server_script,
+        page_metadata,
+        all_render,
+        *,
+        inline_client_script=None,
+        external_client_imports=None,
+        sourcemap=None,
+    ):
+        captured_render.update(all_render)
+        return HTMLResponse("")
+
+    collected_props = (
+        '[{"controller":"EmbeddedController",'
+        '"key":"{\\"embedded_value\\":\\"embedded\\"}",'
+        '"props":{"embedded_value":"embedded"}}]'
+    )
+    with (
+        patch("mountaineer.app.render_ssr", return_value=collected_props),
+        patch.object(app, "compile_html", side_effect=fake_compile_html),
+    ):
+        with TestClient(app.app) as client:
+            response = client.get("/")
+
+    assert response.status_code == 200
+    assert captured_render["PageController"].page_value == "page"
+    embedded_render = captured_render["EmbeddedController"]
+    assert isinstance(embedded_render, dict)
+    assert embedded_render['{"embedded_value":"embedded"}'].embedded_value == "embedded"
+    assert embedded_render['{"embedded_value":"embedded"}'].request_path == "/"
+
+
+def test_ci_webapp_embedded_controller_receives_react_props(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    fixture_root = tmp_path / "ci_webapp"
+    copytree(
+        Path(__file__).parent / "fixtures" / "ci_webapp",
+        fixture_root,
+        ignore=ignore_patterns(
+            "node_modules", ".venv", ".mypy_cache", "__pycache__", "_server"
+        ),
+    )
+
+    monkeypatch.syspath_prepend(str(fixture_root))
+    for module_name in list(sys.modules):
+        if module_name == "ci_webapp" or module_name.startswith("ci_webapp."):
+            del sys.modules[module_name]
+
+    with patch(
+        "mountaineer.app.resolve_package_path",
+        return_value=fixture_root / "ci_webapp",
+    ):
+        app_module = importlib.import_module("ci_webapp.app")
+        embedded_module = importlib.import_module("ci_webapp.controllers.embedded")
+        home_module = importlib.import_module("ci_webapp.controllers.home")
+
+    app = app_module.controller
+    asyncio.run(APIBuilder(app).build_use_server())
+    views_root = fixture_root / "ci_webapp" / "views" / "app"
+    assert (views_root / "embedded" / "_server" / "useServer.ts").exists()
+    assert (views_root / "_server" / "useServer.ts").exists()
+    assert (views_root / "home" / "_server" / "useServer.ts").exists()
+
+    home_definition = app.graph.get_definitions_for_cls(home_module.HomeController)[0]
+    embedded_definition = app.graph.get_definitions_for_cls(
+        embedded_module.EmbeddedController
+    )[0]
+    assert embedded_definition.route is not None
+    assert embedded_definition.route.render_router is None
+
+    home_definition.cache = ControllerDevCache(
+        cached_server_script="",
+        cached_client_script="",
+    )
+    captured_render: dict[str, RenderBase | dict[str, RenderBase]] = {}
+
+    def fake_compile_html(
+        server_script,
+        page_metadata,
+        all_render,
+        *,
+        inline_client_script=None,
+        external_client_imports=None,
+        sourcemap=None,
+    ):
+        captured_render.update(all_render)
+        return HTMLResponse("")
+
+    collected_props = (
+        '[{"controller":"EmbeddedController",'
+        '"key":"{\\"label\\":\\"count-0\\"}",'
+        '"props":{"label":"count-0"}}]'
+    )
+    with (
+        patch("mountaineer.app.render_ssr", return_value=collected_props),
+        patch.object(app, "compile_html", side_effect=fake_compile_html),
+    ):
+        with TestClient(app.app) as client:
+            response = client.get("/")
+
+    assert response.status_code == 200
+    embedded_render = captured_render["EmbeddedController"]
+    assert isinstance(embedded_render, dict)
+    rendered_widget = embedded_render['{"label":"count-0"}']
+    assert rendered_widget.label == "embedded:count-0"
+    assert rendered_widget.request_path == "/"
 
 
 def test_plugin_to_webserver_includes_plugin_router(tmp_path: Path):

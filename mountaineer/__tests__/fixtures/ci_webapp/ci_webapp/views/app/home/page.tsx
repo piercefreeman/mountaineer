@@ -1,5 +1,6 @@
 import React from "react";
 import { useServer, RequestValidationError } from "./_server";
+import EmbeddedWidget from "../embedded/widget";
 import { CustomComponent } from "./element";
 
 const Home = () => {
@@ -14,6 +15,7 @@ const Home = () => {
         Hello {serverState.client_ip}, current count is{" "}
         {serverState.current_count} {serverState.random_uuid}
       </p>
+      <EmbeddedWidget label={`count-${serverState.current_count}`} />
       <CustomComponent />
       <p>
         <a

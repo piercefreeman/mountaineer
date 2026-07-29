@@ -45,6 +45,9 @@ class LocalLinkGenerator(LocalGeneratorBase):
         self.controller = controller
 
     def script(self):
+        if not self.controller.render or not self.controller.entrypoint_url:
+            return
+
         yield from self._get_imports(self.controller)
         yield CodeBlock(self._get_link_implementation(self.controller))
 
@@ -326,9 +329,13 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         *,
         managed_path: ManagedViewPath,
         global_root: ManagedViewPath,
+        is_layout: bool = False,
+        url_prefix: str | None = None,
     ):
         super().__init__(managed_path=managed_path, global_root=global_root)
         self.controller = controller
+        self.is_layout = is_layout
+        self.url_prefix = url_prefix
 
     def script(self):
         if not self.controller.render:
@@ -337,8 +344,8 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         api_import_path = self.get_global_import_path("api.ts")
         links_import_path = self.get_global_import_path("links.ts")
         yield CodeBlock(
-            "import React, { useCallback, useMemo, useState } from 'react';",
-            f"import {{ applySideEffect }} from '{api_import_path}';",
+            "import React, { useCallback, useEffect, useMemo, useState } from 'react';",
+            f"import {{ __request, applySideEffect }} from '{api_import_path}';",
             f"import LinkGenerator from '{links_import_path}';",
         )
 
@@ -366,11 +373,16 @@ class LocalUseServerGenerator(LocalGeneratorBase):
     def _generate_interface(self, controller: ControllerWrapper, render_model: str):
         """Generate ServerState interface"""
         server_key = controller.controller.__name__
+        server_data_type = (
+            f"Record<string, {render_model}>"
+            if self._is_embedded_controller()
+            else render_model
+        )
 
         yield CodeBlock(
             "declare global {",
             "  interface SERVER_DATA_INTERFACE {",
-            f"    {server_key}: {render_model};",
+            f"    {server_key}: {server_data_type};",
             "  }",
             "  var SERVER_DATA: SERVER_DATA_INTERFACE;",
             "}",
@@ -381,6 +393,9 @@ class LocalUseServerGenerator(LocalGeneratorBase):
             "  linkGenerator: typeof LinkGenerator;",
             "}",
         )
+
+    def _is_embedded_controller(self):
+        return not self.is_layout and not self.controller.entrypoint_url
 
     def _generate_hook(self, controller: ControllerWrapper, render_model: str):
         """Generate useServer hook implementation"""
@@ -419,16 +434,69 @@ class LocalUseServerGenerator(LocalGeneratorBase):
 
         optional_model_name = f"{render_model}Optional"
         yield CodeBlock(f"export type {optional_model_name} = Partial<{render_model}>;")
+        if self._is_embedded_controller():
+            if not self.url_prefix:
+                raise ValueError("Embedded controllers require an internal url_prefix")
+
+            yield CodeBlock("export type MountaineerRenderArgs = Record<string, any>;")
+            render_endpoint = f"{self.url_prefix}/render"
+            hook_signature = "mountaineerRenderArgs?: MountaineerRenderArgs"
+            hook_preamble = [
+                "  const mountaineerRenderKey = JSON.stringify(mountaineerRenderArgs ?? {});",
+                "  if ((globalThis as any).__MOUNTAINEER_COLLECT_PROPS__) {",
+                "    ((globalThis as any).__MOUNTAINEER_COLLECTED_PROPS__ ??= []).push({",
+                f"      controller: '{server_key}',",
+                "      key: mountaineerRenderKey,",
+                "      props: mountaineerRenderArgs ?? {},",
+                "    });",
+                "  }",
+                f"  const mountaineerServerData = SERVER_DATA.{server_key} as Record<string, {render_model}>;",
+                f"  const mountaineerInitialState = (mountaineerServerData?.[mountaineerRenderKey] ?? {{}}) as {render_model};\n",
+            ]
+            state_initializer = "mountaineerInitialState"
+            render_refresh = [
+                "  useEffect(() => {",
+                "    if ((globalThis as any).__MOUNTAINEER_COLLECT_PROPS__) {",
+                "      return;",
+                "    }",
+                "    if (mountaineerServerData?.[mountaineerRenderKey]) {",
+                "      setServerState(mountaineerServerData[mountaineerRenderKey]);",
+                "      return;",
+                "    }",
+                "    let mountaineerIsCurrent = true;",
+                "    __request({",
+                "      method: 'GET',",
+                f"      url: '{render_endpoint}',",
+                "      query: mountaineerRenderArgs ?? {},",
+                f"    }}).then((payload: {render_model}) => {{",
+                "      if (mountaineerIsCurrent) {",
+                "        setServerState(payload);",
+                "      }",
+                "    }).catch((error) => {",
+                "      if (mountaineerIsCurrent) {",
+                "        throw error;",
+                "      }",
+                "    });",
+                "    return () => { mountaineerIsCurrent = false; };",
+                "  }, [mountaineerRenderKey]);\n",
+            ]
+        else:
+            hook_signature = ""
+            hook_preamble = []
+            state_initializer = f"SERVER_DATA.{server_key} as {render_model}"
+            render_refresh = []
 
         yield CodeBlock(
-            "export const useServer = (): ServerState => {",
-            f"  const [serverState, setServerState] = useState(SERVER_DATA.{server_key} as {render_model});\n",
+            f"export const useServer = ({hook_signature}): ServerState => {{",
+            *hook_preamble,
+            f"  const [serverState, setServerState] = useState({state_initializer});\n",
             f"  const setControllerState = useCallback((payload: {optional_model_name}) => {{",
             "    setServerState((state) => ({",
             "      ...state,",
             "      ...payload,",
             "    }));",
             "  }, []);\n",
+            *render_refresh,
             *memoized_sideeffect_wrappers,
             f"  return useMemo((): ServerState => ({{\n{memoized_response_body}\n  }}), [{memoized_response_dependencies}]);",
             "};",

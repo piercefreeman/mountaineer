@@ -90,6 +90,13 @@ class ExampleController(ExampleBaseController):
         pass
 
 
+class EmbeddedController(ExampleBaseController):
+    view_path = "/embedded.tsx"
+
+    async def render(self) -> ExampleRenderModel:  # type: ignore
+        pass
+
+
 @pytest.fixture
 def managed_path(tmp_path: Path) -> ManagedViewPath:
     controller_path = tmp_path / "test_controller"
@@ -168,6 +175,22 @@ class TestLocalLinkGenerator:
         imports = list(generator._get_imports(generator.controller))
         assert any("../api" in block.content for block in imports)
         assert any("../controllers" in block.content for block in imports)
+
+    def test_no_link_for_embedded_controller(
+        self,
+        managed_path: ManagedViewPath,
+        global_root: ManagedViewPath,
+        controller_parser: ControllerParser,
+    ) -> None:
+        app_controller = AppController(view_root=Path())
+        app_controller.register(EmbeddedController())
+        generator = LocalLinkGenerator(
+            controller=controller_parser.parse_controller(EmbeddedController),
+            managed_path=managed_path,
+            global_root=global_root,
+        )
+
+        assert list(generator.script()) == []
 
 
 class TestLocalActionGenerator:
@@ -286,6 +309,31 @@ class TestLocalUseServerGenerator:
         assert "update_data: update_dataWithSideEffect" in content
         assert "upload_file: upload_fileWithSideEffect" in content
         assert "return useMemo((): ServerState => ({" in content
+
+    def test_embedded_controller_collects_render_args(
+        self,
+        managed_path: ManagedViewPath,
+        global_root: ManagedViewPath,
+        controller_parser: ControllerParser,
+    ) -> None:
+        app_controller = AppController(view_root=Path())
+        app_controller.register(EmbeddedController())
+        generator = LocalUseServerGenerator(
+            controller=controller_parser.parse_controller(EmbeddedController),
+            managed_path=managed_path,
+            global_root=global_root,
+            url_prefix="/internal/api/embedded_controller",
+        )
+
+        content = "\n".join(block.content for block in generator.script())
+
+        assert "EmbeddedController: Record<string, ExampleRenderModel>;" in content
+        assert "useServer = (mountaineerRenderArgs?: MountaineerRenderArgs)" in content
+        assert "__MOUNTAINEER_COLLECT_PROPS__" in content
+        assert "controller: 'EmbeddedController'" in content
+        assert "url: '/internal/api/embedded_controller/render'" in content
+        assert "setServerState(mountaineerInitialState)" not in content
+        assert "setServerState(mountaineerServerData[mountaineerRenderKey])" in content
 
 
 class TestLocalIndexGenerator:

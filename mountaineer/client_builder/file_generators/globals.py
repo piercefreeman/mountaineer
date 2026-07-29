@@ -165,7 +165,10 @@ class GlobalLinkGenerator(FileGeneratorBase):
         link_setters: dict[str, Any] = {}
 
         for parsed_controller in self.parsed_controllers:
-            if parsed_controller.is_layout:
+            if (
+                parsed_controller.is_layout
+                or not parsed_controller.wrapper.entrypoint_url
+            ):
                 continue
 
             controller_dir = parsed_controller.view_path.get_managed_code_dir()

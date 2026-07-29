@@ -73,6 +73,13 @@ class LayoutController(LayoutControllerBase):
         pass
 
 
+class EmbeddedController(ControllerBase):
+    view_path = "/embedded.tsx"
+
+    async def render(self) -> MainModel:  # type: ignore
+        pass
+
+
 @pytest.fixture
 def managed_path(tmp_path: Path) -> ManagedViewPath:
     return ManagedViewPath(tmp_path)
@@ -195,6 +202,12 @@ class TestGlobalLinkGenerator:
     ) -> List[ParsedController]:
         (managed_path / "child").mkdir()
         (managed_path / "layout").mkdir()
+        (managed_path / "embedded").mkdir()
+
+        app_controller = AppController(view_root=Path())
+        app_controller.register(ChildController())
+        app_controller.register(LayoutController())
+        app_controller.register(EmbeddedController())
 
         return [
             ParsedController(
@@ -206,6 +219,11 @@ class TestGlobalLinkGenerator:
                 wrapper=controller_parser.parse_controller(LayoutController),
                 view_path=ManagedViewPath(managed_path / "layout"),
                 is_layout=True,
+            ),
+            ParsedController(
+                wrapper=controller_parser.parse_controller(EmbeddedController),
+                view_path=ManagedViewPath(managed_path / "embedded"),
+                is_layout=False,
             ),
         ]
 
@@ -227,6 +245,9 @@ class TestGlobalLinkGenerator:
 
         # Verify layout controller is excluded
         assert "LayoutControllerGetLinks" not in content
+
+        # Verify embedded controller without a URL is excluded
+        assert "EmbeddedControllerGetLinks" not in content
 
         # Verify link generator object
         assert "const linkGenerator = {" in content

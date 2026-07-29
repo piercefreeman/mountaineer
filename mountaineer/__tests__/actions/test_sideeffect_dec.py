@@ -414,6 +414,44 @@ async def test_layout_controller_request_support():
 
 
 @pytest.mark.asyncio
+async def test_embeddable_controller_sideeffect_without_url():
+    class ExampleEmbeddedRender(RenderBase):
+        label: str
+        request_info: str
+
+    class TestEmbeddedController(ControllerBase):
+        view_path = "/embedded.tsx"
+
+        def render(self, request: Request, label: str) -> ExampleEmbeddedRender:
+            return ExampleEmbeddedRender(label=label, request_info=request.url.path)
+
+        @sideeffect
+        def call_sideeffect(self, label: str, payload: dict) -> None:
+            pass
+
+    app = AppController(view_root=Path())
+    controller = TestEmbeddedController()
+    app.register(controller)
+
+    controller_definition = app.graph.get_definitions_for_cls(controller.__class__)[0]
+    sideeffect_url = controller_definition.get_url_for_metadata(
+        get_function_metadata(TestEmbeddedController.call_sideeffect)
+    )
+
+    client = TestClient(app.app)
+    response = client.post(
+        sideeffect_url,
+        params={"label": "embedded-label"},
+        json={},
+        headers={"referer": "http://example.com/host-page/"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sideeffect"]["label"] == "embedded-label"
+    assert response.json()["sideeffect"]["request_info"] == "/host-page/"
+
+
+@pytest.mark.asyncio
 async def test_controller_and_layout_request_handling():
     """
     Test and compare both ControllerBase and LayoutControllerBase to ensure they both

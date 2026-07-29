@@ -273,12 +273,23 @@ async def get_render_parameters(
     # in the same way.
     # The referrer should capture the page that they're actually on
     referer = request.headers.get("referer")
-    parsed_path = urlparse(referer or controller.url)
+    controller_url = (
+        None
+        if isinstance(controller, LayoutControllerBase)
+        else getattr(controller, "url", None)
+    )
+    parsed_path = urlparse(referer or controller_url or "/")
+    query_string = parsed_path.query
+    if controller_url is None and request.url.query:
+        query_string = "&".join(
+            query for query in (query_string, request.url.query) if query
+        )
+
     view_request = Request(
         {
             "type": request.scope["type"],
             "path": parsed_path.path,
-            "query_string": parsed_path.query,
+            "query_string": query_string.encode(),
             "headers": request.headers.raw,
             "http_version": request.scope["http_version"],
             "method": "GET",
@@ -324,11 +335,7 @@ async def get_render_parameters(
     try:
         async with get_function_dependencies(
             callable=controller.render,
-            url=(
-                controller.url
-                if not isinstance(controller, LayoutControllerBase)
-                else None
-            ),
+            url=controller_url,
             request=view_request,
         ) as values:
             yield values

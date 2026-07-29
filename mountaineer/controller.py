@@ -70,12 +70,15 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     """
 
-    url: str
+    url: str | None = None
     """
     The URL that this controller will be mounted at. This can contain dynamic
     path parameters, e.g. `/user/{user_id}`. Each parameter will be passed to your
     render function as a keyword argument, so this function would
     have a signature like `async def render(self, user_id: str) -> RenderBase`.
+
+    Omit this or set it to None for controllers that are only embedded into
+    another page and should not have their own browser route.
 
     """
 

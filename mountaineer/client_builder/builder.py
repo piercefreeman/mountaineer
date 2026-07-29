@@ -162,6 +162,8 @@ class APIBuilder:
                 controller=parsed_controller.wrapper,
                 managed_path=managed_path / "useServer.ts",
                 global_root=global_root,
+                is_layout=parsed_controller.is_layout,
+                url_prefix=parsed_controller.url_prefix,
             )
             local_index_generator = LocalIndexGenerator(
                 controller=parsed_controller.wrapper,

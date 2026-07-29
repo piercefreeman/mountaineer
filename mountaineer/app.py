@@ -1,12 +1,13 @@
 from collections import defaultdict
 from functools import partial, wraps
 from hashlib import md5
-from inspect import Signature, isawaitable, isclass, signature
+from inspect import Parameter, Signature, isawaitable, isclass, signature
 from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from re import match as re_match
 from time import monotonic_ns
 from typing import Any, Callable, Type, overload
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
@@ -31,6 +32,7 @@ from mountaineer.config import ConfigBase
 from mountaineer.constants import DEFAULT_STATIC_DIR
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
+from mountaineer.dependencies import get_function_dependencies
 from mountaineer.exceptions import (
     APIException,
     RequestValidationError,
@@ -404,9 +406,21 @@ class AppController:
 
         # Only the signature of the actual rendering function, not the original. We might
         # need to sniff render() again for its typehint
-        generate_controller_html.__signature__ = signature(  # type: ignore
+        view_signature = signature(
             generate_controller_html,
         ).replace(return_annotation=None)
+        if "request" not in view_signature.parameters:
+            view_signature = view_signature.replace(
+                parameters=[
+                    *view_signature.parameters.values(),
+                    Parameter(
+                        "request",
+                        Parameter.KEYWORD_ONLY,
+                        annotation=Request,
+                    ),
+                ]
+            )
+        generate_controller_html.__signature__ = view_signature  # type: ignore
 
         # Validate the return model is actually a RenderBase or explicitly marked up as None
         if not (
@@ -430,25 +444,50 @@ class AppController:
         #
         # We only mount standard controllers, we don't expect LayoutControllers to have
         # a directly accessible URL
+        controller_url = getattr(controller, "url", None)
         if isinstance(controller, LayoutControllerBase):
-            if hasattr(controller, "url"):
+            if controller_url is not None:
                 raise ValueError(
                     f"LayoutControllers are not directly mountable to the router. {controller} should not have a url specified."
                 )
             view_router = None
         else:
-            view_router = APIRouter()
-            view_router.get(controller.url)(generate_controller_html)
-            self.app.include_router(view_router)
-            render_metadata.register_controller_url(
-                controller.__class__, controller.url
-            )
+            view_router = None
+            if controller_url is not None:
+                view_router = APIRouter()
+                view_router.get(controller_url)(generate_controller_html)
+                self.app.include_router(view_router)
+                render_metadata.register_controller_url(
+                    controller.__class__, controller_url
+                )
 
         # Create a wrapper router for each controller to hold the side-effects
         controller_api = APIRouter()
         controller_url_prefix = (
             f"{self.internal_api_prefix}/{underscore(controller.__class__.__name__)}"
         )
+
+        if controller_url is None and not isinstance(controller, LayoutControllerBase):
+
+            async def render_controller_data(request: Request):
+                referer = request.headers.get("referer")
+                if referer:
+                    parsed_referer = urlparse(referer)
+                    request = Request(
+                        {
+                            **request.scope,
+                            "path": parsed_referer.path or "/",
+                            "raw_path": (parsed_referer.path or "/").encode(),
+                        }
+                    )
+                server_data = await self._render_controller_data(
+                    controller_definition,
+                    request,
+                )
+                return server_data.model_dump(mode="json")
+
+            controller_api.get("/render")(render_controller_data)
+
         for _, fn, metadata in controller._get_client_functions():
             if not metadata.get_is_raw_response():
                 # We need to delay adding the typehint for each function until we are here, adding the view. Since
@@ -571,6 +610,12 @@ class AppController:
                 raise ValueError("Dev cache is not a ControllerDevCache")
 
             LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
+            render_output = await self._render_embedded_controllers(
+                dev_cache.cached_server_script,
+                render_output,
+                request=kwargs.get("request"),
+                sourcemap=dev_cache.cached_server_sourcemap,
+            )
             html = self.compile_html(
                 dev_cache.cached_server_script,
                 controller_output,
@@ -585,6 +630,12 @@ class AppController:
             if not isinstance(prod_cache, ControllerProdCache):
                 raise ValueError("Prod cache is not a ControllerProdCache")
 
+            render_output = await self._render_embedded_controllers(
+                prod_cache.cached_server_script,
+                render_output,
+                request=kwargs.get("request"),
+                sourcemap=prod_cache.cached_server_sourcemap,
+            )
             html = self.compile_html(
                 prod_cache.cached_server_script,
                 controller_output,
@@ -602,12 +653,118 @@ class AppController:
         )
         return html
 
+    async def _render_embedded_controllers(
+        self,
+        server_script: str,
+        render_output: dict[str, RenderBase | dict[str, RenderBase]],
+        *,
+        request: Request | None,
+        sourcemap: str | None,
+    ):
+        if request is None:
+            return render_output
+
+        embedded_by_name = {
+            definition.controller.__class__.__name__: definition
+            for definition in self.graph.controllers
+            if definition.route
+            and definition.route.render_router is None
+            and not isinstance(definition.controller, LayoutControllerBase)
+        }
+        if not embedded_by_name:
+            return render_output
+
+        collected_raw = render_ssr(
+            server_script,
+            self._serialize_render_output(render_output),
+            hard_timeout=10,
+            sourcemap=sourcemap,
+            collect_props=True,
+        )
+        collected = json_loads(collected_raw)
+        if not isinstance(collected, list):
+            raise ValueError("SSR embedded prop collection must return a list")
+
+        seen: set[tuple[str, str]] = set()
+        for item in collected:
+            if not isinstance(item, dict):
+                continue
+            controller_name = item.get("controller")
+            key = item.get("key")
+            props = item.get("props") or {}
+            if (
+                not isinstance(controller_name, str)
+                or not isinstance(key, str)
+                or not isinstance(props, dict)
+            ):
+                continue
+            if (controller_name, key) in seen:
+                continue
+            seen.add((controller_name, key))
+
+            definition = embedded_by_name.get(controller_name)
+            if not definition:
+                continue
+
+            embedded_request = Request(
+                {
+                    **request.scope,
+                    "query_string": urlencode(props, doseq=True).encode(),
+                }
+            )
+            server_data = await self._render_controller_data(
+                definition,
+                embedded_request,
+            )
+
+            bucket = render_output.setdefault(controller_name, {})
+            if not isinstance(bucket, dict):
+                raise ValueError(f"Controller {controller_name} already rendered")
+            bucket[key] = server_data
+
+        return render_output
+
+    async def _render_controller_data(
+        self,
+        definition: ControllerDefinition,
+        request: Request,
+    ) -> RenderBase:
+        async with get_function_dependencies(
+            callable=definition.controller.render,
+            url=None,
+            request=request,
+        ) as values:
+            server_data = definition.controller.render(**values)
+            if isawaitable(server_data):
+                server_data = await server_data
+            if server_data is None:
+                server_data = RenderNull()
+
+        if not isinstance(server_data, RenderBase):
+            raise ValueError(
+                f"Embedded controller {definition.controller.__class__.__name__} must render a RenderBase or None"
+            )
+        return server_data
+
+    def _serialize_render_output(
+        self, all_render: dict[str, RenderBase | dict[str, RenderBase]]
+    ):
+        server_data_json: dict[str, Any] = {}
+        for render_key, context in all_render.items():
+            if isinstance(context, dict):
+                server_data_json[render_key] = {
+                    key: value.model_dump(mode="json") for key, value in context.items()
+                }
+            else:
+                server_data_json[render_key] = context.model_dump(mode="json")
+        return server_data_json
+
     @overload
     def compile_html(
         self,
         server_script: str,
         page_metadata: RenderBase,
-        all_render: dict[str, RenderBase],
+        all_render: dict[str, RenderBase | dict[str, RenderBase]],
         *,
         inline_client_script: str,
         external_client_imports: None,
@@ -619,7 +776,7 @@ class AppController:
         self,
         server_script: str,
         page_metadata: RenderBase,
-        all_render: dict[str, RenderBase],
+        all_render: dict[str, RenderBase | dict[str, RenderBase]],
         *,
         inline_client_script: None,
         external_client_imports: list[str],
@@ -630,7 +787,7 @@ class AppController:
         self,
         server_script: str,
         page_metadata: RenderBase,
-        all_render: dict[str, RenderBase],
+        all_render: dict[str, RenderBase | dict[str, RenderBase]],
         *,
         inline_client_script: str | None = None,
         external_client_imports: list[str] | None = None,
@@ -659,10 +816,7 @@ class AppController:
                 header_str = ""
 
         # Client-side react scripts that will hydrate the server side contents on load
-        server_data_json = {
-            render_key: context.model_dump(mode="json")
-            for render_key, context in all_render.items()
-        }
+        server_data_json = self._serialize_render_output(all_render)
 
         ssr_html = render_ssr(
             server_script,

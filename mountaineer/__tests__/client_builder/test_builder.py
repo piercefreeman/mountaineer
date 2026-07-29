@@ -51,3 +51,23 @@ def test_build_all_cleanup_preserves_plugin_assets(tmp_path: Path):
     assert not (host_view_root / "_static").exists()
     assert plugin_static.exists()
     assert plugin_ssr.exists()
+
+
+def test_parse_all_controllers_keeps_url_less_controller(tmp_path: Path):
+    host_view_root = tmp_path / "host_views"
+    host_view_root.mkdir()
+
+    class EmbeddedController(ControllerBase):
+        view_path = "/embedded/page.tsx"
+
+        def render(self) -> None:
+            return None
+
+    app = AppController(view_root=host_view_root)
+    app.register(EmbeddedController())
+
+    _, parsed_controllers = APIBuilder(app)._parse_all_controllers()
+
+    assert len(parsed_controllers) == 1
+    assert parsed_controllers[0].wrapper.controller is EmbeddedController
+    assert parsed_controllers[0].wrapper.entrypoint_url is None

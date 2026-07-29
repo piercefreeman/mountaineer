@@ -61,6 +61,17 @@ def test_ssr_timeout():
     assert ((monotonic_ns() - start) / 1e9) < 1.0
 
 
+def test_ssr_collect_props_mode():
+    js_contents = """
+    var SSR = {
+        x: () => globalThis.__MOUNTAINEER_COLLECT_PROPS__ ? '["ok"]' : '<div>ok</div>'
+    };
+    """
+
+    assert render_ssr(js_contents, {}, hard_timeout=0) == "<div>ok</div>"
+    assert render_ssr(js_contents, {}, hard_timeout=0, collect_props=True) == '["ok"]'
+
+
 def test_ssr_exception_context():
     """
     Ensure we report the context of V8 runtime exceptions with enhanced information.

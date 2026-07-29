@@ -46,7 +46,15 @@ pub fn build_entrypoint(
         entrypoint_content += "hydrateRoot(container, <Entrypoint />);\n";
     } else {
         entrypoint_content += "import { renderToString } from 'react-dom/server.edge';\n";
-        entrypoint_content += "export const Index = () => renderToString(<Entrypoint />);\n";
+        entrypoint_content += "export const Index = () => {\n";
+        entrypoint_content += "    if (globalThis.__MOUNTAINEER_COLLECT_PROPS__) {\n";
+        entrypoint_content += "        globalThis.__MOUNTAINEER_COLLECTED_PROPS__ = [];\n";
+        entrypoint_content += "        renderToString(<Entrypoint />);\n";
+        entrypoint_content +=
+            "        return JSON.stringify(globalThis.__MOUNTAINEER_COLLECTED_PROPS__);\n";
+        entrypoint_content += "    }\n";
+        entrypoint_content += "    return renderToString(<Entrypoint />);\n";
+        entrypoint_content += "};\n";
     }
 
     entrypoint_content
@@ -75,5 +83,6 @@ mod tests {
             .contains(r#"import mountLiveReload from "C:\\absolute\\path\\live_reload.ts";"#));
         assert!(entrypoint.contains(r#"import Layout0 from "C:\\absolute\\path\\layout.jsx";"#));
         assert!(entrypoint.contains(r#"import Layout1 from "C:\\absolute\\path\\page.jsx";"#));
+        assert!(entrypoint.contains("__MOUNTAINEER_COLLECT_PROPS__"));
     }
 }
