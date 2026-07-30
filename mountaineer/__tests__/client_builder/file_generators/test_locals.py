@@ -115,38 +115,93 @@ def controller_wrapper(controller_parser: ControllerParser) -> ControllerWrapper
     return controller_parser.parse_controller(ExampleController)
 
 
+@pytest.fixture
+def base_generator(
+    managed_path: ManagedViewPath, global_root: ManagedViewPath
+) -> LocalGeneratorBase:
+    class ConcreteGeneratorBase(LocalGeneratorBase):
+        def script(self):
+            yield CodeBlock()
+
+    return ConcreteGeneratorBase(managed_path=managed_path, global_root=global_root)
+
+
+@pytest.fixture
+def link_generator(
+    managed_path: ManagedViewPath,
+    global_root: ManagedViewPath,
+    controller_wrapper: ControllerWrapper,
+) -> LocalLinkGenerator:
+    return LocalLinkGenerator(
+        controller=controller_wrapper,
+        managed_path=managed_path,
+        global_root=global_root,
+    )
+
+
+@pytest.fixture
+def action_generator(
+    managed_path: ManagedViewPath,
+    global_root: ManagedViewPath,
+    controller_wrapper: ControllerWrapper,
+) -> LocalActionGenerator:
+    return LocalActionGenerator(
+        controller=controller_wrapper,
+        managed_path=managed_path,
+        global_root=global_root,
+    )
+
+
+@pytest.fixture
+def model_generator(
+    managed_path: ManagedViewPath,
+    global_root: ManagedViewPath,
+    controller_wrapper: ControllerWrapper,
+) -> LocalModelGenerator:
+    return LocalModelGenerator(
+        controller=controller_wrapper,
+        managed_path=managed_path,
+        global_root=global_root,
+    )
+
+
+@pytest.fixture
+def server_generator(
+    managed_path: ManagedViewPath,
+    global_root: ManagedViewPath,
+    controller_wrapper: ControllerWrapper,
+) -> LocalUseServerGenerator:
+    return LocalUseServerGenerator(
+        controller=controller_wrapper,
+        managed_path=managed_path,
+        global_root=global_root,
+    )
+
+
+@pytest.fixture
+def index_generator(
+    managed_path: ManagedViewPath,
+    global_root: ManagedViewPath,
+    controller_wrapper: ControllerWrapper,
+) -> LocalIndexGenerator:
+    return LocalIndexGenerator(
+        controller=controller_wrapper,
+        managed_path=managed_path,
+        global_root=global_root,
+    )
+
+
 class TestLocalGeneratorBase:
-    @pytest.fixture
-    def generator(self, managed_path: ManagedViewPath, global_root: ManagedViewPath):
-        class ConcreteGeneratorBase(LocalGeneratorBase):
-            def script(self):
-                yield CodeBlock()
-
-        return ConcreteGeneratorBase(managed_path=managed_path, global_root=global_root)
-
-    def test_get_global_import_path(self, generator: LocalGeneratorBase) -> None:
-        result: str = generator.get_global_import_path("test.ts")
+    def test_get_global_import_path(self, base_generator: LocalGeneratorBase) -> None:
+        result: str = base_generator.get_global_import_path("test.ts")
         assert isinstance(result, str)
         assert "../" in result
         assert result.endswith("test")
 
 
 class TestLocalLinkGenerator:
-    @pytest.fixture
-    def generator(
-        self,
-        managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-        controller_wrapper: ControllerWrapper,
-    ) -> Any:
-        return LocalLinkGenerator(
-            controller=controller_wrapper,
-            managed_path=managed_path,
-            global_root=global_root,
-        )
-
-    def test_script_generation(self, generator: LocalLinkGenerator) -> None:
-        result = list(generator.script())
+    def test_script_generation(self, link_generator: LocalLinkGenerator) -> None:
+        result = list(link_generator.script())
         assert len(result) > 0
         content = "\n".join(block.content for block in result)
         assert "import" in content
@@ -156,36 +211,27 @@ class TestLocalLinkGenerator:
         assert "enum_param" in content
 
     def test_get_link_implementation_with_parameters(
-        self, generator: LocalLinkGenerator
+        self, link_generator: LocalLinkGenerator
     ) -> None:
-        impl = generator._get_link_implementation(generator.controller)
+        impl = link_generator._get_link_implementation(link_generator.controller)
         assert "path_param" in impl
         assert "query_param?" in impl  # Optional parameter
         assert "enum_param?" in impl  # Optional parameter
         assert "/test" in impl
 
-    def test_get_imports(self, generator: LocalLinkGenerator) -> None:
-        imports = list(generator._get_imports(generator.controller))
+    def test_get_imports(self, link_generator: LocalLinkGenerator) -> None:
+        imports = list(link_generator._get_imports(link_generator.controller))
         assert any("../api" in block.content for block in imports)
         assert any("../controllers" in block.content for block in imports)
 
 
 class TestLocalActionGenerator:
-    @pytest.fixture
-    def generator(
-        self,
-        managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-        controller_wrapper: ControllerWrapper,
-    ) -> Any:
-        return LocalActionGenerator(
-            controller=controller_wrapper,
-            managed_path=managed_path,
-            global_root=global_root,
+    def test_generate_controller_actions(
+        self, action_generator: LocalActionGenerator
+    ) -> None:
+        actions = list(
+            action_generator._generate_controller_actions(action_generator.controller)
         )
-
-    def test_generate_controller_actions(self, generator: LocalActionGenerator) -> None:
-        actions = list(generator._generate_controller_actions(generator.controller))
         assert len(actions) == 4  # base_action, get_data, update_data, upload_file
         action_names: set[str] = {
             action
@@ -194,8 +240,10 @@ class TestLocalActionGenerator:
         }
         assert len(action_names) == 4
 
-    def test_get_dependent_imports(self, generator: LocalActionGenerator) -> None:
-        deps = generator._get_dependent_imports(generator.controller)
+    def test_get_dependent_imports(
+        self, action_generator: LocalActionGenerator
+    ) -> None:
+        deps = action_generator._get_dependent_imports(action_generator.controller)
 
         # Response wrapped models
         assert deps == {
@@ -208,9 +256,9 @@ class TestLocalActionGenerator:
         }
 
     def test_exception_payload_imports_are_type_only(
-        self, generator: LocalActionGenerator
+        self, action_generator: LocalActionGenerator
     ) -> None:
-        content = "\n".join(block.content for block in generator.script())
+        content = "\n".join(block.content for block in action_generator.script())
 
         assert "import { __request, FetchErrorBase }" in content
         assert (
@@ -228,21 +276,8 @@ class TestLocalActionGenerator:
 
 
 class TestLocalModelGenerator:
-    @pytest.fixture
-    def generator(
-        self,
-        managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-        controller_wrapper: ControllerWrapper,
-    ) -> Any:
-        return LocalModelGenerator(
-            controller=controller_wrapper,
-            managed_path=managed_path,
-            global_root=global_root,
-        )
-
-    def test_script_generation(self, generator: LocalModelGenerator) -> None:
-        result: List[Any] = list(generator.script())
+    def test_script_generation(self, model_generator: LocalModelGenerator) -> None:
+        result: List[Any] = list(model_generator.script())
         assert len(result) > 0
         content: str = "\n".join(block.content for block in result)
 
@@ -256,23 +291,10 @@ class TestLocalModelGenerator:
 
 
 class TestLocalUseServerGenerator:
-    @pytest.fixture
-    def generator(
-        self,
-        managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-        controller_wrapper: ControllerWrapper,
-    ) -> Any:
-        return LocalUseServerGenerator(
-            controller=controller_wrapper,
-            managed_path=managed_path,
-            global_root=global_root,
-        )
-
     def test_script_generation_with_render(
-        self, generator: LocalUseServerGenerator
+        self, server_generator: LocalUseServerGenerator
     ) -> None:
-        result: List[Any] = list(generator.script())
+        result: List[Any] = list(server_generator.script())
         content: str = "\n".join(block.content for block in result)
         assert "useServer" in content
         assert "ServerState" in content
@@ -289,28 +311,15 @@ class TestLocalUseServerGenerator:
 
 
 class TestLocalIndexGenerator:
-    @pytest.fixture
-    def generator(
-        self,
-        managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-        controller_wrapper: ControllerWrapper,
-    ) -> Any:
-        return LocalIndexGenerator(
-            controller=controller_wrapper,
-            managed_path=managed_path,
-            global_root=global_root,
-        )
-
     def test_script_generation(
-        self, generator: LocalIndexGenerator, managed_path: ManagedViewPath
+        self, index_generator: LocalIndexGenerator, managed_path: ManagedViewPath
     ) -> None:
         (managed_path.parent / "actions.ts").write_text(
             "export const action = () => {}"
         )
         (managed_path.parent / "models.ts").write_text("export type Model = {}")
 
-        result: List[Any] = list(generator.script())
+        result: List[Any] = list(index_generator.script())
         assert len(result) > 0
         content: str = "\n".join(block.content for block in result)
         assert "export * from './actions'" in content

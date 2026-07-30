@@ -18,15 +18,17 @@ from mountaineer.controller import ControllerBase
 T = TypeVar("T")
 
 
+@pytest.fixture
+def parser() -> ControllerParser:
+    return ControllerParser()
+
+
+@pytest.fixture
+def alias_manager() -> AliasManager:
+    return AliasManager()
+
+
 class TestAliasManager:
-    @pytest.fixture
-    def parser(self) -> ControllerParser:
-        return ControllerParser()
-
-    @pytest.fixture
-    def alias_manager(self) -> AliasManager:
-        return AliasManager()
-
     def test_basic_name_normalization(
         self, parser: ControllerParser, alias_manager: AliasManager
     ) -> None:

@@ -1,0 +1,139 @@
+import ast
+
+from determystic.external import DeterministicTraverser
+
+
+MAX_SIMPLE_STATEMENTS = 4
+COMPLEX_NODES = (
+    ast.If,
+    ast.For,
+    ast.AsyncFor,
+    ast.While,
+    ast.Try,
+    ast.With,
+    ast.AsyncWith,
+    ast.Match,
+    ast.ListComp,
+    ast.SetComp,
+    ast.DictComp,
+    ast.GeneratorExp,
+)
+
+
+class SingleUseTrivialHelperTraverser(DeterministicTraverser):
+    """Flag private helpers that only add indirection to one simple caller."""
+
+    def visit_Module(self, node: ast.Module) -> None:
+        module_helpers = {
+            item.name: item
+            for item in node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and self._is_private_helper(item.name)
+        }
+
+        module_calls = self._collect_module_calls(node)
+        for name, helper in module_helpers.items():
+            calls = module_calls.get(name, [])
+            if self._should_flag(helper, calls):
+                self._add_helper_error(helper, calls[0][1])
+
+        for class_node in [item for item in node.body if isinstance(item, ast.ClassDef)]:
+            self._check_class_helpers(class_node)
+
+        self.generic_visit(node)
+
+    def _check_class_helpers(self, class_node: ast.ClassDef) -> None:
+        helpers = {
+            item.name: item
+            for item in class_node.body
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and self._is_private_helper(item.name)
+        }
+
+        calls = self._collect_self_calls(class_node)
+        for name, helper in helpers.items():
+            helper_calls = calls.get(name, [])
+            if self._should_flag(helper, helper_calls):
+                self._add_helper_error(helper, helper_calls[0][1])
+
+    def _should_flag(
+        self,
+        helper: ast.FunctionDef | ast.AsyncFunctionDef,
+        calls: list[tuple[ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]],
+    ) -> bool:
+        if len(calls) != 1:
+            return False
+
+        caller = calls[0][1]
+        if caller is helper:
+            return False
+
+        return self._is_simple_function(helper) and self._is_simple_function(caller)
+
+    def _add_helper_error(
+        self,
+        helper: ast.FunctionDef | ast.AsyncFunctionDef,
+        caller: ast.FunctionDef | ast.AsyncFunctionDef,
+    ) -> None:
+        self.add_error(
+            helper,
+            (
+                f"Private helper '{helper.name}' is called only by simple "
+                f"'{caller.name}'; inline it unless the helper or caller grows "
+                "real branching, error handling, or reuse."
+            ),
+        )
+
+    def _is_private_helper(self, name: str) -> bool:
+        return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
+
+    def _is_simple_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        body = self._body_without_docstring(node)
+        if len(body) > MAX_SIMPLE_STATEMENTS:
+            return False
+        return not any(isinstance(child, COMPLEX_NODES) for stmt in body for child in ast.walk(stmt))
+
+    def _body_without_docstring(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef
+    ) -> list[ast.stmt]:
+        body = list(node.body)
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            return body[1:]
+        return body
+
+    def _collect_module_calls(
+        self, node: ast.Module
+    ) -> dict[str, list[tuple[ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]]]:
+        calls: dict[str, list[tuple[ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
+        for item in node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for call in self._calls_inside(item):
+                    if isinstance(call.func, ast.Name):
+                        calls.setdefault(call.func.id, []).append((call, item))
+        return calls
+
+    def _collect_self_calls(
+        self, class_node: ast.ClassDef
+    ) -> dict[str, list[tuple[ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]]]:
+        calls: dict[str, list[tuple[ast.Call, ast.FunctionDef | ast.AsyncFunctionDef]]] = {}
+        for item in class_node.body:
+            if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                for call in self._calls_inside(item):
+                    if self._is_self_attr_call(call):
+                        calls.setdefault(call.func.attr, []).append((call, item))
+        return calls
+
+    def _calls_inside(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.Call]:
+        return [child for stmt in self._body_without_docstring(node) for child in ast.walk(stmt) if isinstance(child, ast.Call)]
+
+    def _is_self_attr_call(self, node: ast.Call) -> bool:
+        return (
+            isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id in {"self", "cls"}
+        )

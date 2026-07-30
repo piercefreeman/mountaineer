@@ -1,0 +1,201 @@
+import textwrap
+
+from validator import PytestFixturePlacementTraverser
+
+
+def validate(code: str):
+    return PytestFixturePlacementTraverser(textwrap.dedent(code).strip()).validate()
+
+
+def test_flags_fixture_when_it_is_below_test_code():
+    result = validate(
+        """
+        def test_result():
+            assert True
+
+        @pytest_asyncio.fixture
+        async def cached_result(cache: Cache) -> Result:
+            result = Result(value="ready")
+            await cache.store(result)
+            return result
+        """
+    )
+
+    assert not result.is_valid
+    assert len(result.issues) == 1
+    assert result.issues[0].line_number == 4
+    assert "Move pytest fixtures to the top" in result.issues[0].message
+    assert "@pytest_asyncio.fixture" in result.issues[0].code_snippet
+
+
+def test_flags_pytest_fixture_call_below_helper():
+    result = validate(
+        """
+        def make_value():
+            return object()
+
+        @pytest.fixture(scope="session")
+        def value():
+            return make_value()
+        """
+    )
+
+    assert not result.is_valid
+    assert result.issues[0].line_number == 4
+
+
+def test_flags_fixture_after_initial_fixture_block_has_ended():
+    result = validate(
+        """
+        @pytest.fixture
+        def first():
+            return 1
+
+        def test_first(first):
+            assert first == 1
+
+        @pytest.fixture
+        def second():
+            return 2
+        """
+    )
+
+    assert not result.is_valid
+    assert len(result.issues) == 1
+    assert result.issues[0].line_number == 8
+
+
+def test_flags_nested_fixture_because_it_is_not_top_level():
+    result = validate(
+        """
+        def helper():
+            @pytest.fixture
+            def nested():
+                return 1
+            return nested
+        """
+    )
+
+    assert not result.is_valid
+    assert result.issues[0].line_number == 2
+
+
+def test_allows_fixture_in_top_block_after_preamble():
+    result = validate(
+        '''
+        """Tests for value preparation."""
+        import pytest
+        import pytest_asyncio
+
+        DEFAULT_VALUE = "ready"
+
+        @pytest_asyncio.fixture
+        async def prepared_value():
+            return DEFAULT_VALUE
+
+        def test_value(prepared_value):
+            assert prepared_value
+        '''
+    )
+
+    assert result.is_valid
+    assert result.issues == []
+
+
+def test_allows_fixture_after_top_level_classes():
+    """Model/helper classes can live before shared fixtures."""
+    result = validate(
+        """
+        import pytest
+
+
+        class InputModel:
+            pass
+
+
+        class OutputModel:
+            pass
+
+
+        @pytest.fixture
+        def model_pair():
+            return InputModel(), OutputModel()
+
+
+        def test_model_pair(model_pair):
+            assert model_pair
+        """
+    )
+
+    assert result.is_valid
+    assert result.issues == []
+
+
+def test_flags_fixture_after_plain_helper_function():
+    """Plain helper functions still end the top fixture block."""
+    result = validate(
+        """
+        import pytest
+
+
+        def make_model():
+            return object()
+
+
+        @pytest.fixture
+        def model():
+            return make_model()
+        """
+    )
+
+    assert not result.is_valid
+    assert result.issues[0].line_number == 8
+
+
+def test_allows_multiple_top_fixtures_before_tests():
+    result = validate(
+        """
+        @pytest.fixture
+        def first():
+            return object()
+
+        @pytest_asyncio.fixture()
+        async def second():
+            return object()
+
+        def test_second(second):
+            assert second
+        """
+    )
+
+    assert result.is_valid
+
+
+def test_ignores_other_pytest_decorators():
+    result = validate(
+        """
+        def helper():
+            return 1
+
+        @pytest.mark.asyncio
+        async def test_async():
+            assert helper() == 1
+        """
+    )
+
+    assert result.is_valid
+
+
+def test_allows_imported_fixture_name_because_rule_targets_pytest_attribute_form():
+    result = validate(
+        """
+        def helper():
+            return 1
+
+        @fixture
+        def value():
+            return helper()
+        """
+    )
+
+    assert result.is_valid

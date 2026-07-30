@@ -8,6 +8,30 @@ from mountaineer.logging import LOGGER
 from mountaineer.static import get_static_path
 
 
+@pytest.fixture(scope="session")
+def setup_test_environment(tmp_path_factory: pytest.TempPathFactory):
+    temp_dir = tmp_path_factory.mktemp("test_environment")
+    harness_path = get_static_path(".")
+
+    # Copy all files from harness directory to temp directory
+    for item in os.listdir(harness_path):
+        s = os.path.join(harness_path, item)
+        d = os.path.join(temp_dir, item)
+        if os.path.isdir(s):
+            copytree(s, d)
+        else:
+            copy2(s, d)
+
+    # The harness with package.json lives within one nested directory
+    temp_dir = temp_dir / "harness"
+
+    try:
+        run_command("npm install", cwd=str(temp_dir))
+        yield temp_dir
+    finally:
+        LOGGER.info(f"Test environment cleaned up at {temp_dir}")
+
+
 def run_command(command: str, cwd: str) -> tuple[str, str]:
     try:
         # Use subprocess.Popen to capture output in real-time
@@ -34,30 +58,6 @@ def run_command(command: str, cwd: str) -> tuple[str, str]:
         LOGGER.error(f"Error executing command: {command}")
         LOGGER.error(f"Error output:\n{e.stderr}")
         raise
-
-
-@pytest.fixture(scope="session")
-def setup_test_environment(tmp_path_factory: pytest.TempPathFactory):
-    temp_dir = tmp_path_factory.mktemp("test_environment")
-    harness_path = get_static_path(".")
-
-    # Copy all files from harness directory to temp directory
-    for item in os.listdir(harness_path):
-        s = os.path.join(harness_path, item)
-        d = os.path.join(temp_dir, item)
-        if os.path.isdir(s):
-            copytree(s, d)
-        else:
-            copy2(s, d)
-
-    # The harness with package.json lives within one nested directory
-    temp_dir = temp_dir / "harness"
-
-    try:
-        run_command("npm install", cwd=str(temp_dir))
-        yield temp_dir
-    finally:
-        LOGGER.info(f"Test environment cleaned up at {temp_dir}")
 
 
 def test_static_frontend(setup_test_environment: str):

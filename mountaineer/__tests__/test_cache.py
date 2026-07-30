@@ -14,14 +14,14 @@ from mountaineer.cache import AsyncLoopObjectCache, extended_lru_cache
 #
 
 
-@extended_lru_cache(maxsize=100)
-def get_random_data(param: int):
-    return random()
-
-
 @pytest.fixture(autouse=True)
 def reset_cache():
     get_random_data._cache.clear()  # type: ignore
+
+
+@extended_lru_cache(maxsize=100)
+def get_random_data(param: int):
+    return random()
 
 
 def test_extended_lru_cache():
