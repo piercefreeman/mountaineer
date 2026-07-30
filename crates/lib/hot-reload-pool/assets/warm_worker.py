@@ -1,4 +1,23 @@
-"""Pre-import dependencies, then wait to become an app worker."""
+"""Run one idle worker owned by ``mountaineer-hot-reload-pool``.
+
+Invocation::
+
+    python -c "$SCRIPT" '["module.to.preload", "another.module"]'
+
+The first positional argument is a JSON array of import names. Each module is
+imported while the worker is idle; missing optional imports are reported to
+stderr and skipped.
+
+The worker then reads exactly one newline-delimited JSON command from stdin::
+
+    {"command": "start", "generation": 1, "payload_path": "/abs/payload.json"}
+
+``payload_path`` must reference a serialized ``RuntimePayload``. The
+``generation`` field is carried for protocol consistency but is not interpreted
+by this process. After activation, the worker restores normal SIGINT handling,
+loads the payload, and serves until the Mountaineer runtime exits. It produces
+no stdout protocol.
+"""
 
 import importlib
 import json
@@ -15,7 +34,8 @@ signal.signal(signal.SIGINT, signal.SIG_IGN)
 command = json.loads(sys.stdin.readline())
 signal.signal(signal.SIGINT, signal.default_int_handler)
 
-from mountaineer.runtime import RuntimePayload, serve_runtime
-
-payload = RuntimePayload.model_validate_json(open(command["payload_path"]).read())
-serve_runtime(payload)
+runtime = importlib.import_module("mountaineer.runtime")
+payload = runtime.RuntimePayload.model_validate_json(
+    open(command["payload_path"]).read()
+)
+runtime.serve_runtime(payload)

@@ -1,4 +1,30 @@
-"""Keep only warm imports that remain single-threaded after a fork."""
+"""Report which requested Python imports are safe to retain across ``fork``.
+
+Invocation::
+
+    python -c "$SCRIPT" '["module.to.probe", "another.module"]'
+
+The first positional argument is a JSON array of import names. Every import is
+tested in its own child process so failed or thread-starting imports do not
+contaminate the probe parent.
+
+The script reads no stdin. It writes one JSON object to stdout::
+
+    {
+      "safe": ["module.to.probe"],
+      "excluded": [
+        {
+          "module": "another.module",
+          "safe": false,
+          "thread_count": 2,
+          "reason": "import left 2 process threads running"
+        }
+      ]
+    }
+
+An import is safe only when it succeeds and leaves exactly one process thread.
+``thread_count`` is ``null`` when the import fails or cannot report a result.
+"""
 
 import importlib
 import json

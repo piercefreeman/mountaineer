@@ -1,4 +1,24 @@
-"""Warm Python import template controlled by Mountaineer's Rust runtime."""
+"""Run the Unix fork parent used by ``mountaineer-hot-reload-fork``.
+
+Invocation::
+
+    python -c "$SCRIPT" '["module.to.preload", "another.module"]'
+
+The first positional argument is a JSON array of import names. Each module is
+imported before any backend is forked; missing optional imports are reported to
+stderr and skipped.
+
+After startup, read newline-delimited JSON commands from stdin:
+
+* ``{"command": "start", "generation": 1, "payload_path": "/abs/payload.json"}``
+  forks a backend that loads the Mountaineer runtime payload at ``payload_path``.
+* ``{"command": "stop", "generation": 1}`` terminates that generation.
+* ``{"command": "exit"}`` terminates every generation and exits the parent.
+
+The process writes diagnostics to stderr and intentionally produces no stdout
+protocol. It exits unsuccessfully if an active backend dies unexpectedly so
+the Rust owner can treat parent exit as a fatal lifecycle event.
+"""
 
 import importlib
 import json

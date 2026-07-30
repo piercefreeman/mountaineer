@@ -1,4 +1,19 @@
-"""Print third-party imports referenced by a Python package as JSON."""
+"""Discover third-party imports referenced by a Python package.
+
+Invocation::
+
+    python -c "$SCRIPT" /absolute/package/root dotted.package.name
+
+The first positional argument is the package directory to scan recursively for
+``*.py`` files. The second is the package's import name; its first dotted
+segment is excluded so local imports are not treated as dependencies.
+
+The script reads no stdin. It writes a sorted JSON array of absolute import
+names to stdout, excluding standard-library modules, the package itself, and
+files beneath ``.git``, ``.venv``, ``__pycache__``, or ``node_modules``.
+Syntax or filesystem errors are intentionally fatal and reported by Python on
+stderr for the Rust coordinator to surface.
+"""
 
 import ast
 import json
