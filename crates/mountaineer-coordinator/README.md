@@ -23,5 +23,5 @@ Python SSR worker behind the stable proxy.
 writes the versioned runtime payload, then launches `python -m
 mountaineer.runtime`.
 
-Development projects need `vite` and `@vitejs/plugin-react` in their frontend
-dev dependencies; new Mountaineer projects include both.
+The development coordinator installs its private Vite toolchain into the user
+cache on first launch. Project dependencies remain unchanged.

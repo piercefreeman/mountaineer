@@ -43,6 +43,16 @@ const DANGER: &str = "\x1b[1;38;2;231;90;39m";
 const MUTED: &str = "\x1b[38;2;176;175;167m";
 const DETAIL: &str = "\x1b[38;2;128;128;123m";
 const LINK: &str = "\x1b[4;38;2;68;163;248m";
+const FRONTEND_TOOLCHAIN_PACKAGE_JSON: &str = r#"{
+  "name": "mountaineer-frontend-toolchain",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@vitejs/plugin-react": "6.0.4",
+    "vite": "8.1.5"
+  }
+}
+"#;
 const DISCOVER_IMPORTS: &str = include_str!("coordinator_assets/discover_imports.py");
 const VITE_CONFIG: &str = include_str!("coordinator_assets/vite.config.mjs");
 #[cfg(unix)]
@@ -460,21 +470,219 @@ struct ViteDevServer {
     backend_signal: PathBuf,
 }
 
+fn frontend_toolchain_cache_dir() -> Result<PathBuf> {
+    let base = if let Some(path) = env::var_os("MOUNTAINEER_CACHE_DIR") {
+        PathBuf::from(path)
+    } else if cfg!(windows) {
+        env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .ok_or_else(|| invalid("LOCALAPPDATA is not set"))?
+    } else if cfg!(target_os = "macos") {
+        env::var_os("HOME")
+            .map(PathBuf::from)
+            .ok_or_else(|| invalid("HOME is not set"))?
+            .join("Library")
+            .join("Caches")
+    } else {
+        env::var_os("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache")))
+            .ok_or_else(|| invalid("XDG_CACHE_HOME and HOME are not set"))?
+    };
+    let digest = format!(
+        "{:x}",
+        md5::compute(FRONTEND_TOOLCHAIN_PACKAGE_JSON.as_bytes())
+    );
+    Ok(base.join("mountaineer").join(format!(
+        "frontend-{}-{}-{digest}",
+        env::consts::OS,
+        env::consts::ARCH
+    )))
+}
+
+fn frontend_toolchain_complete(path: &Path) -> bool {
+    path.join("package.json").is_file()
+        && path
+            .join("node_modules")
+            .join("vite")
+            .join("bin")
+            .join("vite.js")
+            .is_file()
+        && path
+            .join("node_modules")
+            .join("@vitejs")
+            .join("plugin-react")
+            .join("package.json")
+            .is_file()
+}
+
+fn package_manager_preferences(frontend_root: &Path) -> Vec<&'static str> {
+    let mut preferences = Vec::new();
+    let mut add = |manager| {
+        if !preferences.contains(&manager) {
+            preferences.push(manager);
+        }
+    };
+
+    if let Ok(package_json) = fs::read_to_string(frontend_root.join("package.json")) {
+        if let Ok(package_json) = serde_json::from_str::<serde_json::Value>(&package_json) {
+            if let Some(manager) = package_json
+                .get("packageManager")
+                .and_then(serde_json::Value::as_str)
+                .and_then(|manager| manager.split('@').next())
+            {
+                match manager {
+                    "npm" => add("npm"),
+                    "pnpm" => add("pnpm"),
+                    "yarn" => add("yarn"),
+                    "bun" => add("bun"),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    for (lockfiles, manager) in [
+        (&["bun.lock", "bun.lockb"][..], "bun"),
+        (&["pnpm-lock.yaml"][..], "pnpm"),
+        (&["yarn.lock"][..], "yarn"),
+        (&["package-lock.json", "npm-shrinkwrap.json"][..], "npm"),
+    ] {
+        if lockfiles
+            .iter()
+            .any(|lockfile| frontend_root.join(lockfile).is_file())
+        {
+            add(manager);
+        }
+    }
+    for manager in ["npm", "pnpm", "yarn", "bun"] {
+        add(manager);
+    }
+    preferences
+}
+
+fn executable_command(executable: &str) -> Command {
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("cmd");
+        command.args(["/C", executable]);
+        command
+    }
+    #[cfg(not(windows))]
+    Command::new(executable)
+}
+
+async fn executable_available(executable: &str) -> bool {
+    executable_command(executable)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .is_ok_and(|status| status.success())
+}
+
+async fn frontend_package_manager(frontend_root: &Path) -> Result<&'static str> {
+    for manager in package_manager_preferences(frontend_root) {
+        if executable_available(manager).await {
+            return Ok(manager);
+        }
+    }
+    Err(invalid("frontend refresh requires npm, pnpm, Yarn, or Bun"))
+}
+
+async fn javascript_runtime() -> Result<&'static str> {
+    for runtime in ["node", "bun"] {
+        if executable_available(runtime).await {
+            return Ok(runtime);
+        }
+    }
+    Err(invalid("frontend refresh requires Node.js or Bun"))
+}
+
+async fn ensure_frontend_toolchain(frontend_root: &Path) -> Result<PathBuf> {
+    let toolchain_root = frontend_toolchain_cache_dir()?;
+    if frontend_toolchain_complete(&toolchain_root) {
+        return Ok(toolchain_root);
+    }
+
+    let cache_root = toolchain_root
+        .parent()
+        .ok_or_else(|| invalid("invalid frontend toolchain cache path"))?;
+    fs::create_dir_all(cache_root)?;
+    let install_root = tempfile::Builder::new()
+        .prefix(".frontend-install-")
+        .tempdir_in(cache_root)?;
+    fs::write(
+        install_root.path().join("package.json"),
+        FRONTEND_TOOLCHAIN_PACKAGE_JSON,
+    )?;
+
+    let manager = frontend_package_manager(frontend_root).await?;
+    if manager == "yarn" {
+        fs::write(
+            install_root.path().join(".yarnrc.yml"),
+            "nodeLinker: node-modules\n",
+        )?;
+    }
+    status(
+        Tone::Muted,
+        "Installing",
+        format!("frontend tooling with {manager}"),
+    );
+    let started = Instant::now();
+    let mut command = executable_command(manager);
+    command.arg("install");
+    if manager == "npm" {
+        command.args(["--no-audit", "--no-fund"]);
+    }
+    let output = command
+        .current_dir(install_root.path())
+        .stdin(Stdio::null())
+        .output()
+        .await?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let details = if stderr.trim().is_empty() {
+            stdout.trim()
+        } else {
+            stderr.trim()
+        };
+        return Err(invalid(format!(
+            "{manager} could not install frontend tooling: {details}"
+        )));
+    }
+    if !frontend_toolchain_complete(install_root.path()) {
+        return Err(invalid(format!(
+            "{manager} completed without installing Vite and its React plugin"
+        )));
+    }
+
+    if let Err(error) = fs::rename(install_root.path(), &toolchain_root) {
+        if !frontend_toolchain_complete(&toolchain_root) {
+            return Err(error.into());
+        }
+    }
+    status(
+        Tone::Accent,
+        "Installed",
+        format!("frontend tooling {}", timing(started)),
+    );
+    Ok(toolchain_root)
+}
+
 impl ViteDevServer {
     async fn spawn(config: &CoordinatorConfig, directory: &TempDir) -> Result<Self> {
-        let package_json = config.frontend_root.join("package.json");
-        let vite_entrypoint = config
-            .frontend_root
+        let toolchain_root = ensure_frontend_toolchain(&config.frontend_root).await?;
+        let package_json = toolchain_root.join("package.json");
+        let vite_entrypoint = toolchain_root
             .join("node_modules")
             .join("vite")
             .join("bin")
             .join("vite.js");
-        if !vite_entrypoint.is_file() {
-            return Err(invalid(format!(
-                "Vite is not installed under {}. Run `npm install -D vite @vitejs/plugin-react`.",
-                config.frontend_root.display()
-            )));
-        }
+        let javascript_runtime = javascript_runtime().await?;
 
         let port = reserve_loopback_port()?;
         let public_host = match config.host.as_str() {
@@ -486,13 +694,13 @@ impl ViteDevServer {
         let backend_signal = directory.path().join("backend-generation");
         fs::write(&config_path, VITE_CONFIG)?;
         fs::write(&backend_signal, b"1")?;
-        let mut child = Command::new("node")
+        let mut child = Command::new(javascript_runtime)
             .arg(vite_entrypoint)
             .args(["--config", config_path.to_string_lossy().as_ref()])
             .args(["--logLevel", "warn"])
             .current_dir(&config.frontend_root)
             .env("MOUNTAINEER_FRONTEND_ROOT", &config.frontend_root)
-            .env("MOUNTAINEER_PACKAGE_JSON", package_json)
+            .env("MOUNTAINEER_TOOLCHAIN_PACKAGE_JSON", package_json)
             .env("MOUNTAINEER_VITE_HOST", &config.host)
             .env("MOUNTAINEER_VITE_PUBLIC_HOST", public_host)
             .env("MOUNTAINEER_VITE_PORT", port.to_string())
@@ -1445,6 +1653,22 @@ fn invalid(message: impl Into<String>) -> AnyError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn frontend_toolchain_prefers_the_projects_package_manager() {
+        let frontend = tempfile::tempdir().unwrap();
+        fs::write(
+            frontend.path().join("package.json"),
+            r#"{"packageManager":"yarn@4.9.1"}"#,
+        )
+        .unwrap();
+        fs::write(frontend.path().join("bun.lock"), "").unwrap();
+
+        assert_eq!(
+            &package_manager_preferences(frontend.path())[..3],
+            &["yarn", "bun", "npm"]
+        );
+    }
 
     #[test]
     fn zero_argument_config_discovers_a_uv_project() {
