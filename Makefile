@@ -20,6 +20,9 @@ DOCS_WEBSITE_NAME := docs_website
 SCRIPTS_DIR := .github
 SCRIPTS_NAME := scripts
 
+DETERMYSTIC_LOCAL_PACKAGE ?= $(abspath ../deterministic)
+DETERMYSTIC_VALIDATE ?= $(if $(wildcard $(DETERMYSTIC_LOCAL_PACKAGE)/pyproject.toml),uv run --with-editable $(DETERMYSTIC_LOCAL_PACKAGE) determystic validate,uv run --with determystic determystic validate)
+
 # Ignore these directories in the local filesystem if they exist
 .PHONY: lint test
 
@@ -64,6 +67,8 @@ lint-scripts:
 # Lint validation - CI to fail on any errors
 lint-validation-lib:
 	$(call lint-validation-common,$(LIB_DIR),$(LIB_NAME))
+	@echo "\n=== Running Determystic validation for $(LIB_NAME) ==="
+	@(cd $(LIB_DIR) && $(DETERMYSTIC_VALIDATE))
 	$(call lint-rust,$(LIB_DIR))
 lint-validation-create-mountaineer-app:
 	$(call lint-validation-common,$(CREATE_MOUNTAINEER_APP_DIR),$(CREATE_MOUNTAINEER_APP_NAME))

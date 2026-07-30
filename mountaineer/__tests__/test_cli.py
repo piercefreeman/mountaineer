@@ -79,20 +79,22 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
     _assert_relative_js_imports_resolve(static_dir)
 
 
-async def check_server_bound(port: int, timeout=8):
-    # 5s hard timeout + 3s overhead
-    # When the server restarting gets stuck it gets stuck permanently
+async def check_server_ready(port: int, timeout: int = 20):
+    # The coordinator returns 503 while frontend tooling and the backend start.
     start_time = time()
     url = f"http://localhost:{port}"
+    status_code = -1
     async with httpx.AsyncClient() as client:
         while time() - start_time < timeout:
             try:
                 response = await client.get(url)
-                return True, response.status_code
+                status_code = response.status_code
+                if status_code == 200:
+                    return True, status_code
             except httpx.RequestError:
                 pass
             await asyncio.sleep(0.1)
-    return False, -1
+    return False, status_code
 
 
 @pytest.mark.integration_tests
@@ -124,6 +126,9 @@ async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
     test_file_path = tmp_ci_webapp / "ci_webapp" / "controllers" / "home.py"
 
     try:
+        is_ready, status_code = await check_server_ready(port)
+        assert is_ready, f"Server did not become ready (last status: {status_code})"
+
         for _ in range(5):
             with open(test_file_path, "a") as f:
                 print(f"Adding content to {test_file_path}")  # noqa: T201
@@ -136,9 +141,8 @@ async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
         print(  # noqa: T201
             "Done with changes, checking that server will resolve if not immediately ready..."
         )
-        is_bound, status_code = await check_server_bound(port)
-        assert is_bound, f"Server is not bound to localhost:{port}"
-        assert status_code == 200, "Server is not returning 200 status code"
+        is_ready, status_code = await check_server_ready(port)
+        assert is_ready, f"Server did not recover (last status: {status_code})"
         print("Server is bound to expected port")  # noqa: T201
     finally:
         # Terminate the processes after test

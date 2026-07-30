@@ -135,8 +135,8 @@ impl CoordinatorConfig {
         let python = options
             .get("--python")
             .cloned()
-            .or_else(|| current_exe.and_then(adjacent_python))
             .or_else(virtualenv_python)
+            .or_else(|| current_exe.and_then(adjacent_python))
             .or_else(|| env::var("PYTHON").ok())
             .unwrap_or_else(|| "python".to_string());
 

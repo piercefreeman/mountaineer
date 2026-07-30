@@ -77,6 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Clone Determystic
+        run: git clone --depth 1 https://github.com/piercefreeman/deterministic.git ../deterministic
+
       - uses: ./.github/actions/setup-python-rust
         with:
           python-version: ${{ matrix.python-version }}

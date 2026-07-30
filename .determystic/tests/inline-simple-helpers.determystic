@@ -1,0 +1,134 @@
+from validator import SingleUseTrivialHelperTraverser
+
+
+def validate(code: str):
+    return SingleUseTrivialHelperTraverser(code).validate()
+
+
+def test_flags_multi_statement_single_use_method():
+    code = """
+class RecordStore:
+    async def save(self, record):
+        cleaned = record.strip()
+        await self._write(cleaned)
+
+    async def _write(self, record):
+        request = WriteRequest(record=record)
+        operation = await self._client.write(request)
+        await operation.wait()
+"""
+    result = validate(code)
+
+    assert not result.is_valid
+    assert len(result.issues) == 1
+    assert result.issues[0].line_number == 7
+    assert "_write" in result.issues[0].message
+    assert "save" in result.issues[0].message
+    assert ">>>   7 |     async def _write" in result.issues[0].code_snippet
+
+
+def test_flags_trivial_single_use_module_helper():
+    code = """
+def import_file(data):
+    prepared = data.strip()
+    return _write_file(prepared)
+
+def _write_file(data):
+    return data.encode()
+"""
+    result = validate(code)
+
+    assert not result.is_valid
+    assert "_write_file" in result.issues[0].message
+
+
+def test_flags_trivial_single_use_method_helper():
+    code = """
+class Service:
+    def save(self, data):
+        value = data.strip()
+        return self._save(value)
+
+    def _save(self, value):
+        return value.encode()
+"""
+    result = validate(code)
+
+    assert not result.is_valid
+    assert "_save" in result.issues[0].message
+
+
+def test_allows_helper_used_by_more_than_one_caller():
+    code = """
+class Service:
+    def save_a(self, data):
+        return self._save(data)
+
+    def save_b(self, data):
+        return self._save(data)
+
+    def _save(self, data):
+        return data.encode()
+"""
+    assert validate(code).is_valid
+
+
+def test_allows_single_use_helper_when_caller_is_complex():
+    code = """
+class Service:
+    def save(self, data, should_prepare):
+        if should_prepare:
+            data = data.strip()
+        return self._save(data)
+
+    def _save(self, data):
+        return data.encode()
+"""
+    assert validate(code).is_valid
+
+
+def test_allows_single_use_helper_when_helper_is_complex():
+    code = """
+def save(data):
+    return _save(data)
+
+def _save(data):
+    if not data:
+        raise ValueError("missing data")
+    return data.encode()
+"""
+    assert validate(code).is_valid
+
+
+def test_allows_public_single_use_function():
+    code = """
+def save(data):
+    return write_file(data)
+
+def write_file(data):
+    return data.encode()
+"""
+    assert validate(code).is_valid
+
+
+def test_allows_dunder_method_single_use():
+    code = """
+class Box:
+    def build(self):
+        return self.__repr__()
+
+    def __repr__(self):
+        return "Box()"
+"""
+    assert validate(code).is_valid
+
+
+def test_ignores_private_helper_passed_as_callback_not_directly_called():
+    code = """
+def run():
+    return map(_clean, [" a "])
+
+def _clean(value):
+    return value.strip()
+"""
+    assert validate(code).is_valid

@@ -1,0 +1,99 @@
+from validator import NoFutureAnnotationsTraverser
+
+
+def validate(code: str):
+    return NoFutureAnnotationsTraverser(code).validate()
+
+
+def test_future_annotations_import_is_flagged():
+    result = validate("from __future__ import annotations\n")
+
+    assert result.is_valid is False
+    assert len(result.issues) == 1
+    assert result.issues[0].line_number == 1
+    assert "from __future__ import annotations" in result.issues[0].code_snippet
+    assert "__future__ import annotations" in result.issues[0].message
+
+
+def test_grouped_future_import_with_annotations_is_flagged():
+    result = validate("from __future__ import division, annotations\n")
+
+    assert result.is_valid is False
+    assert len(result.issues) == 1
+    assert result.issues[0].line_number == 1
+
+
+def test_multiline_future_annotations_import_is_flagged():
+    code = """from __future__ import (
+    annotations,
+)
+"""
+
+    result = validate(code)
+
+    assert result.is_valid is False
+    assert len(result.issues) == 1
+    assert result.issues[0].line_number == 1
+    assert "annotations" in result.issues[0].code_snippet
+
+
+def test_multiple_future_annotations_imports_report_all_occurrences():
+    code = """from __future__ import annotations
+from __future__ import annotations
+"""
+
+    result = validate(code)
+
+    assert result.is_valid is False
+    assert len(result.issues) == 2
+    assert [issue.line_number for issue in result.issues] == [1, 2]
+
+
+def test_other_future_import_is_allowed():
+    result = validate("from __future__ import division\n")
+
+    assert result.is_valid is True
+    assert result.issues == []
+
+
+def test_normal_type_annotations_without_future_import_are_allowed():
+    code = """def normalize(value: str | None) -> str:
+    return value or ""
+"""
+
+    result = validate(code)
+
+    assert result.is_valid is True
+    assert result.issues == []
+
+
+def test_comment_and_string_mentions_are_not_flagged():
+    code = '''# from __future__ import annotations
+text = "from __future__ import annotations"
+'''
+
+    result = validate(code)
+
+    assert result.is_valid is True
+    assert result.issues == []
+
+
+def test_regular_import_of_future_module_is_not_flagged():
+    result = validate("import __future__\n")
+
+    assert result.is_valid is True
+    assert result.issues == []
+
+
+def test_relative_module_named_future_is_not_flagged():
+    result = validate("from .__future__ import annotations\n")
+
+    assert result.is_valid is True
+    assert result.issues == []
+
+
+def test_unrelated_module_importing_annotations_name_is_not_flagged():
+    result = validate("from schema import annotations\n")
+
+    assert result.is_valid is True
+    assert result.issues == []

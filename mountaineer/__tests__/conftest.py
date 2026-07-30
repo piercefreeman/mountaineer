@@ -36,6 +36,18 @@ def clear_config_cache():
     unregister_config()
 
 
+@pytest.fixture(autouse=True)
+def cleanup_main_thread_event_loop():
+    yield
+    _cleanup_main_thread_event_loop()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def cleanup_main_thread_event_loop_session():
+    yield
+    _cleanup_main_thread_event_loop()
+
+
 def _cleanup_main_thread_event_loop() -> None:
     """
     pytest-asyncio on Python 3.10 may leave the main thread's default loop attached to the
@@ -61,15 +73,3 @@ def _cleanup_main_thread_event_loop() -> None:
         event_loop.close()
 
     asyncio.set_event_loop(None)
-
-
-@pytest.fixture(autouse=True)
-def cleanup_main_thread_event_loop():
-    yield
-    _cleanup_main_thread_event_loop()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def cleanup_main_thread_event_loop_session():
-    yield
-    _cleanup_main_thread_event_loop()
