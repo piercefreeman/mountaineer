@@ -1,4 +1,4 @@
-"""Pre-import dependencies, then wait to become one Windows app worker."""
+"""Pre-import dependencies, then wait to become a Windows app worker."""
 
 import importlib
 import json

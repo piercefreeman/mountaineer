@@ -2,6 +2,7 @@ import traceback
 from contextlib import contextmanager
 from multiprocessing import get_start_method, set_start_method
 from os import getenv
+from sys import argv
 from time import time
 from typing import Any, Callable, Coroutine
 
@@ -39,6 +40,20 @@ from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.ssr import find_tsconfig
 from mountaineer.static import get_static_path
+
+
+def run_dev() -> None:
+    try:
+        mountaineer_rs.run_dev(argv[1:])
+    except KeyboardInterrupt:
+        pass
+
+
+def run_prod() -> None:
+    try:
+        mountaineer_rs.run_prod(argv[1:])
+    except KeyboardInterrupt:
+        pass
 
 
 @async_to_sync

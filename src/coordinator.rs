@@ -927,8 +927,7 @@ impl WarmPoolStrategy {
     }
 }
 
-pub async fn run_from_args(mode: RuntimeMode) -> Result<()> {
-    let args: Vec<String> = env::args().skip(1).collect();
+pub async fn run(mode: RuntimeMode, args: &[String]) -> Result<()> {
     if args
         .iter()
         .any(|argument| argument == "--help" || argument == "-h")
@@ -937,7 +936,7 @@ pub async fn run_from_args(mode: RuntimeMode) -> Result<()> {
         return Ok(());
     }
 
-    let config = CoordinatorConfig::parse(mode, &args)
+    let config = CoordinatorConfig::parse(mode, args)
         .map_err(|error| invalid(format!("{error}\n\n{}", usage(mode))))?;
     match mode {
         RuntimeMode::Development => run_development(config).await,

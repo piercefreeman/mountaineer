@@ -1391,6 +1391,7 @@ dependencies = [
  "libc",
  "log",
  "md5",
+ "notify-debouncer-full",
  "path-absolutize",
  "pyo3",
  "regex",
@@ -1400,23 +1401,10 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "toml",
  "v8",
  "walkdir",
  "winapi",
-]
-
-[[package]]
-name = "mountaineer-coordinator"
-version = "0.1.0"
-dependencies = [
- "md5",
- "notify-debouncer-full",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "toml",
- "walkdir",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-"""Warm Python import template controlled by the Rust coordinator."""
+"""Warm Python import template controlled by Mountaineer's Rust runtime."""
 
 import importlib
 import json

@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
+import path from "node:path";
 
 const require = createRequire(process.env.MOUNTAINEER_TOOLCHAIN_PACKAGE_JSON);
 const { defineConfig } = await import(

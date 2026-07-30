@@ -289,7 +289,6 @@ dependencies = [
     { name = "click" },
     { name = "fastapi" },
     { name = "inflection" },
-    { name = "mountaineer-coordinator" },
     { name = "mountaineer-di" },
     { name = "mountaineer-exceptions" },
     { name = "packaging" },
@@ -324,7 +323,6 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7,<9.0.0" },
     { name = "fastapi", specifier = ">=0.114.1,<1.0.0" },
     { name = "inflection", specifier = ">=0.5.1,<1.0.0" },
-    { name = "mountaineer-coordinator", directory = "crates/mountaineer-coordinator" },
     { name = "mountaineer-di", specifier = ">=0.1.2,<1.0.0" },
     { name = "mountaineer-exceptions", specifier = ">=0.1.1" },
     { name = "packaging", specifier = ">=23.2" },
@@ -353,11 +351,6 @@ dev = [
     { name = "types-toml", specifier = ">=0.10.8.20240310" },
     { name = "types-tqdm", specifier = ">=4.67.0.20250301" },
 ]
-
-[[package]]
-name = "mountaineer-coordinator"
-version = "0.1.0"
-source = { directory = "crates/mountaineer-coordinator" }
 
 [[package]]
 name = "mountaineer-di"

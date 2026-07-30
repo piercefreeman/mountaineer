@@ -9,8 +9,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "mountaineer",
-    "mountaineer-coordinator"
+    "mountaineer"
 ]
 
 [project.scripts]
@@ -35,4 +34,3 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 mountaineer = { path = "../../../..", editable = true }
-mountaineer-coordinator = { path = "../../../../crates/mountaineer-coordinator" }

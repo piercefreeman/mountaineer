@@ -1,6 +1,6 @@
 use errors::AppError;
 use log::debug;
-use pyo3::exceptions::{PyConnectionAbortedError, PyValueError};
+use pyo3::exceptions::{PyConnectionAbortedError, PyRuntimeError, PySystemExit, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
@@ -8,6 +8,7 @@ mod bundle_common;
 mod bundle_independent;
 mod bundle_prod;
 mod code_gen;
+mod coordinator;
 mod errors;
 mod lexers;
 mod logging;
@@ -26,6 +27,30 @@ pub use source_map::{
     VLQDecoder,
 };
 pub use ssr::Ssr;
+
+fn run_coordinator(mode: coordinator::RuntimeMode, args: Vec<String>) -> PyResult<()> {
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    if let Err(error) = runtime.block_on(coordinator::run(mode, &args)) {
+        let program = match mode {
+            coordinator::RuntimeMode::Development => "mountaineer-dev",
+            coordinator::RuntimeMode::Production => "mountaineer-prod",
+        };
+        coordinator::report_error(program, error.as_ref());
+        return Err(PySystemExit::new_err(1));
+    }
+    Ok(())
+}
+
+#[pyfunction]
+fn run_dev(args: Vec<String>) -> PyResult<()> {
+    run_coordinator(coordinator::RuntimeMode::Development, args)
+}
+
+#[pyfunction]
+fn run_prod(args: Vec<String>) -> PyResult<()> {
+    run_coordinator(coordinator::RuntimeMode::Production, args)
+}
 
 #[derive(Debug, PartialEq, Clone)]
 #[pyclass(get_all, set_all)]
@@ -73,6 +98,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_class::<MapMetadata>()?;
     m.add_class::<BuildContextParams>()?;
+    m.add_function(wrap_pyfunction!(run_dev, m)?)?;
+    m.add_function(wrap_pyfunction!(run_prod, m)?)?;
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]

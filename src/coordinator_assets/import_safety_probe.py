@@ -1,4 +1,4 @@
-"""Fork each warm import and keep only modules that remain single-threaded."""
+"""Keep only warm imports that remain single-threaded after a fork."""
 
 import importlib
 import json

@@ -8,7 +8,6 @@ authors = [
 ]
 requires-python = ">=3.10,<3.15"
 dependencies = [
-    "mountaineer-coordinator==0.1.0",
     "pydantic>=2.5.3,<3.0.0",
     "fastapi>=0.114.1,<1.0.0",
     "inflection>=0.5.1,<1.0.0",
@@ -33,6 +32,10 @@ exclude = [
     "benchmarking",
 ]
 
+[project.scripts]
+mountaineer-dev = "mountaineer.cli:run_dev"
+mountaineer-prod = "mountaineer.cli:run_prod"
+
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
@@ -48,10 +51,6 @@ cache-keys = [
     { file = "Cargo.lock" },
 ]
 
-
-[tool.uv.sources]
-mountaineer-coordinator = { path = "crates/mountaineer-coordinator" }
-#mountaineer-exceptions = { path = "../mountaineer-exceptions", editable = true }
 
 [tool.maturin]
 exclude = ["**/__tests__/**"]

@@ -1,4 +1,4 @@
-"""Print the third-party imports referenced by a Python package as JSON."""
+"""Print third-party imports referenced by a Python package as JSON."""
 
 import ast
 import json
