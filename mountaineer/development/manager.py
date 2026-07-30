@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import traceback
 from dataclasses import dataclass, field
 from os import getenv

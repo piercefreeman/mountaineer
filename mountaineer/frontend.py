@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from hashlib import md5
 from pathlib import Path
@@ -51,7 +49,7 @@ def write_build_metadata(view_root: ManagedViewPath) -> None:
 
 
 def resolve_frontend(
-    definition: ControllerDefinition,
+    definition: "ControllerDefinition",
     *,
     node_modules_path: Path,
     live_reload_port: int,
@@ -80,7 +78,7 @@ def resolve_frontend(
 
 
 def _development_entry(
-    definition: ControllerDefinition,
+    definition: "ControllerDefinition",
     node_modules_path: Path,
     live_reload_port: int,
 ) -> FrontendEntry:
@@ -131,7 +129,7 @@ def _development_entry(
 
 
 def _production_entry(
-    definition: ControllerDefinition,
+    definition: "ControllerDefinition",
     build_metadata: BuildMetadata | None,
 ) -> FrontendEntry:
     script_name = definition.controller.script_name

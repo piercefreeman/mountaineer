@@ -25,6 +25,24 @@ from mountaineer.controller import ControllerBase
 from mountaineer.render import RenderBase
 
 
+@pytest.fixture
+def parser():
+    parser = ControllerParser()
+    app_controller = AppController(view_root=Path())
+    app_controller.register(ExampleController())
+    return parser
+
+
+@pytest.fixture
+def base_model_wrapper(parser: ControllerParser):
+    return parser._parse_model(ExampleModelBase)
+
+
+@pytest.fixture
+def test_controller_wrapper(parser: ControllerParser):
+    return parser.parse_controller(ExampleController)
+
+
 # Create a simple response model for testing
 class StandardResponse(BaseModel):
     message: str
@@ -52,24 +70,6 @@ def create_model_wrapper(model: type[BaseModel], name: str) -> ModelWrapper:
 # Type variables for generic tests
 T = TypeVar("T")
 S = TypeVar("S")
-
-
-@pytest.fixture
-def parser():
-    parser = ControllerParser()
-    app_controller = AppController(view_root=Path())
-    app_controller.register(ExampleController())
-    return parser
-
-
-@pytest.fixture
-def base_model_wrapper(parser: ControllerParser):
-    return parser._parse_model(ExampleModelBase)
-
-
-@pytest.fixture
-def test_controller_wrapper(parser: ControllerParser):
-    return parser.parse_controller(ExampleController)
 
 
 # Core test enum

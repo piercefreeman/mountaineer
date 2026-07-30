@@ -50,7 +50,8 @@ class APIBuilder:
     async def build_use_server(self):
         # Parse all controllers first
         parser, parsed_views = self._parse_all_controllers()
-        self._assign_unique_names(parser)
+        self.alias_manager.assign_global_names(parser)
+        self.alias_manager.assign_local_names(parser)
         envelope = build_envelope(
             parser,
             parsed_views,
@@ -104,7 +105,3 @@ class APIBuilder:
             view_root.package_root_link = self.view_root.package_root_link
 
         return list(view_roots)
-
-    def _assign_unique_names(self, parser: ControllerParser):
-        self.alias_manager.assign_global_names(parser)
-        self.alias_manager.assign_local_names(parser)
