@@ -251,6 +251,17 @@ jobs:
           # condition handling of maturin-action.
           command: build
 
+      - name: build coordinator wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: crates/mountaineer-coordinator
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux || 'auto' }}
+          args: -vv --release --out ../../dist
+          rust-toolchain: stable
+          docker-options: -e CI -e CI_TARGET=${{ matrix.target }}
+          command: build
+
       - run: ${{ (matrix.os == 'windows' && 'dir') || 'ls -lh' }} dist/
 
       - run: twine check --strict dist/*

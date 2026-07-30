@@ -1,9 +1,9 @@
 from typing import cast
 
 import pytest
-from firehot import Environment
 
 from mountaineer.development.manager import (
+    Environment,
     FileChangesState,
     IsolatedContext,
     WebserverConfig,

@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "mountaineer-coordinator"
+version = "0.1.0"
+description = "Native development and production servers for Mountaineer."
+requires-python = ">=3.10,<3.15"
+
+[tool.maturin]
+bindings = "bin"
+strip = true

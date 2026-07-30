@@ -1,11 +1,11 @@
+from __future__ import annotations
+
 import traceback
 from dataclasses import dataclass, field
 from os import getenv
 from pathlib import Path
 from time import time
-
-from firehot import Environment
-from firehot.environment import IsolatedProcess
+from typing import Any, Callable, Protocol
 
 from mountaineer.console import CONSOLE
 from mountaineer.development.isolation import IsolatedAppContext
@@ -26,6 +26,20 @@ from mountaineer.logging import LOGGER
 
 DEFAULT_RESTART_MESSAGE_TIMEOUT = 5.0
 DEFAULT_RESTART_ATTEMPTS = 2
+
+
+class IsolatedProcess(Protocol):
+    pass
+
+
+class Environment(Protocol):
+    def update_environment(self): ...
+
+    def exec(
+        self, func: Callable, *args: Any, name: str | None = None
+    ) -> IsolatedProcess: ...
+
+    def stop_isolated(self, isolate: IsolatedProcess): ...
 
 
 @dataclass
@@ -55,7 +69,7 @@ async def run_isolated(
     isolated_context: IsolatedContext,
 ):
     """
-    Isolated subprocess with all runtime modules already injected by firehot.
+    Isolated subprocess with runtime modules already injected by a warm parent.
 
     """
     app_context = IsolatedAppContext.from_webcontroller(

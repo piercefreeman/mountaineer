@@ -1,6 +1,7 @@
 from collections import defaultdict
 from functools import partial, wraps
 from hashlib import md5
+from html import escape
 from inspect import Signature, isawaitable, isclass, signature
 from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
@@ -47,6 +48,7 @@ from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import Metadata, RenderBase, RenderNull
+from mountaineer.runtime import build_vite_stylesheets, get_runtime_payload
 from mountaineer.ssr import render_ssr
 
 
@@ -147,7 +149,18 @@ class AppController:
         self._build_exception: Exception | None = None
 
         # Follow our managed path conventions
-        if config is not None and config.PACKAGE is not None:
+        runtime_payload = get_runtime_payload()
+        if runtime_payload is not None:
+            if runtime_payload.paths.frontend_root == runtime_payload.paths.view_root:
+                self._view_root = ManagedViewPath.from_view_root(
+                    runtime_payload.paths.view_root
+                )
+            else:
+                self._view_root = ManagedViewPath.from_view_root(
+                    runtime_payload.paths.view_root,
+                    package_root_link=runtime_payload.paths.frontend_root,
+                )
+        elif config is not None and config.PACKAGE is not None:
             package_path = resolve_package_path(config.PACKAGE)
             self._view_root = ManagedViewPath.from_view_root(package_path / "views")
         elif view_root is not None:
@@ -158,7 +171,8 @@ class AppController:
             )
 
         # Check our view directory is valid
-        self._validate_view(self._view_root)
+        if runtime_payload is None:
+            self._validate_view(self._view_root)
 
         # The act of instantiating the config should register it with the
         # global settings registry. We keep a reference to it so we can shortcut
@@ -571,14 +585,25 @@ class AppController:
                 raise ValueError("Dev cache is not a ControllerDevCache")
 
             LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
-            html = self.compile_html(
-                dev_cache.cached_server_script,
-                controller_output,
-                render_output,
-                inline_client_script=dev_cache.cached_client_script,
-                external_client_imports=None,
-                sourcemap=dev_cache.cached_server_sourcemap,
-            )
+            if dev_cache.external_client_imports is not None:
+                html = self.compile_html(
+                    dev_cache.cached_server_script,
+                    controller_output,
+                    render_output,
+                    inline_client_script=None,
+                    external_client_imports=dev_cache.external_client_imports,
+                    sourcemap=dev_cache.cached_server_sourcemap,
+                )
+            else:
+                assert dev_cache.cached_client_script is not None
+                html = self.compile_html(
+                    dev_cache.cached_server_script,
+                    controller_output,
+                    render_output,
+                    inline_client_script=dev_cache.cached_client_script,
+                    external_client_imports=None,
+                    sourcemap=dev_cache.cached_server_sourcemap,
+                )
         else:
             # Production payload
             prod_cache = controller_definition.resolve_cache()
@@ -641,22 +666,40 @@ class AppController:
         values hydrated into the page.
 
         """
-        header_str: str
+        metadata: Metadata | None
         if page_metadata.metadata:
             metadata = page_metadata.metadata
             if not metadata.ignore_global_metadata and self.global_metadata:
                 metadata = metadata.merge(self.global_metadata)
-            header_str = "\n".join(
-                metadata.build_header(build_metadata=self.get_build_metadata())
-            )
         else:
-            if self.global_metadata:
-                metadata = self.global_metadata
-                header_str = "\n".join(
-                    metadata.build_header(build_metadata=self.get_build_metadata())
-                )
-            else:
-                header_str = ""
+            metadata = self.global_metadata
+
+        runtime_payload = get_runtime_payload()
+        dev_stylesheets: list[tuple[str, str]] = []
+        if metadata and runtime_payload and runtime_payload.frontend.dev_server:
+            metadata = metadata.model_copy(
+                update={
+                    "links": [
+                        link
+                        for link in metadata.links
+                        if link.rel != "stylesheet"
+                        or not link.href.startswith("/static/")
+                    ]
+                }
+            )
+        if runtime_payload and runtime_payload.frontend.dev_server:
+            dev_stylesheets = build_vite_stylesheets(runtime_payload)
+        header_tags = (
+            metadata.build_header(build_metadata=self.get_build_metadata())
+            if metadata
+            else []
+        )
+        header_tags.extend(
+            f'<link rel="stylesheet" href="{escape(href, quote=True)}" '
+            f'data-vite-dev-id="{escape(vite_id, quote=True)}" />'
+            for href, vite_id in dev_stylesheets
+        )
+        header_str = "\n".join(header_tags)
 
         # Client-side react scripts that will hydrate the server side contents on load
         server_data_json = {
@@ -1055,6 +1098,13 @@ class AppController:
         use it for all endpoints.
 
         """
+        runtime_payload = get_runtime_payload()
+        if runtime_payload is not None:
+            self._build_metadata = BuildMetadata(
+                static_artifact_shas=runtime_payload.frontend.static_artifact_shas
+            )
+            return self._build_metadata
+
         if not self.development_enabled:
             # Determine if we've already cached the build
             if hasattr(self, "_build_metadata"):
@@ -1070,4 +1120,7 @@ class AppController:
 
     @property
     def development_enabled(self):
+        runtime_payload = get_runtime_payload()
+        if runtime_payload is not None:
+            return runtime_payload.mode == "development"
         return not self.config or self.config.ENVIRONMENT == "development"

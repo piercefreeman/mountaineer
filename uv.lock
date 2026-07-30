@@ -102,30 +102,6 @@ wheels = [
 ]
 
 [[package]]
-name = "firehot"
-version = "0.4.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/07/6c/66563a7c6b7cfb1f1af7fcea0b31228c05f0fbad7f2321ff2b867992dcc7/firehot-0.4.1.tar.gz", hash = "sha256:d19ca93f0ad62c32043b6e4e338cf3f6dce948fdf6c3756b62582b4ba3a77444", size = 35887143, upload-time = "2025-03-20T04:39:17.816Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/2f/eeaa925d45e66492dac83cc55e8d975a02f609a0d948515aeb2276449573/firehot-0.4.1-cp310-cp310-macosx_10_12_x86_64.whl", hash = "sha256:e2ed9aa18d9898f5a80ef12b7921f524038358c46cfe4de86fdf8f9423b88f93", size = 2265902, upload-time = "2025-03-20T04:38:51.542Z" },
-    { url = "https://files.pythonhosted.org/packages/f8/fa/172bb8f79deffefe8c10185e15569a9ad308652eef2a7393e73a5cd0c98e/firehot-0.4.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:b662b23fbb7899938bcf6654c6cccb8f96d3fc132f49b0c65bf0efab6b24a961", size = 2151105, upload-time = "2025-03-20T04:38:53.117Z" },
-    { url = "https://files.pythonhosted.org/packages/37/35/e745342789e676f717dc32938587abcbcde9dea11d62923285ea797eae6c/firehot-0.4.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3e5bfde61a769f5b53e221fbc15b67468515c8bc933b79711b06701a577ab44d", size = 2335315, upload-time = "2025-03-20T04:38:54.756Z" },
-    { url = "https://files.pythonhosted.org/packages/5f/8a/3e42dfc2a5d138f2105f0b395718b106470caacc6ac304b9a5504f3becdf/firehot-0.4.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8e5816fe972c7c3735ca602d42f133ee952afd07285a01f02f4e9274d3e5d058", size = 2449403, upload-time = "2025-03-20T04:38:56.652Z" },
-    { url = "https://files.pythonhosted.org/packages/18/24/8c9f7d106489c18f4ecbe294e657b74a1343f4157bb63c19411109f28807/firehot-0.4.1-cp311-cp311-macosx_10_12_x86_64.whl", hash = "sha256:9aafe8b12c0b0f6afd658d6491d106e4a9ca5545220f1c868b92455cccd0e902", size = 2265973, upload-time = "2025-03-20T04:38:57.985Z" },
-    { url = "https://files.pythonhosted.org/packages/b4/ff/91760462bb509d45a3cda1efe40deb7f82ddd65488600e19cf1c176854ce/firehot-0.4.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:2bb660796c8c41266bda793e1406ace96ff23b2111c97ab86640623013d533e7", size = 2151174, upload-time = "2025-03-20T04:38:59.66Z" },
-    { url = "https://files.pythonhosted.org/packages/6a/c8/37028e8102aef9e86c36431b5cce67a240c80248e8fdb9179ce3926940fe/firehot-0.4.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6147583fea491ac4f5609a56748356b3d2ee8d0705299e02240882b59012d5d5", size = 2335282, upload-time = "2025-03-20T04:39:01.821Z" },
-    { url = "https://files.pythonhosted.org/packages/a7/17/644b3ae4ca6d80937207dc706c3932851dc4b4870a04bfbd6fba3e3f4eee/firehot-0.4.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7f88743317340a87c088335331d220f31cc9484bbabb779aa0cd814dbbae56aa", size = 2449492, upload-time = "2025-03-20T04:39:03.21Z" },
-    { url = "https://files.pythonhosted.org/packages/10/c5/7239b84ce9f7c1c3843a47d228eefa3fbaa9a14df7aec741f934338a9658/firehot-0.4.1-cp312-cp312-macosx_10_12_x86_64.whl", hash = "sha256:43a2c9e361132c8eb33553311c2fb1e7e854a17c9e2cc930dcf92c22a832c994", size = 2265866, upload-time = "2025-03-20T04:39:05.046Z" },
-    { url = "https://files.pythonhosted.org/packages/0a/84/9a24ec0c5721f977ba9d73c6ffe43ff690e59ae2d05fcaa9577028dffa86/firehot-0.4.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:3e9b6da39a6360befe019b0df2b5c9a5a483ba83448cd9748d4692d65e828a1e", size = 2151739, upload-time = "2025-03-20T04:39:06.373Z" },
-    { url = "https://files.pythonhosted.org/packages/b0/83/dbab2026bb4b13c6a33c5ad18105cf0c5e030b93274beaf3b4cf9279bae0/firehot-0.4.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:f68e226ad3842689e3d44d9e20669de0e7ef1e8536f73e51e83ba48cfba0c67f", size = 2332181, upload-time = "2025-03-20T04:39:07.922Z" },
-    { url = "https://files.pythonhosted.org/packages/35/97/9b44b024680af8e564b1e7ae3c50ba9500556faf0fd0348747c5f6711f3d/firehot-0.4.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7bc3034e588146df70e0115f88c5a5d59b154618e9f77ae550cefadb1f7c2d33", size = 2447126, upload-time = "2025-03-20T04:39:09.335Z" },
-    { url = "https://files.pythonhosted.org/packages/00/54/7f43e71914901c8c01a7927c72adc3ac3fa1ce09825b65fa10ac58a02cfd/firehot-0.4.1-cp313-cp313-macosx_10_12_x86_64.whl", hash = "sha256:c43dce07754951c168b2f83e81b2aa167d5b5911a73b7687c9e4356ceafc6b51", size = 2265865, upload-time = "2025-03-20T04:39:10.71Z" },
-    { url = "https://files.pythonhosted.org/packages/6a/ae/e296acfce31ee523195bc20a61c8d2e6ef433c302dee8b6648f8afce18bc/firehot-0.4.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:0333e74bc0d49732efde5b8deb7bf02697a9eef9af5d4ac373a55bf87634838b", size = 2151738, upload-time = "2025-03-20T04:39:12.455Z" },
-    { url = "https://files.pythonhosted.org/packages/cd/81/43a59ce19b583cb9e45c80ef3edadf5f87b4007186238517b37393e4a76b/firehot-0.4.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:086218f557703f69d338fd93fedd11e04c096edc050d09992f594f4dcba39095", size = 2332182, upload-time = "2025-03-20T04:39:14.18Z" },
-    { url = "https://files.pythonhosted.org/packages/45/e3/a52d6ecd4b0a8c8f16e3ac951507fdd4e333568a59e46af8aec42c88b1c4/firehot-0.4.1-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:5256083ecb3c8f792a4ce352608a7e8dd5ed7257efc2a07f4ebc4f81e7b2c5c4", size = 2447126, upload-time = "2025-03-20T04:39:15.853Z" },
-]
-
-[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -312,8 +288,8 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "fastapi" },
-    { name = "firehot" },
     { name = "inflection" },
+    { name = "mountaineer-coordinator" },
     { name = "mountaineer-di" },
     { name = "mountaineer-exceptions" },
     { name = "packaging" },
@@ -347,8 +323,8 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8.1.7,<9.0.0" },
     { name = "fastapi", specifier = ">=0.114.1,<1.0.0" },
-    { name = "firehot", specifier = ">=0.4.0,<1.0.0" },
     { name = "inflection", specifier = ">=0.5.1,<1.0.0" },
+    { name = "mountaineer-coordinator", directory = "crates/mountaineer-coordinator" },
     { name = "mountaineer-di", specifier = ">=0.1.2,<1.0.0" },
     { name = "mountaineer-exceptions", specifier = ">=0.1.1" },
     { name = "packaging", specifier = ">=23.2" },
@@ -377,6 +353,11 @@ dev = [
     { name = "types-toml", specifier = ">=0.10.8.20240310" },
     { name = "types-tqdm", specifier = ">=4.67.0.20250301" },
 ]
+
+[[package]]
+name = "mountaineer-coordinator"
+version = "0.1.0"
+source = { directory = "crates/mountaineer-coordinator" }
 
 [[package]]
 name = "mountaineer-di"

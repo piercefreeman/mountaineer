@@ -5,7 +5,6 @@ from os import getenv
 from time import time
 from typing import Any, Callable, Coroutine
 
-from firehot import isolate_imports
 from rich.traceback import install as rich_traceback_install
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
@@ -454,6 +453,14 @@ def get_mountaineer_isolated_env(package: str):
         if ignored_modules_raw
         else None
     )
+
+    try:
+        from firehot import isolate_imports
+    except ImportError as error:
+        raise RuntimeError(
+            "The legacy Python hot-reload path is not installed. "
+            "Use the mountaineer-dev Rust entrypoint."
+        ) from error
 
     with isolate_imports(package, ignored_modules=ignored_modules) as environment:
         yield environment

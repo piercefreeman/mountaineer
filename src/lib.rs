@@ -111,9 +111,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[pyfn(m)]
     #[pyo3(name = "parse_source_map_mappings")]
     fn parse_source_map_mappings(py: Python<'_>, mapping: String) -> PyResult<Bound<'_, PyDict>> {
-        #[allow(clippy::print_stdout)]
         if cfg!(debug_assertions) {
-            println!("Running in debug mode");
+            debug!("Running in debug mode");
         }
 
         let mut parser = SourceMapParser::new(VLQDecoder::new());
@@ -150,7 +149,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
          * overhead, see `compile_production_bundle`.
          */
         if cfg!(debug_assertions) {
-            println!("Running in debug mode");
+            debug!("Running in debug mode");
         }
 
         // Initialize our logger with environment-based configuration
@@ -189,7 +188,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
          * client users.
          */
         if cfg!(debug_assertions) {
-            println!("Running in debug mode");
+            debug!("Running in debug mode");
         }
 
         bundle_prod::compile_production_bundle(

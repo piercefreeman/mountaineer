@@ -52,7 +52,7 @@ pub fn init_logger() {
                 "ERROR" => LevelFilter::Error,
                 _ => {
                     // Default to warn if the level is invalid
-                    eprintln!("Invalid log level: {level}. Using warn level instead.");
+                    eprintln!("  [Rust] [warning] Invalid log level {level:?}; using warning");
                     LevelFilter::Warn
                 }
             };
@@ -65,15 +65,13 @@ pub fn init_logger() {
         }
     }
 
-    // Format logs with timestamp, level, target, and message
+    // Keep opt-in native diagnostics in the same envelope as SSR console output.
     builder.format(|buf, record| {
         use std::io::Write;
         writeln!(
             buf,
-            "{} [{}] {}: {}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-            record.level(),
-            record.target(),
+            "  [Rust] [{}] {}",
+            record.level().to_string().to_lowercase(),
             record.args()
         )
     });

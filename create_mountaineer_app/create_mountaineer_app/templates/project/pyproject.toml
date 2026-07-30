@@ -9,6 +9,7 @@ requires-python = ">=3.11,<4.0"
 dependencies = [
     {% if mountaineer_dev_path %}
     "mountaineer @ file://{{ mountaineer_dev_path }}",
+    "mountaineer-coordinator @ file://{{ mountaineer_dev_path }}/crates/mountaineer-coordinator",
     {% else %}
     "mountaineer=={{ mountaineer_min_version }}",
     {% endif %}

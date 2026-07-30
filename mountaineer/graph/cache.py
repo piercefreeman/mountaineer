@@ -34,8 +34,9 @@ class ControllerDevCache(ControllerCacheBase):
     Cache of the controller definition for the given controller.
     """
 
-    cached_client_script: str
+    cached_client_script: str | None
     cached_client_sourcemap: str | None = None
+    external_client_imports: list[str] | None = None
 
     @classmethod
     def resolve_dev_cache(
@@ -65,28 +66,39 @@ class ControllerDevCache(ControllerCacheBase):
         cached_server_script = cast(str, script_payloads[0])
         cached_server_sourcemap = cast(str | None, sourcemap_payloads[0])
 
-        LOGGER.debug(
-            f"Compiling client-side bundle for {definition.controller.__class__.__name__}: {view_paths}"
+        from mountaineer.runtime import build_vite_client
+
+        external_client_imports = build_vite_client(
+            definition.controller.script_name,
+            view_paths[0],
         )
-        script_payloads, client_sourcemap_payloads = (
-            mountaineer_rs.compile_independent_bundles(
-                view_paths,
-                str(config.node_modules_path.resolve().absolute()),
-                "development",
-                config.live_reload_port,
-                str(get_static_path("live_reload.ts").resolve().absolute()),
-                False,
-                tsconfig_path,
+        if external_client_imports is None:
+            LOGGER.debug(
+                f"Compiling client-side bundle for {definition.controller.__class__.__name__}: {view_paths}"
             )
-        )
-        cached_client_script = cast(str, script_payloads[0])
-        cached_client_sourcemap = cast(str | None, client_sourcemap_payloads[0])
+            script_payloads, client_sourcemap_payloads = (
+                mountaineer_rs.compile_independent_bundles(
+                    view_paths,
+                    str(config.node_modules_path.resolve().absolute()),
+                    "development",
+                    config.live_reload_port,
+                    str(get_static_path("live_reload.ts").resolve().absolute()),
+                    False,
+                    tsconfig_path,
+                )
+            )
+            cached_client_script = cast(str, script_payloads[0])
+            cached_client_sourcemap = cast(str | None, client_sourcemap_payloads[0])
+        else:
+            cached_client_script = None
+            cached_client_sourcemap = None
 
         return ControllerDevCache(
             cached_server_script=cached_server_script,
             cached_server_sourcemap=cached_server_sourcemap,
             cached_client_script=cached_client_script,
             cached_client_sourcemap=cached_client_sourcemap,
+            external_client_imports=external_client_imports,
         )
 
 

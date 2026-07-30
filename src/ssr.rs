@@ -31,9 +31,17 @@ use crate::logging::StdoutWrapper;
 use crate::timeout;
 use log::debug;
 use std::collections::HashMap;
-use std::io::Write;
+use std::env;
+use std::io::{self, IsTerminal, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+const RESET: &str = "\x1b[0m";
+const SSR_COLOR: &str = "\x1b[1;38;2;68;163;248m";
+const LOG_COLOR: &str = "\x1b[38;2;176;175;167m";
+const WARNING_COLOR: &str = "\x1b[1;38;2;234;153;40m";
+const ERROR_COLOR: &str = "\x1b[1;38;2;231;90;39m";
+const PAYLOAD_COLOR: &str = "\x1b[38;2;190;190;184m";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ssr<'a> {
@@ -223,21 +231,25 @@ impl<'a> Ssr<'a> {
                         panic!("Expected logger data to be passed as external data");
                     };
 
-                    let log_message = (0..args.length())
+                    let values = (0..args.length())
                         .map(|i| {
-                            args.get(i)
-                                .to_string(scope)
-                                .unwrap()
-                                .to_rust_string_lossy(scope)
+                            let value = args.get(i);
+                            (
+                                Self::format_console_value(scope, value),
+                                value.is_object() && !value.is_native_error(),
+                            )
                         })
-                        .collect::<Vec<String>>()
-                        .join(" ");
+                        .collect::<Vec<_>>();
 
                     let mut stdout_lock = logger_data.stdout.lock().unwrap();
                     writeln!(
                         stdout_lock,
-                        "ssr console [{}]: {}",
-                        logger_data.console_type, log_message
+                        "{}",
+                        Self::render_console_line(
+                            &logger_data.console_type,
+                            &values,
+                            Self::colors_enabled(),
+                        )
                     )
                     .expect("Failed to write to stdout");
 
@@ -251,6 +263,54 @@ impl<'a> Ssr<'a> {
             let console_type_key = v8::String::new(scope, console_type).unwrap();
             console_obj.set(scope, console_type_key.into(), logger_fn.into());
         }
+    }
+
+    fn colors_enabled() -> bool {
+        io::stdout().is_terminal()
+            && env::var_os("NO_COLOR").is_none()
+            && env::var("TERM").as_deref() != Ok("dumb")
+    }
+
+    fn render_console_line(console_type: &str, values: &[(String, bool)], color: bool) -> String {
+        let prefix = if color {
+            let level_color = match console_type {
+                "warn" => WARNING_COLOR,
+                "error" => ERROR_COLOR,
+                _ => LOG_COLOR,
+            };
+            format!("  {SSR_COLOR}[SSR]{RESET} {level_color}[{console_type}]{RESET}")
+        } else {
+            format!("  [SSR] [{console_type}]")
+        };
+        let message = values
+            .iter()
+            .map(|(value, structured)| {
+                if color && *structured {
+                    format!("{PAYLOAD_COLOR}{value}{RESET}")
+                } else {
+                    value.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        format!("{prefix} {message}")
+    }
+
+    fn format_console_value(scope: &mut v8::HandleScope, value: v8::Local<v8::Value>) -> String {
+        if value.is_object() && !value.is_native_error() {
+            let serialized = {
+                let try_catch = &mut v8::TryCatch::new(scope);
+                v8::json::stringify(try_catch, value)
+                    .map(|json| json.to_rust_string_lossy(try_catch))
+            };
+            if let Some(serialized) = serialized {
+                return serialized;
+            }
+        }
+        value
+            .to_string(scope)
+            .map(|text| text.to_rust_string_lossy(scope))
+            .unwrap_or_else(|| "<unprintable>".to_string())
     }
 
     fn extract_exception_message(
@@ -436,7 +496,10 @@ mod tests {
             r##"
                 var SSR = {
                     x: () => {
-                        console.log('test log');
+                        console.log('test log', {
+                            answer: 42,
+                            nested: { ready: true },
+                        });
                         return "<html></html>"
                     }
                 };"##
@@ -451,7 +514,20 @@ mod tests {
         assert_eq!(result, Ok("<html></html>".to_string()));
         assert_eq!(
             String::from_utf8_lossy(&result_vector),
-            "ssr console [log]: test log\n"
+            "  [SSR] [log] test log {\"answer\":42,\"nested\":{\"ready\":true}}\n"
+        );
+        assert_eq!(
+            Ssr::render_console_line(
+                "log",
+                &[
+                    ("test log".to_string(), false),
+                    ("{\"answer\":42}".to_string(), true),
+                ],
+                true,
+            ),
+            format!(
+                "  {SSR_COLOR}[SSR]{RESET} {LOG_COLOR}[log]{RESET} test log {PAYLOAD_COLOR}{{\"answer\":42}}{RESET}"
+            )
         );
     }
 

@@ -239,6 +239,26 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
         self._view_base_path = view_base
 
+        from mountaineer.runtime import get_runtime_payload
+
+        runtime_payload = get_runtime_payload()
+        if (
+            runtime_payload is not None
+            and view_base.resolve() == runtime_payload.paths.view_root.resolve()
+        ):
+            assets = runtime_payload.frontend.controllers.get(self.script_name)
+            if assets is not None:
+                self._ssr_path = assets.ssr_path
+                self.source_map = (
+                    SourceMapParser(assets.ssr_map_path)
+                    if assets.ssr_map_path is not None
+                    else None
+                )
+                self._bundled_scripts = assets.client_scripts
+                return True
+            if runtime_payload.mode == "production":
+                return False
+
         # We'll update this bool if we can't find any dependencies
         found_dependencies = True
 
