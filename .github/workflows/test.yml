@@ -92,7 +92,7 @@ jobs:
         run: make lint-validation
 
       - name: Lint Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
@@ -177,7 +177,7 @@ jobs:
       # This helps to detect errors on different underlying architectures, since
       # these wheel builds are representative of our deployment platforms
       - name: Rust tests
-        run: cargo test --all
+        run: cargo test --workspace --all-features
 
       # Run basic benchmarks to make sure these still compile
       - name: Rust benchmarks

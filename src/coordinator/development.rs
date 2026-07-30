@@ -1,6 +1,5 @@
 use super::{
     config::{write_payload, CoordinatorConfig, ServerConfig},
-    frontend::ViteDevServer,
     hot_reload::{discover_imports, ActiveWorker, PythonHotReload},
     invalid,
     output::{finish_startup_spinner, link, start_startup_spinner, status, timing, Tone},
@@ -8,6 +7,7 @@ use super::{
     watcher::{restart_kind, ChangeKind},
     Error, Result,
 };
+use mountaineer_vite::{DevelopmentConfig as ViteConfig, DevelopmentServer as ViteDevServer};
 use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -30,7 +30,11 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
     let active_target = Arc::new(RwLock::new(None));
 
     let payload_dir = tempfile::tempdir()?;
-    let mut vite = ViteDevServer::spawn(&config, &payload_dir).await?;
+    let mut vite = ViteDevServer::spawn(ViteConfig {
+        frontend_root: config.frontend_root.clone(),
+        host: config.host.clone(),
+    })
+    .await?;
     let mut generation = 1;
     let imports = discover_imports(&config).await?;
     let backend_started = Instant::now();
@@ -40,7 +44,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
         &payload_dir,
         &mut hot_reload,
         generation,
-        &vite.origin,
+        vite.origin(),
         true,
     )
     .await?;
@@ -144,7 +148,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
                             &payload_dir,
                             &mut hot_reload,
                             generation,
-                            &vite.origin,
+                            vite.origin(),
                             refresh_imports,
                         ).await {
                             Ok((candidate, target)) => {
@@ -197,7 +201,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
                             &payload_dir,
                             &mut candidate_strategy,
                             generation,
-                            &vite.origin,
+                            vite.origin(),
                             true,
                         ).await {
                             Ok((candidate, target)) => {
@@ -312,9 +316,12 @@ async fn start_candidate(
     Ok((worker, target))
 }
 
-fn unexpected_exit(name: &str, result: Result<ExitStatus>) -> Error {
+fn unexpected_exit<E>(name: &str, result: std::result::Result<ExitStatus, E>) -> Error
+where
+    E: Into<Error>,
+{
     match result {
         Ok(status) => invalid(format!("{name} exited unexpectedly with {status}")),
-        Err(error) => error,
+        Err(error) => error.into(),
     }
 }

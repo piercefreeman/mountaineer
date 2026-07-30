@@ -1423,7 +1423,9 @@ dependencies = [
  "lazy_static",
  "libc",
  "log",
- "md5",
+ "mountaineer-hot-reload-fork",
+ "mountaineer-hot-reload-pool",
+ "mountaineer-vite",
  "notify-debouncer-full",
  "path-absolutize",
  "pyo3",
@@ -1437,6 +1439,40 @@ dependencies = [
  "toml",
  "v8",
  "winapi",
+]
+
+[[package]]
+name = "mountaineer-hot-reload-fork"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+]
+
+[[package]]
+name = "mountaineer-hot-reload-pool"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
+]
+
+[[package]]
+name = "mountaineer-vite"
+version = "0.1.0"
+dependencies = [
+ "md5",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.12",
+ "tokio",
 ]
 
 [[package]]

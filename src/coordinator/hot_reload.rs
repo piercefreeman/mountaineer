@@ -4,96 +4,57 @@ use super::{
     output::{detail, emphasis, status, status_with_details, Tone},
     Result,
 };
-use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeSet,
-    path::PathBuf,
-    process::{ExitStatus, Stdio},
+#[cfg(unix)]
+use mountaineer_hot_reload_fork::{
+    Config as ForkConfig, ExcludedImport, Spawned as SpawnedFork, Strategy as ForkStrategy,
 };
-#[cfg(unix)]
-use tokio::time::{timeout, Duration};
-use tokio::{
-    io::AsyncWriteExt,
-    process::{Child, ChildStdin, Command},
-};
-
-const DISCOVER_IMPORTS: &str = include_str!("../coordinator_assets/discover_imports.py");
-#[cfg(unix)]
-const FORK_PARENT: &str = include_str!("../coordinator_assets/fork_parent.py");
-#[cfg(unix)]
-const IMPORT_SAFETY_PROBE: &str = include_str!("../coordinator_assets/import_safety_probe.py");
 #[cfg(windows)]
-const WARM_WORKER: &str = include_str!("../coordinator_assets/warm_worker.py");
+use mountaineer_hot_reload_pool::{Config as PoolConfig, Pool};
+use std::{collections::BTreeSet, path::PathBuf, process::ExitStatus};
+use tokio::process::Command;
 
-#[derive(Debug, Serialize)]
-#[serde(tag = "command", rename_all = "snake_case")]
-enum LayerCommand {
-    Start {
-        generation: u64,
-        payload_path: PathBuf,
-    },
-    #[cfg(unix)]
-    Stop { generation: u64 },
-    #[cfg(unix)]
-    Exit,
-}
+const DISCOVER_IMPORTS: &str = include_str!("hot_reload/discover_imports.py");
+
+#[cfg(unix)]
+type Strategy = ForkStrategy;
+#[cfg(windows)]
+type Strategy = Pool;
+
+#[cfg(unix)]
+pub(super) type ActiveWorker = mountaineer_hot_reload_fork::Worker;
+#[cfg(windows)]
+pub(super) type ActiveWorker = mountaineer_hot_reload_pool::Worker;
 
 pub(super) struct PythonHotReload {
     pub(super) imports: BTreeSet<String>,
-    #[cfg(unix)]
-    strategy: ForkStrategy,
-    #[cfg(windows)]
-    strategy: WarmPoolStrategy,
-}
-
-pub(super) struct ActiveWorker {
-    #[cfg(unix)]
-    generation: u64,
-    #[cfg(windows)]
-    child: Child,
-}
-
-#[cfg(unix)]
-#[derive(Deserialize)]
-struct ImportSafetyProbe {
-    safe: BTreeSet<String>,
-    excluded: Vec<ExcludedImport>,
-}
-
-#[cfg(unix)]
-#[derive(Deserialize)]
-struct ExcludedImport {
-    module: String,
-    thread_count: Option<usize>,
-    reason: String,
+    strategy: Strategy,
 }
 
 impl PythonHotReload {
     pub(super) async fn new(config: &CoordinatorConfig, imports: BTreeSet<String>) -> Result<Self> {
-        let libraries = discovered_libraries(&imports);
-        if !libraries.is_empty() {
-            let noun = if libraries.len() == 1 {
-                "library"
-            } else {
-                "libraries"
-            };
-            status(
-                Tone::Muted,
-                "Found",
-                format!(
-                    "{} Python {noun} for warm reload: {}",
-                    emphasis(libraries.len()),
-                    detail(libraries.join(", "))
-                ),
-            );
-        }
+        report_discovered_libraries(&imports);
+
         #[cfg(unix)]
         let strategy = {
-            let safe_imports = fork_safe_imports(config, &imports).await?;
-            ForkStrategy::spawn(config, &safe_imports)?
+            let SpawnedFork {
+                strategy,
+                excluded_imports,
+            } = ForkStrategy::spawn(ForkConfig {
+                python: config.python.clone(),
+                project_root: config.project_root.clone(),
+                imports: imports.clone(),
+            })
+            .await?;
+            report_excluded_imports(&excluded_imports);
+            strategy
         };
         #[cfg(windows)]
-        let strategy = WarmPoolStrategy::spawn(config, &imports)?;
+        let strategy = Pool::spawn(PoolConfig {
+            python: config.python.clone(),
+            project_root: config.project_root.clone(),
+            imports: imports.clone(),
+            size: config.warm_processes,
+        })?;
 
         Ok(Self { imports, strategy })
     }
@@ -103,186 +64,19 @@ impl PythonHotReload {
         generation: u64,
         payload_path: PathBuf,
     ) -> Result<ActiveWorker> {
-        #[cfg(unix)]
-        {
-            self.strategy
-                .send(&LayerCommand::Start {
-                    generation,
-                    payload_path,
-                })
-                .await?;
-            Ok(ActiveWorker { generation })
-        }
-        #[cfg(windows)]
-        {
-            let child = self.strategy.activate(generation, payload_path).await?;
-            Ok(ActiveWorker { child })
-        }
+        Ok(self.strategy.start(generation, payload_path).await?)
     }
 
     pub(super) async fn stop(&mut self, worker: ActiveWorker) -> Result<()> {
-        #[cfg(unix)]
-        self.strategy
-            .send(&LayerCommand::Stop {
-                generation: worker.generation,
-            })
-            .await?;
-        #[cfg(windows)]
-        {
-            let mut worker = worker;
-            if worker.child.try_wait()?.is_none() {
-                worker.child.start_kill()?;
-            }
-            worker.child.wait().await?;
-        }
-        Ok(())
+        Ok(self.strategy.stop(worker).await?)
     }
 
     pub(super) async fn shutdown(&mut self) -> Result<()> {
-        self.strategy.shutdown().await
+        Ok(self.strategy.shutdown().await?)
     }
 
     pub(super) async fn wait(&mut self) -> Result<ExitStatus> {
-        #[cfg(unix)]
-        return self.strategy.wait().await;
-        #[cfg(windows)]
-        std::future::pending().await
-    }
-}
-
-impl ActiveWorker {
-    pub(super) async fn wait(&mut self) -> Result<ExitStatus> {
-        #[cfg(unix)]
-        return std::future::pending().await;
-        #[cfg(windows)]
-        Ok(self.child.wait().await?)
-    }
-}
-
-#[cfg(unix)]
-struct ForkStrategy {
-    child: Child,
-    stdin: ChildStdin,
-}
-
-#[cfg(unix)]
-impl ForkStrategy {
-    fn spawn(config: &CoordinatorConfig, imports: &BTreeSet<String>) -> Result<Self> {
-        let mut child = Command::new(&config.python)
-            .args(["-c", FORK_PARENT])
-            .arg(serde_json::to_string(imports)?)
-            .current_dir(&config.project_root)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .kill_on_drop(true)
-            .spawn()?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| invalid("failed to open fork-template stdin"))?;
-        Ok(Self { child, stdin })
-    }
-
-    async fn send(&mut self, command: &LayerCommand) -> Result<()> {
-        send_json_line(&mut self.stdin, command).await
-    }
-
-    async fn wait(&mut self) -> Result<ExitStatus> {
-        Ok(self.child.wait().await?)
-    }
-
-    async fn shutdown(&mut self) -> Result<()> {
-        let _ = self.send(&LayerCommand::Exit).await;
-        if self.child.try_wait()?.is_none() {
-            match timeout(Duration::from_secs(5), self.child.wait()).await {
-                Ok(status) => {
-                    status?;
-                }
-                Err(_) => {
-                    self.child.start_kill()?;
-                    self.child.wait().await?;
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-#[cfg(windows)]
-struct WarmPoolStrategy {
-    python: String,
-    project_root: PathBuf,
-    imports_json: String,
-    target_size: usize,
-    idle: Vec<WarmProcess>,
-}
-
-#[cfg(windows)]
-struct WarmProcess {
-    child: Child,
-    stdin: ChildStdin,
-}
-
-#[cfg(windows)]
-impl WarmPoolStrategy {
-    fn spawn(config: &CoordinatorConfig, imports: &BTreeSet<String>) -> Result<Self> {
-        let mut strategy = Self {
-            python: config.python.clone(),
-            project_root: config.project_root.clone(),
-            imports_json: serde_json::to_string(imports)?,
-            target_size: config.warm_processes.max(1),
-            idle: Vec::new(),
-        };
-        strategy.replenish()?;
-        Ok(strategy)
-    }
-
-    fn replenish(&mut self) -> Result<()> {
-        while self.idle.len() < self.target_size {
-            let mut child = Command::new(&self.python)
-                .args(["-c", WARM_WORKER])
-                .arg(&self.imports_json)
-                .current_dir(&self.project_root)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .kill_on_drop(true)
-                .spawn()?;
-            let stdin = child
-                .stdin
-                .take()
-                .ok_or_else(|| invalid("failed to open warm-worker stdin"))?;
-            self.idle.push(WarmProcess { child, stdin });
-        }
-        Ok(())
-    }
-
-    async fn activate(&mut self, generation: u64, payload_path: PathBuf) -> Result<Child> {
-        let mut process = self
-            .idle
-            .pop()
-            .ok_or_else(|| invalid("warm process pool is empty"))?;
-        send_json_line(
-            &mut process.stdin,
-            &LayerCommand::Start {
-                generation,
-                payload_path,
-            },
-        )
-        .await?;
-        drop(process.stdin);
-        self.replenish()?;
-        Ok(process.child)
-    }
-
-    async fn shutdown(&mut self) -> Result<()> {
-        for process in &mut self.idle {
-            process.child.start_kill()?;
-            process.child.wait().await?;
-        }
-        self.idle.clear();
-        Ok(())
+        Ok(self.strategy.wait().await?)
     }
 }
 
@@ -305,6 +99,27 @@ pub(super) async fn discover_imports(config: &CoordinatorConfig) -> Result<BTree
     Ok(imports.into_iter().collect())
 }
 
+fn report_discovered_libraries(imports: &BTreeSet<String>) {
+    let libraries = discovered_libraries(imports);
+    if libraries.is_empty() {
+        return;
+    }
+    let noun = if libraries.len() == 1 {
+        "library"
+    } else {
+        "libraries"
+    };
+    status(
+        Tone::Muted,
+        "Found",
+        format!(
+            "{} Python {noun} for warm reload: {}",
+            emphasis(libraries.len()),
+            detail(libraries.join(", "))
+        ),
+    );
+}
+
 fn discovered_libraries(imports: &BTreeSet<String>) -> Vec<String> {
     imports
         .iter()
@@ -316,60 +131,30 @@ fn discovered_libraries(imports: &BTreeSet<String>) -> Vec<String> {
 }
 
 #[cfg(unix)]
-async fn fork_safe_imports(
-    config: &CoordinatorConfig,
-    imports: &BTreeSet<String>,
-) -> Result<BTreeSet<String>> {
-    if imports.is_empty() {
-        return Ok(BTreeSet::new());
+fn report_excluded_imports(excluded_imports: &[ExcludedImport]) {
+    if excluded_imports.is_empty() {
+        return;
     }
-    let output = Command::new(&config.python)
-        .args(["-c", IMPORT_SAFETY_PROBE])
-        .arg(serde_json::to_string(imports)?)
-        .current_dir(&config.project_root)
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(invalid(format!(
-            "fork-safety probe exited with {}:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-
-    let result: ImportSafetyProbe = serde_json::from_slice(&output.stdout)?;
-    if !result.excluded.is_empty() {
-        let noun = if result.excluded.len() == 1 {
-            "library"
-        } else {
-            "libraries"
-        };
-        let details = result
-            .excluded
-            .iter()
-            .map(|excluded| match excluded.thread_count {
-                Some(threads) => {
-                    format!("- {} ({threads} threads after import)", excluded.module)
-                }
-                None => format!("- {} ({})", excluded.module, excluded.reason),
-            })
-            .collect::<Vec<_>>();
-        status_with_details(
-            Tone::Warning,
-            "Ignored",
-            format!("{} Python {noun} for warm reload", details.len()),
-            &details,
-        );
-    }
-    Ok(result.safe)
-}
-
-async fn send_json_line(stdin: &mut ChildStdin, command: &LayerCommand) -> Result<()> {
-    let mut payload = serde_json::to_vec(command)?;
-    payload.push(b'\n');
-    stdin.write_all(&payload).await?;
-    stdin.flush().await?;
-    Ok(())
+    let noun = if excluded_imports.len() == 1 {
+        "library"
+    } else {
+        "libraries"
+    };
+    let details = excluded_imports
+        .iter()
+        .map(|excluded| match excluded.thread_count {
+            Some(threads) => {
+                format!("- {} ({threads} threads after import)", excluded.module)
+            }
+            None => format!("- {} ({})", excluded.module, excluded.reason),
+        })
+        .collect::<Vec<_>>();
+    status_with_details(
+        Tone::Warning,
+        "Ignored",
+        format!("{} Python {noun} for warm reload", details.len()),
+        &details,
+    );
 }
 
 #[cfg(test)]
@@ -423,63 +208,5 @@ mod tests {
             ])),
             vec!["fastapi".to_string(), "pydantic".to_string()]
         );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn fork_probe_excludes_thread_starting_imports() {
-        let project = tempfile::tempdir().unwrap();
-        fs::write(project.path().join("safe_import.py"), "VALUE = 1\n").unwrap();
-        fs::write(
-            project.path().join("threaded_import.py"),
-            "import threading, time\n\
-             threading.Thread(target=lambda: time.sleep(5), daemon=True).start()\n",
-        )
-        .unwrap();
-        let package_root = project.path().join("example");
-        fs::create_dir_all(package_root.join("views")).unwrap();
-        let config = test_config(project.path().to_path_buf(), package_root);
-
-        let safe = fork_safe_imports(
-            &config,
-            &BTreeSet::from(["safe_import".to_string(), "threaded_import".to_string()]),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(safe, BTreeSet::from(["safe_import".to_string()]));
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn fork_parent_exits_when_an_active_backend_dies() {
-        let project = tempfile::tempdir().unwrap();
-        let mut child = Command::new("python")
-            .args(["-c", FORK_PARENT])
-            .arg("[]")
-            .current_dir(project.path())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let mut stdin = child.stdin.take().unwrap();
-        send_json_line(
-            &mut stdin,
-            &LayerCommand::Start {
-                generation: 1,
-                payload_path: project.path().join("missing.json"),
-            },
-        )
-        .await
-        .unwrap();
-
-        let status = timeout(Duration::from_secs(3), child.wait())
-            .await
-            .expect("fork parent did not notice its failed backend")
-            .unwrap();
-
-        assert!(!status.success());
     }
 }

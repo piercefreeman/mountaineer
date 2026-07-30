@@ -1,11 +1,9 @@
-"""Pre-import dependencies, then wait to become a Windows app worker."""
+"""Pre-import dependencies, then wait to become an app worker."""
 
 import importlib
 import json
 import signal
 import sys
-
-from mountaineer.runtime import RuntimePayload, serve_runtime
 
 for module in json.loads(sys.argv[1]):
     try:
@@ -16,6 +14,8 @@ for module in json.loads(sys.argv[1]):
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 command = json.loads(sys.stdin.readline())
 signal.signal(signal.SIGINT, signal.default_int_handler)
+
+from mountaineer.runtime import RuntimePayload, serve_runtime
 
 payload = RuntimePayload.model_validate_json(open(command["payload_path"]).read())
 serve_runtime(payload)
