@@ -70,10 +70,9 @@ async def _prepare_controller(payload: RuntimePayload):
         raise RuntimeError("App controller did not initialize")
 
     if payload.mode == "development" and payload.rebuild_generated:
-        if context.js_compiler is None or context.app_compiler is None:
-            raise RuntimeError("Development compilers did not initialize")
+        if context.js_compiler is None:
+            raise RuntimeError("Development compiler did not initialize")
         await context.js_compiler.build_use_server()
-        await context.app_compiler.run_builder_plugins()
 
     return context.app_controller
 

@@ -26,8 +26,6 @@ from mountaineer.actions import (
     init_function_metadata,
 )
 from mountaineer.annotation_helpers import MountaineerUnsetValue
-from mountaineer.client_compiler.base import APIBuilderBase
-from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.config import ConfigBase
 from mountaineer.constants import DEFAULT_STATIC_DIR
 from mountaineer.controller import ControllerBase
@@ -37,7 +35,7 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
-from mountaineer.frontend import resolve_frontend, vite_stylesheets
+from mountaineer.frontend import BuildMetadata, resolve_frontend, vite_stylesheets
 from mountaineer.graph.app_graph import AppGraph, ControllerDefinition, ControllerRoute
 from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
@@ -63,8 +61,6 @@ class AppController:
     Main entrypoint of a project web application.
 
     """
-
-    builders: list[APIBuilderBase]
 
     global_metadata: Metadata | None
     """
@@ -127,7 +123,6 @@ class AppController:
         version: str = "0.1.0",
         view_root: Path | None = None,
         global_metadata: Metadata | None = None,
-        custom_builders: list[APIBuilderBase] | None = None,
         config: ConfigBase | None = None,
         fastapi_args: dict[str, Any] | None = None,
     ):
@@ -136,8 +131,6 @@ class AppController:
         self.name = name
         self.version = version
         self.global_metadata = global_metadata
-        self.builders = custom_builders if custom_builders else []
-
         # If this flag is present, we will re-raise this error during render()
         # so users can see the error in the browser.
         # This is useful for debugging, but should not be used in production

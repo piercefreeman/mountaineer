@@ -209,7 +209,7 @@ All these functions are now exposed to the frontend layout, including the link g
 
 ```typescript title="/views/app/layout.tsx"
 import React, { ReactNode } from "react";
-import { useServer } from "./_server";
+import { useServer } from "./.mountaineer";
 
 const Layout = ({ children }: { children: ReactNode }) => {
   const serverState = useServer();

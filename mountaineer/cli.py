@@ -36,6 +36,7 @@ from mountaineer.development.watch import (
     PackageWatchdog,
 )
 from mountaineer.development.watch_server import WatcherWebservice
+from mountaineer.frontend import vite_style_paths, write_build_metadata
 from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
 from mountaineer.ssr import find_tsconfig
@@ -300,16 +301,10 @@ async def handle_build(
 
     # Type validation
     assert isolated_context.js_compiler is not None
-    assert isolated_context.app_compiler is not None
     assert isolated_context.app_controller is not None
 
-    # Fresh builds should remove all framework-managed artifacts so we do not
-    # preserve stale files across branch switches or deleted controllers.
-    isolated_context.app_compiler.clear_managed_artifacts()
-
-    # Build the frontend support bundle
-    await isolated_context.js_compiler.build_use_server()
-    await isolated_context.app_compiler.run_builder_plugins()
+    # Clear stale artifacts and build the generated TypeScript API.
+    await isolated_context.js_compiler.build_all()
 
     # Get the build-enabled controllers
     build_controllers = [
@@ -391,6 +386,17 @@ async def handle_build(
         (ssr_output / f"{controller_definition.controller.script_name}.js").write_text(
             script
         )
+
+    mountaineer_rs.build_frontend_styles(
+        str(isolated_context.app_controller._view_root),
+        str(static_output),
+        [
+            str(path)
+            for path in vite_style_paths(isolated_context.app_controller._view_root)
+        ],
+        minify,
+    )
+    write_build_metadata(isolated_context.app_controller._view_root)
 
     LOGGER.info(f"Build completed in {(time() - start):.2f}s")
 

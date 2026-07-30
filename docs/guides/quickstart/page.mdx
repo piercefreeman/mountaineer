@@ -145,7 +145,6 @@ Now that we've newly created this controller, we wire it up to the application. 
 
 ```python title="my_webapp/app.py"
 from mountaineer.app import AppController
-from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
 from my_webapp.config import AppConfig
@@ -156,9 +155,6 @@ controller = AppController(
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
-    custom_builders=[
-        PostCSSBundler(),
-    ],
 )
 
 controller.register(HomeController())
@@ -168,7 +164,7 @@ Let's move over to the frontend.
 
 ```typescript title="my_webapp/views/app/home/page.tsx"
 import React from "react";
-import { useServer, ServerState } from "./_server/useServer";
+import { useServer, ServerState } from "./.mountaineer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
@@ -252,7 +248,7 @@ Mountaineer detects the presence of this sideeffect function and analyzes its si
 
 ```typescript title="my_webapp/views/app/home/page.tsx"
 import React, { useState } from "react";
-import { useServer } from "./_server/useServer";
+import { useServer } from "./.mountaineer";
 
 /* Replace the existing CreateTodo component definition you have */
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {

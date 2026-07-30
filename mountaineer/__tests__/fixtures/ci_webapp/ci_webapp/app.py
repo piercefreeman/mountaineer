@@ -1,5 +1,4 @@
 from mountaineer import AppController, LinkAttribute, Metadata
-from mountaineer.client_compiler.postcss import PostCSSBundler
 
 from ci_webapp.config import AppConfig
 from ci_webapp.controllers.complex import ComplexController
@@ -12,9 +11,6 @@ controller = AppController(
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
-    custom_builders=[
-        PostCSSBundler(),
-    ],
     config=AppConfig(),
 )
 controller.register(HomeController())

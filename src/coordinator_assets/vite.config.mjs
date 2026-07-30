@@ -13,6 +13,11 @@ const host = process.env.MOUNTAINEER_VITE_HOST;
 const publicHost = process.env.MOUNTAINEER_VITE_PUBLIC_HOST;
 const port = Number(process.env.MOUNTAINEER_VITE_PORT);
 const backendSignal = path.resolve(process.env.MOUNTAINEER_BACKEND_SIGNAL);
+const styleEntries = Object.fromEntries(
+  JSON.parse(process.env.MOUNTAINEER_VITE_STYLES ?? "[]").map(
+    ({ name, path }) => [name, path],
+  ),
+);
 
 export default defineConfig({
   root: process.env.MOUNTAINEER_FRONTEND_ROOT,
@@ -92,4 +97,20 @@ hydrateRoot(root, element);
       ],
     },
   },
+  build:
+    Object.keys(styleEntries).length > 0
+      ? {
+          outDir: process.env.MOUNTAINEER_VITE_OUTPUT,
+          emptyOutDir: false,
+          copyPublicDir: false,
+          cssCodeSplit: true,
+          minify: process.env.MOUNTAINEER_VITE_MINIFY !== "false",
+          rollupOptions: {
+            input: styleEntries,
+            output: {
+              assetFileNames: "[name][extname]",
+            },
+          },
+        }
+      : undefined,
 });

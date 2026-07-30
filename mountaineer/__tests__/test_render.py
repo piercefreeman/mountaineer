@@ -1,6 +1,6 @@
 import pytest
 
-from mountaineer.client_compiler.build_metadata import BuildMetadata
+from mountaineer.frontend import BuildMetadata
 from mountaineer.render import (
     LinkAttribute,
     MetaAttribute,

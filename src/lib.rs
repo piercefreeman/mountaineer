@@ -53,6 +53,25 @@ fn run_prod(args: Vec<String>) -> PyResult<()> {
     run_coordinator(coordinator::RuntimeMode::Production, args)
 }
 
+#[pyfunction]
+fn build_frontend_styles(
+    frontend_root: String,
+    output_dir: String,
+    styles: Vec<String>,
+    minify: bool,
+) -> PyResult<()> {
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    runtime
+        .block_on(coordinator::build_frontend_styles(
+            frontend_root.into(),
+            output_dir.into(),
+            styles.into_iter().map(Into::into).collect(),
+            minify,
+        ))
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
 #[derive(Debug, PartialEq, Clone)]
 #[pyclass(get_all, set_all)]
 struct BuildContextParams {
@@ -101,6 +120,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<BuildContextParams>()?;
     m.add_function(wrap_pyfunction!(run_dev, m)?)?;
     m.add_function(wrap_pyfunction!(run_prod, m)?)?;
+    m.add_function(wrap_pyfunction!(build_frontend_styles, m)?)?;
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]

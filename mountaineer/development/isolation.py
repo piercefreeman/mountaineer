@@ -8,7 +8,6 @@ from fastapi import Request
 
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import APIBuilder
-from mountaineer.client_compiler.compile import ClientCompiler
 from mountaineer.development.messages import (
     BootupMessage,
     BuildJsMessage,
@@ -64,7 +63,6 @@ class IsolatedAppContext:
         self.use_dev_exceptions = use_dev_exceptions
 
         self.js_compiler: APIBuilder | None = None
-        self.app_compiler: ClientCompiler | None = None
 
     @classmethod
     def from_webcontroller(cls, webcontroller: str, use_dev_exceptions: bool = True):
@@ -159,18 +157,15 @@ class IsolatedAppContext:
         """
         Compile JavaScript files based on updated paths.
 
-        Runs the builder plugins and invalidates any affected views in the app controller.
+        Invalidates affected views in the app controller.
 
         :param updated_js: Optional list of specific JS files that were updated
         :return: Success response on successful build
-        :raises ValueError: If app compiler or controller is not initialized
+        :raises ValueError: If the controller is not initialized
         """
-        if self.app_compiler is None:
-            raise ValueError("App compiler not initialized")
         if self.app_controller is None:
             raise ValueError("App controller not initialized")
 
-        await self.app_compiler.run_builder_plugins(limit_paths=updated_js)
         for path in updated_js or []:
             self.app_controller.invalidate_view(path)
 
@@ -210,10 +205,6 @@ class IsolatedAppContext:
             self.app_controller,
             build_cache=global_build_cache,
         )
-        self.app_compiler = ClientCompiler(
-            app=self.app_controller,
-        )
-
         return SuccessResponse()
 
     async def handle_start_server(self, host: str, port: int, live_reload_port: int):

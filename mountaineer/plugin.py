@@ -4,16 +4,9 @@ from typing import Type, TypeAlias
 
 from fastapi import APIRouter
 
-from mountaineer.client_compiler.base import APIBuilderBase
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
 from mountaineer.paths import ManagedViewPath
-
-
-@dataclass
-class BuildConfig:
-    custom_builders: list[APIBuilderBase] = field(default_factory=list)
-
 
 # Proper type alias definition
 CONTROLLER_TYPE: TypeAlias = ControllerBase | LayoutControllerBase
@@ -24,7 +17,6 @@ class MountaineerPlugin:
     name: str
     controllers: list[Type[CONTROLLER_TYPE]] | None = None
     view_root: Path | None = None
-    build_config: BuildConfig | None = None
     router: APIRouter | None = None
 
     _concrete_controllers: dict[Type[CONTROLLER_TYPE], CONTROLLER_TYPE] = field(
@@ -97,12 +89,7 @@ class MountaineerPlugin:
                 f"Plugin {self.name} must define view_root to create a standalone webserver"
             )
 
-        app_controller = AppController(
-            view_root=view_root,
-            custom_builders=(
-                self.build_config.custom_builders if self.build_config else []
-            ),
-        )
+        app_controller = AppController(view_root=view_root)
         for controller in self.get_controllers():
             app_controller.register(controller)
         if self.router is not None:

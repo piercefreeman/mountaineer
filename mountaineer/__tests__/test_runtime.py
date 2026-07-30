@@ -2,9 +2,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mountaineer.app import AppController
-from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.controller import ControllerBase
-from mountaineer.frontend import resolve_frontend, vite_stylesheets
+from mountaineer.frontend import (
+    BuildMetadata,
+    resolve_frontend,
+    vite_stylesheets,
+    write_build_metadata,
+)
+from mountaineer.paths import ManagedViewPath
 from mountaineer.render import RenderNull
 from mountaineer.runtime import RuntimePayload, ServerConfig, set_runtime_payload
 
@@ -114,3 +119,18 @@ def test_vite_client_is_generated_without_route_files(tmp_path: Path):
     assert html.index('rel="stylesheet"') < html.index("</head>") < html.index("<body>")
     assert f"@fs/{styles.resolve().as_posix()}?direct" in html
     assert not (view_root / ".mountaineer-vite").exists()
+
+
+def test_build_metadata_hashes_final_static_assets(tmp_path: Path):
+    view_root = ManagedViewPath.from_view_root(tmp_path / "views")
+    view_root.mkdir()
+    static_dir = view_root.get_managed_static_dir()
+    (static_dir / "app_main.css").write_text("body {}")
+    (static_dir / "home.js").write_text("export default null")
+
+    write_build_metadata(view_root)
+
+    metadata = BuildMetadata.model_validate_json(
+        (view_root.get_managed_metadata_dir() / "metadata.json").read_text()
+    )
+    assert set(metadata.static_artifact_shas) == {"app_main.css", "home.js"}

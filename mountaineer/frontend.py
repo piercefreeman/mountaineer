@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from urllib.parse import urlencode
 
+from pydantic import BaseModel
+
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.client_compiler.build_metadata import BuildMetadata
 from mountaineer.logging import LOGGER
+from mountaineer.paths import ManagedViewPath
 from mountaineer.runtime import get_runtime_payload
 from mountaineer.ssr import find_tsconfig
 from mountaineer.static import get_static_path
@@ -23,6 +25,24 @@ class FrontendEntry:
     client_script: str | None = None
     client_imports: tuple[str, ...] = ()
     server_sourcemap: str | None = None
+
+
+class BuildMetadata(BaseModel):
+    static_artifact_shas: dict[str, str]
+
+
+def write_build_metadata(view_root: ManagedViewPath) -> None:
+    static_dir = view_root.get_managed_static_dir()
+    metadata = BuildMetadata(
+        static_artifact_shas={
+            str(path.relative_to(static_dir)): md5(path.read_bytes()).hexdigest()
+            for path in static_dir.rglob("*")
+            if path.is_file()
+        }
+    )
+    (view_root.get_managed_metadata_dir() / "metadata.json").write_text(
+        metadata.model_dump_json()
+    )
 
 
 def resolve_frontend(
@@ -70,7 +90,7 @@ def _development_entry(
                 vite_client_url(
                     payload.dev_server_origin,
                     view_paths[0],
-                    _vite_styles(definition.view_root),
+                    vite_style_paths(definition.view_root),
                 ),
             ),
         )
@@ -154,11 +174,11 @@ def vite_stylesheets(frontend_root: Path) -> list[tuple[str, str]]:
             f"{payload.dev_server_origin}/@fs/{style.as_posix()}?direct",
             style.as_posix(),
         )
-        for style in _vite_styles(frontend_root)
+        for style in vite_style_paths(frontend_root)
     ]
 
 
-def _vite_styles(frontend_root: Path) -> list[Path]:
+def vite_style_paths(frontend_root: Path) -> list[Path]:
     ignored = {
         ".mountaineer",
         ".mountaineer-vite",

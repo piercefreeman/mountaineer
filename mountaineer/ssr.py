@@ -6,8 +6,8 @@ from typing import Any, cast
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.cache import extended_lru_cache
-from mountaineer.client_compiler.source_maps import SourceMapParser
 from mountaineer.logging import debug_log_artifact
+from mountaineer.source_maps import SourceMapParser
 from mountaineer.static import get_static_path
 
 

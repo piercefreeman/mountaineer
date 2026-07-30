@@ -1,3 +1,5 @@
+"""Map SSR exceptions back to their frontend source."""
+
 from dataclasses import dataclass
 from os.path import commonpath
 from pathlib import Path

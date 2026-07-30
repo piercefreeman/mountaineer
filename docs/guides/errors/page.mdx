@@ -28,7 +28,7 @@ When your server returns an error, your async action will raise the relevant err
 When this button is clicked, it will send an `increment_count` action to the server. The server will validate the incoming payload with Pydantic, which will throw a [ValidationError](https://docs.pydantic.dev/latest/errors/validation_errors/) since it expects `count` to be an integer, not a string. The server will then respond with a 422 validation error, which will be passed back to the client and raised in the async function. You can catch this error with a try/catch block:
 
 ```typescript
-import { HTTPValidationErrorException } from "./_server/actions";
+import { HTTPValidationErrorException } from "./.mountaineer";
 
 ...
 
@@ -59,7 +59,7 @@ import { HTTPValidationErrorException } from "./_server/actions";
 </button>
 ```
 
-Mountaineer will convert the error into a custom error class and expose it in `_server/actions` for you to import. This class helps you switch logic depending on the type of error that was raised. Using a class here also has the benefit of typeguarding your error handling, so you'll see IDE recommendations specific to that ValidationError.
+Mountaineer converts the error into a custom class and exports it from the view's `.mountaineer` module. This class helps you switch logic depending on the type of error that was raised. Using a class here also has the benefit of typeguarding your error handling, so you'll see IDE recommendations specific to that ValidationError.
 
 You can find the error payload itself within `error.body`, which will be typehinted with all the metadata (if any) that the server is expected to return as part of this error code. In the above example, that looks like this:
 
@@ -69,7 +69,7 @@ Validation Error (2) ['body', 'count'] Input should be a valid integer, unable 
 
 Internally, we generate `HTTPValidationErrorException` as a subclass of FetchErrorBase. This provided the common error handling, while typehinting it for your specific API errors.
 
-```typescript title="_server/actions.ts"
+```typescript title=".mountaineer/actions.ts"
 class HTTPValidationErrorException extends FetchErrorBase<HTTPValidationError> {}
 ```
 

@@ -1,3 +1,5 @@
+"""Source-map behavior for SSR exception reporting."""
+
 from pathlib import Path
 from re import sub as re_sub
 
@@ -5,7 +7,7 @@ import pytest
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.client_compiler.source_maps import (
+from mountaineer.source_maps import (
     SourceMapParser,
     SourceMapSchema,
 )

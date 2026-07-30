@@ -9,7 +9,7 @@ from pydantic._internal._model_construction import ModelMetaclass
 from pydantic.fields import Field, FieldInfo
 from typing_extensions import dataclass_transform
 
-from mountaineer.client_compiler.build_metadata import BuildMetadata
+from mountaineer.frontend import BuildMetadata
 
 T = TypeVar("T")
 
