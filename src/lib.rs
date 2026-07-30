@@ -7,6 +7,7 @@ use pyo3::types::{PyDict, PyString};
 mod bundle_common;
 mod bundle_independent;
 mod bundle_prod;
+mod client_builder;
 mod code_gen;
 mod coordinator;
 mod errors;
@@ -72,6 +73,12 @@ fn build_frontend_styles(
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }
 
+/// Generate managed TypeScript client files from a Mountaineer envelope.
+#[pyfunction]
+fn build_client(payload: String) -> PyResult<()> {
+    client_builder::build(&payload).map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
 #[derive(Debug, PartialEq, Clone)]
 #[pyclass(get_all, set_all)]
 struct BuildContextParams {
@@ -121,6 +128,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(run_dev, m)?)?;
     m.add_function(wrap_pyfunction!(run_prod, m)?)?;
     m.add_function(wrap_pyfunction!(build_frontend_styles, m)?)?;
+    m.add_function(wrap_pyfunction!(build_client, m)?)?;
 
     #[pyfn(m)]
     #[pyo3(name = "render_ssr")]

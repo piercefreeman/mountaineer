@@ -10,7 +10,12 @@ from mountaineer.client_builder.parser import (
     CoreWrapper,
     ModelWrapper,
 )
-from mountaineer.client_builder.typescript import normalize_interface
+
+
+def normalize_interface(title: str) -> str:
+    for character in {" ", "[", "]"}:
+        title = title.strip(character).replace(character, "_")
+    return camelize(title)
 
 
 class AliasManager:
