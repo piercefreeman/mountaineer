@@ -37,18 +37,13 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
+from mountaineer.frontend import resolve_frontend, vite_stylesheets
 from mountaineer.graph.app_graph import AppGraph, ControllerDefinition, ControllerRoute
-from mountaineer.graph.cache import (
-    ControllerDevCache,
-    ControllerProdCache,
-    DevCacheConfig,
-    ProdCacheConfig,
-)
 from mountaineer.logging import LOGGER, debug_log_artifact
 from mountaineer.paths import ManagedViewPath, resolve_package_path
 from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import Metadata, RenderBase, RenderNull
-from mountaineer.runtime import build_vite_stylesheets, get_runtime_payload
+from mountaineer.runtime import get_runtime_payload
 from mountaineer.ssr import render_ssr
 
 
@@ -149,18 +144,7 @@ class AppController:
         self._build_exception: Exception | None = None
 
         # Follow our managed path conventions
-        runtime_payload = get_runtime_payload()
-        if runtime_payload is not None:
-            if runtime_payload.paths.frontend_root == runtime_payload.paths.view_root:
-                self._view_root = ManagedViewPath.from_view_root(
-                    runtime_payload.paths.view_root
-                )
-            else:
-                self._view_root = ManagedViewPath.from_view_root(
-                    runtime_payload.paths.view_root,
-                    package_root_link=runtime_payload.paths.frontend_root,
-                )
-        elif config is not None and config.PACKAGE is not None:
+        if config is not None and config.PACKAGE is not None:
             package_path = resolve_package_path(config.PACKAGE)
             self._view_root = ManagedViewPath.from_view_root(package_path / "views")
         elif view_root is not None:
@@ -171,8 +155,7 @@ class AppController:
             )
 
         # Check our view directory is valid
-        if runtime_payload is None:
-            self._validate_view(self._view_root)
+        self._validate_view(self._view_root)
 
         # The act of instantiating the config should register it with the
         # global settings registry. We keep a reference to it so we can shortcut
@@ -184,7 +167,7 @@ class AppController:
         # The static directory has to exist before we try to mount it
         static_dir = self._view_root.get_managed_static_dir()
 
-        # Mount the view_root / _static directory, since we'll need
+        # Mount the framework-managed static directory, since we'll need
         # this for the client mounted view files
         self.app.mount(
             DEFAULT_STATIC_DIR,
@@ -262,25 +245,23 @@ class AppController:
             raise ValueError(f"Unknown controller type: {type(controller)}")
 
     def _register_controller(self, controller: ControllerBase):
-        # This allows each view to avoid having to find these on disk, as well as gives
-        # a proactive error if any view will be unable to render when their script files
-        # are missing
-        controller.resolve_paths(self._view_root, force=True)
-
         controller_definition = self._register_controller_common(
             controller,
+            view_root=self._view_root,
+            static_url=DEFAULT_STATIC_DIR,
+            build_enabled=True,
             dev_enabled=self.development_enabled,
         )
 
         # If we just registered a layout controller, we need to add it to the graph
         if isinstance(controller, LayoutControllerBase):
-            self.path_to_layout[str(controller.full_view_path.absolute())] = (
+            self.path_to_layout[str(controller_definition.view_path.absolute())] = (
                 controller_definition
             )
 
         # We might have added a fresh root path to the graph with this addition, so we should
         # scan the file path for layout files that might wrap this controller
-        layout_paths = self._collect_layouts_for_controller(controller)
+        layout_paths = self._collect_layouts_for_controller(controller_definition)
 
         child_controller = controller_definition
         for layout_path in layout_paths:
@@ -313,35 +294,24 @@ class AppController:
                         f"Plugin {plugin.name} must define view_root when controller {controller.__class__.__name__} uses a relative view_path"
                     )
 
-            if isinstance(controller.view_path, str):
-                controller.view_path = (
-                    ManagedViewPath.from_view_root(controller_view_root)
-                    / controller.view_path
-                )
-
-            # This should find our precompiled static and ssr files
-            controller._scripts_prefix = f"/static_plugins/{plugin.name}"
-            controller._build_enabled = False
-
-            controller.resolve_paths(controller_view_root, force=True)
-
-            # Unlike standard controllers, plugins are expected to have precompiled scripts
-            # at all times
-            if not controller._ssr_path:
-                raise ValueError(
-                    f"Controller {controller} was not able to find SSR scripts for plugin {plugin.name}"
-                )
-            if not controller._bundled_scripts:
-                raise ValueError(
-                    f"Controller {controller} was not able to find bundled scripts for plugin {plugin.name}"
-                )
-
             # Dev mode is disabled so the app is forced to load the full built javascript
             # bundle when the pages load. This doesn't affect how the controller API endpoints
             # are mounted or otherwise how the view controller is added to the app.
-            self._register_controller_common(controller, dev_enabled=False)
+            self._register_controller_common(
+                controller,
+                view_root=ManagedViewPath.from_view_root(controller_view_root),
+                static_url=f"/static_plugins/{plugin.name}",
+                build_enabled=False,
+                dev_enabled=False,
+            )
 
-        static_dir = plugin_view_root / "_static" if plugin_view_root else None
+        static_dir = (
+            ManagedViewPath.from_view_root(plugin_view_root).get_managed_static_dir(
+                create_dir=False
+            )
+            if plugin_view_root
+            else None
+        )
         if static_dir and static_dir.exists():
             # Mount the plugin static directory when the plugin ships frontend assets.
             self.app.mount(
@@ -353,7 +323,13 @@ class AppController:
             self.app.include_router(plugin.router)
 
     def _register_controller_common(
-        self, controller: ControllerBase, dev_enabled: bool = True
+        self,
+        controller: ControllerBase,
+        *,
+        view_root: ManagedViewPath,
+        static_url: str,
+        build_enabled: bool,
+        dev_enabled: bool,
     ):
         # Since the controller name is used to build dependent files, we ensure
         # that we only register one controller of a given name
@@ -367,22 +343,12 @@ class AppController:
         controller_definition = self.graph.register(
             controller,
             route=None,
-            cache_args=(
-                DevCacheConfig(
-                    node_modules_path=self._view_root / "node_modules",
-                    # This will be 0 on first mount, until the build pipeline overrides
-                    # the app param
-                    live_reload_port=self.live_reload_port,
-                )
-                if dev_enabled
-                else ProdCacheConfig()
-            ),
+            view_path=view_root.get_controller_view_path(controller),
+            view_root=view_root,
+            static_url=static_url,
+            build_enabled=build_enabled,
+            development_enabled=dev_enabled,
         )
-
-        # If we're running in production, sniff for the script files ahead of time so we
-        # can fail early if they're missing
-        if not dev_enabled:
-            controller_definition.resolve_cache()
 
         # The controller superclass needs to be initialized before it's
         # registered into the application
@@ -396,7 +362,6 @@ class AppController:
         generate_controller_html = wraps(controller.render)(
             partial(
                 self._generate_controller_html,
-                dev_enabled=dev_enabled,
                 controller_definition=controller_definition,
             )
         )
@@ -517,7 +482,6 @@ class AppController:
     async def _generate_controller_html(
         self,
         *args,
-        dev_enabled: bool,
         controller_definition: ControllerDefinition,
         **kwargs,
     ):
@@ -569,58 +533,22 @@ class AppController:
             )
         )
 
-        # If we're in development mode, we should recompile the script on page
-        # load to make sure we have the latest if there's any chance that it
-        # was affected by recent code changes
-        if dev_enabled:
-            # Update the params to reflect the current host-time config
-            if not isinstance(controller_definition.cache_args, DevCacheConfig):
-                raise ValueError("Dev cache is not a DevCacheConfig")
-            controller_definition.cache_args.live_reload_port = self.live_reload_port
-
-            # We delay the cache resolution until we need it, so we don't need to
-            # pay the cost of building the cache if we're not in dev mode
-            dev_cache = controller_definition.resolve_cache()
-            if not isinstance(dev_cache, ControllerDevCache):
-                raise ValueError("Dev cache is not a ControllerDevCache")
-
-            LOGGER.debug(f"Compiled dev scripts in {(monotonic_ns() - start) / 1e9}")
-            if dev_cache.external_client_imports is not None:
-                html = self.compile_html(
-                    dev_cache.cached_server_script,
-                    controller_output,
-                    render_output,
-                    inline_client_script=None,
-                    external_client_imports=dev_cache.external_client_imports,
-                    sourcemap=dev_cache.cached_server_sourcemap,
-                )
-            else:
-                assert dev_cache.cached_client_script is not None
-                html = self.compile_html(
-                    dev_cache.cached_server_script,
-                    controller_output,
-                    render_output,
-                    inline_client_script=dev_cache.cached_client_script,
-                    external_client_imports=None,
-                    sourcemap=dev_cache.cached_server_sourcemap,
-                )
-        else:
-            # Production payload
-            prod_cache = controller_definition.resolve_cache()
-            if not isinstance(prod_cache, ControllerProdCache):
-                raise ValueError("Prod cache is not a ControllerProdCache")
-
-            html = self.compile_html(
-                prod_cache.cached_server_script,
-                controller_output,
-                render_output,
-                inline_client_script=None,
-                external_client_imports=[
-                    f"{controller._scripts_prefix}/{script_name}"
-                    for script_name in controller._bundled_scripts
-                ],
-                sourcemap=prod_cache.cached_server_sourcemap,
-            )
+        frontend = resolve_frontend(
+            controller_definition,
+            node_modules_path=self._view_root.get_package_root_link() / "node_modules",
+            live_reload_port=self.live_reload_port,
+            build_metadata=self.get_build_metadata(),
+        )
+        html = self.compile_html(
+            frontend.server_script,
+            controller_output,
+            render_output,
+            inline_client_script=frontend.client_script,
+            external_client_imports=(
+                list(frontend.client_imports) if frontend.client_imports else None
+            ),
+            sourcemap=frontend.server_sourcemap,
+        )
 
         LOGGER.debug(
             f"Controller {controller.__class__.__name__} load time took {(monotonic_ns() - start) / 1e9}"
@@ -676,7 +604,7 @@ class AppController:
 
         runtime_payload = get_runtime_payload()
         dev_stylesheets: list[tuple[str, str]] = []
-        if metadata and runtime_payload and runtime_payload.frontend.dev_server:
+        if metadata and runtime_payload and runtime_payload.dev_server_origin:
             metadata = metadata.model_copy(
                 update={
                     "links": [
@@ -687,8 +615,8 @@ class AppController:
                     ]
                 }
             )
-        if runtime_payload and runtime_payload.frontend.dev_server:
-            dev_stylesheets = build_vite_stylesheets(runtime_payload)
+        if runtime_payload and runtime_payload.dev_server_origin:
+            dev_stylesheets = vite_stylesheets(self._view_root)
         header_tags = (
             metadata.build_header(build_metadata=self.get_build_metadata())
             if metadata
@@ -774,8 +702,8 @@ class AppController:
         return HTMLResponse(page_contents)
 
     def _collect_layouts_for_controller(
-        self, controller: ControllerBase
-    ) -> list[ManagedViewPath]:
+        self, definition: ControllerDefinition
+    ) -> list[Path]:
         """
         Recursively parse the parent paths to find the first layout (if any)
 
@@ -787,11 +715,11 @@ class AppController:
         Returns the path where result[0] is the closest layout, and result[-1] is the furthest
 
         """
-        full_view_path = controller.full_view_path.resolve().absolute()
-        current_path = full_view_path.realpath()
-        package_root = full_view_path.get_root_link().realpath()
+        full_view_path = definition.view_path.resolve().absolute()
+        current_path = full_view_path
+        package_root = definition.view_root.resolve().absolute()
 
-        found_layouts: list[ManagedViewPath] = []
+        found_layouts: list[Path] = []
 
         while current_path != package_root:
             # We should never get to the OS root
@@ -839,7 +767,15 @@ class AppController:
             },
         )
         LOGGER.debug(f"Creating synthetic layout {layout_name} for {layout_path}")
-        new_definition = self.graph.register(new_layout(), route=None, cache_args=None)
+        new_definition = self.graph.register(
+            new_layout(),
+            route=None,
+            view_path=layout_path,
+            view_root=self._view_root,
+            static_url=DEFAULT_STATIC_DIR,
+            build_enabled=True,
+            development_enabled=self.development_enabled,
+        )
         self.path_to_layout[str(layout_path)] = new_definition
         return new_definition, True
 
@@ -899,14 +835,13 @@ class AppController:
         # In development mode, clear all controller caches since any view file
         # could potentially be imported by any controller
         if self.development_enabled:
-            cleared_controllers: list[ControllerDefinition] = []
-
-            for controller_definition in self.graph.controllers:
-                # Only clear caches that are in development mode
-                if isinstance(controller_definition.cache_args, DevCacheConfig):
-                    if controller_definition.cache is not None:
-                        controller_definition.clear_cache(recursive=False)
-                        cleared_controllers.append(controller_definition)
+            cleared_controllers = [
+                definition
+                for definition in self.graph.controllers
+                if definition.development_enabled and definition.frontend is not None
+            ]
+            for definition in cleared_controllers:
+                definition.clear_frontend(recursive=False)
 
             controller_names = [
                 controller.controller.__class__.__name__
@@ -1098,13 +1033,6 @@ class AppController:
         use it for all endpoints.
 
         """
-        runtime_payload = get_runtime_payload()
-        if runtime_payload is not None:
-            self._build_metadata = BuildMetadata(
-                static_artifact_shas=runtime_payload.frontend.static_artifact_shas
-            )
-            return self._build_metadata
-
         if not self.development_enabled:
             # Determine if we've already cached the build
             if hasattr(self, "_build_metadata"):

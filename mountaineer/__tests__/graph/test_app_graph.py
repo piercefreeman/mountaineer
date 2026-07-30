@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from mountaineer.app import AppController, ControllerDefinition
 from mountaineer.controller import ControllerBase
 from mountaineer.graph.app_graph import ControllerRoute
+from mountaineer.paths import ManagedViewPath
 
 
 class TargetController(ControllerBase):
@@ -32,6 +33,7 @@ def test_merge_render_signatures():
         pass
 
     app = AppController(view_root=Path(""))
+    view_root = ManagedViewPath.from_view_root(Path(""))
 
     target_definition = ControllerDefinition(
         controller=TargetController(),
@@ -42,6 +44,11 @@ def test_merge_render_signatures():
             render_router=APIRouter(),
         ),
         graph=app.graph,
+        view_path=view_root / "target.tsx",
+        view_root=view_root,
+        static_url="/static",
+        build_enabled=True,
+        development_enabled=True,
     )
     reference_definition = ControllerDefinition(
         controller=ReferenceController(),
@@ -52,6 +59,11 @@ def test_merge_render_signatures():
             render_router=APIRouter(),
         ),
         graph=app.graph,
+        view_path=view_root / "reference.tsx",
+        view_root=view_root,
+        static_url="/static",
+        build_enabled=True,
+        development_enabled=True,
     )
 
     assert target_definition.route is not None
@@ -84,6 +96,7 @@ def test_merge_render_signatures_conflicting_types():
         pass
 
     app = AppController(view_root=Path(""))
+    view_root = ManagedViewPath.from_view_root(Path(""))
 
     target_definition = ControllerDefinition(
         controller=TargetController(),
@@ -94,6 +107,11 @@ def test_merge_render_signatures_conflicting_types():
             render_router=APIRouter(),
         ),
         graph=app.graph,
+        view_path=view_root / "target.tsx",
+        view_root=view_root,
+        static_url="/static",
+        build_enabled=True,
+        development_enabled=True,
     )
     reference_definition = ControllerDefinition(
         controller=ReferenceController(),
@@ -104,6 +122,11 @@ def test_merge_render_signatures_conflicting_types():
             render_router=APIRouter(),
         ),
         graph=app.graph,
+        view_path=view_root / "reference.tsx",
+        view_root=view_root,
+        static_url="/static",
+        build_enabled=True,
+        development_enabled=True,
     )
 
     assert target_definition.route is not None

@@ -34,10 +34,12 @@ def test_get_static_files_ignores_managed_artifact_dirs(tmp_path: Path):
     compiler = ClientCompiler(app=app)
 
     (tmp_path / "app.tsx").write_text("export const app = true;")
-    (tmp_path / "_server").mkdir()
-    (tmp_path / "_server" / "generated.ts").write_text("export const generated = true;")
-    (tmp_path / "_metadata").mkdir()
-    (tmp_path / "_metadata" / "metadata.json").write_text("{}")
+    (tmp_path / ".mountaineer").mkdir(exist_ok=True)
+    (tmp_path / ".mountaineer" / "generated.ts").write_text(
+        "export const generated = true;"
+    )
+    (tmp_path / ".mountaineer" / "metadata").mkdir()
+    (tmp_path / ".mountaineer" / "metadata" / "metadata.json").write_text("{}")
 
     static_files = list(compiler._get_static_files())
 
@@ -47,15 +49,17 @@ def test_get_static_files_ignores_managed_artifact_dirs(tmp_path: Path):
 def test_clear_managed_artifacts_preserves_plugin_assets(tmp_path: Path):
     host_view_root = tmp_path / "host_views"
     host_view_root.mkdir()
-    (host_view_root / "_static").mkdir()
-    (host_view_root / "_static" / "stale_host.js").write_text("stale")
+    (host_view_root / ".mountaineer" / "static").mkdir(parents=True)
+    (host_view_root / ".mountaineer" / "static" / "stale_host.js").write_text("stale")
 
     plugin_view_root = tmp_path / "plugin_views"
     plugin_view_root.mkdir()
-    (plugin_view_root / "_static").mkdir()
-    (plugin_view_root / "_ssr").mkdir()
-    plugin_static = plugin_view_root / "_static" / "plugin_controller.js"
-    plugin_ssr = plugin_view_root / "_ssr" / "plugin_controller.js"
+    (plugin_view_root / ".mountaineer" / "static").mkdir(parents=True)
+    (plugin_view_root / ".mountaineer" / "ssr").mkdir()
+    plugin_static = (
+        plugin_view_root / ".mountaineer" / "static" / "plugin_controller.js"
+    )
+    plugin_ssr = plugin_view_root / ".mountaineer" / "ssr" / "plugin_controller.js"
     plugin_static.write_text("console.log('plugin');")
     plugin_ssr.write_text("export default null;")
 
@@ -85,6 +89,6 @@ def test_clear_managed_artifacts_preserves_plugin_assets(tmp_path: Path):
 
     ClientCompiler(app=app).clear_managed_artifacts()
 
-    assert not (host_view_root / "_static").exists()
+    assert not (host_view_root / ".mountaineer").exists()
     assert plugin_static.exists()
     assert plugin_ssr.exists()

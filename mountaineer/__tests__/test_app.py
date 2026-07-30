@@ -19,7 +19,7 @@ from mountaineer.exceptions import (
     RequestValidationError,
     RequestValidationFailure,
 )
-from mountaineer.graph.cache import ControllerDevCache, DevCacheConfig
+from mountaineer.frontend import FrontendEntry
 from mountaineer.paths import ManagedViewPath
 from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import Metadata, RenderBase
@@ -183,12 +183,12 @@ def test_register_plugin_includes_plugin_router(tmp_path: Path):
 
     plugin_view_root = tmp_path / "plugin_views"
     plugin_view_root.mkdir()
-    (plugin_view_root / "_static").mkdir()
-    (plugin_view_root / "_ssr").mkdir()
-    (plugin_view_root / "_static" / "plugin_controller.js").write_text(
+    (plugin_view_root / ".mountaineer" / "static").mkdir(parents=True)
+    (plugin_view_root / ".mountaineer" / "ssr").mkdir()
+    (plugin_view_root / ".mountaineer" / "static" / "plugin_controller.js").write_text(
         "console.log('plugin');"
     )
-    (plugin_view_root / "_ssr" / "plugin_controller.js").write_text(
+    (plugin_view_root / ".mountaineer" / "ssr" / "plugin_controller.js").write_text(
         "export default null;"
     )
 
@@ -251,12 +251,12 @@ def test_register_plugin_infers_view_root_from_controller_paths(tmp_path: Path):
 
     plugin_view_root = tmp_path / "plugin_views"
     plugin_view_root.mkdir()
-    (plugin_view_root / "_static").mkdir()
-    (plugin_view_root / "_ssr").mkdir()
-    (plugin_view_root / "_static" / "plugin_controller.js").write_text(
+    (plugin_view_root / ".mountaineer" / "static").mkdir(parents=True)
+    (plugin_view_root / ".mountaineer" / "ssr").mkdir()
+    (plugin_view_root / ".mountaineer" / "static" / "plugin_controller.js").write_text(
         "console.log('plugin');"
     )
-    (plugin_view_root / "_ssr" / "plugin_controller.js").write_text(
+    (plugin_view_root / ".mountaineer" / "ssr" / "plugin_controller.js").write_text(
         "export default null;"
     )
 
@@ -374,7 +374,7 @@ async def test_parse_validation_exception():
     assert error.value_input == "not_a_number"
 
 
-def test_invalidate_view_clears_cache(tmp_path: Path):
+def test_invalidate_view_clears_frontend_entry(tmp_path: Path):
     """
     Test that invalidate_view properly clears caches when files change in development.
     This is the core logic that should trigger when JS/TS files change.
@@ -411,29 +411,14 @@ def test_invalidate_view_clears_cache(tmp_path: Path):
     assert len(controller_definitions) == 1
     controller_definition = controller_definitions[0]
 
-    # Verify development mode cache config is set
-    assert isinstance(controller_definition.cache_args, DevCacheConfig)
-
-    # Mock the Rust compilation to avoid actual compilation
-    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
-        mock_compile.return_value = (
-            ["console.log('test script');"],  # script_payloads
-            ["// sourcemap"],  # sourcemap_payloads
-        )
-
-        # Create cache by resolving it
-        cache = controller_definition.resolve_cache()
-        assert isinstance(cache, ControllerDevCache)
-        assert controller_definition.cache is not None
-
-        # This is the key test: invalidate_view should clear the cache
-        app.invalidate_view(test_page)
-
-        # Cache should be cleared
-        assert controller_definition.cache is None
+    controller_definition.frontend = FrontendEntry(
+        server_script="server", client_script="client"
+    )
+    app.invalidate_view(test_page)
+    assert controller_definition.frontend is None
 
 
-def test_invalidate_view_clears_all_dev_caches(tmp_path: Path):
+def test_invalidate_view_clears_all_frontend_entries(tmp_path: Path):
     """
     Test that invalidate_view clears ALL development caches when any view file changes.
     This is the new aggressive behavior since we don't parse import dependencies.
@@ -490,26 +475,15 @@ def test_invalidate_view_clears_all_dev_caches(tmp_path: Path):
     controller1_def = app.graph.get_definitions_for_cls(TestController1)[0]
     controller2_def = app.graph.get_definitions_for_cls(TestController2)[0]
 
-    # Mock compilation and create caches
-    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
-        mock_compile.return_value = (
-            ["console.log('test script');"],
-            ["// sourcemap"],
-        )
-
-        # Create caches for both controllers
-        controller1_def.resolve_cache()
-        controller2_def.resolve_cache()
-
-        assert controller1_def.cache is not None
-        assert controller2_def.cache is not None
-
-        # Change the shared component file - should clear ALL caches
-        app.invalidate_view(component_file)
-
-        # Both controller caches should be cleared even though only a shared component changed
-        assert controller1_def.cache is None
-        assert controller2_def.cache is None
+    controller1_def.frontend = FrontendEntry(
+        server_script="server-1", client_script="client-1"
+    )
+    controller2_def.frontend = FrontendEntry(
+        server_script="server-2", client_script="client-2"
+    )
+    app.invalidate_view(component_file)
+    assert controller1_def.frontend is None
+    assert controller2_def.frontend is None
 
 
 def test_invalidate_view_ignores_files_outside_view_root(tmp_path: Path):
@@ -550,19 +524,8 @@ def test_invalidate_view_ignores_files_outside_view_root(tmp_path: Path):
 
     controller_definition = app.graph.get_definitions_for_cls(TestController)[0]
 
-    # Mock compilation and create cache
-    with patch("mountaineer.mountaineer.compile_independent_bundles") as mock_compile:
-        mock_compile.return_value = (
-            ["console.log('test script');"],
-            ["// sourcemap"],
-        )
-
-        # Create cache
-        controller_definition.resolve_cache()
-        assert controller_definition.cache is not None
-
-        # Invalidate file outside view root - should NOT clear the cache
-        app.invalidate_view(outside_file)
-
-        # Cache should still be present
-        assert controller_definition.cache is not None
+    controller_definition.frontend = FrontendEntry(
+        server_script="server", client_script="client"
+    )
+    app.invalidate_view(outside_file)
+    assert controller_definition.frontend is not None

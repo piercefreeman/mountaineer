@@ -1,21 +1,26 @@
+use crate::terminal;
+use console::{colors_enabled_stderr, Style};
+use indicatif::{ProgressBar, ProgressStyle};
 use notify_debouncer_full::{
     new_debouncer, notify::RecursiveMode, DebounceEventResult, DebouncedEvent,
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeSet, HashMap},
     env,
     error::Error,
     fmt::Display,
     fs,
-    io::{self, Error as IoError, ErrorKind, IsTerminal},
+    io::{Error as IoError, ErrorKind},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Component, Path, PathBuf},
     process::Stdio,
-    sync::Arc,
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 use tempfile::TempDir;
+#[cfg(unix)]
+use tokio::time::timeout;
 use tokio::{
     io::{copy_bidirectional, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -24,25 +29,12 @@ use tokio::{
     sync::{mpsc, RwLock},
     time::{sleep, Instant},
 };
-use walkdir::WalkDir;
-
-#[cfg(unix)]
-use tokio::time::timeout;
 
 type AnyError = Box<dyn Error + Send + Sync>;
 type Result<T> = std::result::Result<T, AnyError>;
 
 const PAYLOAD_SCHEMA_VERSION: u16 = 1;
 const PAYLOAD_PATH_ENV: &str = "MOUNTAINEER_RUNTIME_PAYLOAD";
-const RESET: &str = "\x1b[0m";
-const BOLD: &str = "\x1b[1m";
-// Mountaineer terminal palette: Monkeydo's warm ink colors, tuned for dark terminals.
-const ACCENT: &str = "\x1b[1;38;2;60;200;138m";
-const WARNING: &str = "\x1b[1;38;2;234;153;40m";
-const DANGER: &str = "\x1b[1;38;2;231;90;39m";
-const MUTED: &str = "\x1b[38;2;176;175;167m";
-const DETAIL: &str = "\x1b[38;2;128;128;123m";
-const LINK: &str = "\x1b[4;38;2;68;163;248m";
 const FRONTEND_TOOLCHAIN_PACKAGE_JSON: &str = r#"{
   "name": "mountaineer-frontend-toolchain",
   "private": true,
@@ -71,20 +63,44 @@ enum Tone {
 }
 
 impl Tone {
-    fn ansi(self) -> &'static str {
+    fn style(self) -> Style {
         match self {
-            Self::Accent => ACCENT,
-            Self::Warning => WARNING,
-            Self::Error => DANGER,
-            Self::Muted => MUTED,
+            Self::Accent => terminal::accent(),
+            Self::Warning => terminal::warning(),
+            Self::Error => terminal::error(),
+            Self::Muted => terminal::muted(),
         }
     }
 }
 
-fn colors_enabled() -> bool {
-    io::stderr().is_terminal()
-        && env::var_os("NO_COLOR").is_none()
-        && env::var("TERM").as_deref() != Ok("dumb")
+fn startup_spinner_slot() -> &'static Mutex<Option<ProgressBar>> {
+    static SPINNER: OnceLock<Mutex<Option<ProgressBar>>> = OnceLock::new();
+    SPINNER.get_or_init(|| Mutex::new(None))
+}
+
+fn start_startup_spinner() {
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner:.green.bold} {msg}")
+            .expect("valid startup spinner template"),
+    );
+    spinner.set_message("Starting Mountaineer...");
+    spinner.enable_steady_tick(Duration::from_millis(80));
+    *startup_spinner_slot().lock().unwrap() = Some(spinner);
+}
+
+fn finish_startup_spinner() {
+    if let Some(spinner) = startup_spinner_slot().lock().unwrap().take() {
+        spinner.finish_and_clear();
+    }
+}
+
+fn print_status_line(line: String) {
+    if let Some(spinner) = startup_spinner_slot().lock().unwrap().as_ref() {
+        spinner.suspend(|| eprintln!("{line}"));
+    } else {
+        eprintln!("{line}");
+    }
 }
 
 fn render_status(label: &str, message: impl Display, tone: Tone, color: bool) -> String {
@@ -93,15 +109,16 @@ fn render_status(label: &str, message: impl Display, tone: Tone, color: bool) ->
         .to_string()
         .replace("\r\n", "\n")
         .replace('\n', continuation);
-    if color {
-        format!("{}{label}{RESET} {message}", tone.ansi())
-    } else {
-        format!("{label} {message}")
-    }
+    let label = tone
+        .style()
+        .for_stderr()
+        .force_styling(color)
+        .apply_to(label);
+    format!("{label} {message}")
 }
 
 fn status(tone: Tone, label: &str, message: impl Display) {
-    eprintln!("{}", render_status(label, message, tone, colors_enabled()));
+    print_status_line(render_status(label, message, tone, colors_enabled_stderr()));
 }
 
 fn render_status_with_details(
@@ -115,22 +132,25 @@ fn render_status_with_details(
     for detail in details {
         output.push('\n');
         output.push_str("  ");
-        if color {
-            output.push_str(DETAIL);
-        }
-        output.push_str(detail);
-        if color {
-            output.push_str(RESET);
-        }
+        output.push_str(
+            &terminal::detail()
+                .for_stderr()
+                .force_styling(color)
+                .apply_to(detail)
+                .to_string(),
+        );
     }
     output
 }
 
 fn status_with_details(tone: Tone, label: &str, message: impl Display, details: &[String]) {
-    eprintln!(
-        "{}",
-        render_status_with_details(label, message, tone, details, colors_enabled())
-    );
+    print_status_line(render_status_with_details(
+        label,
+        message,
+        tone,
+        details,
+        colors_enabled_stderr(),
+    ));
 }
 
 fn discovered_libraries(imports: &BTreeSet<String>) -> Vec<String> {
@@ -142,39 +162,20 @@ fn discovered_libraries(imports: &BTreeSet<String>) -> Vec<String> {
 }
 
 fn link(url: impl Display) -> String {
-    let url = url.to_string();
-    if colors_enabled() {
-        format!("{LINK}{url}{RESET}")
-    } else {
-        url
-    }
+    terminal::link().for_stderr().apply_to(url).to_string()
 }
 
 fn emphasis(value: impl Display) -> String {
-    let value = value.to_string();
-    if colors_enabled() {
-        format!("{BOLD}{value}{RESET}")
-    } else {
-        value
-    }
+    Style::new().bold().for_stderr().apply_to(value).to_string()
 }
 
 fn detail(value: impl Display) -> String {
-    let value = value.to_string();
-    if colors_enabled() {
-        format!("{DETAIL}{value}{RESET}")
-    } else {
-        value
-    }
+    terminal::detail().for_stderr().apply_to(value).to_string()
 }
 
 fn timing(start: Instant) -> String {
     let value = format!("in {}", format_duration(start.elapsed()));
-    if colors_enabled() {
-        format!("{DETAIL}{value}{RESET}")
-    } else {
-        value
-    }
+    detail(value)
 }
 
 fn format_duration(duration: Duration) -> String {
@@ -188,6 +189,7 @@ fn format_duration(duration: Duration) -> String {
 }
 
 pub fn report_error(program: &str, error: &dyn Display) {
+    finish_startup_spinner();
     status(Tone::Error, "Error", format!("{program}: {error}"));
 }
 
@@ -199,44 +201,9 @@ pub enum RuntimeMode {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ImportTarget {
-    pub package: String,
-    pub webcontroller: String,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RuntimePaths {
-    pub project_root: PathBuf,
-    pub python_package_root: PathBuf,
-    pub frontend_root: PathBuf,
-    pub view_root: PathBuf,
-    pub static_root: PathBuf,
-    pub ssr_root: PathBuf,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ControllerAssets {
-    pub ssr_path: PathBuf,
-    pub ssr_map_path: Option<PathBuf>,
-    pub client_scripts: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FrontendManifest {
-    pub controllers: BTreeMap<String, ControllerAssets>,
-    pub static_artifact_shas: BTreeMap<String, String>,
-    pub dev_server: Option<FrontendDevServer>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FrontendDevServer {
-    pub origin: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -245,10 +212,9 @@ pub struct RuntimePayload {
     pub mode: RuntimeMode,
     pub generation: u64,
     pub rebuild_generated: bool,
-    pub import: ImportTarget,
+    pub webcontroller: String,
     pub server: ServerConfig,
-    pub paths: RuntimePaths,
-    pub frontend: FrontendManifest,
+    pub dev_server_origin: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -275,7 +241,6 @@ pub struct CoordinatorConfig {
     project_root: PathBuf,
     python_package_root: PathBuf,
     frontend_root: PathBuf,
-    view_root: PathBuf,
 }
 
 impl CoordinatorConfig {
@@ -371,7 +336,6 @@ impl CoordinatorConfig {
             project_root,
             python_package_root,
             frontend_root,
-            view_root,
         })
     }
 
@@ -379,38 +343,18 @@ impl CoordinatorConfig {
         &self,
         generation: u64,
         server: ServerConfig,
-        dev_server: Option<FrontendDevServer>,
+        dev_server_origin: Option<String>,
         rebuild_generated: bool,
-    ) -> Result<RuntimePayload> {
-        let static_root = self.view_root.join("_static");
-        let ssr_root = self.view_root.join("_ssr");
-        let mut frontend = if self.mode == RuntimeMode::Production {
-            build_frontend_manifest(&static_root, &ssr_root)?
-        } else {
-            FrontendManifest::default()
-        };
-        frontend.dev_server = dev_server;
-
-        Ok(RuntimePayload {
+    ) -> RuntimePayload {
+        RuntimePayload {
             schema_version: PAYLOAD_SCHEMA_VERSION,
             mode: self.mode,
             generation,
             rebuild_generated,
-            import: ImportTarget {
-                package: self.package.clone(),
-                webcontroller: self.webcontroller.clone(),
-            },
+            webcontroller: self.webcontroller.clone(),
             server,
-            paths: RuntimePaths {
-                project_root: self.project_root.clone(),
-                python_package_root: self.python_package_root.clone(),
-                frontend_root: self.frontend_root.clone(),
-                view_root: self.view_root.clone(),
-                static_root,
-                ssr_root,
-            },
-            frontend,
-        })
+            dev_server_origin,
+        }
     }
 }
 
@@ -986,6 +930,7 @@ Options:
 }
 
 async fn run_development(config: CoordinatorConfig) -> Result<()> {
+    start_startup_spinner();
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
     let public_address = listener.local_addr()?;
     let active_target = Arc::new(RwLock::new(None));
@@ -1007,10 +952,15 @@ async fn run_development(config: CoordinatorConfig) -> Result<()> {
     )
     .await?;
     *active_target.write().await = Some(initial_target);
+    finish_startup_spinner();
     status(
         Tone::Accent,
         "Started",
-        format!("Python backend {}", timing(backend_started)),
+        format!(
+            "app {} @ {}",
+            timing(backend_started),
+            link(format!("http://{public_address}"))
+        ),
     );
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
@@ -1028,12 +978,6 @@ async fn run_development(config: CoordinatorConfig) -> Result<()> {
     {
         debouncer.watch(&config.frontend_root, RecursiveMode::Recursive)?;
     }
-
-    status(
-        Tone::Muted,
-        "Local",
-        link(format!("http://{public_address}")),
-    );
 
     loop {
         tokio::select! {
@@ -1184,11 +1128,9 @@ async fn start_candidate(
             host: Ipv4Addr::LOCALHOST.to_string(),
             port: internal_port,
         },
-        Some(FrontendDevServer {
-            origin: vite_origin.to_string(),
-        }),
+        Some(vite_origin.to_string()),
         rebuild_generated,
-    )?;
+    );
     let payload_path = write_payload(payload_dir, &payload)?;
     let worker = hot_reload.start(generation, payload_path).await?;
     if let Err(error) = wait_until_ready(target, Duration::from_secs(15)).await {
@@ -1208,17 +1150,8 @@ async fn run_production(config: CoordinatorConfig) -> Result<()> {
         },
         None,
         false,
-    )?;
-    let payload_path = write_payload(&payload_dir, &payload)?;
-    status(
-        Tone::Accent,
-        "Validated",
-        format!(
-            "production assets ({} routes, {} files)",
-            payload.frontend.controllers.len(),
-            payload.frontend.static_artifact_shas.len()
-        ),
     );
+    let payload_path = write_payload(&payload_dir, &payload)?;
     status(
         Tone::Accent,
         "Starting",
@@ -1229,7 +1162,7 @@ async fn run_production(config: CoordinatorConfig) -> Result<()> {
     );
 
     let mut child = Command::new(&config.python)
-        .args(["-m", "mountaineer.runtime"])
+        .args(["-c", "from mountaineer.runtime import main; main()"])
         .env(PAYLOAD_PATH_ENV, payload_path)
         .current_dir(&config.project_root)
         .stdin(Stdio::inherit())
@@ -1404,13 +1337,10 @@ fn ignored_path(path: &Path) -> bool {
                     Some(
                         ".git"
                             | ".venv"
+                            | ".mountaineer"
                             | ".mountaineer-vite"
                             | "node_modules"
                             | "__pycache__"
-                            | "_server"
-                            | "_static"
-                            | "_ssr"
-                            | "_metadata"
                     )
                 )
         )
@@ -1431,85 +1361,6 @@ fn write_payload(directory: &TempDir, payload: &RuntimePayload) -> Result<PathBu
         .join(format!("generation-{}.json", payload.generation));
     fs::write(&path, serde_json::to_vec_pretty(payload)?)?;
     Ok(path)
-}
-
-fn build_frontend_manifest(static_root: &Path, ssr_root: &Path) -> Result<FrontendManifest> {
-    if !static_root.is_dir() {
-        return Err(invalid(format!(
-            "missing production static directory: {}",
-            static_root.display()
-        )));
-    }
-    if !ssr_root.is_dir() {
-        return Err(invalid(format!(
-            "missing production SSR directory: {}",
-            ssr_root.display()
-        )));
-    }
-
-    let mut static_artifact_shas = BTreeMap::new();
-    for entry in WalkDir::new(static_root)
-        .into_iter()
-        .filter_map(std::result::Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-    {
-        let relative = slash_path(entry.path().strip_prefix(static_root)?)?;
-        let digest = format!("{:x}", md5::compute(fs::read(entry.path())?));
-        static_artifact_shas.insert(relative, digest);
-    }
-
-    let mut controllers = BTreeMap::new();
-    for entry in fs::read_dir(ssr_root)? {
-        let path = entry?.path();
-        if path.extension().and_then(|extension| extension.to_str()) != Some("js") {
-            continue;
-        }
-        let script_name = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .ok_or_else(|| invalid(format!("invalid SSR filename: {}", path.display())))?
-            .to_string();
-        let client_name = format!("{script_name}.js");
-        let client_path = static_root.join(&client_name);
-        let client_hash = static_artifact_shas.get(&client_name).ok_or_else(|| {
-            invalid(format!(
-                "SSR entrypoint {script_name:?} has no matching client bundle at {}",
-                client_path.display()
-            ))
-        })?;
-        let source_map = path.with_extension("js.map");
-        controllers.insert(
-            script_name,
-            ControllerAssets {
-                ssr_path: path.canonicalize()?,
-                ssr_map_path: source_map
-                    .exists()
-                    .then(|| source_map.canonicalize())
-                    .transpose()?,
-                client_scripts: vec![format!("{client_name}?v={client_hash}")],
-            },
-        );
-    }
-
-    Ok(FrontendManifest {
-        controllers,
-        static_artifact_shas,
-        dev_server: None,
-    })
-}
-
-fn slash_path(path: &Path) -> Result<String> {
-    let mut parts = Vec::new();
-    for component in path.components() {
-        match component {
-            Component::Normal(part) => parts.push(
-                part.to_str()
-                    .ok_or_else(|| invalid(format!("non-UTF-8 artifact path: {path:?}")))?,
-            ),
-            _ => return Err(invalid(format!("invalid relative artifact path: {path:?}"))),
-        }
-    }
-    Ok(parts.join("/"))
 }
 
 fn find_project_root(start: &Path) -> Result<PathBuf> {
@@ -1716,8 +1567,7 @@ mod tests {
             config.python_package_root,
             package_root.canonicalize().unwrap()
         );
-        assert_eq!(config.view_root, view_root.canonicalize().unwrap());
-        assert_eq!(config.frontend_root, config.view_root);
+        assert_eq!(config.frontend_root, view_root.canonicalize().unwrap());
         assert_eq!(config.python, python.to_string_lossy());
     }
 
@@ -1729,7 +1579,7 @@ mod tests {
         );
         assert_eq!(
             render_status("Failed", "backend", Tone::Error, true),
-            format!("{DANGER}Failed{RESET} backend")
+            "\u{1b}[38;2;231;90;39m\u{1b}[1mFailed\u{1b}[0m backend"
         );
         assert_eq!(
             render_status("Failed", "first line\nsecond line", Tone::Error, false),
@@ -1754,10 +1604,16 @@ mod tests {
                 &["- fastapi".to_string(), "- pydantic".to_string()],
                 true,
             ),
-            format!(
-                "{MUTED}Found{RESET} 2 Python libraries for warm reload\n  {DETAIL}- fastapi{RESET}\n  {DETAIL}- pydantic{RESET}"
-            )
+            "\u{1b}[38;2;176;175;167mFound\u{1b}[0m 2 Python libraries for warm reload\n  \u{1b}[38;2;128;128;123m- fastapi\u{1b}[0m\n  \u{1b}[38;2;128;128;123m- pydantic\u{1b}[0m"
         );
+    }
+
+    #[test]
+    fn startup_spinner_clears_when_the_server_is_ready() {
+        start_startup_spinner();
+        assert!(startup_spinner_slot().lock().unwrap().is_some());
+        finish_startup_spinner();
+        assert!(startup_spinner_slot().lock().unwrap().is_none());
     }
 
     #[tokio::test]
@@ -1783,8 +1639,7 @@ mod tests {
             warm_processes: 2,
             project_root: project.path().to_path_buf(),
             python_package_root: package_root,
-            frontend_root: view_root.clone(),
-            view_root,
+            frontend_root: view_root,
         };
 
         assert_eq!(
@@ -1794,17 +1649,10 @@ mod tests {
     }
 
     #[test]
-    fn production_payload_connects_matching_frontend_artifacts() {
+    fn runtime_payload_only_contains_process_bootstrap() {
         let project = tempfile::tempdir().unwrap();
         let package_root = project.path().join("example");
         let view_root = package_root.join("views");
-        let static_root = view_root.join("_static");
-        let ssr_root = view_root.join("_ssr");
-        fs::create_dir_all(&static_root).unwrap();
-        fs::create_dir_all(&ssr_root).unwrap();
-        fs::write(static_root.join("home_controller.js"), "client").unwrap();
-        fs::write(static_root.join("shared.js"), "shared").unwrap();
-        fs::write(ssr_root.join("home_controller.js"), "server").unwrap();
 
         let config = CoordinatorConfig {
             mode: RuntimeMode::Production,
@@ -1817,30 +1665,22 @@ mod tests {
             warm_processes: 2,
             project_root: project.path().to_path_buf(),
             python_package_root: package_root,
-            frontend_root: view_root.clone(),
-            view_root,
+            frontend_root: view_root,
         };
-        let payload = config
-            .payload(
-                7,
-                ServerConfig {
-                    host: "127.0.0.1".to_string(),
-                    port: 5006,
-                },
-                None,
-                false,
-            )
-            .unwrap();
+        let payload = config.payload(
+            7,
+            ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 5006,
+            },
+            None,
+            false,
+        );
 
         assert_eq!(payload.schema_version, 1);
         assert_eq!(payload.generation, 7);
-        assert_eq!(payload.frontend.controllers.len(), 1);
-        assert_eq!(payload.frontend.static_artifact_shas.len(), 2);
-        let client_hash = format!("{:x}", md5::compute("client"));
-        assert_eq!(
-            payload.frontend.controllers["home_controller"].client_scripts,
-            vec![format!("home_controller.js?v={client_hash}")]
-        );
+        assert_eq!(payload.webcontroller, "example.app:controller");
+        assert_eq!(payload.server.port, 5006);
         assert_eq!(
             serde_json::from_str::<RuntimePayload>(&serde_json::to_string(&payload).unwrap())
                 .unwrap(),
@@ -1913,8 +1753,7 @@ mod tests {
             warm_processes: 2,
             project_root: project.path().to_path_buf(),
             python_package_root: package_root,
-            frontend_root: view_root.clone(),
-            view_root,
+            frontend_root: view_root,
         };
 
         let safe = fork_safe_imports(

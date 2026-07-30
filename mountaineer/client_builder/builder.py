@@ -8,8 +8,8 @@ from mountaineer.client_builder.file_generators.globals import (
     GlobalLinkGenerator,
 )
 from mountaineer.client_builder.file_generators.locals import (
+    IndexGenerator,
     LocalActionGenerator,
-    LocalIndexGenerator,
     LocalLinkGenerator,
     LocalModelGenerator,
     LocalUseServerGenerator,
@@ -83,13 +83,11 @@ class APIBuilder:
             parsed_wrapper = parser.parse_controller(controller.__class__)
 
             # Get view path
-            view_path = self.view_root.get_controller_view_path(controller)
-
             # Create ParsedController instance
             parsed_controllers.append(
                 ParsedController(
                     wrapper=parsed_wrapper,
-                    view_path=view_path,
+                    view_path=controller_def.view_path,
                     url_prefix=controller_def.route.url_prefix,
                     is_layout=isinstance(controller, LayoutControllerBase),
                 )
@@ -102,14 +100,9 @@ class APIBuilder:
     ) -> list[ManagedViewPath]:
         view_roots = {self.view_root.copy()}
         for controller_definition in self.app.graph.controllers:
-            if (
-                build_enabled_only
-                and not controller_definition.controller._build_enabled
-            ):
+            if build_enabled_only and not controller_definition.build_enabled:
                 continue
-            view_path = controller_definition.controller.view_path
-            if isinstance(view_path, ManagedViewPath):
-                view_roots.add(view_path.get_root_link().copy())
+            view_roots.add(controller_definition.view_root.copy())
 
         for view_root in view_roots:
             view_root.package_root_link = self.view_root.package_root_link
@@ -133,9 +126,14 @@ class APIBuilder:
             parsed_controllers=parsed_controllers,
             managed_path=global_root / "links.ts",
         )
+        global_index_generator = IndexGenerator(
+            managed_path=global_root / "index.ts",
+            modules=("api", "controllers", "links"),
+        )
 
         global_controller_generator.build()
         global_link_generator.build()
+        global_index_generator.build()
 
     def _generate_local_files(self, parsed_controllers: list[ParsedController]):
         global_root = self.view_root.get_managed_code_dir()
@@ -163,10 +161,8 @@ class APIBuilder:
                 managed_path=managed_path / "useServer.ts",
                 global_root=global_root,
             )
-            local_index_generator = LocalIndexGenerator(
-                controller=parsed_controller.wrapper,
+            local_index_generator = IndexGenerator(
                 managed_path=managed_path / "index.ts",
-                global_root=global_root,
             )
 
             # Controller-only Files

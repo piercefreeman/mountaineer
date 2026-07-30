@@ -435,20 +435,19 @@ class LocalUseServerGenerator(LocalGeneratorBase):
         )
 
 
-class LocalIndexGenerator(LocalGeneratorBase):
+class IndexGenerator(FileGeneratorBase):
     def __init__(
         self,
-        controller: ControllerWrapper,
         *,
         managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
+        modules: tuple[str, ...] = ("actions", "links", "models", "useServer"),
     ):
-        super().__init__(managed_path=managed_path, global_root=global_root)
-        self.controller = controller
+        super().__init__(managed_path=managed_path)
+        self.modules = modules
 
     def script(self):
         exports = []
-        for module in ["actions", "links", "models", "useServer"]:
+        for module in self.modules:
             module_file = self.managed_path.parent / f"{module}.ts"
             if module_file.exists() and module_file.read_text().strip():
                 exports.append(f"export * from './{module}';")

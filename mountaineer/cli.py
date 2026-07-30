@@ -315,7 +315,7 @@ async def handle_build(
     build_controllers = [
         controller_definition
         for controller_definition in isolated_context.app_controller.graph.controllers
-        if controller_definition.controller._build_enabled
+        if controller_definition.build_enabled
     ]
 
     # Get view paths for all controllers

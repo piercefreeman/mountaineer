@@ -28,20 +28,13 @@
 
 use crate::errors::AppError;
 use crate::logging::StdoutWrapper;
+use crate::terminal;
 use crate::timeout;
 use log::debug;
 use std::collections::HashMap;
-use std::env;
-use std::io::{self, IsTerminal, Write};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-
-const RESET: &str = "\x1b[0m";
-const SSR_COLOR: &str = "\x1b[1;38;2;68;163;248m";
-const LOG_COLOR: &str = "\x1b[38;2;176;175;167m";
-const WARNING_COLOR: &str = "\x1b[1;38;2;234;153;40m";
-const ERROR_COLOR: &str = "\x1b[1;38;2;231;90;39m";
-const PAYLOAD_COLOR: &str = "\x1b[38;2;190;190;184m";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ssr<'a> {
@@ -248,7 +241,7 @@ impl<'a> Ssr<'a> {
                         Self::render_console_line(
                             &logger_data.console_type,
                             &values,
-                            Self::colors_enabled(),
+                            console::colors_enabled(),
                         )
                     )
                     .expect("Failed to write to stdout");
@@ -265,28 +258,27 @@ impl<'a> Ssr<'a> {
         }
     }
 
-    fn colors_enabled() -> bool {
-        io::stdout().is_terminal()
-            && env::var_os("NO_COLOR").is_none()
-            && env::var("TERM").as_deref() != Ok("dumb")
-    }
-
     fn render_console_line(console_type: &str, values: &[(String, bool)], color: bool) -> String {
-        let prefix = if color {
-            let level_color = match console_type {
-                "warn" => WARNING_COLOR,
-                "error" => ERROR_COLOR,
-                _ => LOG_COLOR,
-            };
-            format!("  {SSR_COLOR}[SSR]{RESET} {level_color}[{console_type}]{RESET}")
-        } else {
-            format!("  [SSR] [{console_type}]")
+        let level_style = match console_type {
+            "warn" => terminal::warning(),
+            "error" => terminal::error(),
+            _ => terminal::muted(),
         };
+        let prefix = format!(
+            "  {} {}",
+            terminal::info().force_styling(color).apply_to("[SSR]"),
+            level_style
+                .force_styling(color)
+                .apply_to(format!("[{console_type}]"))
+        );
         let message = values
             .iter()
             .map(|(value, structured)| {
                 if color && *structured {
-                    format!("{PAYLOAD_COLOR}{value}{RESET}")
+                    terminal::payload()
+                        .force_styling(true)
+                        .apply_to(value)
+                        .to_string()
                 } else {
                     value.clone()
                 }
@@ -525,9 +517,7 @@ mod tests {
                 ],
                 true,
             ),
-            format!(
-                "  {SSR_COLOR}[SSR]{RESET} {LOG_COLOR}[log]{RESET} test log {PAYLOAD_COLOR}{{\"answer\":42}}{RESET}"
-            )
+            "  \u{1b}[38;2;68;163;248m\u{1b}[1m[SSR]\u{1b}[0m \u{1b}[38;2;176;175;167m[log]\u{1b}[0m test log \u{1b}[38;2;190;190;184m{\"answer\":42}\u{1b}[0m"
         );
     }
 

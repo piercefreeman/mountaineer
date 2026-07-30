@@ -49,9 +49,7 @@ class ClientCompiler:
         if limit_paths is None:
             limit_paths = list(self._get_static_files())
             limit_paths += [
-                self.view_root.get_controller_view_path(
-                    controller_definition.controller
-                )
+                controller_definition.view_path
                 for controller_definition in self.app.graph.controllers
             ]
 
@@ -114,10 +112,8 @@ class ClientCompiler:
         for builder in self.app.builders:
             for controller_definition in self.app.graph.controllers:
                 builder.register_controller(
-                    controller_definition.controller,
-                    self.view_root.get_controller_view_path(
-                        controller_definition.controller
-                    ),
+                    controller_definition.view_path,
+                    controller_definition.build_enabled,
                 )
 
     def _get_static_files(self):
@@ -148,14 +144,9 @@ class ClientCompiler:
         # Find the view roots
         view_roots = {self.view_root.copy()}
         for controller_definition in self.app.graph.controllers:
-            if (
-                build_enabled_only
-                and not controller_definition.controller._build_enabled
-            ):
+            if build_enabled_only and not controller_definition.build_enabled:
                 continue
-            view_path = controller_definition.controller.view_path
-            if isinstance(view_path, ManagedViewPath):
-                view_roots.add(view_path.get_root_link().copy())
+            view_roots.add(controller_definition.view_root.copy())
 
         # All the view roots should have the same package root
         for view_root in view_roots:

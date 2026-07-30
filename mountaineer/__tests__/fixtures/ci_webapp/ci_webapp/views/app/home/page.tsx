@@ -1,5 +1,5 @@
 import React from "react";
-import { useServer, RequestValidationError } from "./_server";
+import { useServer, RequestValidationError } from "./.mountaineer";
 import { CustomComponent } from "./element";
 
 const Home = () => {

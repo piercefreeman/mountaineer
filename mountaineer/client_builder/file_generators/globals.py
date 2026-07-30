@@ -191,5 +191,5 @@ class GlobalLinkGenerator(FileGeneratorBase):
         link_generator = python_payload_to_typescript(link_setters)
 
         yield CodeBlock(*imports)
-        yield CodeBlock(f"const linkGenerator = {link_generator};")
+        yield CodeBlock(f"export const linkGenerator = {link_generator};")
         yield CodeBlock("export default linkGenerator;")

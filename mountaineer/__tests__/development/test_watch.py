@@ -73,10 +73,10 @@ def test_change_mapping():
 @pytest.mark.parametrize(
     "path",
     [
-        "myproject/_server/generated.ts",
-        "myproject/_static/app.css",
-        "myproject/_ssr/app.js",
-        "myproject/_metadata/metadata.json",
+        "myproject/.mountaineer/generated.ts",
+        "myproject/.mountaineer/static/app.css",
+        "myproject/.mountaineer/ssr/app.js",
+        "myproject/.mountaineer/metadata/metadata.json",
     ],
 )
 def test_default_ignore_path_uses_managed_artifact_dirs(path: str):

@@ -2,7 +2,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 
-from mountaineer.controller import ControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 
@@ -32,15 +31,13 @@ class APIBuilderBase(ABC):
         self.metadata: ClientBundleMetadata | None = None
 
         self.dirty_files: set[Path] = set()
-        self.controllers: list[tuple[ControllerBase, ManagedViewPath]] = []
+        self.controllers: list[tuple[ManagedViewPath, bool]] = []
 
     def set_metadata(self, metadata: ClientBundleMetadata):
         self.metadata = metadata
 
-    def register_controller(
-        self, controller: ControllerBase, view_path: ManagedViewPath
-    ):
-        self.controllers.append((controller, view_path))
+    def register_controller(self, view_path: ManagedViewPath, build_enabled: bool):
+        self.controllers.append((view_path, build_enabled))
 
     def mark_file_dirty(self, file_path: Path):
         self.dirty_files.add(file_path)
@@ -72,12 +69,10 @@ class APIBuilderBase(ABC):
         # Index all of the unique view roots to track the DAG hierarchies
         # Only include controllers that have build enabled (exclude plugins)
         build_enabled_controllers = [
-            (controller, view_path)
-            for controller, view_path in self.controllers
-            if controller._build_enabled
+            view_path for view_path, build_enabled in self.controllers if build_enabled
         ]
         unique_roots = {
-            view_path.get_root_link() for _, view_path in build_enabled_controllers
+            view_path.get_root_link() for view_path in build_enabled_controllers
         }
 
         # Convert all of the dirty files into managed paths

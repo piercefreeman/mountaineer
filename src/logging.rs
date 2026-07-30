@@ -1,3 +1,4 @@
+use crate::terminal;
 use env_logger::Builder;
 use log::LevelFilter;
 use std::env;
@@ -52,7 +53,11 @@ pub fn init_logger() {
                 "ERROR" => LevelFilter::Error,
                 _ => {
                     // Default to warn if the level is invalid
-                    eprintln!("  [Rust] [warning] Invalid log level {level:?}; using warning");
+                    eprintln!(
+                        "  {} {} Invalid log level {level:?}; using warning",
+                        terminal::info().for_stderr().apply_to("[Rust]"),
+                        terminal::warning().for_stderr().apply_to("[warning]")
+                    );
                     LevelFilter::Warn
                 }
             };
@@ -68,10 +73,18 @@ pub fn init_logger() {
     // Keep opt-in native diagnostics in the same envelope as SSR console output.
     builder.format(|buf, record| {
         use std::io::Write;
+        let level = match record.level() {
+            log::Level::Warn => terminal::warning(),
+            log::Level::Error => terminal::error(),
+            _ => terminal::muted(),
+        };
         writeln!(
             buf,
-            "  [Rust] [{}] {}",
-            record.level().to_string().to_lowercase(),
+            "  {} {} {}",
+            terminal::info().for_stderr().apply_to("[Rust]"),
+            level
+                .for_stderr()
+                .apply_to(format!("[{}]", record.level().to_string().to_lowercase())),
             record.args()
         )
     });

@@ -63,13 +63,13 @@ def test_is_path_file_heuristic(path: Path, expected_is_file: Path):
         ),
         (
             Path(
-                "/Users/root/projects/mountaineer/ci_webapp/ci_webapp/views/app/home/_server"
+                "/Users/root/projects/mountaineer/ci_webapp/ci_webapp/views/app/home/.mountaineer"
             ),
             Path(
-                "/Users/root/projects/mountaineer/ci_webapp/ci_webapp/views/_server/server.tsx"
+                "/Users/root/projects/mountaineer/ci_webapp/ci_webapp/views/.mountaineer/server.tsx"
             ),
             True,
-            "../../../_server/server",
+            "../../../.mountaineer/server",
         ),
         (
             Path("src/subdir/fileA.js"),
@@ -140,15 +140,15 @@ def test_managed_view_paths_code_directories(tmpdir):
 
     """
     root_path = ManagedViewPath.from_view_root(tmpdir)
-    assert root_path.get_managed_code_dir() == root_path / "_server"
-    assert root_path.get_managed_static_dir() == root_path / "_static"
-    assert root_path.get_managed_ssr_dir() == root_path / "_ssr"
+    assert root_path.get_managed_code_dir() == root_path / ".mountaineer"
+    assert root_path.get_managed_static_dir() == root_path / ".mountaineer/static"
+    assert root_path.get_managed_ssr_dir() == root_path / ".mountaineer/ssr"
 
     # Non-root paths should only yield the server directory
     non_root_path = root_path / "subdir"
     non_root_path.mkdir()
 
-    assert non_root_path.get_managed_code_dir() == root_path / "subdir" / "_server"
+    assert non_root_path.get_managed_code_dir() == root_path / "subdir" / ".mountaineer"
     with pytest.raises(ValueError):
         non_root_path.get_managed_static_dir()
     with pytest.raises(ValueError):
@@ -177,11 +177,9 @@ def test_clear_managed_artifact_dirs(tmpdir):
     root_path = ManagedViewPath.from_view_root(tmpdir)
 
     managed_dirs = [
+        root_path / ".mountaineer",
+        root_path / "app" / "home" / ".mountaineer",
         root_path / "_server",
-        root_path / "_static",
-        root_path / "_ssr",
-        root_path / "_metadata",
-        root_path / "app" / "home" / "_server",
     ]
     for managed_dir in managed_dirs:
         managed_dir.mkdir(parents=True, exist_ok=True)

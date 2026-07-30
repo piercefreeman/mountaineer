@@ -39,14 +39,14 @@ class PostCSSBundler(APIBuilderBase):
             # files for style declarations
 
             # However, we should only track files that belong to build-enabled controllers
-            # to avoid warnings about plugin files that have _build_enabled = False
+            # to avoid warnings about plugin files that are not part of the app build
             build_enabled_controllers = [
-                (controller, view_path)
-                for controller, view_path in self.controllers
-                if controller._build_enabled
+                view_path
+                for view_path, build_enabled in self.controllers
+                if build_enabled
             ]
             unique_roots = {
-                view_path.get_root_link() for _, view_path in build_enabled_controllers
+                view_path.get_root_link() for view_path in build_enabled_controllers
             }
 
             # Check if this file belongs to any build-enabled view root

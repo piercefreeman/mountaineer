@@ -171,7 +171,7 @@ class LinkAttribute(HashableAttribute, BaseModel):
     optional_attributes: dict[str, str] = {}
 
     # A sha will only be added automatically for link imports
-    # that reference files built into the _static directory at runtime. Other
+    # that reference files built into the managed static directory at runtime. Other
     # links will remain as-is without a resolved sha.
     add_static_sha: bool = True
 

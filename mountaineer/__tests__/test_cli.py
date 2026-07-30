@@ -78,7 +78,7 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
             event_loop.close()
         asyncio.set_event_loop(None)
 
-    static_dir = package_dir / "views" / "_static"
+    static_dir = package_dir / "views" / ".mountaineer" / "static"
 
     _assert_relative_js_imports_resolve(static_dir)
 

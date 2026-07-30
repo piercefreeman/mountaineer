@@ -11,9 +11,9 @@ from mountaineer.actions.sideeffect_dec import sideeffect
 from mountaineer.app import AppController
 from mountaineer.client_builder.file_generators.base import CodeBlock
 from mountaineer.client_builder.file_generators.locals import (
+    IndexGenerator,
     LocalActionGenerator,
     LocalGeneratorBase,
-    LocalIndexGenerator,
     LocalLinkGenerator,
     LocalModelGenerator,
     LocalUseServerGenerator,
@@ -288,22 +288,18 @@ class TestLocalUseServerGenerator:
         assert "return useMemo((): ServerState => ({" in content
 
 
-class TestLocalIndexGenerator:
+class TestIndexGenerator:
     @pytest.fixture
     def generator(
         self,
         managed_path: ManagedViewPath,
-        global_root: ManagedViewPath,
-        controller_wrapper: ControllerWrapper,
     ) -> Any:
-        return LocalIndexGenerator(
-            controller=controller_wrapper,
+        return IndexGenerator(
             managed_path=managed_path,
-            global_root=global_root,
         )
 
     def test_script_generation(
-        self, generator: LocalIndexGenerator, managed_path: ManagedViewPath
+        self, generator: IndexGenerator, managed_path: ManagedViewPath
     ) -> None:
         (managed_path.parent / "actions.ts").write_text(
             "export const action = () => {}"

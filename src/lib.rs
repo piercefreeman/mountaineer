@@ -14,6 +14,7 @@ mod lexers;
 mod logging;
 mod source_map;
 mod ssr;
+mod terminal;
 mod timeout;
 mod use_client;
 
