@@ -97,32 +97,62 @@ def controller_wrappers(controller_parser: ControllerParser) -> list[ControllerW
     ]
 
 
+@pytest.fixture
+def controller_generator(
+    managed_path: ManagedViewPath,
+    controller_wrappers: List[ControllerWrapper],
+) -> GlobalControllerGenerator:
+    return GlobalControllerGenerator(
+        managed_path=managed_path, controller_wrappers=controller_wrappers
+    )
+
+
+@pytest.fixture
+def parsed_controllers(
+    controller_parser: ControllerParser, managed_path: ManagedViewPath
+) -> List[ParsedController]:
+    (managed_path / "child").mkdir()
+    (managed_path / "layout").mkdir()
+
+    return [
+        ParsedController(
+            wrapper=controller_parser.parse_controller(ChildController),
+            view_path=ManagedViewPath(managed_path / "child"),
+            is_layout=False,
+        ),
+        ParsedController(
+            wrapper=controller_parser.parse_controller(LayoutController),
+            view_path=ManagedViewPath(managed_path / "layout"),
+            is_layout=True,
+        ),
+    ]
+
+
+@pytest.fixture
+def link_generator(
+    managed_path: ManagedViewPath, parsed_controllers: List[ParsedController]
+) -> GlobalLinkGenerator:
+    return GlobalLinkGenerator(
+        managed_path=managed_path, parsed_controllers=parsed_controllers
+    )
+
+
 # Tests
 class TestGlobalControllerGenerator:
-    @pytest.fixture
-    def generator(
-        self,
-        managed_path: ManagedViewPath,
-        controller_wrappers: List[ControllerWrapper],
-    ) -> GlobalControllerGenerator:
-        return GlobalControllerGenerator(
-            managed_path=managed_path, controller_wrappers=controller_wrappers
-        )
-
     def test_model_enum_graph_resolution(
-        self, generator: GlobalControllerGenerator
+        self, controller_generator: GlobalControllerGenerator
     ) -> None:
         """Test that models and enums are sorted correctly"""
         # Get embedded types
         controllers = ControllerWrapper.get_all_embedded_controllers(
-            generator.controller_wrappers
+            controller_generator.controller_wrappers
         )
         embedded = ControllerWrapper.get_all_embedded_types(
             controllers, include_superclasses=True
         )
 
         # Sort them
-        sorted_items = generator._build_model_enum_graph(
+        sorted_items = controller_generator._build_model_enum_graph(
             embedded.models, embedded.enums
         )
 
@@ -143,13 +173,13 @@ class TestGlobalControllerGenerator:
         assert main_model_idx < dependent_model_idx
 
     def test_controller_graph_resolution(
-        self, generator: GlobalControllerGenerator
+        self, controller_generator: GlobalControllerGenerator
     ) -> None:
         """Test that controllers are sorted correctly"""
         controllers = ControllerWrapper.get_all_embedded_controllers(
-            generator.controller_wrappers
+            controller_generator.controller_wrappers
         )
-        sorted_controllers = generator._build_controller_graph(controllers)
+        sorted_controllers = controller_generator._build_controller_graph(controllers)
 
         base_idx = self.get_item_order(sorted_controllers, "BaseController")
         child_idx = self.get_item_order(sorted_controllers, "ChildController")
@@ -157,9 +187,11 @@ class TestGlobalControllerGenerator:
         # Base should come before Child
         assert base_idx < child_idx
 
-    def test_script_generation(self, generator: GlobalControllerGenerator) -> None:
+    def test_script_generation(
+        self, controller_generator: GlobalControllerGenerator
+    ) -> None:
         """Test the complete script generation"""
-        blocks = generator.script()
+        blocks = controller_generator.script()
         content = "\n".join(block.content for block in blocks)
 
         # Verify models are generated
@@ -189,37 +221,9 @@ class TestGlobalControllerGenerator:
 
 
 class TestGlobalLinkGenerator:
-    @pytest.fixture
-    def parsed_controllers(
-        self, controller_parser: ControllerParser, managed_path: ManagedViewPath
-    ) -> List[ParsedController]:
-        (managed_path / "child").mkdir()
-        (managed_path / "layout").mkdir()
-
-        return [
-            ParsedController(
-                wrapper=controller_parser.parse_controller(ChildController),
-                view_path=ManagedViewPath(managed_path / "child"),
-                is_layout=False,
-            ),
-            ParsedController(
-                wrapper=controller_parser.parse_controller(LayoutController),
-                view_path=ManagedViewPath(managed_path / "layout"),
-                is_layout=True,
-            ),
-        ]
-
-    @pytest.fixture
-    def generator(
-        self, managed_path: ManagedViewPath, parsed_controllers: List[ParsedController]
-    ) -> GlobalLinkGenerator:
-        return GlobalLinkGenerator(
-            managed_path=managed_path, parsed_controllers=parsed_controllers
-        )
-
-    def test_script_generation(self, generator: GlobalLinkGenerator) -> None:
+    def test_script_generation(self, link_generator: GlobalLinkGenerator) -> None:
         """Test link aggregator generation"""
-        blocks = generator.script()
+        blocks = link_generator.script()
         content = "\n".join(block.content for block in blocks)
 
         # Verify imports

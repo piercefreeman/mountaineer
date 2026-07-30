@@ -14,43 +14,6 @@ from mountaineer.__tests__.fixtures import get_fixture_path
 AppPackageType = tuple[str, Path, Path]
 
 
-def create_package_json(views_path: Path) -> None:
-    """
-    Create a package.json file with necessary React dependencies.
-
-    """
-    package_json = {
-        "name": "test-package",
-        "version": "1.0.0",
-        "description": "Test package for mountaineer",
-        "main": "index.js",
-        "scripts": {"test": 'echo "Error: no test specified" && exit 1'},
-        "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0"},
-        "devDependencies": {
-            "@types/react": "^18.2.0",
-            "@types/react-dom": "^18.2.0",
-            "typescript": "^5.0.0",
-        },
-    }
-
-    with open(views_path / "package.json", "w") as f:
-        json_dump(package_json, f, indent=2)
-
-
-def setup_npm_environment(package_path: Path) -> None:
-    """
-    Install npm dependencies in the package directory.
-
-    """
-    subprocess.run(
-        ["npm", "install"],
-        cwd=package_path,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
 @pytest.fixture(scope="module")
 def simple_package_dependencies():
     """
@@ -141,3 +104,40 @@ def app_package(isolated_package_dir: tuple[Path, str]) -> AppPackageType:
     (views_dir / "test_controller" / "page.tsx").write_text("")
 
     return package_name, package_path, controller_file
+
+
+def create_package_json(views_path: Path) -> None:
+    """
+    Create a package.json file with necessary React dependencies.
+
+    """
+    package_json = {
+        "name": "test-package",
+        "version": "1.0.0",
+        "description": "Test package for mountaineer",
+        "main": "index.js",
+        "scripts": {"test": 'echo "Error: no test specified" && exit 1'},
+        "dependencies": {"react": "^18.2.0", "react-dom": "^18.2.0"},
+        "devDependencies": {
+            "@types/react": "^18.2.0",
+            "@types/react-dom": "^18.2.0",
+            "typescript": "^5.0.0",
+        },
+    }
+
+    with open(views_path / "package.json", "w") as f:
+        json_dump(package_json, f, indent=2)
+
+
+def setup_npm_environment(package_path: Path) -> None:
+    """
+    Install npm dependencies in the package directory.
+
+    """
+    subprocess.run(
+        ["npm", "install"],
+        cwd=package_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )

@@ -38,6 +38,24 @@ T = TypeVar("T")
 S = TypeVar("S")
 
 
+@pytest.fixture
+def parser():
+    parser = ControllerParser()
+    app_controller = AppController(view_root=Path())
+    app_controller.register(ExampleController())
+    return parser
+
+
+@pytest.fixture
+def base_model_wrapper(parser: ControllerParser):
+    return parser._parse_model(ExampleModelBase)
+
+
+@pytest.fixture
+def test_controller_wrapper(parser: ControllerParser):
+    return parser.parse_controller(ExampleController)
+
+
 # Core test enum
 class ExampleEnum(Enum):
     A = "a"
@@ -161,21 +179,6 @@ class SpecialTypesController(ControllerBase):
 
 # Tests
 class TestControllerParser:
-    @pytest.fixture
-    def parser(self):
-        parser = ControllerParser()
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ExampleController())
-        return parser
-
-    @pytest.fixture
-    def base_model_wrapper(self, parser: ControllerParser):
-        return parser._parse_model(ExampleModelBase)
-
-    @pytest.fixture
-    def test_controller_wrapper(self, parser: ControllerParser):
-        return parser.parse_controller(ExampleController)
-
     def test_parse_enum(self, parser: ControllerParser):
         wrapper = parser._parse_enum(ExampleEnum)
         assert isinstance(wrapper, EnumWrapper)
@@ -327,10 +330,6 @@ class TestControllerParser:
 
 
 class TestInheritanceHandling:
-    @pytest.fixture
-    def parser(self):
-        return ControllerParser()
-
     def test_basic_inheritance(self, parser: ControllerParser):
         wrapper = parser._parse_model(BaseInheritanceModel)
         assert len(wrapper.superclasses) == 1
@@ -345,10 +344,6 @@ class TestInheritanceHandling:
 
 
 class TestGenericHandling:
-    @pytest.fixture
-    def parser(self):
-        return ControllerParser()
-
     def test_basic_generic(self, parser: ControllerParser):
         wrapper = parser._parse_model(GenericTestModel[str])
         assert len(wrapper.value_models) == 2
@@ -371,13 +366,6 @@ class TestGenericHandling:
 
 
 class TestControllerWrapperFeatures:
-    @pytest.fixture
-    def parser(self):
-        parser = ControllerParser()
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ExampleController())
-        return parser
-
     def test_all_actions_collection(self, parser: ControllerParser):
         wrapper = parser.parse_controller(ExampleController)
         action_names = {action.name for action in wrapper.all_actions}
@@ -421,10 +409,6 @@ class TestControllerWrapperFeatures:
 
 
 class TestIsolatedModelCreation:
-    @pytest.fixture
-    def parser(self):
-        return ControllerParser()
-
     def test_standard_model_isolation(self, parser: ControllerParser):
         class ParentModel(BaseModel):
             parent_field: str
@@ -527,13 +511,6 @@ class TestIsolatedModelCreation:
 
 
 class TestActionWrapper:
-    @pytest.fixture
-    def parser(self):
-        parser = ControllerParser()
-        app_controller = AppController(view_root=Path())
-        app_controller.register(ExampleController())
-        return parser
-
     @pytest.mark.parametrize(
         "params, headers, request_body, expected_has_required",
         [

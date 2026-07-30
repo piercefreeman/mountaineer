@@ -1,0 +1,90 @@
+import ast
+
+from determystic.external import DeterministicTraverser
+
+
+class PytestFixturePlacementTraverser(DeterministicTraverser):
+    """Require pytest fixtures to live in the initial top-of-file block."""
+
+    FIXTURE_MODULES = {"pytest", "pytest_asyncio"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._allowed_fixture_nodes: set[int] = set()
+        self._reported_fixture_nodes: set[int] = set()
+
+    def visit_Module(self, node: ast.Module) -> None:
+        self._allowed_fixture_nodes = self._find_top_fixture_nodes(node.body)
+        self.generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._check_fixture_placement(node)
+        self.generic_visit(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._check_fixture_placement(node)
+        self.generic_visit(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._check_fixture_placement(node)
+        self.generic_visit(node)
+
+    def _find_top_fixture_nodes(self, body: list[ast.stmt]) -> set[int]:
+        allowed: set[int] = set()
+        seen_normal_code = False
+
+        for index, stmt in enumerate(body):
+            if not seen_normal_code and self._is_allowed_preamble(stmt, index):
+                continue
+
+            if self._fixture_decorator(stmt):
+                if not seen_normal_code:
+                    allowed.add(id(stmt))
+                continue
+
+            seen_normal_code = True
+
+        return allowed
+
+    def _check_fixture_placement(
+        self, node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
+    ) -> None:
+        decorator = self._fixture_decorator(node)
+        if not decorator:
+            return
+        if id(node) in self._allowed_fixture_nodes:
+            return
+        if id(node) in self._reported_fixture_nodes:
+            return
+
+        self._reported_fixture_nodes.add(id(node))
+        self.add_error(
+            decorator,
+            "Move pytest fixtures to the top of the file before test/helper code.",
+        )
+
+    def _fixture_decorator(self, node: ast.AST) -> ast.AST | None:
+        decorators = getattr(node, "decorator_list", [])
+        for decorator in decorators:
+            expr = decorator.func if isinstance(decorator, ast.Call) else decorator
+            if (
+                isinstance(expr, ast.Attribute)
+                and expr.attr == "fixture"
+                and isinstance(expr.value, ast.Name)
+                and expr.value.id in self.FIXTURE_MODULES
+            ):
+                return decorator
+        return None
+
+    def _is_allowed_preamble(self, stmt: ast.stmt, index: int) -> bool:
+        if index == 0 and isinstance(stmt, ast.Expr) and isinstance(
+            stmt.value, ast.Constant
+        ) and isinstance(stmt.value.value, str):
+            return True
+        if isinstance(stmt, ast.ClassDef) and self._fixture_decorator(stmt) is None:
+            return True
+        preamble_types = (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign)
+        type_alias = getattr(ast, "TypeAlias", None)
+        if type_alias is not None:
+            preamble_types = (*preamble_types, type_alias)
+        return isinstance(stmt, preamble_types)
