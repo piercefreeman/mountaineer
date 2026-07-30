@@ -3,6 +3,7 @@
 import importlib
 import json
 import os
+import select
 import signal
 import sys
 import traceback
@@ -28,30 +29,46 @@ def stop(generation: int) -> None:
         pass
 
 
-for line in sys.stdin:
-    command = json.loads(line)
-    if command["command"] == "start":
-        generation = command["generation"]
-        pid = os.fork()
-        if pid == 0:
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            try:
-                from mountaineer.runtime import RuntimePayload, serve_runtime
-
-                payload = RuntimePayload.model_validate_json(
-                    open(command["payload_path"]).read()
+try:
+    while True:
+        for generation, pid in list(children.items()):
+            exited_pid, status = os.waitpid(pid, os.WNOHANG)
+            if exited_pid:
+                children.pop(generation)
+                raise RuntimeError(
+                    f"backend generation {generation} exited unexpectedly "
+                    f"with status {status}"
                 )
-                serve_runtime(payload)
-            except BaseException:
-                traceback.print_exc()
-            finally:
-                os._exit(1)
-        children[generation] = pid
-    elif command["command"] == "stop":
-        stop(command["generation"])
-    elif command["command"] == "exit":
-        break
 
-for generation in list(children):
-    stop(generation)
+        readable, _, _ = select.select([sys.stdin], [], [], 0.1)
+        if not readable:
+            continue
+        line = sys.stdin.readline()
+        if not line:
+            break
+        command = json.loads(line)
+        if command["command"] == "start":
+            generation = command["generation"]
+            pid = os.fork()
+            if pid == 0:
+                signal.signal(signal.SIGTERM, signal.SIG_DFL)
+                signal.signal(signal.SIGINT, signal.SIG_DFL)
+                try:
+                    from mountaineer.runtime import RuntimePayload, serve_runtime
+
+                    payload = RuntimePayload.model_validate_json(
+                        open(command["payload_path"]).read()
+                    )
+                    serve_runtime(payload)
+                except BaseException:
+                    traceback.print_exc()
+                finally:
+                    os._exit(1)
+            children[generation] = pid
+        elif command["command"] == "stop":
+            stop(command["generation"])
+        elif command["command"] == "exit":
+            break
+finally:
+    for generation in list(children):
+        stop(generation)

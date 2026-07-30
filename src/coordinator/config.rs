@@ -20,20 +20,20 @@ pub enum RuntimeMode {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
+pub(super) struct ServerConfig {
+    pub(super) host: String,
+    pub(super) port: u16,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RuntimePayload {
-    pub schema_version: u16,
-    pub mode: RuntimeMode,
-    pub generation: u64,
-    pub rebuild_generated: bool,
-    pub webcontroller: String,
-    pub server: ServerConfig,
-    pub dev_server_origin: Option<String>,
+pub(super) struct RuntimePayload {
+    schema_version: u16,
+    mode: RuntimeMode,
+    generation: u64,
+    rebuild_generated: bool,
+    webcontroller: String,
+    server: ServerConfig,
+    dev_server_origin: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -44,6 +44,59 @@ struct PyProject {
 #[derive(Deserialize)]
 struct PyProjectMetadata {
     name: String,
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+enum OptionName {
+    Host,
+    Port,
+    ProjectRoot,
+    Package,
+    PackageRoot,
+    WebController,
+    ViewRoot,
+    FrontendRoot,
+    Python,
+    DebounceMs,
+    WarmProcesses,
+}
+
+impl OptionName {
+    fn parse(value: &str, mode: RuntimeMode) -> Result<Self> {
+        if !value.starts_with("--") {
+            return Err(invalid(format!("unexpected argument {value:?}")));
+        }
+        match value {
+            "--host" => Ok(Self::Host),
+            "--port" => Ok(Self::Port),
+            "--project-root" => Ok(Self::ProjectRoot),
+            "--package" => Ok(Self::Package),
+            "--package-root" => Ok(Self::PackageRoot),
+            "--webcontroller" => Ok(Self::WebController),
+            "--view-root" => Ok(Self::ViewRoot),
+            "--frontend-root" => Ok(Self::FrontendRoot),
+            "--python" => Ok(Self::Python),
+            "--debounce-ms" if mode == RuntimeMode::Development => Ok(Self::DebounceMs),
+            "--warm-processes" if mode == RuntimeMode::Development => Ok(Self::WarmProcesses),
+            _ => Err(invalid(format!("unknown option {value:?}"))),
+        }
+    }
+
+    fn flag(self) -> &'static str {
+        match self {
+            Self::Host => "--host",
+            Self::Port => "--port",
+            Self::ProjectRoot => "--project-root",
+            Self::Package => "--package",
+            Self::PackageRoot => "--package-root",
+            Self::WebController => "--webcontroller",
+            Self::ViewRoot => "--view-root",
+            Self::FrontendRoot => "--frontend-root",
+            Self::Python => "--python",
+            Self::DebounceMs => "--debounce-ms",
+            Self::WarmProcesses => "--warm-processes",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -78,27 +131,29 @@ impl CoordinatorConfig {
         let mut options = HashMap::new();
         let mut index = 0;
         while index < args.len() {
-            let key = args[index].as_str();
-            if !key.starts_with("--") {
-                return Err(invalid(format!("unexpected argument {key:?}")));
-            }
+            let raw_key = args[index].as_str();
+            let key = OptionName::parse(raw_key, mode)?;
             let value = args
                 .get(index + 1)
-                .ok_or_else(|| invalid(format!("missing value for {key}")))?;
-            options.insert(key.to_string(), value.clone());
+                .ok_or_else(|| invalid(format!("missing value for {raw_key}")))?;
+            if options.insert(key, value.clone()).is_some() {
+                return Err(invalid(format!(
+                    "option {raw_key:?} specified more than once"
+                )));
+            }
             index += 2;
         }
 
-        let project_root = match options.get("--project-root") {
+        let project_root = match options.get(&OptionName::ProjectRoot) {
             Some(path) => canonical_dir(resolve_path(current_dir, path), "project root")?,
             None => find_project_root(current_dir)?,
         };
         let project_name = read_project_name(&project_root)?;
         let requested_package = options
-            .get("--package")
+            .get(&OptionName::Package)
             .cloned()
             .unwrap_or_else(|| normalize_package_name(&project_name));
-        let (package, python_package_root) = match options.get("--package-root") {
+        let (package, python_package_root) = match options.get(&OptionName::PackageRoot) {
             Some(path) => (
                 requested_package,
                 canonical_dir(resolve_path(&project_root, path), "Python package root")?,
@@ -106,11 +161,11 @@ impl CoordinatorConfig {
             None => discover_package_root(
                 &project_root,
                 &requested_package,
-                !options.contains_key("--package"),
+                !options.contains_key(&OptionName::Package),
             )?,
         };
         let webcontroller = options
-            .get("--webcontroller")
+            .get(&OptionName::WebController)
             .cloned()
             .unwrap_or_else(|| format!("{package}.app:controller"));
         if !webcontroller.contains(':') {
@@ -120,20 +175,20 @@ impl CoordinatorConfig {
         }
         let view_root = canonical_dir(
             options
-                .get("--view-root")
+                .get(&OptionName::ViewRoot)
                 .map(|path| resolve_path(&project_root, path))
                 .unwrap_or_else(|| python_package_root.join("views")),
             "view root",
         )?;
         let frontend_root = canonical_dir(
             options
-                .get("--frontend-root")
+                .get(&OptionName::FrontendRoot)
                 .map(|path| resolve_path(&project_root, path))
                 .unwrap_or_else(|| view_root.clone()),
             "frontend root",
         )?;
         let python = options
-            .get("--python")
+            .get(&OptionName::Python)
             .cloned()
             .or_else(virtualenv_python)
             .or_else(|| current_exe.and_then(adjacent_python))
@@ -145,13 +200,13 @@ impl CoordinatorConfig {
             package,
             webcontroller,
             host: options
-                .get("--host")
+                .get(&OptionName::Host)
                 .cloned()
                 .unwrap_or_else(|| "127.0.0.1".to_string()),
-            port: parse_number(&options, "--port", 5006)?,
+            port: parse_number(&options, OptionName::Port, 5006)?,
             python,
-            debounce_ms: parse_number(&options, "--debounce-ms", 100)?,
-            warm_processes: parse_number(&options, "--warm-processes", 2)?,
+            debounce_ms: parse_number(&options, OptionName::DebounceMs, 100)?,
+            warm_processes: parse_number(&options, OptionName::WarmProcesses, 2)?,
             project_root,
             python_package_root,
             frontend_root,
@@ -337,14 +392,18 @@ fn virtualenv_python() -> Option<String> {
         .then(|| candidate.to_string_lossy().into_owned())
 }
 
-fn parse_number<T>(options: &HashMap<String, String>, name: &str, default: T) -> Result<T>
+fn parse_number<T>(options: &HashMap<OptionName, String>, name: OptionName, default: T) -> Result<T>
 where
     T: std::str::FromStr,
     T::Err: Error + Send + Sync + 'static,
 {
     options
-        .get(name)
-        .map(|value| value.parse().map_err(Into::into))
+        .get(&name)
+        .map(|value| {
+            value
+                .parse()
+                .map_err(|error| invalid(format!("invalid value for {}: {error}", name.flag())))
+        })
         .transpose()
         .map(|value| value.unwrap_or(default))
 }
@@ -451,5 +510,52 @@ mod tests {
                 .unwrap(),
             payload
         );
+    }
+
+    #[test]
+    fn config_rejects_unknown_and_duplicate_options() {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(
+            project.path().join("pyproject.toml"),
+            "[project]\nname = \"example\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(project.path().join("example/views")).unwrap();
+
+        for (arguments, expected) in [
+            (vec!["--porrt", "5006"], "unknown option \"--porrt\""),
+            (
+                vec!["--port", "5006", "--port", "5007"],
+                "option \"--port\" specified more than once",
+            ),
+        ] {
+            let arguments = arguments
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            let error = CoordinatorConfig::parse_from(
+                RuntimeMode::Development,
+                &arguments,
+                project.path(),
+                None,
+            )
+            .unwrap_err();
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[test]
+    fn production_config_rejects_development_only_options() {
+        let project = tempfile::tempdir().unwrap();
+        let arguments = ["--debounce-ms", "10"].map(str::to_string);
+        let error = CoordinatorConfig::parse_from(
+            RuntimeMode::Production,
+            &arguments,
+            project.path(),
+            None,
+        )
+        .unwrap_err();
+
+        assert_eq!(error.to_string(), "unknown option \"--debounce-ms\"");
     }
 }

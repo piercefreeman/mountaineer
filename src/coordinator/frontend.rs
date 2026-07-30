@@ -11,7 +11,7 @@ use std::{
     env, fs,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Component, Path, PathBuf},
-    process::Stdio,
+    process::{ExitStatus, Stdio},
     time::Duration,
 };
 use tempfile::TempDir;
@@ -282,13 +282,20 @@ impl ViteDevServer {
             .stderr(Stdio::inherit())
             .kill_on_drop(true)
             .spawn()?;
-        if let Err(error) = wait_until_ready(
-            SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
-            Duration::from_secs(15),
-        )
-        .await
-        {
-            child.start_kill()?;
+        let ready = tokio::select! {
+            result = wait_until_ready(
+                SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port),
+                Duration::from_secs(15),
+            ) => result,
+            status = child.wait() => {
+                let status = status?;
+                Err(invalid(format!("Vite development server exited with {status}")))
+            }
+        };
+        if let Err(error) = ready {
+            if child.try_wait()?.is_none() {
+                child.start_kill()?;
+            }
             child.wait().await?;
             return Err(error);
         }
@@ -304,14 +311,20 @@ impl ViteDevServer {
         Ok(())
     }
 
+    pub(super) async fn wait(&mut self) -> Result<ExitStatus> {
+        Ok(self.child.wait().await?)
+    }
+
     pub(super) async fn shutdown(&mut self) -> Result<()> {
-        self.child.start_kill()?;
+        if self.child.try_wait()?.is_none() {
+            self.child.start_kill()?;
+        }
         self.child.wait().await?;
         Ok(())
     }
 }
 
-pub(crate) async fn build_frontend_styles(
+pub async fn build_frontend_styles(
     frontend_root: PathBuf,
     output_dir: PathBuf,
     styles: Vec<PathBuf>,

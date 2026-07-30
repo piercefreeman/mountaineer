@@ -5,7 +5,11 @@ use super::{
     Result,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeSet, path::PathBuf, process::Stdio};
+use std::{
+    collections::BTreeSet,
+    path::PathBuf,
+    process::{ExitStatus, Stdio},
+};
 #[cfg(unix)]
 use tokio::time::{timeout, Duration};
 use tokio::{
@@ -126,7 +130,9 @@ impl PythonHotReload {
         #[cfg(windows)]
         {
             let mut worker = worker;
-            worker.child.start_kill()?;
+            if worker.child.try_wait()?.is_none() {
+                worker.child.start_kill()?;
+            }
             worker.child.wait().await?;
         }
         Ok(())
@@ -134,6 +140,22 @@ impl PythonHotReload {
 
     pub(super) async fn shutdown(&mut self) -> Result<()> {
         self.strategy.shutdown().await
+    }
+
+    pub(super) async fn wait(&mut self) -> Result<ExitStatus> {
+        #[cfg(unix)]
+        return self.strategy.wait().await;
+        #[cfg(windows)]
+        std::future::pending().await
+    }
+}
+
+impl ActiveWorker {
+    pub(super) async fn wait(&mut self) -> Result<ExitStatus> {
+        #[cfg(unix)]
+        return std::future::pending().await;
+        #[cfg(windows)]
+        Ok(self.child.wait().await?)
     }
 }
 
@@ -166,14 +188,22 @@ impl ForkStrategy {
         send_json_line(&mut self.stdin, command).await
     }
 
+    async fn wait(&mut self) -> Result<ExitStatus> {
+        Ok(self.child.wait().await?)
+    }
+
     async fn shutdown(&mut self) -> Result<()> {
         let _ = self.send(&LayerCommand::Exit).await;
-        if timeout(Duration::from_secs(5), self.child.wait())
-            .await
-            .is_err()
-        {
-            self.child.start_kill()?;
-            self.child.wait().await?;
+        if self.child.try_wait()?.is_none() {
+            match timeout(Duration::from_secs(5), self.child.wait()).await {
+                Ok(status) => {
+                    status?;
+                }
+                Err(_) => {
+                    self.child.start_kill()?;
+                    self.child.wait().await?;
+                }
+            }
         }
         Ok(())
     }
@@ -418,5 +448,38 @@ mod tests {
         .unwrap();
 
         assert_eq!(safe, BTreeSet::from(["safe_import".to_string()]));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn fork_parent_exits_when_an_active_backend_dies() {
+        let project = tempfile::tempdir().unwrap();
+        let mut child = Command::new("python")
+            .args(["-c", FORK_PARENT])
+            .arg("[]")
+            .current_dir(project.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut stdin = child.stdin.take().unwrap();
+        send_json_line(
+            &mut stdin,
+            &LayerCommand::Start {
+                generation: 1,
+                payload_path: project.path().join("missing.json"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let status = timeout(Duration::from_secs(3), child.wait())
+            .await
+            .expect("fork parent did not notice its failed backend")
+            .unwrap();
+
+        assert!(!status.success());
     }
 }
