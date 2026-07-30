@@ -32,6 +32,11 @@ class BuildMetadata(BaseModel):
 
 
 def write_build_metadata(view_root: ManagedViewPath) -> None:
+    """
+    Persist content hashes for the compiled static assets.
+
+    :param view_root: The managed frontend directory containing the static assets
+    """
     static_dir = view_root.get_managed_static_dir()
     metadata = BuildMetadata(
         static_artifact_shas={
@@ -52,6 +57,16 @@ def resolve_frontend(
     live_reload_port: int,
     build_metadata: BuildMetadata | None,
 ) -> FrontendEntry:
+    """
+    Resolve and cache the frontend assets for a controller.
+
+    :param definition: The controller and view paths to resolve
+    :param node_modules_path: The installed frontend dependencies used for development compilation
+    :param live_reload_port: The port injected into development bundles for live reload
+    :param build_metadata: Content hashes for production assets, when available
+    :return: The scripts and imports needed to render the controller
+    :raises ValueError: If a required production artifact is missing
+    """
     if definition.frontend is not None:
         return definition.frontend
 
@@ -156,6 +171,14 @@ def vite_client_url(
     view_paths: list[str],
     styles: list[Path],
 ) -> str:
+    """
+    Build the Vite URL that serves a controller's client entrypoint.
+
+    :param origin: The Vite development server origin
+    :param view_paths: The controller view hierarchy to bundle
+    :param styles: The stylesheets to include in the bundle
+    :return: The client entrypoint URL
+    """
     query = urlencode(
         [
             *(("view", Path(path).resolve().as_posix()) for path in view_paths),
@@ -166,6 +189,12 @@ def vite_client_url(
 
 
 def vite_stylesheets(frontend_root: Path) -> list[tuple[str, str]]:
+    """
+    Resolve development stylesheet URLs served by Vite.
+
+    :param frontend_root: The root directory containing frontend sources
+    :return: Pairs of Vite URLs and their source paths
+    """
     payload = get_runtime_payload()
     if payload is None or payload.dev_server_origin is None:
         return []
@@ -179,6 +208,12 @@ def vite_stylesheets(frontend_root: Path) -> list[tuple[str, str]]:
 
 
 def vite_style_paths(frontend_root: Path) -> list[Path]:
+    """
+    Find source stylesheets while excluding generated and dependency directories.
+
+    :param frontend_root: The root directory containing frontend sources
+    :return: Absolute paths to the source stylesheets
+    """
     ignored = {
         ".mountaineer",
         ".mountaineer-vite",

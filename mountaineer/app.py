@@ -7,7 +7,7 @@ from json import JSONDecodeError, dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from re import match as re_match
 from time import monotonic_ns
-from typing import Any, Callable, Type, overload
+from typing import Any, Callable, Type, cast
 
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.exceptions import RequestValidationError as RequestValidationErrorRaw
@@ -548,30 +548,6 @@ class AppController:
         )
         return html
 
-    @overload
-    def compile_html(
-        self,
-        server_script: str,
-        page_metadata: RenderBase,
-        all_render: dict[str, RenderBase],
-        *,
-        inline_client_script: str,
-        external_client_imports: None,
-        sourcemap: str | None,
-    ): ...
-
-    @overload
-    def compile_html(
-        self,
-        server_script: str,
-        page_metadata: RenderBase,
-        all_render: dict[str, RenderBase],
-        *,
-        inline_client_script: None,
-        external_client_imports: list[str],
-        sourcemap: str | None,
-    ): ...
-
     def compile_html(
         self,
         server_script: str,
@@ -581,7 +557,7 @@ class AppController:
         inline_client_script: str | None = None,
         external_client_imports: list[str] | None = None,
         sourcemap: str | None = None,
-    ):
+    ) -> HTMLResponse:
         """
         Compiles the HTML for a given page, with all the controller-returned
         values hydrated into the page.
@@ -763,7 +739,7 @@ class AppController:
         new_definition = self.graph.register(
             new_layout(),
             route=None,
-            view_path=layout_path,
+            view_path=cast(ManagedViewPath, layout_path),
             view_root=self._view_root,
             static_url=DEFAULT_STATIC_DIR,
             build_enabled=True,

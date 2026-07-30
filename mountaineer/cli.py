@@ -1,5 +1,6 @@
 import traceback
 from contextlib import contextmanager
+from importlib import import_module
 from multiprocessing import get_start_method, set_start_method
 from os import getenv
 from sys import argv
@@ -15,7 +16,6 @@ from mountaineer.development.isolation import IsolatedAppContext
 from mountaineer.development.manager import (
     FileChangesState,
     IsolatedContext,
-    WebserverConfig,
     rebuild_frontend,
     restart_backend,
 )
@@ -35,7 +35,6 @@ from mountaineer.development.watch import (
     CallbackType,
     PackageWatchdog,
 )
-from mountaineer.development.watch_server import WatcherWebservice
 from mountaineer.frontend import vite_style_paths, write_build_metadata
 from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
@@ -154,8 +153,7 @@ async def handle_watch(
     CONSOLE.print("[green]Shutdown complete")
 
 
-@async_to_sync
-async def handle_runserver(
+def handle_runserver(
     *,
     package: str,
     webservice: str,
@@ -167,105 +165,32 @@ async def handle_runserver(
     subscribe_to_mountaineer: bool = False,
 ):
     """
-    Start a local development server. This will hot-reload your browser any time
-    your frontend or backend code changes.
+    Start the native development server with legacy project arguments.
 
-    :param package: Ex. "ci_webapp"
-    :param webservice: Ex. "ci_webapp.app:app"
-    :param webcontroller: Ex. "ci_webapp.app:controller"
+    :param package: The Python package containing the application
+    :param webservice: Retained for compatibility with existing project scripts
+    :param webcontroller: The app controller import path
+    :param host: The public host to bind
     :param port: Desired port for the webapp while running locally
-    :param subscribe_to_mountaineer: See `handle_watch` for more details.
-
+    :param hotreload_host: Retained for compatibility with existing project scripts
+    :param hotreload_port: Retained for compatibility with existing project scripts
+    :param subscribe_to_mountaineer: Retained for compatibility with existing project scripts
     """
-    update_multiprocessing_settings()
-    rich_traceback_install()
-
-    watcher_webservice = WatcherWebservice(
-        webservice_host=hotreload_host or host, webservice_port=hotreload_port
-    )
-    await watcher_webservice.start()
-
-    file_changes_state = FileChangesState()
-
-    # Nonlocal vars for shutdown context
-    watchdog: PackageWatchdog
-    first_run: bool = True
-
-    async with AsyncMessageBroker.start_server() as (broker, config):
-        isolated_context = IsolatedContext(
-            webcontroller=webcontroller,
-            webserver_config=WebserverConfig(
-                host=host,
-                port=port,
-                live_reload_port=watcher_webservice.port,
-            ),
-            message_config=config,
-        )
-
-        with get_mountaineer_isolated_env(package) as environment:
-            CONSOLE.print("[bold blue]Development manager started")
-
-            async def handle_file_changes(metadata: CallbackMetadata):
-                try:
-                    LOGGER.debug(f"Handling file changes: {metadata}")
-                    nonlocal first_run
-                    nonlocal file_changes_state
-
-                    # First collect all the files that need updating
-                    for event in metadata.events:
-                        if event.path.suffix in KNOWN_JS_EXTENSIONS:
-                            file_changes_state.pending_js.add(event.path)
-                        elif event.path.suffix == ".py":
-                            file_changes_state.pending_python.add(event.path)
-
-                    if not first_run and not (
-                        file_changes_state.pending_js
-                        or file_changes_state.pending_python
-                    ):
-                        return
-
-                    try:
-                        if file_changes_state.pending_python or first_run:
-                            await restart_backend(
-                                environment,
-                                broker,
-                                file_changes_state,
-                                isolated_context,
-                            )
-
-                        if file_changes_state.pending_js or first_run:
-                            await rebuild_frontend(
-                                broker,
-                                file_changes_state,
-                            )
-                    except BrokerExecutionError as e:
-                        CONSOLE.print(f"[red]Error: {e.error}\n\n{e.traceback}")
-                        return
-
-                    # If we've succeeded, we should clear out the pending
-                    # files so we don't rebuild them again
-                    file_changes_state.pending_js.clear()
-                    file_changes_state.pending_python.clear()
-
-                    # Ping the watcher webservice to let it know we've updated
-                    await watcher_webservice.broadcast_listeners()
-
-                    first_run = False
-
-                except Exception as e:
-                    # Otherwise silently caught by our watchfiles command
-                    CONSOLE.print(f"[red]Error: {e}")
-                    CONSOLE.print(traceback.format_exc())
-                    raise e
-
-            watchdog = build_common_watchdog(
+    try:
+        mountaineer_rs.run_dev(
+            [
+                "--package",
                 package,
-                handle_file_changes,
-                subscribe_to_mountaineer=subscribe_to_mountaineer,
-            )
-            await watchdog.start_watching()
-
-    CONSOLE.print("[green]Shutdown complete")
+                "--webcontroller",
+                webcontroller,
+                "--host",
+                host,
+                "--port",
+                str(port),
+            ]
+        )
+    except KeyboardInterrupt:
+        pass
 
 
 @async_to_sync
@@ -476,7 +401,7 @@ def get_mountaineer_isolated_env(package: str):
     )
 
     try:
-        from firehot import isolate_imports
+        isolate_imports = import_module("firehot").isolate_imports
     except ImportError as error:
         raise RuntimeError(
             "The legacy Python hot-reload path is not installed. "

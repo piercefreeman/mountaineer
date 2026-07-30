@@ -15,6 +15,7 @@ import toml
 
 from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.cli import find_packages_with_prefix, handle_build
+from mountaineer.io import get_free_port
 
 
 @pytest.fixture
@@ -35,13 +36,8 @@ def tmp_ci_webapp(tmp_path: Path):
     with open(pyproject_path, "r") as file:
         content = toml.load(file)
 
-    # Point to the absolute path of the local mountaineer core package, versus the
-    # symlinked version in the original package. We only have one dependency so we can
-    # just replace the entire bundle.
-    assert len(content["project"]["dependencies"]) == 1
-    content["project"]["dependencies"] = [
-        f"mountaineer @ file://{str(base_package_path)}"
-    ]
+    # Point uv to the absolute path of the local Mountaineer package.
+    content["tool"]["uv"]["sources"]["mountaineer"]["path"] = str(base_package_path)
 
     with open(pyproject_path, "w") as file:
         toml.dump(content, file)
@@ -101,16 +97,8 @@ async def check_server_bound(port: int, timeout=8):
 
 @pytest.mark.integration_tests
 @pytest.mark.asyncio
-async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
-    # Ensure that there is no existing webapp running
-    port = 5006
-    url = f"http://localhost:{port}"
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.get(url, timeout=1)
-            assert False, "The server is already running"
-        except httpx.RequestError:
-            pass
+async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
+    port = get_free_port()
 
     uv_env = {
         key: value
@@ -127,7 +115,7 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
     ).wait()
     assert return_code == 0
 
-    # Start the handle_runserver function in a process
+    # The project's runserver command delegates to the native development server.
     server_process = Popen(
         ["uv", "run", "runserver", "--port", str(port)],
         cwd=tmp_ci_webapp,
@@ -149,7 +137,7 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
             "Done with changes, checking that server will resolve if not immediately ready..."
         )
         is_bound, status_code = await check_server_bound(port)
-        assert is_bound, "Server is not bound to localhost:3000"
+        assert is_bound, f"Server is not bound to localhost:{port}"
         assert status_code == 200, "Server is not returning 200 status code"
         print("Server is bound to expected port")  # noqa: T201
     finally:

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 from unittest.mock import patch
 
 from mountaineer.app import AppController
@@ -22,7 +23,11 @@ class RuntimeController(ControllerBase):
         return None
 
 
-def runtime_payload(mode: str, *, dev_server_origin: str | None = None):
+def runtime_payload(
+    mode: Literal["development", "production"],
+    *,
+    dev_server_origin: str | None = None,
+) -> RuntimePayload:
     return RuntimePayload(
         schema_version=1,
         mode=mode,
@@ -115,7 +120,7 @@ def test_vite_client_is_generated_without_route_files(tmp_path: Path):
             styles.resolve().as_posix(),
         )
     ]
-    html = response.body.decode()
+    html = bytes(response.body).decode()
     assert html.index('rel="stylesheet"') < html.index("</head>") < html.index("<body>")
     assert f"@fs/{styles.resolve().as_posix()}?direct" in html
     assert not (view_root / ".mountaineer-vite").exists()

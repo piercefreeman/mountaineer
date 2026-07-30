@@ -217,7 +217,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
                 controller_path.package_root_link = self.package_root_link
             return controller_path
 
-        relative_path = Path(controller_path.lstrip("/"))
+        relative_path = Path(str(controller_path).lstrip("/"))
         return self / relative_path
 
     def copy(self) -> "ManagedViewPath":
