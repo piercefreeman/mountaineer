@@ -31,12 +31,12 @@ fn parse(args: &[String]) -> std::result::Result<WatchArgs, clap::Error> {
     WatchArgs::try_parse_from(args)
 }
 
-pub(super) async fn run(args: &[String]) -> Result<()> {
+pub(super) async fn run(args: &[String], python: String) -> Result<()> {
     let WatchArgs {
         common,
         debounce_ms,
     } = parse(args)?;
-    let config = LaunchConfig::resolve(common)?;
+    let config = LaunchConfig::resolve(common, python)?;
     let payload_dir = tempfile::tempdir()?;
     let mut generation = 1;
     let mut file_monitor = FileMonitor::start(FileMonitorConfig {

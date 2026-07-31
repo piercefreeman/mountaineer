@@ -13,7 +13,7 @@ from create_mountaineer_app.generation import ProjectMetadata
 
 def test_project_template_exposes_migrate_script():
     template_path = (
-        Path(__file__).parent / ".." / "templates" / "project" / "pyproject.toml"
+        Path(__file__).parent / ".." / "templates" / "project" / "pyproject.toml.jinja"
     ).resolve()
 
     template_contents = template_path.read_text()

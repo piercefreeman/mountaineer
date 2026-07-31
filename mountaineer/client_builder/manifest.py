@@ -159,7 +159,7 @@ def build_envelope(
     return MountaineerEnvelope(
         schema_version=1,
         mountaineer_version=version("mountaineer"),
-        global_root=str(global_root),
+        global_root=str(global_root.resolve()),
         components=tuple(
             _component(component)
             for component in (
@@ -343,7 +343,7 @@ def _view(view: ParsedView, parser: ControllerParser) -> ViewManifest:
         controller=wrapper.name.global_name,
         server_key=wrapper.controller.__name__,
         link_name=camelize(wrapper.controller.__name__, uppercase_first_letter=False),
-        managed_dir=str(view.view_path.get_managed_code_dir()),
+        managed_dir=str(view.view_path.get_managed_code_dir().resolve()),
         entrypoint_url=wrapper.entrypoint_url,
         is_layout=view.is_layout,
         render=wrapper.render.name.global_name if wrapper.render else None,

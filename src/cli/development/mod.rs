@@ -49,13 +49,13 @@ fn parse(args: &[String]) -> std::result::Result<DevArgs, clap::Error> {
     DevArgs::try_parse_from(args)
 }
 
-pub(super) async fn run(args: &[String]) -> Result<()> {
+pub(super) async fn run(args: &[String], python: String) -> Result<()> {
     let DevArgs {
         common,
         debounce_ms,
         warm_processes,
     } = parse(args)?;
-    let config = LaunchConfig::resolve(common)?;
+    let config = LaunchConfig::resolve(common, python)?;
 
     start_startup_spinner();
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
