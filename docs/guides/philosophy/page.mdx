@@ -47,7 +47,7 @@ Controllers are normal Python classes. Dependencies use FastAPI's dependency inj
 
 ### Frontend
 
-The `views` directory is a normal React and TypeScript project. Mountaineer reads your `package.json` and `tsconfig.json`, so aliases and compiler settings remain yours. Additional build steps can be added through builder plugins such as `PostCSSBundler`.
+The `views` directory is a normal React and TypeScript project. Mountaineer reads your `package.json`, `tsconfig.json`, and PostCSS configuration while Vite provides the same CSS pipeline in development and production.
 
 ### Data Layer
 
@@ -59,7 +59,7 @@ In practice, switching away from Iceaxe mostly means replacing the generated pro
 
 Some pieces are deliberately not a dropdown setting.
 
-- The contract between controllers and the frontend is built around `render`, `@sideeffect`, `@passthrough`, generated `_server` helpers, and disk-based view discovery
+- The contract between controllers and the frontend is built around `render`, `@sideeffect`, `@passthrough`, generated `.mountaineer` helpers, and disk-based view discovery
 - The frontend build pipeline is part of the framework rather than a generic "bring any bundler" adapter
 - Mountaineer assumes React is the primary view layer rather than server templates
 

@@ -1,5 +1,5 @@
 from click import command, option
-from mountaineer.cli import handle_build, handle_runserver, handle_watch
+from mountaineer.cli import handle_build, handle_runserver
 
 
 @command()
@@ -12,15 +12,6 @@ def runserver(host: str, port: int):
         webcontroller="ci_webapp.app:controller",
         host=host,
         port=port,
-        subscribe_to_mountaineer=True,
-    )
-
-
-@command()
-def watch():
-    handle_watch(
-        package="ci_webapp",
-        webcontroller="ci_webapp.app:controller",
         subscribe_to_mountaineer=True,
     )
 

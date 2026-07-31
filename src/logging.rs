@@ -1,32 +1,8 @@
 use env_logger::Builder;
 use log::LevelFilter;
+use mountaineer_terminal as terminal;
 use std::env;
-use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
-
-pub struct StdoutWrapper(Arc<Mutex<dyn Write + Send + 'static>>);
-
-impl StdoutWrapper {
-    pub fn new() -> Self {
-        StdoutWrapper(Arc::new(Mutex::new(io::stdout())))
-    }
-
-    pub fn get_arc(&self) -> Arc<Mutex<dyn Write + Send + 'static>> {
-        self.0.clone()
-    }
-}
-
-impl Write for StdoutWrapper {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut writer = self.0.lock().expect("Failed to lock mutex");
-        writer.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        let mut writer = self.0.lock().expect("Failed to lock mutex");
-        writer.flush()
-    }
-}
+use std::sync::Mutex;
 
 lazy_static! {
     static ref LOGGER_INITIALIZED: Mutex<bool> = Mutex::new(false);
@@ -52,7 +28,11 @@ pub fn init_logger() {
                 "ERROR" => LevelFilter::Error,
                 _ => {
                     // Default to warn if the level is invalid
-                    eprintln!("Invalid log level: {level}. Using warn level instead.");
+                    eprintln!(
+                        "  {} {} Invalid log level {level:?}; using warning",
+                        terminal::info().for_stderr().apply_to("[Rust]"),
+                        terminal::warning().for_stderr().apply_to("[warning]")
+                    );
                     LevelFilter::Warn
                 }
             };
@@ -65,15 +45,21 @@ pub fn init_logger() {
         }
     }
 
-    // Format logs with timestamp, level, target, and message
+    // Keep opt-in native diagnostics in the same envelope as SSR console output.
     builder.format(|buf, record| {
         use std::io::Write;
+        let level = match record.level() {
+            log::Level::Warn => terminal::warning(),
+            log::Level::Error => terminal::error(),
+            _ => terminal::muted(),
+        };
         writeln!(
             buf,
-            "{} [{}] {}: {}",
-            chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"),
-            record.level(),
-            record.target(),
+            "  {} {} {}",
+            terminal::info().for_stderr().apply_to("[Rust]"),
+            level
+                .for_stderr()
+                .apply_to(format!("[{}]", record.level().to_string().to_lowercase())),
             record.args()
         )
     });

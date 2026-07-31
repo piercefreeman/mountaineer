@@ -1,0 +1,8 @@
+[package]
+name = "mountaineer-terminal"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+console = "0.16"

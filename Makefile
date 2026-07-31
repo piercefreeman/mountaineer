@@ -105,7 +105,7 @@ endef
 # Rust testing functions
 define test-rust-common
 	echo "\n=== Running Rust tests for $(2) ==="
-	(cd $(1) && cargo test --all)
+	(cd $(1) && cargo test --workspace --all-features)
 	echo "=== Rust tests completed successfully for $(2) ==="
 endef
 
@@ -139,14 +139,14 @@ endef
 # Rust linting functions
 define run-rustfmt
 	@echo "\n=== Running rustfmt on $(1) ==="
-	@(cd $(1) && cargo fmt) || { echo "FAILED: rustfmt in $(1)"; exit 1; }
-	@(cd $(1) && cargo fix --allow-dirty --allow-staged) || { echo "FAILED: rustfix in $(1)"; exit 1; }
+	@(cd $(1) && cargo fmt --all) || { echo "FAILED: rustfmt in $(1)"; exit 1; }
+	@(cd $(1) && cargo fix --workspace --all-targets --allow-dirty --allow-staged) || { echo "FAILED: rustfix in $(1)"; exit 1; }
 	@echo "=== rustfmt completed successfully for $(1) ==="
 endef
 
 define run-clippy
 	@echo "\n=== Running clippy on $(1) ==="
-	@(cd $(1) && cargo clippy -- -D warnings) || { echo "FAILED: clippy in $(1)"; exit 1; }
+	@(cd $(1) && cargo clippy --workspace --all-targets -- -D warnings) || { echo "FAILED: clippy in $(1)"; exit 1; }
 	@echo "=== clippy completed successfully for $(1) ==="
 endef
 

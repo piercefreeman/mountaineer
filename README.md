@@ -68,12 +68,11 @@ Mountaineer relies on watching your project for changes and doing progressive co
 While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
 
 ```bash
-$ uv run runserver
+$ uv run mountaineer-dev
 
-INFO:     Started server process [93111]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:5006 (Press CTRL+C to quit)
+Found 4 Python libraries for warm reload: click, fastapi, mountaineer, pydantic
+Started Python backend in 2.05s
+Local http://127.0.0.1:5006
 ```
 
 Navigate to http://127.0.0.1:5006 to see your new webapp running.
@@ -81,10 +80,11 @@ Navigate to http://127.0.0.1:5006 to see your new webapp running.
 Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
 
 ```bash
-$ uv run watch
+$ uv run mountaineer-watch
 ```
 
-Both of these CLI commands are specified in your project's `cli.py` file.
+Both native commands are installed with Mountaineer and discover the project
+automatically.
 
 ### Documentation
 

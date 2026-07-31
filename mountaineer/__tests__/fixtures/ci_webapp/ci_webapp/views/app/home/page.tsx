@@ -1,19 +1,29 @@
 import React from "react";
-import { useServer, RequestValidationError } from "./_server";
+import { useServer, RequestValidationError } from "./.mountaineer";
 import { CustomComponent } from "./element";
 
 const Home = () => {
   const serverState = useServer();
+  const [draft, setDraft] = React.useState("");
   console.log("SERVER PAYLOAD", serverState);
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl">Home</h1>
+      <h1 className="text-2xl">Home — Live HMR ✓</h1>
       <p className="text-green-500">Home page</p>
       <p>
         Hello {serverState.client_ip}, current count is{" "}
         {serverState.current_count} {serverState.random_uuid}
       </p>
+      <label className="block py-4">
+        Fast Refresh draft
+        <input
+          className="ml-2 rounded border p-1"
+          data-testid="fast-refresh-draft"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
+      </label>
       <CustomComponent />
       <p>
         <a

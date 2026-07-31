@@ -1,19 +1,17 @@
 from dataclasses import dataclass, field
 from inspect import Parameter, signature
-from typing import Callable, Type
+from typing import TYPE_CHECKING, Callable, Type
 
 from fastapi import APIRouter
 
 from mountaineer.actions.fields import FunctionMetadata
 from mountaineer.controller import ControllerBase
 from mountaineer.controller_layout import LayoutControllerBase
-from mountaineer.graph.cache import (
-    ControllerDevCache,
-    ControllerProdCache,
-    DevCacheConfig,
-    ProdCacheConfig,
-)
 from mountaineer.logging import LOGGER
+from mountaineer.paths import ManagedViewPath
+
+if TYPE_CHECKING:
+    from mountaineer.frontend import FrontendEntry
 
 
 @dataclass(kw_only=True)
@@ -42,9 +40,12 @@ class ControllerRoute:
 class ControllerDefinition:
     controller: ControllerBase
     route: ControllerRoute | None
-
-    cache: ControllerDevCache | ControllerProdCache | None = None
-    cache_args: DevCacheConfig | ProdCacheConfig | None = None
+    view_path: ManagedViewPath
+    view_root: ManagedViewPath
+    static_url: str
+    build_enabled: bool
+    development_enabled: bool
+    frontend: "FrontendEntry | None" = None
 
     graph: "AppGraph"
     """
@@ -80,32 +81,14 @@ class ControllerDefinition:
     def get_hierarchy_view_paths(self):
         layouts = self.get_parents()
         layouts.reverse()
-        return [
-            [str(layout.controller.full_view_path.absolute()) for layout in layouts]
-        ]
+        return [[str(layout.view_path.absolute()) for layout in layouts]]
 
-    def resolve_cache(self):
-        if self.cache_args is None:
-            raise ValueError("Cache args are not set for this controller")
-
-        if self.cache:
-            return self.cache
-
-        if isinstance(self.cache_args, DevCacheConfig):
-            self.cache = ControllerDevCache.resolve_dev_cache(self, self.cache_args)
-            return self.cache
-        elif isinstance(self.cache_args, ProdCacheConfig):
-            self.cache = ControllerProdCache.resolve_prod_cache(self, self.cache_args)
-            return self.cache
-        else:
-            raise ValueError("Invalid cache args")
-
-    def clear_cache(self, recursive: bool = True):
-        self.cache = None
+    def clear_frontend(self, recursive: bool = True):
+        self.frontend = None
 
         if recursive:
             for child in self.children:
-                child.clear_cache(recursive=True)
+                child.clear_frontend(recursive=True)
 
 
 class AppGraph:
@@ -130,7 +113,12 @@ class AppGraph:
         self,
         controller: ControllerBase,
         route: ControllerRoute | None,
-        cache_args: DevCacheConfig | ProdCacheConfig | None,
+        *,
+        view_path: ManagedViewPath,
+        view_root: ManagedViewPath,
+        static_url: str,
+        build_enabled: bool,
+        development_enabled: bool,
     ):
         controller_definition: ControllerDefinition | None = None
 
@@ -139,10 +127,7 @@ class AppGraph:
         # we created based on the disk hierarchy alone
         if isinstance(controller, LayoutControllerBase):
             for definition in self.controllers:
-                if (
-                    definition.controller.full_view_path.absolute()
-                    == controller.full_view_path.absolute()
-                ):
+                if definition.view_path.absolute() == view_path.absolute():
                     controller_definition = definition
                     break
 
@@ -151,7 +136,11 @@ class AppGraph:
                 controller=controller,
                 route=route,
                 graph=self,
-                cache_args=cache_args,
+                view_path=view_path,
+                view_root=view_root,
+                static_url=static_url,
+                build_enabled=build_enabled,
+                development_enabled=development_enabled,
             )
             self.controllers.append(controller_definition)
 
@@ -159,10 +148,11 @@ class AppGraph:
         controller_definition.controller = controller
         controller_definition.route = route
         controller_definition.graph = self
-        controller_definition.cache_args = cache_args
-
-        # Set the back-reference to the controller definition in case the controller
-        # needs to access the graph directly
+        controller_definition.view_path = view_path
+        controller_definition.view_root = view_root
+        controller_definition.static_url = static_url
+        controller_definition.build_enabled = build_enabled
+        controller_definition.development_enabled = development_enabled
         controller._definition = controller_definition
         return controller_definition
 

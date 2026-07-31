@@ -1,5 +1,5 @@
 import React, { ReactNode } from "react";
-import { useServer } from "./_server";
+import { useServer } from "./.mountaineer";
 
 const Layout = ({ children }: { children: ReactNode }) => {
   const serverState = useServer();

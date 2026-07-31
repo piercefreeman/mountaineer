@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import DatabaseSetupPage from "../_common/database-setup-page";
 import { Background, Masthead } from "../_common/field-guide";
-import { useServer } from "./_server/useServer";
+import { useServer } from "./.mountaineer";
 
 const Page = () => {
   const serverState = useServer();

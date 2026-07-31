@@ -30,7 +30,16 @@ class ManagedViewPath(type(Path())):  # type: ignore
     # they may be different
     package_root_link: Optional["ManagedViewPath"]
 
-    MANAGED_ARTIFACT_DIRS = ("_server", "_static", "_ssr", "_metadata")
+    MANAGED_DIR = ".mountaineer"
+    # Legacy names remain discoverable so the first build after upgrading removes them.
+    MANAGED_ARTIFACT_DIRS = (
+        MANAGED_DIR,
+        "_server",
+        "_static",
+        "_ssr",
+        "_metadata",
+        ".mountaineer-vite",
+    )
 
     def __new__(cls, *args, **kwargs):
         # Ensure instances are created properly by using the __new__ method of the Path class
@@ -91,7 +100,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
         return self.package_root_link
 
     def get_managed_code_dir(self, create_dir: bool = True):
-        return self.get_managed_dir_common("_server", create_dir=create_dir)
+        return self.get_managed_dir_common(self.MANAGED_DIR, create_dir=create_dir)
 
     def get_managed_static_dir(self, tmp_build: bool = False, create_dir: bool = True):
         # Only root paths can have static directories
@@ -99,7 +108,9 @@ class ManagedViewPath(type(Path())):  # type: ignore
             raise ValueError(
                 "Cannot get static directory from a non-root linked view path"
             )
-        path = self.get_managed_dir_common("_static", create_dir=create_dir)
+        path = self.get_managed_code_dir(create_dir=create_dir) / "static"
+        if create_dir:
+            path.mkdir(exist_ok=True)
         if tmp_build:
             path = path / "tmp"
             path.mkdir(exist_ok=True)
@@ -111,7 +122,9 @@ class ManagedViewPath(type(Path())):  # type: ignore
             raise ValueError(
                 "Cannot get SSR directory from a non-root linked view path"
             )
-        path = self.get_managed_dir_common("_ssr", create_dir=create_dir)
+        path = self.get_managed_code_dir(create_dir=create_dir) / "ssr"
+        if create_dir:
+            path.mkdir(exist_ok=True)
         if tmp_build:
             path = path / "tmp"
             path.mkdir(exist_ok=True)
@@ -125,7 +138,9 @@ class ManagedViewPath(type(Path())):  # type: ignore
             raise ValueError(
                 "Cannot get SSR directory from a non-root linked view path"
             )
-        path = self.get_managed_dir_common("_metadata", create_dir=create_dir)
+        path = self.get_managed_code_dir(create_dir=create_dir) / "metadata"
+        if create_dir:
+            path.mkdir(exist_ok=True)
         if tmp_build:
             path = path / "tmp"
             path.mkdir(exist_ok=True)
@@ -202,7 +217,7 @@ class ManagedViewPath(type(Path())):  # type: ignore
                 controller_path.package_root_link = self.package_root_link
             return controller_path
 
-        relative_path = Path(controller_path.lstrip("/"))
+        relative_path = Path(str(controller_path).lstrip("/"))
         return self / relative_path
 
     def copy(self) -> "ManagedViewPath":

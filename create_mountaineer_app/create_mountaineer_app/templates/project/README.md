@@ -17,7 +17,7 @@ Then start your server:
 
 ```bash
 source venv/bin/activate
-runserver
+mountaineer-dev
 ```
 {% else %}
 Install the dependencies with uv:
@@ -29,7 +29,7 @@ uv sync
 Then start your server:
 
 ```bash
-uv run runserver
+uv run mountaineer-dev
 ```
 {% endif %}
 

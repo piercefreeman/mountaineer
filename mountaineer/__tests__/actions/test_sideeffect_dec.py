@@ -366,6 +366,7 @@ async def test_layout_controller_request_support():
     class ExampleLayoutRender(RenderBase):
         request_info: str
         cookie_value: str
+        layout_arg: int | None
 
     class TestLayoutController(LayoutControllerBase):
         view_path = "/test-layout.tsx"
@@ -373,10 +374,12 @@ async def test_layout_controller_request_support():
         def render(
             self,
             request: Request,
+            layout_arg: int | None = None,
         ) -> ExampleLayoutRender:
             return ExampleLayoutRender(
                 request_info=request.url.path,
                 cookie_value=request.cookies.get("test-cookie", "no-cookie"),
+                layout_arg=layout_arg,
             )
 
         @sideeffect
@@ -400,7 +403,7 @@ async def test_layout_controller_request_support():
         json={},
         headers={
             "Cookie": "test-cookie=layout-cookie-value",
-            "referer": "http://example.com/test-page/",
+            "referer": "http://example.com/test-page/?layout_arg=7",
         },
     )
 
@@ -411,6 +414,7 @@ async def test_layout_controller_request_support():
     assert "sideeffect" in response_data
     assert response_data["sideeffect"]["request_info"] == "/test-page/"
     assert response_data["sideeffect"]["cookie_value"] == "layout-cookie-value"
+    assert response_data["sideeffect"]["layout_arg"] == 7
 
 
 @pytest.mark.asyncio

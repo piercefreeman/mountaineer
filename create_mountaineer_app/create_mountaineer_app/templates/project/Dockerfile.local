@@ -40,4 +40,4 @@ WORKDIR /usr/src/app
 
 EXPOSE 5006
 
-CMD ["uv", "run", "runserver", "--host", "0.0.0.0", "--port", "5006"]
+CMD ["uv", "run", "mountaineer-dev", "--host", "0.0.0.0", "--port", "5006"]

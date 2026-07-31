@@ -14,7 +14,10 @@ import pytest
 import toml
 
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.cli import find_packages_with_prefix, handle_build
+from mountaineer.cli import handle_build
+from mountaineer.development.packages import find_packages_with_prefix
+from mountaineer.io import get_free_port
+from mountaineer.ssr import render_ssr
 
 
 @pytest.fixture
@@ -35,13 +38,8 @@ def tmp_ci_webapp(tmp_path: Path):
     with open(pyproject_path, "r") as file:
         content = toml.load(file)
 
-    # Point to the absolute path of the local mountaineer core package, versus the
-    # symlinked version in the original package. We only have one dependency so we can
-    # just replace the entire bundle.
-    assert len(content["project"]["dependencies"]) == 1
-    content["project"]["dependencies"] = [
-        f"mountaineer @ file://{str(base_package_path)}"
-    ]
+    # Point uv to the absolute path of the local Mountaineer package.
+    content["tool"]["uv"]["sources"]["mountaineer"]["path"] = str(base_package_path)
 
     with open(pyproject_path, "w") as file:
         toml.dump(content, file)
@@ -71,46 +69,48 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
     try:
         handle_build(
             webcontroller="client_only_fixture.app:controller",
-            minify=False,
+            minify=True,
         )
     finally:
         if not event_loop.is_closed():
             event_loop.close()
         asyncio.set_event_loop(None)
 
-    static_dir = package_dir / "views" / "_static"
+    static_dir = package_dir / "views" / ".mountaineer" / "static"
+    ssr_dir = package_dir / "views" / ".mountaineer" / "ssr"
 
     _assert_relative_js_imports_resolve(static_dir)
+    html = render_ssr(
+        (ssr_dir / "client_only_controller.js").read_text(),
+        {},
+        sourcemap=(ssr_dir / "client_only_controller.js.map").read_text(),
+    )
+    assert "<h1>Client Only Test</h1>" in html
+    assert "Loading browser-only component" not in html
 
 
-async def check_server_bound(port: int, timeout=8):
-    # 5s hard timeout + 3s overhead
-    # When the server restarting gets stuck it gets stuck permanently
+async def check_server_ready(port: int, timeout: int = 20):
+    # The development proxy returns 503 while frontend tooling and the backend start.
     start_time = time()
     url = f"http://localhost:{port}"
+    status_code = -1
     async with httpx.AsyncClient() as client:
         while time() - start_time < timeout:
             try:
                 response = await client.get(url)
-                return True, response.status_code
+                status_code = response.status_code
+                if status_code == 200:
+                    return True, status_code
             except httpx.RequestError:
                 pass
             await asyncio.sleep(0.1)
-    return False, -1
+    return False, status_code
 
 
 @pytest.mark.integration_tests
 @pytest.mark.asyncio
-async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
-    # Ensure that there is no existing webapp running
-    port = 5006
-    url = f"http://localhost:{port}"
-    async with httpx.AsyncClient() as client:
-        try:
-            await client.get(url, timeout=1)
-            assert False, "The server is already running"
-        except httpx.RequestError:
-            pass
+async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
+    port = get_free_port()
 
     uv_env = {
         key: value
@@ -127,7 +127,7 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
     ).wait()
     assert return_code == 0
 
-    # Start the handle_runserver function in a process
+    # The project's runserver command delegates to the native development server.
     server_process = Popen(
         ["uv", "run", "runserver", "--port", str(port)],
         cwd=tmp_ci_webapp,
@@ -136,6 +136,9 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
     test_file_path = tmp_ci_webapp / "ci_webapp" / "controllers" / "home.py"
 
     try:
+        is_ready, status_code = await check_server_ready(port)
+        assert is_ready, f"Server did not become ready (last status: {status_code})"
+
         for _ in range(5):
             with open(test_file_path, "a") as f:
                 print(f"Adding content to {test_file_path}")  # noqa: T201
@@ -148,9 +151,8 @@ async def test_handle_runserver_with_user_modifications(tmp_ci_webapp: Path):
         print(  # noqa: T201
             "Done with changes, checking that server will resolve if not immediately ready..."
         )
-        is_bound, status_code = await check_server_bound(port)
-        assert is_bound, "Server is not bound to localhost:3000"
-        assert status_code == 200, "Server is not returning 200 status code"
+        is_ready, status_code = await check_server_ready(port)
+        assert is_ready, f"Server did not recover (last status: {status_code})"
         print("Server is bound to expected port")  # noqa: T201
     finally:
         # Terminate the processes after test
@@ -202,11 +204,6 @@ controller.register(ClientOnlyController())
         (fixture_views_dir / "tsconfig.json").read_text()
     )
 
-    _symlink_or_copy_dir(
-        fixture_views_dir / "node_modules",
-        views_dir / "node_modules",
-    )
-
     (app_dir / "page.tsx").write_text(
         """
 import React from "react";
@@ -230,6 +227,8 @@ export default ClientOnlyPage;
 
     (app_dir / "ClientOnlyWrapper.tsx").write_text(
         """
+"use client";
+
 import React, { type ComponentType, useEffect, useState } from "react";
 
 const ClientOnlyWrapper = () => {
@@ -257,7 +256,6 @@ export default ClientOnlyWrapper;
     (app_dir / "BrowserOnlyClient.tsx").write_text(
         """
 import React from "react";
-import queueMicrotask from "queue-microtask";
 import { browserOnlyValue } from "./browserOnlyDom";
 import { sharedClientValue } from "./sharedClientValue";
 
@@ -289,13 +287,6 @@ export const browserOnlyValue = "browser-only-client";
     )
 
     return package_dir
-
-
-def _symlink_or_copy_dir(source: Path, target: Path) -> None:
-    try:
-        target.symlink_to(source, target_is_directory=True)
-    except OSError:
-        copytree(source, target)
 
 
 def _assert_relative_js_imports_resolve(static_dir: Path) -> None:

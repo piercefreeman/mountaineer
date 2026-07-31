@@ -28,7 +28,6 @@ def update_version_rust(new_version: str):
         raise ValueError("Cargo.toml is missing the [package] section")
 
     filedata["package"]["version"] = cargo_version
-
     cargo_path.write_text(toml.dumps(filedata))
 
 

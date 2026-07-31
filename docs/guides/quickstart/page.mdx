@@ -50,10 +50,11 @@ Navigate to http://127.0.0.1:5006 to see your new webapp running.
 Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
 
 ```bash
-$ uv run watch
+$ uv run mountaineer-watch
 ```
 
-Both of these CLI commands are specified in your project's `cli.py` file.
+Both native commands are installed with Mountaineer and discover the project
+automatically.
 
 ## Walkthrough
 
@@ -145,7 +146,6 @@ Now that we've newly created this controller, we wire it up to the application. 
 
 ```python title="my_webapp/app.py"
 from mountaineer.app import AppController
-from mountaineer.client_compiler.postcss import PostCSSBundler
 from mountaineer.render import LinkAttribute, Metadata
 
 from my_webapp.config import AppConfig
@@ -156,9 +156,6 @@ controller = AppController(
     global_metadata=Metadata(
         links=[LinkAttribute(rel="stylesheet", href="/static/app_main.css")]
     ),
-    custom_builders=[
-        PostCSSBundler(),
-    ],
 )
 
 controller.register(HomeController())
@@ -168,7 +165,7 @@ Let's move over to the frontend.
 
 ```typescript title="my_webapp/views/app/home/page.tsx"
 import React from "react";
-import { useServer, ServerState } from "./_server/useServer";
+import { useServer, ServerState } from "./.mountaineer";
 
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
   return (
@@ -252,7 +249,7 @@ Mountaineer detects the presence of this sideeffect function and analyzes its si
 
 ```typescript title="my_webapp/views/app/home/page.tsx"
 import React, { useState } from "react";
-import { useServer } from "./_server/useServer";
+import { useServer } from "./.mountaineer";
 
 /* Replace the existing CreateTodo component definition you have */
 const CreateTodo = ({ serverState }: { serverState: ServerState }) => {

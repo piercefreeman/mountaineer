@@ -9,7 +9,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "postcss-cli": "^11.0.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"
   },

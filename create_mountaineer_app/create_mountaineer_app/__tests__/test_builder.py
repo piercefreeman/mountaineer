@@ -212,7 +212,7 @@ def test_valid_permutations(
 
     # Now launch the server in the background
     process = environment.run_command(
-        ["runserver", "--port", str(webhost_port)], metadata.project_path
+        ["mountaineer-dev", "--port", str(webhost_port)], metadata.project_path
     )
 
     try:

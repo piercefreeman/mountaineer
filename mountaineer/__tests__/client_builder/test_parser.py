@@ -7,10 +7,6 @@ import pytest
 from fastapi import File, Form, UploadFile
 from pydantic import BaseModel, ConfigDict, field_validator
 
-from mountaineer.__tests__.client_builder.interface_builders.common import (
-    create_field_wrapper,
-    create_model_wrapper,
-)
 from mountaineer.actions.fields import FunctionActionType
 from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.actions.sideeffect_dec import sideeffect
@@ -22,20 +18,11 @@ from mountaineer.client_builder.parser import (
     EnumWrapper,
     FieldWrapper,
     ModelWrapper,
+    WrapperName,
 )
 from mountaineer.client_builder.types import ListOf
 from mountaineer.controller import ControllerBase
 from mountaineer.render import RenderBase
-
-
-# Create a simple response model for testing
-class StandardResponse(BaseModel):
-    message: str
-
-
-# Type variables for generic tests
-T = TypeVar("T")
-S = TypeVar("S")
 
 
 @pytest.fixture
@@ -54,6 +41,35 @@ def base_model_wrapper(parser: ControllerParser):
 @pytest.fixture
 def test_controller_wrapper(parser: ControllerParser):
     return parser.parse_controller(ExampleController)
+
+
+# Create a simple response model for testing
+class StandardResponse(BaseModel):
+    message: str
+
+
+def create_field_wrapper(
+    name: str,
+    type_hint: type | ModelWrapper | EnumWrapper,
+    required: bool = True,
+) -> FieldWrapper:
+    return FieldWrapper(name=name, value=type_hint, required=required)
+
+
+def create_model_wrapper(model: type[BaseModel], name: str) -> ModelWrapper:
+    return ModelWrapper(
+        name=WrapperName(name),
+        module_name="test_module",
+        model=model,
+        isolated_model=model,
+        superclasses=[],
+        value_models=[],
+    )
+
+
+# Type variables for generic tests
+T = TypeVar("T")
+S = TypeVar("S")
 
 
 # Core test enum

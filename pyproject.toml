@@ -19,8 +19,6 @@ dependencies = [
     # include them by default since we don't want to force regular dev builds to install an extras
     # for basic CLI functionality.
     "rich>=13.7.1,<14.0.0",
-    "watchfiles>=1.0.0,<2.0.0",
-    "firehot>=0.4.0,<1.0.0",
     "mountaineer-exceptions>=0.1.1",
     "mountaineer-di>=0.1.2,<1.0.0",
 ]
@@ -33,6 +31,11 @@ exclude = [
     "benchmarking",
 ]
 
+[project.scripts]
+mountaineer-dev = "mountaineer.cli:run_dev"
+mountaineer-prod = "mountaineer.cli:run_prod"
+mountaineer-watch = "mountaineer.cli:run_watch"
+
 [build-system]
 requires = ["maturin>=1.0,<2.0"]
 build-backend = "maturin"
@@ -44,13 +47,11 @@ cache-keys = [
     { file = "mountaineer/**/*.py" },
     { file = "mountaineer/static/**/*" },
     { file = "src/**/*.rs" },
+    { file = "crates/**/*" },
     { file = "Cargo.toml" },
     { file = "Cargo.lock" },
 ]
 
-
-#[tool.uv.sources]
-#mountaineer-exceptions = { path = "../mountaineer-exceptions", editable = true }
 
 [tool.maturin]
 exclude = ["**/__tests__/**"]

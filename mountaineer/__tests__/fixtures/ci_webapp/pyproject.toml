@@ -9,12 +9,11 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 dependencies = [
-    "mountaineer @ file://../../../../"
+    "mountaineer"
 ]
 
 [project.scripts]
 runserver = "ci_webapp.cli:runserver"
-watch = "ci_webapp.cli:watch"
 build = "ci_webapp.cli:build"
 
 [tool.ruff.lint]
@@ -32,5 +31,5 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.metadata]
-allow-direct-references = true
+[tool.uv.sources]
+mountaineer = { path = "../../../..", editable = true }

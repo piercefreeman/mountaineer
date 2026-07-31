@@ -1,18 +1,11 @@
 from pathlib import Path
 
+from mountaineer import mountaineer as mountaineer_rs  # type: ignore
 from mountaineer.app import AppController
 from mountaineer.client_builder.aliases import AliasManager
-from mountaineer.client_builder.file_generators.base import ParsedController
-from mountaineer.client_builder.file_generators.globals import (
-    GlobalControllerGenerator,
-    GlobalLinkGenerator,
-)
-from mountaineer.client_builder.file_generators.locals import (
-    LocalActionGenerator,
-    LocalIndexGenerator,
-    LocalLinkGenerator,
-    LocalModelGenerator,
-    LocalUseServerGenerator,
+from mountaineer.client_builder.manifest import (
+    ParsedView,
+    build_envelope,
 )
 from mountaineer.client_builder.parser import (
     ControllerParser,
@@ -20,7 +13,6 @@ from mountaineer.client_builder.parser import (
 from mountaineer.controller_layout import LayoutControllerBase as LayoutControllerBase
 from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
-from mountaineer.static import get_static_path
 
 
 class APIBuilder:
@@ -57,18 +49,26 @@ class APIBuilder:
 
     async def build_use_server(self):
         # Parse all controllers first
-        parser, parsed_controller = self._parse_all_controllers()
-        self._assign_unique_names(parser)
-
-        # Generate all the required files
-        self._generate_static_files()
-        self._generate_global_files(parsed_controller)
-        self._generate_local_files(parsed_controller)
+        parser, parsed_views = self._parse_all_controllers()
+        self.alias_manager.assign_global_names(parser)
+        self.alias_manager.assign_local_names(parser)
+        envelope = build_envelope(
+            parser,
+            parsed_views,
+            self.view_root.get_managed_code_dir(),
+        )
+        mountaineer_rs.build_client(
+            envelope.model_dump_json(
+                by_alias=True,
+                exclude_defaults=True,
+                exclude_none=True,
+            )
+        )
 
     def _parse_all_controllers(self):
         """Parse all controllers and store their parsed representations"""
         parser = ControllerParser()
-        parsed_controllers: list[ParsedController] = []
+        parsed_controllers: list[ParsedView] = []
 
         for controller_def in self.app.graph.controllers:
             if controller_def.route is None:
@@ -82,15 +82,10 @@ class APIBuilder:
             # Parse the controller
             parsed_wrapper = parser.parse_controller(controller.__class__)
 
-            # Get view path
-            view_path = self.view_root.get_controller_view_path(controller)
-
-            # Create ParsedController instance
             parsed_controllers.append(
-                ParsedController(
+                ParsedView(
                     wrapper=parsed_wrapper,
-                    view_path=view_path,
-                    url_prefix=controller_def.route.url_prefix,
+                    view_path=controller_def.view_path,
                     is_layout=isinstance(controller, LayoutControllerBase),
                 )
             )
@@ -102,90 +97,11 @@ class APIBuilder:
     ) -> list[ManagedViewPath]:
         view_roots = {self.view_root.copy()}
         for controller_definition in self.app.graph.controllers:
-            if (
-                build_enabled_only
-                and not controller_definition.controller._build_enabled
-            ):
+            if build_enabled_only and not controller_definition.build_enabled:
                 continue
-            view_path = controller_definition.controller.view_path
-            if isinstance(view_path, ManagedViewPath):
-                view_roots.add(view_path.get_root_link().copy())
+            view_roots.add(controller_definition.view_root.copy())
 
         for view_root in view_roots:
             view_root.package_root_link = self.view_root.package_root_link
 
         return list(view_roots)
-
-    def _assign_unique_names(self, parser: ControllerParser):
-        self.alias_manager.assign_global_names(parser)
-        self.alias_manager.assign_local_names(parser)
-
-    def _generate_global_files(self, parsed_controllers: list[ParsedController]):
-        global_root = self.view_root.get_managed_code_dir()
-
-        global_controller_generator = GlobalControllerGenerator(
-            controller_wrappers=[
-                controller.wrapper for controller in parsed_controllers
-            ],
-            managed_path=global_root / "controllers.ts",
-        )
-        global_link_generator = GlobalLinkGenerator(
-            parsed_controllers=parsed_controllers,
-            managed_path=global_root / "links.ts",
-        )
-
-        global_controller_generator.build()
-        global_link_generator.build()
-
-    def _generate_local_files(self, parsed_controllers: list[ParsedController]):
-        global_root = self.view_root.get_managed_code_dir()
-
-        for parsed_controller in parsed_controllers:
-            managed_path = parsed_controller.view_path.get_managed_code_dir()
-
-            local_link_generator = LocalLinkGenerator(
-                controller=parsed_controller.wrapper,
-                managed_path=managed_path / "links.ts",
-                global_root=global_root,
-            )
-            local_action_generator = LocalActionGenerator(
-                controller=parsed_controller.wrapper,
-                managed_path=managed_path / "actions.ts",
-                global_root=global_root,
-            )
-            local_model_generator = LocalModelGenerator(
-                controller=parsed_controller.wrapper,
-                managed_path=managed_path / "models.ts",
-                global_root=global_root,
-            )
-            local_use_server_generator = LocalUseServerGenerator(
-                controller=parsed_controller.wrapper,
-                managed_path=managed_path / "useServer.ts",
-                global_root=global_root,
-            )
-            local_index_generator = LocalIndexGenerator(
-                controller=parsed_controller.wrapper,
-                managed_path=managed_path / "index.ts",
-                global_root=global_root,
-            )
-
-            # Controller-only Files
-            if not parsed_controller.is_layout:
-                local_link_generator.build()
-
-            # Controllers + Layout files
-            local_action_generator.build()
-            local_model_generator.build()
-            local_use_server_generator.build()
-
-            # Since the local index generator reads created files on disk to
-            # determine what to re-export, it needs to always go after the
-            # other generators
-            local_index_generator.build()
-
-    def _generate_static_files(self):
-        """Copy over static files required for the client"""
-        managed_code_dir = self.view_root.get_managed_code_dir()
-        for static_file in ["api.ts", "live_reload.ts"]:
-            content = get_static_path(static_file).read_text()
-            (managed_code_dir / static_file).write_text(content)

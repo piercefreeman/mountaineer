@@ -1,5 +1,5 @@
 from click import command, option, group
-from mountaineer.cli import handle_runserver, handle_watch, handle_build
+from mountaineer.cli import handle_runserver, handle_build
 from mountaineer.io import async_to_sync
 from mountaineer.dependencies import get_function_dependencies
 from mountaineer import Depends, CoreDependencies
@@ -42,14 +42,6 @@ def runserver(host: str, port: int):
         webcontroller="{{project_name}}.app:controller",
         host=host,
         port=port,
-    )
-
-
-@command()
-def watch():
-    handle_watch(
-        package="{{project_name}}",
-        webcontroller="{{project_name}}.app:controller",
     )
 
 

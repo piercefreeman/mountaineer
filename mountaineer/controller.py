@@ -1,5 +1,4 @@
 from abc import ABC
-from hashlib import md5
 from inspect import getmembers, isfunction, ismethod
 from pathlib import Path
 from typing import (
@@ -9,7 +8,6 @@ from typing import (
     Coroutine,
     Generic,
     Iterable,
-    Optional,
     ParamSpec,
 )
 
@@ -20,16 +18,11 @@ from mountaineer.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
-from mountaineer.client_compiler.source_maps import SourceMapParser
 from mountaineer.constants import DEFAULT_STATIC_DIR
-from mountaineer.logging import LOGGER
-from mountaineer.paths import ManagedViewPath
-from mountaineer.render import (
-    RenderBase,
-)
+from mountaineer.render import RenderBase
 
 if TYPE_CHECKING:
-    from mountaineer.app import ControllerDefinition
+    from mountaineer.graph.app_graph import ControllerDefinition
 
 RenderInput = ParamSpec("RenderInput")
 
@@ -58,7 +51,7 @@ class ControllerBase(ABC, Generic[RenderInput]):
     ```
 
     ```typescript {{sticky: True}}
-    import { useServer } from "./_server";
+    import { useServer } from "./.mountaineer";
 
     const MyPage = () => {
         const serverState = useServer();
@@ -79,37 +72,11 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     """
 
-    view_path: str | ManagedViewPath
+    view_path: str | Path
     """
     Typically, view paths should be a relative path to the local project root.
     Paths are only used if you need to specify an absolute path to another
     file on disk.
-
-    """
-
-    _bundled_scripts: list[str]
-    """
-    Client static scripts that are identified at runtime. Intended
-    for internal use.
-
-    """
-
-    _scripts_prefix: str = DEFAULT_STATIC_DIR
-    """
-    Prefix for the static resolution endpoint of the bundled scripts.
-    """
-
-    _build_enabled: bool = True
-    """
-    Whether the frontend build pipeline is enabled for this controller.
-    """
-
-    _definition: Optional["ControllerDefinition"] = None
-    """
-    Upon registration, the AppController will mount a wrapper
-    with state metadata. This is a back-reference to allow clients
-    to access the definition directly from the controller. Intended
-    for internal use.
 
     """
 
@@ -129,12 +96,9 @@ class ControllerBase(ABC, Generic[RenderInput]):
 
     """
 
-    source_map: SourceMapParser | None
+    _scripts_prefix: str = DEFAULT_STATIC_DIR
     """
-    During development, we will load server-side source maps alongside the raw
-    javascript code. This parser controls converting stack traces from the
-    minified code to the original source code.
-
+    Prefix for the static resolution endpoint of the bundled scripts.
     """
 
     def __init__(
@@ -154,16 +118,10 @@ class ControllerBase(ABC, Generic[RenderInput]):
         """
         super().__init__()
 
-        # Injected by the build framework
-        self._bundled_scripts: list[str] = []
         self.slow_ssr_threshold = slow_ssr_threshold
         self.hard_ssr_timeout = hard_ssr_timeout
-        self.source_map: SourceMapParser | None = None
+        self._definition: ControllerDefinition | None = None
         self.initialized = True
-
-        # Set by the path resolution layer
-        self._view_base_path: Path | None = None
-        self._ssr_path: Path | None = None
 
     def render(
         self, *args: RenderInput.args, **kwargs: RenderInput.kwargs
@@ -224,62 +182,6 @@ class ControllerBase(ABC, Generic[RenderInput]):
         # We specifically traverse through the MRO, except the last one (object class)
         for name, func in getmembers(self, predicate=ismethod):
             yield from function_is_action(name, func)
-
-    def resolve_paths(self, view_base: Path, force: bool = True) -> bool:
-        """
-        Typically used internally by the Mountaineer build pipeline. Calling this function
-        sets the active `view_base` of the frontend project, which allows us to resolve the
-        built javascripts that are required for this controller.
-
-        :return: Whether we have found all necessary files and fully updated the controller state.
-
-        """
-        if not force and self._view_base_path is not None:
-            return False
-
-        self._view_base_path = view_base
-
-        # We'll update this bool if we can't find any dependencies
-        found_dependencies = True
-
-        ssr_path = view_base / "_ssr" / f"{self.script_name}.js"
-        if ssr_path.exists():
-            self._ssr_path = ssr_path
-            ssr_map_path = ssr_path.with_suffix(".js.map")
-            self.source_map = (
-                SourceMapParser(ssr_map_path) if ssr_map_path.exists() else None
-            )
-        else:
-            LOGGER.debug(f"SSR path not found for {self.script_name} {ssr_path}")
-            found_dependencies = False
-
-        static_path = view_base / "_static" / f"{self.script_name}.js"
-        if static_path.exists():
-            md5_hash = md5(static_path.read_bytes()).hexdigest()
-            # The full path to the script that's accessible to the client (ie. the  controller._scripts_prefix)
-            # will be injected by the production build pipeline
-            self._bundled_scripts = [f"{static_path.name}?v={md5_hash}"]
-        else:
-            LOGGER.debug(f"Static path not found for {self.script_name} {static_path}")
-            found_dependencies = False
-
-        return found_dependencies
-
-    @property
-    def full_view_path(self) -> ManagedViewPath:
-        if isinstance(self.view_path, ManagedViewPath):
-            return self.view_path
-        elif isinstance(self.view_path, str):
-            if self._view_base_path is None:
-                raise ValueError(
-                    f"Unable to resolve view path because of unset view_base_path: {self.view_path}"
-                )
-
-            return ManagedViewPath.from_view_root(  # type: ignore
-                self._view_base_path
-            ) / self.view_path.lstrip("/")
-        else:
-            return ManagedViewPath(str(self.view_path))
 
     @property
     def script_name(self):

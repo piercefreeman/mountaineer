@@ -10,10 +10,7 @@ First, add the following to your `.dockerignore` file. This will prevent Docker 
 
 ```
 **/node_modules
-**/_server
-**/_ssr
-**/_static
-**/_metadata
+**/.mountaineer
 ```
 
 ### Image 1: Frontend Dependencies
@@ -39,7 +36,7 @@ FROM --platform=linux/amd64 python:3.14-slim-bookworm AS builder
 
 WORKDIR /app
 
-# You only need `nodejs` here if you are using the postcss plugin
+# Node.js runs Vite while Mountaineer builds the browser and SSR artifacts.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends nodejs curl \
     && rm -rf /var/lib/apt/lists/*
@@ -88,6 +85,10 @@ ENV PATH="/app/.venv/bin:${PATH}"
 # Run the application
 CMD ["uvicorn", "{my_webapp}.main:app", "--host", "0.0.0.0", "--port", "3000"]
 ```
+
+The final image does not include Node.js or Vite. Production serves Vite's
+browser artifacts as static files and executes its self-contained SSR artifacts
+inside Mountaineer's embedded V8 runtime.
 
 ## Local Testing
 

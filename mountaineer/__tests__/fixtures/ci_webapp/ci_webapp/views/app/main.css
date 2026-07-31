@@ -1,3 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+[data-testid="fast-refresh-draft"] {
+  outline: 3px solid rgb(14 165 233);
+}

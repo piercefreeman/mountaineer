@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/lib/*"]
+resolver = "2"
+
 [package]
 name = "mountaineer"
 # Bumped automatically by CI on a release
@@ -5,33 +9,34 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-v8 = "129.0.0"
-deno_core_icudata = "0.73.0"
-
 lazy_static = "1.5.0"
 pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py310"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0"
 path-absolutize = "3.1.1"
 regex = "1.11.1"
-md5 = "0.7.0"
-walkdir = "2.5.0"
+toml = "0.8"
+mountaineer-file-monitor = { path = "crates/lib/file-monitor" }
+mountaineer-vite = { path = "crates/lib/vite" }
+mountaineer-hot-reload-discover = { path = "crates/lib/hot-reload-discover" }
+mountaineer-ssr = { path = "crates/lib/ssr" }
+mountaineer-terminal = { path = "crates/lib/terminal" }
 
 log = "0.4"
 env_logger = "0.11"
-chrono = "0.4"
+console = "0.16"
+indicatif = "0.18"
 
-# Not currently published to crates.io
-# https://github.com/rolldown/rolldown/issues/3227
-rolldown = { git = "https://github.com/rolldown/rolldown.git", tag="v1.0.0-beta.60", features = ["experimental"] }
 tokio = { version = "1.43.0", features = ["full"] }
-indexmap = "2.7.1"
-rustc-hash = { version = "2.1" }
 
-# Thread cancellation needs OS bindings
-libc = "0.2"
-winapi = { version = "0.3", features = ["processthreadsapi"] }
 tempfile = "3.16.0"
+clap = { version = "4.6.4", features = ["derive"] }
+
+[target.'cfg(unix)'.dependencies]
+mountaineer-hot-reload-fork = { path = "crates/lib/hot-reload-fork" }
+
+[target.'cfg(windows)'.dependencies]
+mountaineer-hot-reload-pool = { path = "crates/lib/hot-reload-pool" }
 
 
 [dev-dependencies]

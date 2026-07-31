@@ -13,7 +13,7 @@ fn fresh_parse_mapping(
     // Ensure the result actually parsed
     assert!(result.len() > 5000);
 
-    return result;
+    result
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

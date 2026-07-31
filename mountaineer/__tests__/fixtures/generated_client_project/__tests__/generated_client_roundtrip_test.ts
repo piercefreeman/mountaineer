@@ -3,7 +3,7 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 
-import { useServer } from "../app/home/_server/useServer";
+import { useServer } from "../app/home/.mountaineer";
 
 const baseUrl = process.env.MOUNTAINEER_BASE_URL!;
 const serverData = JSON.parse(process.env.MOUNTAINEER_SERVER_DATA_JSON!);

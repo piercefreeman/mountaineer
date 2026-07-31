@@ -94,8 +94,8 @@ mountaineer-exceptions/
 │       │   ├── layout.tsx           # Layout components
 │       │   └── exception/
 │       │       ├── page.tsx         # Main exception page
-│       │       └── _server/         # Generated server hooks
-│       └── _static/                 # Compiled assets
+│       │       └── .mountaineer/    # Generated server hooks
+│       └── .mountaineer/static/     # Compiled assets
 └── README.md
 ```
 
@@ -107,8 +107,7 @@ Every plugin must have a `plugin.py` file that defines a `MountaineerPlugin` ins
 
 ```python title="your_plugin/plugin.py"
 from fastapi import APIRouter
-from mountaineer.client_compiler.postcss import PostCSSBundler
-from mountaineer.plugin import BuildConfig, MountaineerPlugin
+from mountaineer.plugin import MountaineerPlugin
 
 from your_plugin.controllers.main_controller import MainController
 from your_plugin.views import get_core_view_path
@@ -123,7 +122,6 @@ plugin = MountaineerPlugin(
     name="your-plugin-name",
     controllers=[MainController],
     view_root=get_core_view_path(""),
-    build_config=BuildConfig(custom_builders=[PostCSSBundler()]),
     router=router,
 )
 ```
@@ -134,7 +132,6 @@ plugin = MountaineerPlugin(
 **Optional fields:**
 - `controllers`: List of controller classes to register
 - `view_root`: Path to the plugin's view directory. Required when plugin controllers use relative `view_path` values. If every controller already uses a `ManagedViewPath` under one shared root, Mountaineer can infer it.
-- `build_config`: Custom build configuration with bundlers, CSS processors, etc.
 - `router`: Optional FastAPI `APIRouter` for plugin-owned API endpoints that are not tied to a controller action
 
 <Note>
@@ -192,7 +189,7 @@ Plugin views are standard React components with TypeScript:
 
 ```typescript title="your_plugin/views/core/main/page.tsx"
 import React from "react";
-import { useServer } from "./_server/useServer";
+import { useServer } from "./.mountaineer";
 
 const MainPage = (): JSX.Element => {
   const serverState = useServer();
@@ -241,7 +238,7 @@ Your `pyproject.toml` should include build artifacts:
 
 ```toml title="pyproject.toml"
 [tool.hatch.build]
-artifacts = ["your_plugin/views/_static", "your_plugin/views/_ssr"]
+artifacts = ["your_plugin/views/.mountaineer"]
 
 [build-system]
 requires = ["hatchling"]
