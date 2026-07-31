@@ -847,6 +847,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         let frontend = workspace.path().join("frontend");
         fs::create_dir(&frontend).unwrap();
+        let frontend = frontend.canonicalize().unwrap();
 
         let error = prepare_output_dir(&frontend, workspace.path().to_path_buf()).unwrap_err();
 
