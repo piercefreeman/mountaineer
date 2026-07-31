@@ -3,7 +3,12 @@ import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 import { JSDOM } from "jsdom";
 
-import { useServer } from "../app/home/.mountaineer";
+import { RequestValidationError } from "../.mountaineer";
+import { RequestValidationError as DetailRequestValidationError } from "../app/detail/.mountaineer";
+import {
+  RequestValidationError as HomeRequestValidationError,
+  useServer,
+} from "../app/home/.mountaineer";
 
 const baseUrl = process.env.MOUNTAINEER_BASE_URL!;
 const serverData = JSON.parse(process.env.MOUNTAINEER_SERVER_DATA_JSON!);
@@ -43,6 +48,9 @@ afterAll(() => {
 
 describe("generated useServer integration", () => {
   it("round trips sideeffects and keeps callbacks stable across rerenders", async () => {
+    expect(HomeRequestValidationError).toBe(RequestValidationError);
+    expect(DetailRequestValidationError).toBe(RequestValidationError);
+
     let latestState: any;
 
     function Probe() {
@@ -65,6 +73,14 @@ describe("generated useServer integration", () => {
     expect(
       initialState.linkGenerator.detailController({ item_id: "generated-link" }),
     ).toBe("/detail/generated-link");
+
+    await expect(
+      initialState.increment_count({
+        requestBody: {
+          count: "invalid",
+        },
+      }),
+    ).rejects.toBeInstanceOf(RequestValidationError);
 
     await act(async () => {
       const passthrough = await initialState.get_message();

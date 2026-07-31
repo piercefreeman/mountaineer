@@ -6,12 +6,16 @@ mod support;
 mod use_server;
 
 use self::{
-    actions::local_actions,
+    actions::{global_exceptions, local_actions},
     controllers::{global_controllers, local_models},
     links::{global_links, local_links},
     use_server::local_use_server,
 };
-use super::{manifest::Envelope, output::OutputPlan, Result};
+use super::{
+    manifest::{ComponentKind, Envelope},
+    output::OutputPlan,
+    Result,
+};
 use std::collections::HashMap;
 
 pub(super) fn render(envelope: &Envelope) -> Result<OutputPlan> {
@@ -41,18 +45,32 @@ pub(super) fn render(envelope: &Envelope) -> Result<OutputPlan> {
         generated(&envelope.mountaineer_version, global_controllers(envelope)),
     )?;
     output.write(
+        envelope.global_root.join("exceptions.ts"),
+        generated(&envelope.mountaineer_version, global_exceptions(envelope)),
+    )?;
+    output.write(
         envelope.global_root.join("links.ts"),
         generated(&envelope.mountaineer_version, global_links(envelope)?),
     )?;
+    let mut root_exports = vec![
+        "export * from './api';\nexport * from './controllers';\nexport * from './links';".into(),
+    ];
+    let mut exception_names = envelope
+        .components
+        .iter()
+        .filter(|component| component.kind == ComponentKind::Exception)
+        .map(|component| component.global_name.as_str())
+        .collect::<Vec<_>>();
+    exception_names.sort_unstable();
+    if !exception_names.is_empty() {
+        root_exports.push(format!(
+            "export {{ {} }} from './exceptions';",
+            exception_names.join(", ")
+        ));
+    }
     output.write(
         envelope.global_root.join("index.ts"),
-        generated(
-            &envelope.mountaineer_version,
-            vec![
-                "export * from './api';\nexport * from './controllers';\nexport * from './links';"
-                    .into(),
-            ],
-        ),
+        generated(&envelope.mountaineer_version, root_exports),
     )?;
 
     for view in &envelope.views {

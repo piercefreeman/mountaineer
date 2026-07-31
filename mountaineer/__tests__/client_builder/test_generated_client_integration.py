@@ -80,6 +80,10 @@ class DetailController(ControllerBase):
             metadata=Metadata(title=f"Detail: {item_id}"),
         )
 
+    @passthrough
+    def get_detail_message(self) -> GetMessageResponse:
+        return GetMessageResponse(message="detail")
+
 
 @pytest.mark.integration_tests
 def test_generated_use_server_roundtrip(tmp_path: Path):
