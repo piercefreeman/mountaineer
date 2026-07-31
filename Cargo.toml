@@ -9,9 +9,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-v8 = "129.0.0"
-deno_core_icudata = "0.73.0"
-
 lazy_static = "1.5.0"
 pyo3 = { version = "0.24.1", features = ["extension-module", "abi3-py310"] }
 serde = { version = "1.0.217", features = ["derive"] }
@@ -22,6 +19,8 @@ notify-debouncer-full = "0.7.0"
 toml = "0.8"
 mountaineer-vite = { path = "crates/lib/vite" }
 mountaineer-hot-reload-discover = { path = "crates/lib/hot-reload-discover" }
+mountaineer-ssr = { path = "crates/lib/ssr" }
+mountaineer-terminal = { path = "crates/lib/terminal" }
 
 log = "0.4"
 env_logger = "0.11"
@@ -30,9 +29,6 @@ indicatif = "0.18"
 
 tokio = { version = "1.43.0", features = ["full"] }
 
-# Thread cancellation needs OS bindings
-libc = "0.2"
-winapi = { version = "0.3", features = ["processthreadsapi"] }
 tempfile = "3.16.0"
 clap = { version = "4.6.4", features = ["derive"] }
 

@@ -729,15 +729,15 @@ dependencies = [
  "clap",
  "console",
  "criterion",
- "deno_core_icudata",
  "env_logger",
  "indicatif",
  "lazy_static",
- "libc",
  "log",
  "mountaineer-hot-reload-discover",
  "mountaineer-hot-reload-fork",
  "mountaineer-hot-reload-pool",
+ "mountaineer-ssr",
+ "mountaineer-terminal",
  "mountaineer-vite",
  "notify-debouncer-full",
  "path-absolutize",
@@ -748,8 +748,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
- "v8",
- "winapi",
 ]
 
 [[package]]
@@ -782,6 +780,26 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "mountaineer-ssr"
+version = "0.1.0"
+dependencies = [
+ "console",
+ "deno_core_icudata",
+ "libc",
+ "log",
+ "mountaineer-terminal",
+ "v8",
+ "winapi",
+]
+
+[[package]]
+name = "mountaineer-terminal"
+version = "0.1.0"
+dependencies = [
+ "console",
 ]
 
 [[package]]

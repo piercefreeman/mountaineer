@@ -1,6 +1,6 @@
-use crate::terminal;
 use console::{colors_enabled_stderr, Style};
 use indicatif::{ProgressBar, ProgressStyle};
+use mountaineer_terminal as terminal;
 use std::{
     fmt::Display,
     sync::{Mutex, OnceLock},

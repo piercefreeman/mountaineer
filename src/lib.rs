@@ -1,5 +1,5 @@
-use errors::AppError;
 use log::debug;
+use mountaineer_ssr::Error as SsrError;
 use mountaineer_vite::{
     Entrypoint, ProductionConfig as FrontendProductionConfig, SsrConfig as FrontendSsrConfig,
 };
@@ -10,24 +10,20 @@ use pyo3::types::{PyDict, PyString};
 mod cli;
 pub mod client_builder;
 pub mod coordinator;
-mod errors;
 mod lexers;
 mod logging;
 mod source_map;
-mod ssr;
-mod terminal;
-mod timeout;
 
 #[macro_use]
 extern crate lazy_static;
 
 // Export mainly for use in benchmarks
 pub use lexers::strip_js_comments;
+pub use mountaineer_ssr::Ssr;
 pub use source_map::{
     make_source_map_paths_absolute, update_source_map_path, MapMetadata, SourceMapParser,
     VLQDecoder,
 };
-pub use ssr::Ssr;
 
 fn run_coordinator(mode: coordinator::RuntimeMode, args: Vec<String>) -> PyResult<()> {
     let runtime = tokio::runtime::Runtime::new()
@@ -144,7 +140,9 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             debug!("Running in debug mode");
         }
 
-        let result_value = ssr::run_ssr(js_string, hard_timeout);
+        let hard_timeout =
+            (hard_timeout > 0).then(|| std::time::Duration::from_millis(hard_timeout));
+        let result_value = mountaineer_ssr::render(js_string, hard_timeout);
 
         match result_value {
             Ok(result) => {
@@ -152,8 +150,8 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
                 Ok(result_py)
             }
             Err(err) => match err {
-                AppError::HardTimeoutError(msg) => Err(PyConnectionAbortedError::new_err(msg)),
-                AppError::V8ExceptionError(msg) => Err(PyValueError::new_err(msg)),
+                SsrError::Timeout(message) => Err(PyConnectionAbortedError::new_err(message)),
+                SsrError::JavaScript(message) => Err(PyValueError::new_err(message)),
             },
         }
     }

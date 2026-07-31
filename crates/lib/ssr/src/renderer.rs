@@ -26,74 +26,61 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
-use crate::errors::AppError;
-use crate::logging::StdoutWrapper;
-use crate::terminal;
-use crate::timeout;
-use log::debug;
-use std::collections::HashMap;
+use crate::{Error, Result};
 use std::io::Write;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::sync::{Arc, Mutex, Once};
 
-#[derive(Clone, Debug, PartialEq)]
+type Writer = Arc<Mutex<dyn Write + Send + 'static>>;
+
+/// A JavaScript source bundle and the object whose functions produce rendered output.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Ssr<'a> {
-    // TODO: Check if better Box<str> instead of String
     source: String,
     entry_point: &'a str,
 }
 
 struct LoggerData {
-    console_type: String,
-    stdout: Arc<Mutex<dyn Write + 'static>>,
+    console_type: &'static str,
+    stdout: Writer,
 }
 
-// Ensure that LoggerData can be sent safely across threads.
-unsafe impl Send for LoggerData {}
-
-fn init_v8_platform() {
-    lazy_static! {
-      static ref INIT_PLATFORM: () = {
-          // Include ICU data file.
-          // https://github.com/denoland/deno_core/blob/d8e13061571e587b92487d391861faa40bd84a6f/core/runtime/setup.rs#L21
-          v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
-
-          //Initialize a new V8 platform
-          let platform = v8::new_default_platform(0, false).make_shared();
-          v8::V8::initialize_platform(platform);
-          v8::V8::initialize();
-      };
-    }
-
-    lazy_static::initialize(&INIT_PLATFORM);
+pub(crate) fn initialize() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        v8::icu::set_common_data_73(deno_core_icudata::ICU_DATA).unwrap();
+        let platform = v8::new_default_platform(0, false).make_shared();
+        v8::V8::initialize_platform(platform);
+        v8::V8::initialize();
+    });
 }
 
 impl<'a> Ssr<'a> {
-    /// Create an instance of the Ssr struct instanciate the v8 platform as well.
+    /// Creates an SSR bundle that resolves functions from `entry_point`.
     pub fn new(source: String, entry_point: &'a str) -> Self {
-        Ssr {
+        Self {
             source,
             entry_point,
         }
     }
 
-    /// Evaluates the JS source code instanciate in the Ssr struct
-    /// "enrty_point" is the variable name set from the frontend bundler used. <a href="https://github.com/Valerioageno/ssr-rs/blob/main/client/webpack.ssr.js" target="_blank">Here</a> an example from webpack.
-    pub fn render_to_string(&self, params: Option<&str>) -> Result<String, AppError> {
+    /// Executes every function exported by the entry-point object and concatenates the results.
+    pub fn render_to_string(&self, params: Option<&str>) -> Result<String> {
         Self::render(
-            self.source.clone(),
+            &self.source,
             self.entry_point,
             params,
-            StdoutWrapper::new().get_arc(),
+            Arc::new(Mutex::new(std::io::stdout())),
         )
     }
 
     fn render(
-        source: String,
+        source: &str,
         entry_point: &str,
         params: Option<&str>,
-        stdout: Arc<Mutex<dyn Write + 'static>>,
-    ) -> Result<String, AppError> {
+        stdout: Writer,
+    ) -> Result<String> {
+        initialize();
+
         /*
          * Main entrypoint for rendering, takes a source string (containing one or many functions) and
          * an entry point (ie. function name to execute) and returns the result of the execution as
@@ -105,8 +92,12 @@ impl<'a> Ssr<'a> {
         let mut context = v8::Context::new(handle_scope, Default::default());
         let scope = &mut v8::ContextScope::new(handle_scope, context);
 
-        // Add logging support
-        Self::inject_logger(&mut context, scope, stdout);
+        let logger_data =
+            ["log", "warn", "info", "debug", "error"].map(|console_type| LoggerData {
+                console_type,
+                stdout: stdout.clone(),
+            });
+        Self::inject_logger(&mut context, scope, &logger_data);
 
         // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
         let try_catch = &mut v8::TryCatch::new(scope);
@@ -116,16 +107,14 @@ impl<'a> Ssr<'a> {
             None => {
                 // This typically shouldn't fail unless there's a serious issue (like out of memory),
                 // so we don't handle it specifically with try_catch.
-                return Err(AppError::V8ExceptionError(
-                    "Failed to create code string".into(),
-                ));
+                return Err(Error::JavaScript("Failed to create code string".into()));
             }
         };
 
         let script = if let Some(s) = v8::Script::compile(try_catch, code, None) {
             s
         } else {
-            return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+            return Err(Error::JavaScript(Self::extract_exception_message(
                 try_catch,
                 "Script compilation failed",
             )));
@@ -134,7 +123,7 @@ impl<'a> Ssr<'a> {
         let result = if let Some(r) = script.run(try_catch) {
             r
         } else {
-            return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+            return Err(Error::JavaScript(Self::extract_exception_message(
                 try_catch,
                 "Script execution failed",
             )));
@@ -143,13 +132,13 @@ impl<'a> Ssr<'a> {
         let object = if let Some(obj) = result.to_object(try_catch) {
             obj
         } else {
-            return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+            return Err(Error::JavaScript(Self::extract_exception_message(
                 try_catch,
                 "Result is not an object",
             )));
         };
 
-        let fn_map = Self::create_fn_map(try_catch, object);
+        let functions = Self::entrypoint_functions(try_catch, object)?;
 
         let params_v8 = match v8::String::new(try_catch, params.unwrap_or_default()) {
             Some(s) => s.into(),
@@ -158,13 +147,12 @@ impl<'a> Ssr<'a> {
 
         let mut rendered = String::new();
 
-        for (key, func) in fn_map {
-            let key_str = key; // Assuming key is already a Rust String
-            let result = func.call(try_catch, object.into(), &[params_v8]);
+        for (name, function) in functions {
+            let result = function.call(try_catch, object.into(), &[params_v8]);
             if try_catch.has_caught() {
-                return Err(AppError::V8ExceptionError(Self::extract_exception_message(
+                return Err(Error::JavaScript(Self::extract_exception_message(
                     try_catch,
-                    &format!("Error calling function '{key_str}'"),
+                    &format!("Error calling function '{name}'"),
                 )));
             }
 
@@ -181,9 +169,8 @@ impl<'a> Ssr<'a> {
     fn inject_logger(
         context: &mut v8::Local<'_, v8::Context>,
         scope: &mut v8::ContextScope<'_, v8::HandleScope<'_>>,
-        stdout: Arc<Mutex<dyn Write + 'static>>,
+        logger_data: &[LoggerData],
     ) {
-        let console_types = vec!["log", "warn", "info", "debug", "error"];
         let global = context.global(scope);
         let console_key =
             v8::String::new(scope, "console").unwrap_or_else(|| v8::String::empty(scope));
@@ -196,13 +183,9 @@ impl<'a> Ssr<'a> {
                 obj
             });
 
-        for console_type in console_types {
-            let logger_data = LoggerData {
-                console_type: console_type.to_string(),
-                stdout: stdout.clone(),
-            };
+        for data in logger_data {
             let logger_data_external =
-                v8::External::new(scope, Box::into_raw(Box::new(logger_data)) as *mut _);
+                v8::External::new(scope, data as *const LoggerData as *mut std::ffi::c_void);
 
             // Normally, we'd just use a closure to pass the console data into our handler function.
             // However, the Function() syntax in V8 relies on us passing a raw function _pointer_ into
@@ -239,7 +222,7 @@ impl<'a> Ssr<'a> {
                         stdout_lock,
                         "{}",
                         Self::render_console_line(
-                            &logger_data.console_type,
+                            logger_data.console_type,
                             &values,
                             console::colors_enabled(),
                         )
@@ -253,20 +236,22 @@ impl<'a> Ssr<'a> {
             .build(scope)
             .unwrap();
 
-            let console_type_key = v8::String::new(scope, console_type).unwrap();
+            let console_type_key = v8::String::new(scope, data.console_type).unwrap();
             console_obj.set(scope, console_type_key.into(), logger_fn.into());
         }
     }
 
     fn render_console_line(console_type: &str, values: &[(String, bool)], color: bool) -> String {
         let level_style = match console_type {
-            "warn" => terminal::warning(),
-            "error" => terminal::error(),
-            _ => terminal::muted(),
+            "warn" => mountaineer_terminal::warning(),
+            "error" => mountaineer_terminal::error(),
+            _ => mountaineer_terminal::muted(),
         };
         let prefix = format!(
             "  {} {}",
-            terminal::info().force_styling(color).apply_to("[SSR]"),
+            mountaineer_terminal::info()
+                .force_styling(color)
+                .apply_to("[SSR]"),
             level_style
                 .force_styling(color)
                 .apply_to(format!("[{console_type}]"))
@@ -275,7 +260,7 @@ impl<'a> Ssr<'a> {
             .iter()
             .map(|(value, structured)| {
                 if color && *structured {
-                    terminal::payload()
+                    mountaineer_terminal::payload()
                         .force_styling(true)
                         .apply_to(value)
                         .to_string()
@@ -328,95 +313,60 @@ impl<'a> Ssr<'a> {
         }
     }
 
-    fn create_fn_map<'b>(
+    fn entrypoint_functions<'b>(
         scope: &mut v8::TryCatch<'b, v8::HandleScope>,
         object: v8::Local<v8::Object>,
-    ) -> HashMap<String, v8::Local<'b, v8::Function>> {
-        let mut fn_map: HashMap<String, v8::Local<v8::Function>> = HashMap::new();
+    ) -> Result<Vec<(String, v8::Local<'b, v8::Function>)>> {
+        let Some(properties) = object.get_own_property_names(scope, Default::default()) else {
+            return Err(Error::JavaScript(Self::extract_exception_message(
+                scope,
+                "Failed to inspect the SSR entry point",
+            )));
+        };
+        let mut functions = Vec::with_capacity(properties.length() as usize);
 
-        if let Some(props) = object.get_own_property_names(scope, Default::default()) {
-            fn_map = Some(props)
-                .iter()
-                .enumerate()
-                .map(|(i, &p)| {
-                    let name = p.get_index(scope, i as u32).unwrap();
-
-                    //A HandleScope which first allocates a handle in the current scope which will be later filled with the escape value.
-                    let mut scope = v8::EscapableHandleScope::new(scope);
-
-                    let func = object.get(&mut scope, name).unwrap();
-
-                    let func = v8::Local::<v8::Function>::try_from(func).unwrap();
-
-                    (
-                        name.to_string(&mut scope)
-                            .unwrap()
-                            .to_rust_string_lossy(&mut scope),
-                        scope.escape(func),
-                    )
-                })
-                .collect();
+        for index in 0..properties.length() {
+            let Some(property) = properties.get_index(scope, index) else {
+                return Err(Error::JavaScript(format!(
+                    "Failed to read SSR entry point property {index}"
+                )));
+            };
+            let name = property
+                .to_string(scope)
+                .map(|name| name.to_rust_string_lossy(scope))
+                .unwrap_or_else(|| index.to_string());
+            let mut child_scope = v8::EscapableHandleScope::new(scope);
+            let Some(value) = object.get(&mut child_scope, property) else {
+                return Err(Error::JavaScript(format!(
+                    "Failed to read SSR entry point property '{name}'"
+                )));
+            };
+            let function = v8::Local::<v8::Function>::try_from(value).map_err(|_| {
+                Error::JavaScript(format!(
+                    "SSR entry point property '{name}' is not a function"
+                ))
+            })?;
+            functions.push((name, child_scope.escape(function)));
         }
 
-        fn_map
-    }
-}
-
-pub fn run_ssr(js_string: String, hard_timeout: u64) -> Result<String, AppError> {
-    // init_platform must always be called from the main thread. CPU chipsets that have
-    // the PKU flag (like Skylake) will sometimes cause a crash if it's initialized on
-    // a non-main thread and the isolate tries to allocate memory.
-    // Context: https://github.com/denoland/rusty_v8/issues/1381
-    init_v8_platform();
-
-    debug!(
-        "SSR execution starting with hard timeout: {}ms",
-        hard_timeout
-    );
-
-    if hard_timeout > 0 {
-        // Seems to return a timeout error even if it was some other type of error
-        timeout::run_thread_with_timeout(
-            || {
-                let js = Ssr::new(js_string, "SSR");
-                js.render_to_string(None)
-            },
-            Duration::from_millis(hard_timeout),
-        )
-    } else {
-        // Call inline, no timeout
-        let js = Ssr::new(js_string, "SSR");
-        js.render_to_string(None)
+        Ok(functions)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // Initialize V8 platform once before running any tests
-    use std::sync::Once;
-    static INIT: Once = Once::new();
-
-    fn initialize() {
-        INIT.call_once(|| {
-            init_v8_platform();
-        });
-    }
+    use std::time::Duration;
 
     #[test]
     fn render_no_timeout() {
-        initialize();
         let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
-        let hard_timeout = 0;
-
-        let result = run_ssr(js_string, hard_timeout).unwrap();
+        let result = crate::render(js_string, None).unwrap();
         assert_eq!(result, "<html></html>");
     }
 
     #[test]
     fn render_ignores_a_trailing_line_comment() {
-        initialize();
         let js = Ssr::new(
             "var SSR = { renderToString: () => \"<html></html>\" };\n//# sourceMappingURL=ssr.js.map"
                 .to_string(),
@@ -428,17 +378,13 @@ mod tests {
 
     #[test]
     fn render_with_timeout() {
-        initialize();
         let js_string = r##"var SSR = { renderToString: () => "<html></html>" };"##.to_string();
-        let hard_timeout = 2000;
-
-        let result = run_ssr(js_string, hard_timeout).unwrap();
+        let result = crate::render(js_string, Some(Duration::from_millis(2000))).unwrap();
         assert_eq!(result, "<html></html>");
     }
 
     #[test]
     fn check_ssr_struct_instance() {
-        initialize();
         let js = Ssr::new(
             r##"var SSR = {x: () => "<html></html>"};"##.to_string(),
             "SSR",
@@ -455,7 +401,6 @@ mod tests {
 
     #[test]
     fn check_exception() {
-        initialize();
         let js = Ssr::new(
             r##"
                 var SSR = {
@@ -470,13 +415,12 @@ mod tests {
 
         assert_eq!(
             result,
-            Err(AppError::V8ExceptionError("Error calling function 'x': Error: custom_error_text\nStack: Error: custom_error_text\n    at Object.x (<anonymous>:4:31)".into()))
+            Err(Error::JavaScript("Error calling function 'x': Error: custom_error_text\nStack: Error: custom_error_text\n    at Object.x (<anonymous>:4:31)".into()))
         )
     }
 
     #[test]
     fn test_render_to_string() {
-        initialize();
         let js = Ssr::new(
             r##"
                 var SSR = {
@@ -491,8 +435,27 @@ mod tests {
     }
 
     #[test]
+    fn renders_entrypoint_functions_in_export_order() {
+        let js = Ssr::new(
+            "var SSR = { head: () => '<head>', body: () => '<body>' };".to_string(),
+            "SSR",
+        );
+
+        assert_eq!(js.render_to_string(None).unwrap(), "<head><body>");
+    }
+
+    #[test]
+    fn rejects_non_function_entrypoint_properties() {
+        let js = Ssr::new("var SSR = { renderToString: 42 };".to_string(), "SSR");
+
+        assert!(matches!(
+            js.render_to_string(None),
+            Err(Error::JavaScript(message)) if message.contains("is not a function")
+        ));
+    }
+
+    #[test]
     fn test_log_to_stdout() {
-        initialize();
         // Create a synthetic stdout that we can inspect
         let stdout = Arc::new(Mutex::new(Vec::new()));
 
@@ -506,8 +469,7 @@ mod tests {
                         });
                         return "<html></html>"
                     }
-                };"##
-                .to_string(),
+                };"##,
             "SSR",
             None,
             stdout.clone(),
@@ -535,7 +497,6 @@ mod tests {
 
     #[test]
     fn test_timezone_succeeds() {
-        initialize();
         // More context:
         // https://github.com/denoland/rusty_v8/issues/1444
         // https://github.com/denoland/rusty_v8/pull/603

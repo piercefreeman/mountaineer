@@ -1,16 +1,15 @@
-use std::result::Result;
-use std::sync::mpsc;
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::thread;
 use std::time::Duration;
 
-use crate::errors::AppError;
+use crate::{Error, Result};
 
 #[cfg(unix)]
 mod platform {
     use std::os::unix::thread::JoinHandleExt;
     use std::thread::JoinHandle;
 
-    pub unsafe fn cancel_thread(thread: JoinHandle<()>) {
+    pub(super) unsafe fn cancel_thread(thread: JoinHandle<()>) {
         /*
          * Unsafe function (probably for obvious reasons). Terminating a thread
          * on the OS level violates Rust's memory guarantees, since this can leave
@@ -23,45 +22,43 @@ mod platform {
 
 #[cfg(windows)]
 mod platform {
-    // nits
-    extern crate winapi;
     use std::os::windows::io::AsRawHandle;
     use std::thread::JoinHandle;
     use winapi::um::processthreadsapi::TerminateThread;
     use winapi::um::winnt::HANDLE;
 
-    pub unsafe fn cancel_thread(thread: JoinHandle<()>) {
+    pub(super) unsafe fn cancel_thread(thread: JoinHandle<()>) {
         let handle = thread.as_raw_handle();
         TerminateThread(handle as HANDLE, 0);
     }
 }
 
-pub fn run_thread_with_timeout<F, R>(func: F, timeout: Duration) -> Result<R, AppError>
+pub(super) fn run<F, R>(function: F, timeout: Duration) -> Result<R>
 where
-    F: FnOnce() -> Result<R, AppError> + Send + 'static,
+    F: FnOnce() -> Result<R> + Send + 'static,
     R: Send + 'static,
 {
     let (tx, rx) = mpsc::channel();
 
-    // Spawn a new thread to run the provided function
     let handle = thread::spawn(move || {
-        let result = func();
-        tx.send(result).expect("Failed to send result");
+        let _ = tx.send(function());
     });
 
     match rx.recv_timeout(timeout) {
         Ok(result) => {
             let _ = handle.join();
             result
-        } // Function completed within timeout
-        Err(_) => {
+        }
+        Err(RecvTimeoutError::Timeout) => {
             unsafe {
                 platform::cancel_thread(handle);
             }
-            Err(AppError::HardTimeoutError(
-                "Function execution timed out".into(),
-            ))
-        } // Timeout occurred, we should cancel the thread and return
+            Err(Error::Timeout("Function execution timed out".into()))
+        }
+        Err(RecvTimeoutError::Disconnected) => match handle.join() {
+            Ok(()) => unreachable!("SSR worker exited without sending a result"),
+            Err(panic) => std::panic::resume_unwind(panic),
+        },
     }
 }
 
@@ -101,7 +98,7 @@ mod tests {
     #[test]
     fn test_run_thread_times_out() {
         let start = std::time::Instant::now();
-        let result = run_thread_with_timeout(
+        let result = run(
             || {
                 let mut largest_prime = 0;
                 // Outrageously large amount of processing - for all intents will
@@ -121,9 +118,7 @@ mod tests {
 
         assert_eq!(
             result,
-            Err(AppError::HardTimeoutError(
-                "Function execution timed out".into()
-            ))
+            Err(Error::Timeout("Function execution timed out".into()))
         );
         assert!(start.elapsed() < Duration::from_secs(1));
     }
@@ -131,8 +126,7 @@ mod tests {
     #[test]
     fn test_run_thread_valid() {
         let start = std::time::Instant::now();
-        let result =
-            run_thread_with_timeout(|| Ok("returns instantly"), Duration::from_millis(500));
+        let result = run(|| Ok("returns instantly"), Duration::from_millis(500));
 
         assert_eq!(result, Ok("returns instantly"));
         assert!(start.elapsed() < Duration::from_millis(500));
