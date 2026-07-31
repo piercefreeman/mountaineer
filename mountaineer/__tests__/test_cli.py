@@ -203,11 +203,6 @@ controller.register(ClientOnlyController())
         (fixture_views_dir / "tsconfig.json").read_text()
     )
 
-    _symlink_or_copy_dir(
-        fixture_views_dir / "node_modules",
-        views_dir / "node_modules",
-    )
-
     (app_dir / "page.tsx").write_text(
         """
 import React from "react";
@@ -260,7 +255,6 @@ export default ClientOnlyWrapper;
     (app_dir / "BrowserOnlyClient.tsx").write_text(
         """
 import React from "react";
-import queueMicrotask from "queue-microtask";
 import { browserOnlyValue } from "./browserOnlyDom";
 import { sharedClientValue } from "./sharedClientValue";
 
@@ -292,13 +286,6 @@ export const browserOnlyValue = "browser-only-client";
     )
 
     return package_dir
-
-
-def _symlink_or_copy_dir(source: Path, target: Path) -> None:
-    try:
-        target.symlink_to(source, target_is_directory=True)
-    except OSError:
-        copytree(source, target)
 
 
 def _assert_relative_js_imports_resolve(static_dir: Path) -> None:

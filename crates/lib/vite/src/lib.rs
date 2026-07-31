@@ -24,6 +24,8 @@ const FRONTEND_TOOLCHAIN_PACKAGE_JSON: &str = r#"{
   "type": "module",
   "dependencies": {
     "@vitejs/plugin-react": "6.0.4",
+    "react": "19.2.5",
+    "react-dom": "19.2.5",
     "vite": "8.1.5"
   }
 }
@@ -630,6 +632,10 @@ fn frontend_toolchain_complete(path: &Path) -> bool {
         path.join("node_modules")
             .join("@vitejs")
             .join("plugin-react")
+            .join("package.json"),
+        path.join("node_modules").join("react").join("package.json"),
+        path.join("node_modules")
+            .join("react-dom")
             .join("package.json"),
     ]
     .iter()

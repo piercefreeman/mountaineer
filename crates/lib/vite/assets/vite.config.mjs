@@ -10,6 +10,16 @@ import {
 import { mountaineerUseClient } from "./mountaineer-use-client.mjs";
 
 const require = createRequire(mountaineer.toolchain_package_json);
+const projectRequire = createRequire(
+  path.join(mountaineer.frontend_root, "package.json"),
+);
+const resolveRuntime = (source) => {
+  try {
+    return projectRequire.resolve(source);
+  } catch {
+    return require.resolve(source);
+  }
+};
 const { defineConfig } = await import(
   pathToFileURL(require.resolve("vite")).href
 );
@@ -42,6 +52,17 @@ export default defineConfig({
   base: "./",
   clearScreen: false,
   resolve: {
+    alias: [
+      "react",
+      "react/jsx-runtime",
+      "react/jsx-dev-runtime",
+      "react-dom",
+      "react-dom/client",
+      "react-dom/server.edge",
+    ].map((source) => ({
+      find: new RegExp(`^${source.replaceAll(".", "\\.")}$`),
+      replacement: resolveRuntime(source),
+    })),
     tsconfigPaths: true,
   },
   define: ssrBuild
