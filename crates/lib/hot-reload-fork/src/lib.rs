@@ -254,4 +254,23 @@ mod tests {
 
         assert!(!status.success());
     }
+
+    #[tokio::test]
+    async fn parent_processes_back_to_back_commands() {
+        let project = tempfile::tempdir().unwrap();
+        let Spawned { mut strategy, .. } = Strategy::spawn(Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports: BTreeSet::new(),
+        })
+        .await
+        .unwrap();
+
+        timeout(Duration::from_secs(1), async {
+            strategy.stop(Worker { generation: 1 }).await.unwrap();
+            strategy.shutdown().await.unwrap();
+        })
+        .await
+        .expect("fork parent stalled with buffered commands");
+    }
 }

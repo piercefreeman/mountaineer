@@ -36,6 +36,7 @@ for module in json.loads(sys.argv[1]):
 
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 children: dict[int, int] = {}
+stdin = sys.stdin.buffer.raw
 
 
 def stop(generation: int) -> None:
@@ -60,10 +61,10 @@ try:
                     f"with status {status}"
                 )
 
-        readable, _, _ = select.select([sys.stdin], [], [], 0.1)
+        readable, _, _ = select.select([stdin], [], [], 0.1)
         if not readable:
             continue
-        line = sys.stdin.readline()
+        line = stdin.readline()
         if not line:
             break
         command = json.loads(line)
