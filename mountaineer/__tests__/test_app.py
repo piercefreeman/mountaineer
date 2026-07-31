@@ -215,6 +215,8 @@ def test_register_plugin_includes_plugin_router(tmp_path: Path):
     app = AppController(view_root=host_view_root)
     app.register(plugin)
 
+    assert plugin.get_controllers()[0]._scripts_prefix == "/static_plugins/plugin-test"
+
     with TestClient(app.app) as client:
         response = client.get("/plugin-api")
         assert response.status_code == 200

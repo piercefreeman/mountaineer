@@ -38,8 +38,6 @@ from mountaineer.development.watch import (
 from mountaineer.frontend import vite_style_paths, write_build_metadata
 from mountaineer.io import async_to_sync
 from mountaineer.logging import LOGGER
-from mountaineer.ssr import find_tsconfig
-from mountaineer.static import get_static_path
 
 
 def run_dev() -> None:
@@ -238,83 +236,24 @@ async def handle_build(
         if controller_definition.build_enabled
     ]
 
-    # Get view paths for all controllers
-    all_view_paths: list[list[str]] = [
-        view_path
+    entrypoints = [
+        (controller_definition.controller.script_name, view_paths)
         for controller_definition in build_controllers
-        for view_path in controller_definition.get_hierarchy_view_paths()
-    ]
-    entrypoint_names = [
-        controller_definition.controller.script_name
-        for controller_definition in build_controllers
+        for view_paths in controller_definition.get_hierarchy_view_paths()
     ]
 
-    # Find tsconfig.json in the parent directories of the view paths
-    tsconfig_path = find_tsconfig(all_view_paths)
-
-    if not all_view_paths:
+    if not entrypoints:
         LOGGER.warning("No controllers found to build. Skipping bundling steps.")
         LOGGER.info(f"Build completed in {(time() - start):.2f}s")
         return
 
-    # Compile the final client bundle
-    client_bundle_result = mountaineer_rs.compile_production_bundle(
-        all_view_paths,
-        str(isolated_context.app_controller._view_root / "node_modules"),
-        "production",
-        minify,
-        str(get_static_path("live_reload.ts").resolve().absolute()),
-        False,
-        tsconfig_path,
-        entrypoint_names,
-    )
-
     static_output = isolated_context.app_controller._view_root.get_managed_static_dir()
     ssr_output = isolated_context.app_controller._view_root.get_managed_ssr_dir()
-
-    # If we don't have the same number of entrypoints as controllers, something went wrong
-    if len(client_bundle_result["entrypoints"]) != len(build_controllers):
-        raise ValueError(
-            f"Mismatch between number of controllers and number of entrypoints in the client bundle\n"
-            f"Controllers: {len(build_controllers)}\n"
-            f"Entrypoints: {len(client_bundle_result['entrypoints'])}"
-        )
-
-    # Try to parse the format (entrypoint{}.js or entrypoint{}.js.map)
-    for entrypoint_name, content, map_content in zip(
-        entrypoint_names,
-        client_bundle_result["entrypoints"],
-        client_bundle_result["entrypoint_maps"],
-    ):
-        (static_output / f"{entrypoint_name}.js").write_text(content)
-        (static_output / f"{entrypoint_name}.map.js").write_text(map_content)
-
-    # Copy the other files 1:1 because they'll be referenced by name in the
-    # entrypoints
-    for path, content in client_bundle_result["supporting"].items():
-        (static_output / path).write_text(content)
-
-    # Now we go one-by-one to provide the SSR files, which will be consolidated
-    # into a single runnable script for ease of use by the V8 engine
-    result_scripts, _ = mountaineer_rs.compile_independent_bundles(
-        all_view_paths,
-        str(isolated_context.app_controller._view_root / "node_modules"),
-        "production",
-        0,
-        str(get_static_path("live_reload.ts").resolve().absolute()),
-        True,
-        tsconfig_path,
-    )
-
-    # Write each script to disk
-    for controller_definition, script in zip(build_controllers, result_scripts):
-        (ssr_output / f"{controller_definition.controller.script_name}.js").write_text(
-            script
-        )
-
-    mountaineer_rs.build_frontend_styles(
+    mountaineer_rs.build_frontend(
         str(isolated_context.app_controller._view_root),
         str(static_output),
+        str(ssr_output),
+        entrypoints,
         [
             str(path)
             for path in vite_style_paths(isolated_context.app_controller._view_root)

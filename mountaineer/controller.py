@@ -18,6 +18,7 @@ from mountaineer.actions import (
     FunctionMetadata,
     get_function_metadata,
 )
+from mountaineer.constants import DEFAULT_STATIC_DIR
 from mountaineer.render import RenderBase
 
 if TYPE_CHECKING:
@@ -93,6 +94,11 @@ class ControllerBase(ABC, Generic[RenderInput]):
     This helps avoid blocking other server render handlers if the React render
     logic hangs.
 
+    """
+
+    _scripts_prefix: str = DEFAULT_STATIC_DIR
+    """
+    Prefix for the static resolution endpoint of the bundled scripts.
     """
 
     def __init__(

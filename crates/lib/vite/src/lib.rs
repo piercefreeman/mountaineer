@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 use std::{
+    collections::BTreeSet,
     env, fs, io,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
@@ -23,11 +24,14 @@ const FRONTEND_TOOLCHAIN_PACKAGE_JSON: &str = r#"{
   "type": "module",
   "dependencies": {
     "@vitejs/plugin-react": "6.0.4",
-    "vite": "8.1.5"
+    "vite": "8.1.5",
+    "vite-tsconfig-paths": "6.1.1"
   }
 }
 "#;
 const VITE_CONFIG: &str = include_str!("../assets/vite.config.mjs");
+const ENTRYPOINTS: &str = include_str!("../assets/entrypoints.mjs");
+const USE_CLIENT: &str = include_str!("../assets/use-client.mjs");
 
 /// Error returned by the Vite component.
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +62,16 @@ pub struct DevelopmentConfig {
     pub host: String,
 }
 
+/// One named Mountaineer page and its ordered layout hierarchy.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct Entrypoint {
+    /// Stable output filename stem.
+    pub name: String,
+
+    /// Component paths ordered from outermost layout to page.
+    pub views: Vec<PathBuf>,
+}
+
 /// A named stylesheet entry for a Vite build.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct Stylesheet {
@@ -66,6 +80,48 @@ pub struct Stylesheet {
 
     /// Absolute path to the source stylesheet.
     pub path: PathBuf,
+}
+
+/// Typed configuration for a complete production frontend build.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProductionConfig {
+    /// Root directory containing the application's frontend source.
+    pub frontend_root: PathBuf,
+
+    /// Directory that receives browser JavaScript, chunks, and stylesheets.
+    pub client_output_dir: PathBuf,
+
+    /// Directory that receives standalone scripts for embedded-V8 rendering.
+    pub ssr_output_dir: PathBuf,
+
+    /// Controller entrypoints compiled for both browser and server rendering.
+    pub entrypoints: Vec<Entrypoint>,
+
+    /// Stylesheets compiled as stable, independently linked assets.
+    pub styles: Vec<PathBuf>,
+
+    /// Whether production JavaScript and CSS should be minified.
+    pub minify: bool,
+}
+
+/// Typed configuration for one standalone development SSR compilation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SsrConfig {
+    /// Root directory containing the application's frontend source.
+    pub frontend_root: PathBuf,
+
+    /// Component paths ordered from outermost layout to page.
+    pub views: Vec<PathBuf>,
+}
+
+/// Standalone JavaScript produced for embedded-V8 rendering.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CompiledSsr {
+    /// Self-contained script exposing Mountaineer's `SSR` entrypoint object.
+    pub script: String,
+
+    /// Source map emitted beside the script.
+    pub source_map: Option<String>,
 }
 
 /// Typed configuration for a stylesheet-only Vite build.
@@ -96,6 +152,8 @@ impl DevelopmentServer {
     /// Starts Vite from typed Rust configuration and waits until it accepts connections.
     pub async fn spawn(config: DevelopmentConfig) -> Result<Self> {
         let frontend_root = config.frontend_root.canonicalize()?;
+        let toolchain_root = ensure_frontend_toolchain(&frontend_root).await?;
+        let javascript_runtime = javascript_runtime().await?;
         let directory = tempfile::tempdir()?;
         let port = reserve_loopback_port()?;
         let public_host = match config.host.as_str() {
@@ -105,18 +163,27 @@ impl DevelopmentServer {
         let origin = format!("http://{public_host}:{port}");
         let backend_signal = directory.path().join("backend-generation");
         fs::write(&backend_signal, b"1")?;
-
-        let mut child = command(
-            &frontend_root,
+        write_config(
             &directory,
-            Mode::Development {
-                host: &config.host,
-                public_host,
-                port,
-                backend_signal: &backend_signal,
+            Config {
+                frontend_root: &frontend_root,
+                toolchain_package_json: toolchain_root.join("package.json"),
+                mode: Mode::Development {
+                    host: &config.host,
+                    public_host,
+                    port,
+                    backend_signal: &backend_signal,
+                },
             },
-        )
-        .await?
+        )?;
+
+        let mut child = vite_command(
+            javascript_runtime,
+            &frontend_root,
+            &toolchain_root,
+            &directory,
+            false,
+        )?
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
@@ -171,39 +238,134 @@ impl DevelopmentServer {
     }
 }
 
-/// Builds stylesheet entrypoints through Vite.
-pub async fn build_styles(config: StyleBuildConfig) -> Result<()> {
-    if config.styles.is_empty() {
+/// Builds browser, stylesheet, and standalone SSR artifacts for production.
+pub async fn build_production(config: ProductionConfig) -> Result<()> {
+    let frontend_root = config.frontend_root.canonicalize()?;
+    let entrypoints = prepare_entrypoints(config.entrypoints)?;
+    let styles = prepare_style_paths(&frontend_root, config.styles)?;
+    if entrypoints.is_empty() {
         return Ok(());
     }
 
-    let frontend_root = config.frontend_root.canonicalize()?;
-    fs::create_dir_all(&config.output_dir)?;
-    let output_dir = config.output_dir.canonicalize()?;
+    let client_output_dir = prepare_output_dir(&frontend_root, config.client_output_dir)?;
+    let ssr_output_dir = prepare_output_dir(&frontend_root, config.ssr_output_dir)?;
+    if client_output_dir == ssr_output_dir {
+        return Err(Error::Invalid(
+            "client and SSR output directories must differ".to_string(),
+        ));
+    }
+
+    let toolchain_root = ensure_frontend_toolchain(&frontend_root).await?;
+    let javascript_runtime = javascript_runtime().await?;
     let directory = tempfile::tempdir()?;
-    let output = command(
+    run_build(
+        javascript_runtime,
         &frontend_root,
+        &toolchain_root,
+        &directory,
+        Mode::BuildClient {
+            entrypoints: &entrypoints,
+            output_dir: &client_output_dir,
+            minify: config.minify,
+        },
+    )
+    .await?;
+
+    for (index, entrypoint) in entrypoints.iter().enumerate() {
+        run_build(
+            javascript_runtime,
+            &frontend_root,
+            &toolchain_root,
+            &directory,
+            Mode::BuildSsr {
+                entrypoint,
+                output_dir: &ssr_output_dir,
+                environment: "production",
+                minify: config.minify,
+                empty_output: index == 0,
+            },
+        )
+        .await?;
+    }
+
+    if !styles.is_empty() {
+        run_build(
+            javascript_runtime,
+            &frontend_root,
+            &toolchain_root,
+            &directory,
+            Mode::BuildStyles {
+                styles: &styles,
+                output_dir: &client_output_dir,
+                minify: config.minify,
+            },
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Compiles one self-contained development SSR script for embedded V8.
+pub async fn compile_ssr(config: SsrConfig) -> Result<CompiledSsr> {
+    let frontend_root = config.frontend_root.canonicalize()?;
+    let entrypoint = prepare_entrypoint(Entrypoint {
+        name: "entrypoint".to_string(),
+        views: config.views,
+    })?;
+    let toolchain_root = ensure_frontend_toolchain(&frontend_root).await?;
+    let javascript_runtime = javascript_runtime().await?;
+    let directory = tempfile::tempdir()?;
+    let output_dir = directory.path().join("ssr");
+    fs::create_dir(&output_dir)?;
+    run_build(
+        javascript_runtime,
+        &frontend_root,
+        &toolchain_root,
+        &directory,
+        Mode::BuildSsr {
+            entrypoint: &entrypoint,
+            output_dir: &output_dir,
+            environment: "development",
+            minify: false,
+            empty_output: true,
+        },
+    )
+    .await?;
+
+    let script_path = output_dir.join("entrypoint.js");
+    let source_map_path = output_dir.join("entrypoint.js.map");
+    Ok(CompiledSsr {
+        script: fs::read_to_string(script_path)?,
+        source_map: source_map_path
+            .is_file()
+            .then(|| fs::read_to_string(source_map_path))
+            .transpose()?,
+    })
+}
+
+/// Builds stylesheet entrypoints through Vite.
+pub async fn build_styles(config: StyleBuildConfig) -> Result<()> {
+    let frontend_root = config.frontend_root.canonicalize()?;
+    let styles = prepare_styles(config.styles)?;
+    if styles.is_empty() {
+        return Ok(());
+    }
+    let output_dir = prepare_output_dir(&frontend_root, config.output_dir)?;
+    let toolchain_root = ensure_frontend_toolchain(&frontend_root).await?;
+    let javascript_runtime = javascript_runtime().await?;
+    let directory = tempfile::tempdir()?;
+    run_build(
+        javascript_runtime,
+        &frontend_root,
+        &toolchain_root,
         &directory,
         Mode::BuildStyles {
-            styles: &config.styles,
+            styles: &styles,
             output_dir: &output_dir,
             minify: config.minify,
         },
     )
-    .await?
-    .output()
-    .await?;
-    if output.status.success() {
-        return Ok(());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    Err(Error::Invalid(if stderr.trim().is_empty() {
-        stdout.trim().to_string()
-    } else {
-        stderr.trim().to_string()
-    }))
+    .await
 }
 
 #[derive(Serialize)]
@@ -223,6 +385,18 @@ enum Mode<'a> {
         port: u16,
         backend_signal: &'a Path,
     },
+    BuildClient {
+        entrypoints: &'a [Entrypoint],
+        output_dir: &'a Path,
+        minify: bool,
+    },
+    BuildSsr {
+        entrypoint: &'a Entrypoint,
+        output_dir: &'a Path,
+        environment: &'a str,
+        minify: bool,
+        empty_output: bool,
+    },
     BuildStyles {
         styles: &'a [Stylesheet],
         output_dir: &'a Path,
@@ -230,24 +404,69 @@ enum Mode<'a> {
     },
 }
 
-async fn command(frontend_root: &Path, directory: &TempDir, mode: Mode<'_>) -> Result<Command> {
-    let build = matches!(mode, Mode::BuildStyles { .. });
-    let toolchain_root = ensure_frontend_toolchain(frontend_root).await?;
-    let config = Config {
+async fn run_build(
+    javascript_runtime: &str,
+    frontend_root: &Path,
+    toolchain_root: &Path,
+    directory: &TempDir,
+    mode: Mode<'_>,
+) -> Result<()> {
+    write_config(
+        directory,
+        Config {
+            frontend_root,
+            toolchain_package_json: toolchain_root.join("package.json"),
+            mode,
+        },
+    )?;
+    let output = vite_command(
+        javascript_runtime,
         frontend_root,
-        toolchain_package_json: toolchain_root.join("package.json"),
-        mode,
-    };
-    let config_path = directory.path().join("mountaineer-vite.config.mjs");
+        toolchain_root,
+        directory,
+        true,
+    )?
+    .output()
+    .await?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Err(Error::Invalid(if stderr.trim().is_empty() {
+        stdout.trim().to_string()
+    } else {
+        stderr.trim().to_string()
+    }))
+}
+
+fn write_config(directory: &TempDir, config: Config<'_>) -> Result<()> {
     fs::write(
-        &config_path,
+        directory.path().join("mountaineer-entrypoints.mjs"),
+        ENTRYPOINTS,
+    )?;
+    fs::write(
+        directory.path().join("mountaineer-use-client.mjs"),
+        USE_CLIENT,
+    )?;
+    fs::write(
+        directory.path().join("mountaineer-vite.config.mjs"),
         format!(
             "const mountaineer = {};\n{VITE_CONFIG}",
             serde_json::to_string(&config)?
         ),
     )?;
+    Ok(())
+}
 
-    let mut command = Command::new(javascript_runtime().await?);
+fn vite_command(
+    javascript_runtime: &str,
+    frontend_root: &Path,
+    toolchain_root: &Path,
+    directory: &TempDir,
+    build: bool,
+) -> Result<Command> {
+    let mut command = executable_command(javascript_runtime);
     command.arg(
         toolchain_root
             .join("node_modules")
@@ -259,11 +478,117 @@ async fn command(frontend_root: &Path, directory: &TempDir, mode: Mode<'_>) -> R
         command.arg("build");
     }
     command
-        .args(["--config", config_path.to_string_lossy().as_ref()])
+        .args([
+            "--config",
+            directory
+                .path()
+                .join("mountaineer-vite.config.mjs")
+                .to_string_lossy()
+                .as_ref(),
+        ])
         .args(["--logLevel", "warn"])
         .current_dir(frontend_root)
         .stdin(Stdio::null());
     Ok(command)
+}
+
+fn prepare_entrypoints(entrypoints: Vec<Entrypoint>) -> Result<Vec<Entrypoint>> {
+    let mut names = BTreeSet::new();
+    entrypoints
+        .into_iter()
+        .map(|entrypoint| {
+            let entrypoint = prepare_entrypoint(entrypoint)?;
+            if !names.insert(entrypoint.name.clone()) {
+                return Err(Error::Invalid(format!(
+                    "duplicate frontend entrypoint name {:?}",
+                    entrypoint.name
+                )));
+            }
+            Ok(entrypoint)
+        })
+        .collect()
+}
+
+fn prepare_entrypoint(mut entrypoint: Entrypoint) -> Result<Entrypoint> {
+    validate_name("frontend entrypoint", &entrypoint.name)?;
+    if entrypoint.views.is_empty() {
+        return Err(Error::Invalid(format!(
+            "frontend entrypoint {:?} has no views",
+            entrypoint.name
+        )));
+    }
+    entrypoint.views = entrypoint
+        .views
+        .into_iter()
+        .map(|view| view.canonicalize().map_err(Error::from))
+        .collect::<Result<_>>()?;
+    Ok(entrypoint)
+}
+
+fn prepare_styles(styles: Vec<Stylesheet>) -> Result<Vec<Stylesheet>> {
+    let mut names = BTreeSet::new();
+    styles
+        .into_iter()
+        .map(|mut style| {
+            validate_name("stylesheet", &style.name)?;
+            if !names.insert(style.name.clone()) {
+                return Err(Error::Invalid(format!(
+                    "duplicate stylesheet name {:?}",
+                    style.name
+                )));
+            }
+            style.path = style.path.canonicalize()?;
+            Ok(style)
+        })
+        .collect()
+}
+
+fn prepare_style_paths(frontend_root: &Path, styles: Vec<PathBuf>) -> Result<Vec<Stylesheet>> {
+    let styles = styles
+        .into_iter()
+        .map(|style| {
+            let path = style.canonicalize()?;
+            let relative = path.strip_prefix(frontend_root).map_err(|_| {
+                Error::Invalid(format!(
+                    "stylesheet {} is outside frontend root {}",
+                    path.display(),
+                    frontend_root.display()
+                ))
+            })?;
+            let name = relative
+                .with_extension("")
+                .components()
+                .filter_map(|component| component.as_os_str().to_str())
+                .collect::<Vec<_>>()
+                .join("_");
+            Ok(Stylesheet { name, path })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    prepare_styles(styles)
+}
+
+fn validate_name(kind: &str, name: &str) -> Result<()> {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(Error::Invalid(format!(
+            "{kind} name {name:?} must contain only ASCII letters, digits, '-' or '_'"
+        )));
+    }
+    Ok(())
+}
+
+fn prepare_output_dir(frontend_root: &Path, output_dir: PathBuf) -> Result<PathBuf> {
+    fs::create_dir_all(&output_dir)?;
+    let output_dir = output_dir.canonicalize()?;
+    if frontend_root.starts_with(&output_dir) {
+        return Err(Error::Invalid(
+            "Vite output directory cannot contain the frontend root".to_string(),
+        ));
+    }
+    Ok(output_dir)
 }
 
 fn frontend_toolchain_cache_dir() -> Result<PathBuf> {
@@ -297,19 +622,22 @@ fn frontend_toolchain_cache_dir() -> Result<PathBuf> {
 }
 
 fn frontend_toolchain_complete(path: &Path) -> bool {
-    path.join("package.json").is_file()
-        && path
-            .join("node_modules")
+    [
+        path.join("package.json"),
+        path.join("node_modules")
             .join("vite")
             .join("bin")
-            .join("vite.js")
-            .is_file()
-        && path
-            .join("node_modules")
+            .join("vite.js"),
+        path.join("node_modules")
             .join("@vitejs")
             .join("plugin-react")
-            .join("package.json")
-            .is_file()
+            .join("package.json"),
+        path.join("node_modules")
+            .join("vite-tsconfig-paths")
+            .join("package.json"),
+    ]
+    .iter()
+    .all(|path| path.is_file())
 }
 
 fn package_manager_preferences(frontend_root: &Path) -> Vec<&'static str> {
@@ -397,7 +725,7 @@ async fn javascript_runtime() -> Result<&'static str> {
         }
     }
     Err(Error::Invalid(
-        "frontend refresh requires Node.js or Bun".to_string(),
+        "frontend tooling requires Node.js or Bun".to_string(),
     ))
 }
 
@@ -450,7 +778,7 @@ async fn ensure_frontend_toolchain(frontend_root: &Path) -> Result<PathBuf> {
     }
     if !frontend_toolchain_complete(install_root.path()) {
         return Err(Error::Invalid(format!(
-            "{manager} completed without installing Vite and its React plugin"
+            "{manager} completed without installing the complete Vite toolchain"
         )));
     }
 
@@ -504,7 +832,24 @@ mod tests {
     }
 
     #[test]
-    fn vite_config_consumes_typed_rust_settings() {
-        assert!(!VITE_CONFIG.contains("process.env"));
+    fn entrypoint_names_cannot_escape_the_output_directory() {
+        let error = prepare_entrypoint(Entrypoint {
+            name: "../outside".to_string(),
+            views: vec![PathBuf::from("page.tsx")],
+        })
+        .unwrap_err();
+
+        assert!(error.to_string().contains("only ASCII"));
+    }
+
+    #[test]
+    fn output_directory_cannot_contain_frontend_sources() {
+        let workspace = tempfile::tempdir().unwrap();
+        let frontend = workspace.path().join("frontend");
+        fs::create_dir(&frontend).unwrap();
+
+        let error = prepare_output_dir(&frontend, workspace.path().to_path_buf()).unwrap_err();
+
+        assert!(error.to_string().contains("cannot contain"));
     }
 }

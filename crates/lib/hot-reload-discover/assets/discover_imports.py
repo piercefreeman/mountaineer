@@ -12,7 +12,7 @@ The script reads no stdin. It writes a sorted JSON array of absolute import
 names to stdout, excluding standard-library modules, the package itself, and
 files beneath ``.git``, ``.venv``, ``__pycache__``, or ``node_modules``.
 Syntax or filesystem errors are intentionally fatal and reported by Python on
-stderr for the Rust coordinator to surface.
+stderr for the Rust caller to surface.
 """
 
 import ast

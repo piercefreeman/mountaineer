@@ -59,8 +59,6 @@ def test_production_frontend_is_resolved_from_route_definition(tmp_path: Path):
         definition = app.graph.get_definitions_for_cls(RuntimeController)[0]
         frontend = resolve_frontend(
             definition,
-            node_modules_path=view_root / "node_modules",
-            live_reload_port=0,
             build_metadata=BuildMetadata(
                 static_artifact_shas={"runtime_controller.js": "coordinated"}
             ),
@@ -89,13 +87,11 @@ def test_vite_client_is_generated_without_route_files(tmp_path: Path):
         app.register(RuntimeController())
         definition = app.graph.get_definitions_for_cls(RuntimeController)[0]
         with patch(
-            "mountaineer.frontend.mountaineer_rs.compile_independent_bundles",
-            return_value=(["server bundle"], ["source map"]),
+            "mountaineer.frontend.mountaineer_rs.compile_frontend_ssr",
+            return_value=("server bundle", "source map"),
         ):
             frontend = resolve_frontend(
                 definition,
-                node_modules_path=view_root / "node_modules",
-                live_reload_port=0,
                 build_metadata=None,
             )
         with patch("mountaineer.app.render_ssr", return_value="<main>Home</main>"):

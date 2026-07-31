@@ -324,6 +324,8 @@ class AppController:
         build_enabled: bool,
         dev_enabled: bool,
     ):
+        controller._scripts_prefix = static_url
+
         # Since the controller name is used to build dependent files, we ensure
         # that we only register one controller of a given name
         if self.graph.get_definitions_for_cls(controller.__class__):
@@ -528,8 +530,6 @@ class AppController:
 
         frontend = resolve_frontend(
             controller_definition,
-            node_modules_path=self._view_root.get_package_root_link() / "node_modules",
-            live_reload_port=self.live_reload_port,
             build_metadata=self.get_build_metadata(),
         )
         html = self.compile_html(

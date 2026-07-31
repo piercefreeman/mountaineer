@@ -111,7 +111,7 @@ impl<'a> Ssr<'a> {
         // Encapsulate all V8 operations that might throw exceptions within this TryCatch block
         let try_catch = &mut v8::TryCatch::new(scope);
 
-        let code = match v8::String::new(try_catch, &format!("{source};{entry_point}")) {
+        let code = match v8::String::new(try_catch, &format!("{source}\n;{entry_point}")) {
             Some(code) => code,
             None => {
                 // This typically shouldn't fail unless there's a serious issue (like out of memory),
@@ -412,6 +412,18 @@ mod tests {
 
         let result = run_ssr(js_string, hard_timeout).unwrap();
         assert_eq!(result, "<html></html>");
+    }
+
+    #[test]
+    fn render_ignores_a_trailing_line_comment() {
+        initialize();
+        let js = Ssr::new(
+            "var SSR = { renderToString: () => \"<html></html>\" };\n//# sourceMappingURL=ssr.js.map"
+                .to_string(),
+            "SSR",
+        );
+
+        assert_eq!(js.render_to_string(None).unwrap(), "<html></html>");
     }
 
     #[test]

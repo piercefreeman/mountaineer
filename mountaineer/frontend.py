@@ -7,11 +7,8 @@ from urllib.parse import urlencode
 from pydantic import BaseModel
 
 from mountaineer import mountaineer as mountaineer_rs  # type: ignore
-from mountaineer.logging import LOGGER
 from mountaineer.paths import ManagedViewPath
 from mountaineer.runtime import get_runtime_payload
-from mountaineer.ssr import find_tsconfig
-from mountaineer.static import get_static_path
 
 if TYPE_CHECKING:
     from mountaineer.graph.app_graph import ControllerDefinition
@@ -51,16 +48,12 @@ def write_build_metadata(view_root: ManagedViewPath) -> None:
 def resolve_frontend(
     definition: "ControllerDefinition",
     *,
-    node_modules_path: Path,
-    live_reload_port: int,
     build_metadata: BuildMetadata | None,
 ) -> FrontendEntry:
     """
     Resolve and cache the frontend assets for a controller.
 
     :param definition: The controller and view paths to resolve
-    :param node_modules_path: The installed frontend dependencies used for development compilation
-    :param live_reload_port: The port injected into development bundles for live reload
     :param build_metadata: Content hashes for production assets, when available
     :return: The scripts and imports needed to render the controller
     :raises ValueError: If a required production artifact is missing
@@ -69,62 +62,32 @@ def resolve_frontend(
         return definition.frontend
 
     if definition.development_enabled:
-        definition.frontend = _development_entry(
-            definition, node_modules_path, live_reload_port
-        )
+        definition.frontend = _development_entry(definition)
     else:
         definition.frontend = _production_entry(definition, build_metadata)
     return definition.frontend
 
 
-def _development_entry(
-    definition: "ControllerDefinition",
-    node_modules_path: Path,
-    live_reload_port: int,
-) -> FrontendEntry:
-    view_paths = definition.get_hierarchy_view_paths()
-    tsconfig_path = find_tsconfig(view_paths)
-    scripts, sourcemaps = mountaineer_rs.compile_independent_bundles(
-        view_paths,
-        str(node_modules_path.resolve()),
-        "development",
-        live_reload_port,
-        str(get_static_path("live_reload.ts").resolve()),
-        True,
-        tsconfig_path,
-    )
-
+def _development_entry(definition: "ControllerDefinition") -> FrontendEntry:
     payload = get_runtime_payload()
-    if payload is not None and payload.dev_server_origin is not None:
-        return FrontendEntry(
-            server_script=cast(str, scripts[0]),
-            server_sourcemap=cast(str | None, sourcemaps[0]),
-            client_imports=(
-                vite_client_url(
-                    payload.dev_server_origin,
-                    view_paths[0],
-                    vite_style_paths(definition.view_root),
-                ),
-            ),
-        )
+    if payload is None or payload.dev_server_origin is None:
+        raise RuntimeError("Development frontend requires the Mountaineer Vite server")
 
-    LOGGER.debug(
-        "Compiling client-side bundle for %s",
-        definition.controller.__class__.__name__,
-    )
-    client_scripts, _ = mountaineer_rs.compile_independent_bundles(
-        view_paths,
-        str(node_modules_path.resolve()),
-        "development",
-        live_reload_port,
-        str(get_static_path("live_reload.ts").resolve()),
-        False,
-        tsconfig_path,
+    [views] = definition.get_hierarchy_view_paths()
+    script, source_map = mountaineer_rs.compile_frontend_ssr(
+        str(definition.view_root),
+        views,
     )
     return FrontendEntry(
-        server_script=cast(str, scripts[0]),
-        server_sourcemap=cast(str | None, sourcemaps[0]),
-        client_script=cast(str, client_scripts[0]),
+        server_script=cast(str, script),
+        server_sourcemap=cast(str | None, source_map),
+        client_imports=(
+            vite_client_url(
+                payload.dev_server_origin,
+                views,
+                vite_style_paths(definition.view_root),
+            ),
+        ),
     )
 
 

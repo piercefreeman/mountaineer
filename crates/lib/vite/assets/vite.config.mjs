@@ -2,6 +2,13 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
 
+import {
+  developmentClientSource,
+  entrypointInputs,
+  mountaineerEntrypoints,
+} from "./mountaineer-entrypoints.mjs";
+import { mountaineerUseClient } from "./mountaineer-use-client.mjs";
+
 const require = createRequire(mountaineer.toolchain_package_json);
 const { defineConfig } = await import(
   pathToFileURL(require.resolve("vite")).href
@@ -9,13 +16,25 @@ const { defineConfig } = await import(
 const react = (
   await import(pathToFileURL(require.resolve("@vitejs/plugin-react")).href)
 ).default;
+const tsconfigPaths = (
+  await import(pathToFileURL(require.resolve("vite-tsconfig-paths")).href)
+).default;
+
 const development =
   mountaineer.mode === "development" ? mountaineer : undefined;
+const clientBuild =
+  mountaineer.mode === "build_client" ? mountaineer : undefined;
+const ssrBuild = mountaineer.mode === "build_ssr" ? mountaineer : undefined;
 const styleBuild =
   mountaineer.mode === "build_styles" ? mountaineer : undefined;
 const backendSignal = development
   ? path.resolve(development.backend_signal)
   : undefined;
+const entrypoints = clientBuild
+  ? clientBuild.entrypoints
+  : ssrBuild
+    ? [ssrBuild.entrypoint]
+    : [];
 const styleEntries = Object.fromEntries(
   (styleBuild?.styles ?? []).map(({ name, path }) => [name, path]),
 );
@@ -23,13 +42,31 @@ const styleEntries = Object.fromEntries(
 export default defineConfig({
   root: mountaineer.frontend_root,
   appType: "custom",
+  base: "./",
   clearScreen: false,
+  define: ssrBuild
+    ? {
+        "process.env.NODE_ENV": JSON.stringify(ssrBuild.environment),
+        "process.env.SSR_RENDERING": "true",
+        "process.env.LIVE_RELOAD_PORT": "0",
+        global: "globalThis",
+      }
+    : clientBuild
+      ? {
+          "process.env.NODE_ENV": JSON.stringify("production"),
+          "process.env.SSR_RENDERING": "false",
+          "process.env.LIVE_RELOAD_PORT": "0",
+        }
+      : undefined,
   plugins: [
+    mountaineerEntrypoints(entrypoints, ssrBuild ? "ssr" : "client"),
+    mountaineerUseClient(ssrBuild ? "ssr" : "client"),
+    tsconfigPaths(),
     react(),
     ...(development
       ? [
           {
-            name: "mountaineer:backend-reload",
+            name: "mountaineer:development",
             configureServer(server) {
               server.middlewares.use(
                 "/@mountaineer/client",
@@ -51,29 +88,7 @@ export default defineConfig({
                   }
 
                   response.setHeader("Content-Type", "text/javascript");
-                  response.end(`
-import "/@vite/client";
-import RefreshRuntime from "/@react-refresh";
-RefreshRuntime.injectIntoGlobalHook(window);
-window.$RefreshReg$ = () => {};
-window.$RefreshSig$ = () => (type) => type;
-window.__vite_plugin_react_preamble_installed__ = true;
-await Promise.all(${JSON.stringify(styles)}.map((path) => import(path)));
-const ReactModule = await import("/@id/react");
-const React = ReactModule.default ?? ReactModule;
-const ReactDOMModule = await import("/@id/react-dom/client");
-const { hydrateRoot } = ReactDOMModule.default ?? ReactDOMModule;
-const components = await Promise.all(
-  ${JSON.stringify(views)}.map((path) => import(path)),
-);
-let element = null;
-for (const module of components.reverse()) {
-  element = React.createElement(module.default, null, element);
-}
-const root = document.getElementById("root");
-if (!root) throw new Error("Mountaineer root element is missing");
-hydrateRoot(root, element);
-`);
+                  response.end(developmentClientSource(views, styles));
                 },
               );
 
@@ -109,19 +124,60 @@ hydrateRoot(root, element);
         },
       }
     : undefined,
-  build: styleBuild
+  ssr: ssrBuild
     ? {
-        outDir: styleBuild.output_dir,
-        emptyOutDir: false,
+        target: "webworker",
+        noExternal: true,
+      }
+    : undefined,
+  build: clientBuild
+    ? {
+        outDir: clientBuild.output_dir,
+        emptyOutDir: true,
         copyPublicDir: false,
         cssCodeSplit: true,
-        minify: styleBuild.minify,
-        rollupOptions: {
-          input: styleEntries,
+        minify: clientBuild.minify,
+        sourcemap: "hidden",
+        rolldownOptions: {
+          input: entrypointInputs(clientBuild.entrypoints),
           output: {
-            assetFileNames: "[name][extname]",
+            entryFileNames: "[name].js",
+            chunkFileNames: "[name]-[hash].js",
+            assetFileNames: "[name]-[hash][extname]",
           },
         },
       }
-    : undefined,
+    : ssrBuild
+      ? {
+          ssr: true,
+          outDir: ssrBuild.output_dir,
+          emptyOutDir: ssrBuild.empty_output,
+          copyPublicDir: false,
+          minify: ssrBuild.minify,
+          sourcemap: "hidden",
+          rolldownOptions: {
+            input: entrypointInputs([ssrBuild.entrypoint]),
+            output: {
+              format: "iife",
+              name: "SSR",
+              inlineDynamicImports: true,
+              entryFileNames: "[name].js",
+            },
+          },
+        }
+      : styleBuild
+        ? {
+            outDir: styleBuild.output_dir,
+            emptyOutDir: false,
+            copyPublicDir: false,
+            cssCodeSplit: true,
+            minify: styleBuild.minify,
+            rolldownOptions: {
+              input: styleEntries,
+              output: {
+                assetFileNames: "[name][extname]",
+              },
+            },
+          }
+        : undefined,
 });

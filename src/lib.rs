@@ -1,14 +1,14 @@
 use errors::AppError;
 use log::debug;
+use mountaineer_vite::{
+    Entrypoint, ProductionConfig as FrontendProductionConfig, SsrConfig as FrontendSsrConfig,
+};
 use pyo3::exceptions::{PyConnectionAbortedError, PyRuntimeError, PySystemExit, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
 
-mod bundle_common;
-mod bundle_independent;
-mod bundle_prod;
+mod cli;
 pub mod client_builder;
-mod code_gen;
 pub mod coordinator;
 mod errors;
 mod lexers;
@@ -17,7 +17,6 @@ mod source_map;
 mod ssr;
 mod terminal;
 mod timeout;
-mod use_client;
 
 #[macro_use]
 extern crate lazy_static;
@@ -34,6 +33,12 @@ fn run_coordinator(mode: coordinator::RuntimeMode, args: Vec<String>) -> PyResul
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
     if let Err(error) = runtime.block_on(coordinator::run(mode, &args)) {
+        if let Some(error) = error.downcast_ref::<clap::Error>() {
+            error
+                .print()
+                .map_err(|print_error| PyRuntimeError::new_err(print_error.to_string()))?;
+            return Err(PySystemExit::new_err(error.exit_code()));
+        }
         let program = match mode {
             coordinator::RuntimeMode::Development => "mountaineer-dev",
             coordinator::RuntimeMode::Production => "mountaineer-prod",
@@ -55,22 +60,50 @@ fn run_prod(args: Vec<String>) -> PyResult<()> {
 }
 
 #[pyfunction]
-fn build_frontend_styles(
+fn build_frontend(
     frontend_root: String,
-    output_dir: String,
+    client_output_dir: String,
+    ssr_output_dir: String,
+    entrypoints: Vec<(String, Vec<String>)>,
     styles: Vec<String>,
     minify: bool,
 ) -> PyResult<()> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
     runtime
-        .block_on(coordinator::build_frontend_styles(
-            frontend_root.into(),
-            output_dir.into(),
-            styles.into_iter().map(Into::into).collect(),
-            minify,
+        .block_on(mountaineer_vite::build_production(
+            FrontendProductionConfig {
+                frontend_root: frontend_root.into(),
+                client_output_dir: client_output_dir.into(),
+                ssr_output_dir: ssr_output_dir.into(),
+                entrypoints: entrypoints
+                    .into_iter()
+                    .map(|(name, views)| Entrypoint {
+                        name,
+                        views: views.into_iter().map(Into::into).collect(),
+                    })
+                    .collect(),
+                styles: styles.into_iter().map(Into::into).collect(),
+                minify,
+            },
         ))
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))
+}
+
+#[pyfunction]
+fn compile_frontend_ssr(
+    frontend_root: String,
+    views: Vec<String>,
+) -> PyResult<(String, Option<String>)> {
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    let compiled = runtime
+        .block_on(mountaineer_vite::compile_ssr(FrontendSsrConfig {
+            frontend_root: frontend_root.into(),
+            views: views.into_iter().map(Into::into).collect(),
+        }))
+        .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
+    Ok((compiled.script, compiled.source_map))
 }
 
 /// Generate managed TypeScript client files from a Mountaineer envelope.
@@ -79,55 +112,16 @@ fn build_client(payload: String) -> PyResult<()> {
     client_builder::build(&payload).map_err(|error| PyRuntimeError::new_err(error.to_string()))
 }
 
-#[derive(Debug, PartialEq, Clone)]
-#[pyclass(get_all, set_all)]
-struct BuildContextParams {
-    // Build watch settings
-    path: String,
-    node_modules_path: String,
-    environment: String,
-    live_reload_port: i32,
-    is_server: bool,
-
-    // Output settings
-    controller_name: String,
-    output_dir: String,
-}
-
-#[pymethods]
-impl BuildContextParams {
-    #[new]
-    fn new(
-        path: String,
-        node_modules_path: String,
-        environment: String,
-        live_reload_port: i32,
-        is_server: bool,
-        controller_name: String,
-        output_dir: String,
-    ) -> Self {
-        Self {
-            path,
-            node_modules_path,
-            environment,
-            live_reload_port,
-            is_server,
-            controller_name,
-            output_dir,
-        }
-    }
-}
-
 #[pymodule]
 fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Initialize our logger with environment-based configuration
     logging::init_logger();
 
     m.add_class::<MapMetadata>()?;
-    m.add_class::<BuildContextParams>()?;
     m.add_function(wrap_pyfunction!(run_dev, m)?)?;
     m.add_function(wrap_pyfunction!(run_prod, m)?)?;
-    m.add_function(wrap_pyfunction!(build_frontend_styles, m)?)?;
+    m.add_function(wrap_pyfunction!(build_frontend, m)?)?;
+    m.add_function(wrap_pyfunction!(compile_frontend_ssr, m)?)?;
     m.add_function(wrap_pyfunction!(build_client, m)?)?;
 
     #[pyfn(m)]
@@ -182,82 +176,6 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
             }
             Err(_err) => Err(PyValueError::new_err("Unable to parse source map mappings")),
         }
-    }
-
-    #[pyfn(m)]
-    #[pyo3(name = "compile_independent_bundles")]
-    #[pyo3(signature = (paths, node_modules_path, environment, live_reload_port, live_reload_import, is_server, tsconfig_path=None))]
-    #[allow(clippy::too_many_arguments)]
-    fn compile_independent_bundles(
-        py: Python,
-        paths: Vec<Vec<String>>,
-        node_modules_path: String,
-        environment: String,
-        live_reload_port: i32,
-        live_reload_import: String,
-        is_server: bool,
-        tsconfig_path: Option<String>,
-    ) -> PyResult<(Vec<String>, Vec<String>)> {
-        /*
-         * Accepts a list of page definitions and creates fully isolated bundles
-         * that can be executed in a JS runtime with zero dependencies / external imports. For
-         * production ready packages that use chunking to decrease the filesize
-         * overhead, see `compile_production_bundle`.
-         */
-        if cfg!(debug_assertions) {
-            debug!("Running in debug mode");
-        }
-
-        // Initialize our logger with environment-based configuration
-        logging::init_logger();
-
-        bundle_independent::compile_independent_bundles(
-            py,
-            paths,
-            node_modules_path,
-            environment,
-            live_reload_port,
-            live_reload_import,
-            is_server,
-            tsconfig_path,
-        )
-    }
-
-    #[pyfn(m)]
-    #[pyo3(name = "compile_production_bundle")]
-    #[pyo3(signature = (paths, node_modules_path, environment, minify, live_reload_import, is_server, tsconfig_path=None, entrypoint_names=None))]
-    #[allow(clippy::too_many_arguments)]
-    fn compile_production_bundle(
-        py: Python,
-        paths: Vec<Vec<String>>,
-        node_modules_path: String,
-        environment: String,
-        minify: bool,
-        live_reload_import: String,
-        is_server: bool,
-        tsconfig_path: Option<String>,
-        entrypoint_names: Option<Vec<String>>,
-    ) -> PyResult<Py<PyDict>> {
-        /*
-         * Builds a full production bundle from multiple JavaScript files. Uses
-         * file splitting and tree-shaking to optimize the bundle size for
-         * client users.
-         */
-        if cfg!(debug_assertions) {
-            debug!("Running in debug mode");
-        }
-
-        bundle_prod::compile_production_bundle(
-            py,
-            paths,
-            node_modules_path,
-            environment,
-            minify,
-            live_reload_import,
-            is_server,
-            tsconfig_path,
-            entrypoint_names,
-        )
     }
 
     Ok(())

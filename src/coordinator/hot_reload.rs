@@ -1,9 +1,9 @@
 use super::{
     config::CoordinatorConfig,
-    invalid,
     output::{detail, emphasis, status, status_with_details, Tone},
     Result,
 };
+use mountaineer_hot_reload_discover::{discover, Config as DiscoverConfig};
 #[cfg(unix)]
 use mountaineer_hot_reload_fork::{
     Config as ForkConfig, ExcludedImport, Spawned as SpawnedFork, Strategy as ForkStrategy,
@@ -11,9 +11,6 @@ use mountaineer_hot_reload_fork::{
 #[cfg(windows)]
 use mountaineer_hot_reload_pool::{Config as PoolConfig, Pool};
 use std::{collections::BTreeSet, path::PathBuf, process::ExitStatus};
-use tokio::process::Command;
-
-const DISCOVER_IMPORTS: &str = include_str!("hot_reload/discover_imports.py");
 
 #[cfg(unix)]
 type Strategy = ForkStrategy;
@@ -81,22 +78,13 @@ impl PythonHotReload {
 }
 
 pub(super) async fn discover_imports(config: &CoordinatorConfig) -> Result<BTreeSet<String>> {
-    let output = Command::new(&config.python)
-        .args(["-c", DISCOVER_IMPORTS])
-        .arg(&config.python_package_root)
-        .arg(&config.package)
-        .current_dir(&config.project_root)
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(invalid(format!(
-            "Python import discovery exited with {}:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    let imports: Vec<String> = serde_json::from_slice(&output.stdout)?;
-    Ok(imports.into_iter().collect())
+    Ok(discover(DiscoverConfig {
+        python: config.python.clone(),
+        project_root: config.project_root.clone(),
+        package_root: config.python_package_root.clone(),
+        package: config.package.clone(),
+    })
+    .await?)
 }
 
 fn report_discovered_libraries(imports: &BTreeSet<String>) {
@@ -160,43 +148,6 @@ fn report_excluded_imports(excluded_imports: &[ExcludedImport]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::coordinator::config::RuntimeMode;
-    use std::fs;
-
-    fn test_config(project_root: PathBuf, package_root: PathBuf) -> CoordinatorConfig {
-        CoordinatorConfig {
-            mode: RuntimeMode::Development,
-            package: "example".to_string(),
-            webcontroller: "example.app:controller".to_string(),
-            host: "127.0.0.1".to_string(),
-            port: 5006,
-            python: "python".to_string(),
-            debounce_ms: 100,
-            warm_processes: 2,
-            frontend_root: package_root.join("views"),
-            project_root,
-            python_package_root: package_root,
-        }
-    }
-
-    #[tokio::test]
-    async fn import_discovery_returns_only_third_party_modules() {
-        let project = tempfile::tempdir().unwrap();
-        let package_root = project.path().join("example");
-        fs::create_dir_all(package_root.join("views")).unwrap();
-        fs::write(
-            package_root.join("app.py"),
-            "import os\nimport pydantic.fields\nfrom fastapi import FastAPI\n\
-             from example.local import value\n",
-        )
-        .unwrap();
-        let config = test_config(project.path().to_path_buf(), package_root);
-
-        assert_eq!(
-            discover_imports(&config).await.unwrap(),
-            BTreeSet::from(["fastapi".to_string(), "pydantic.fields".to_string()])
-        );
-    }
 
     #[test]
     fn library_names_are_deduplicated() {

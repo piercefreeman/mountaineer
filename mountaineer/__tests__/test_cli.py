@@ -16,6 +16,7 @@ import toml
 from mountaineer.__tests__.fixtures import get_fixture_path
 from mountaineer.cli import find_packages_with_prefix, handle_build
 from mountaineer.io import get_free_port
+from mountaineer.ssr import render_ssr
 
 
 @pytest.fixture
@@ -67,7 +68,7 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
     try:
         handle_build(
             webcontroller="client_only_fixture.app:controller",
-            minify=False,
+            minify=True,
         )
     finally:
         if not event_loop.is_closed():
@@ -75,8 +76,16 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
         asyncio.set_event_loop(None)
 
     static_dir = package_dir / "views" / ".mountaineer" / "static"
+    ssr_dir = package_dir / "views" / ".mountaineer" / "ssr"
 
     _assert_relative_js_imports_resolve(static_dir)
+    html = render_ssr(
+        (ssr_dir / "client_only_controller.js").read_text(),
+        {},
+        sourcemap=(ssr_dir / "client_only_controller.js.map").read_text(),
+    )
+    assert "<h1>Client Only Test</h1>" in html
+    assert "Loading browser-only component" not in html
 
 
 async def check_server_ready(port: int, timeout: int = 20):
@@ -222,6 +231,8 @@ export default ClientOnlyPage;
 
     (app_dir / "ClientOnlyWrapper.tsx").write_text(
         """
+"use client";
+
 import React, { type ComponentType, useEffect, useState } from "react";
 
 const ClientOnlyWrapper = () => {
