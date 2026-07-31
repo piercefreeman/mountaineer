@@ -6,10 +6,10 @@ use mountaineer_vite::{
 use pyo3::exceptions::{PyConnectionAbortedError, PyRuntimeError, PySystemExit, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyString};
+use std::future::Future;
 
 mod cli;
 pub mod client_builder;
-pub mod coordinator;
 mod lexers;
 mod logging;
 mod source_map;
@@ -25,21 +25,17 @@ pub use source_map::{
     VLQDecoder,
 };
 
-fn run_coordinator(mode: coordinator::RuntimeMode, args: Vec<String>) -> PyResult<()> {
+fn run_cli(program: &str, command: impl Future<Output = cli::Result<()>>) -> PyResult<()> {
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|error| PyRuntimeError::new_err(error.to_string()))?;
-    if let Err(error) = runtime.block_on(coordinator::run(mode, &args)) {
+    if let Err(error) = runtime.block_on(command) {
         if let Some(error) = error.downcast_ref::<clap::Error>() {
             error
                 .print()
                 .map_err(|print_error| PyRuntimeError::new_err(print_error.to_string()))?;
             return Err(PySystemExit::new_err(error.exit_code()));
         }
-        let program = match mode {
-            coordinator::RuntimeMode::Development => "mountaineer-dev",
-            coordinator::RuntimeMode::Production => "mountaineer-prod",
-        };
-        coordinator::report_error(program, error.as_ref());
+        cli::report_error(program, error.as_ref());
         return Err(PySystemExit::new_err(1));
     }
     Ok(())
@@ -47,12 +43,12 @@ fn run_coordinator(mode: coordinator::RuntimeMode, args: Vec<String>) -> PyResul
 
 #[pyfunction]
 fn run_dev(args: Vec<String>) -> PyResult<()> {
-    run_coordinator(coordinator::RuntimeMode::Development, args)
+    run_cli("mountaineer-dev", cli::run_development(&args))
 }
 
 #[pyfunction]
 fn run_prod(args: Vec<String>) -> PyResult<()> {
-    run_coordinator(coordinator::RuntimeMode::Production, args)
+    run_cli("mountaineer-prod", cli::run_production(&args))
 }
 
 #[pyfunction]

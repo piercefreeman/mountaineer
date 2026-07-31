@@ -47,7 +47,6 @@ cache-keys = [
     { file = "mountaineer/**/*.py" },
     { file = "mountaineer/static/**/*" },
     { file = "src/**/*.rs" },
-    { file = "src/coordinator/**/*" },
     { file = "crates/**/*" },
     { file = "Cargo.toml" },
     { file = "Cargo.lock" },

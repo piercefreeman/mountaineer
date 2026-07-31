@@ -1,5 +1,5 @@
-use super::{
-    config::CoordinatorConfig,
+use crate::cli::{
+    config::LaunchConfig,
     output::{detail, emphasis, status, status_with_details, Tone},
     Result,
 };
@@ -28,11 +28,16 @@ pub(super) struct PythonHotReload {
 }
 
 impl PythonHotReload {
-    pub(super) async fn new(config: &CoordinatorConfig, imports: BTreeSet<String>) -> Result<Self> {
+    pub(super) async fn new(
+        config: &LaunchConfig,
+        imports: BTreeSet<String>,
+        warm_processes: usize,
+    ) -> Result<Self> {
         report_discovered_libraries(&imports);
 
         #[cfg(unix)]
         let strategy = {
+            let _ = warm_processes;
             let SpawnedFork {
                 strategy,
                 excluded_imports,
@@ -50,7 +55,7 @@ impl PythonHotReload {
             python: config.python.clone(),
             project_root: config.project_root.clone(),
             imports: imports.clone(),
-            size: config.warm_processes,
+            size: warm_processes,
         })?;
 
         Ok(Self { imports, strategy })
@@ -77,7 +82,7 @@ impl PythonHotReload {
     }
 }
 
-pub(super) async fn discover_imports(config: &CoordinatorConfig) -> Result<BTreeSet<String>> {
+pub(super) async fn discover_imports(config: &LaunchConfig) -> Result<BTreeSet<String>> {
     Ok(discover(DiscoverConfig {
         python: config.python.clone(),
         project_root: config.project_root.clone(),

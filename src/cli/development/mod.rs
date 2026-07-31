@@ -1,15 +1,23 @@
-use super::{
-    config::{write_payload, CoordinatorConfig, ServerConfig},
+mod hot_reload;
+mod proxy;
+mod watcher;
+
+use self::{
     hot_reload::{discover_imports, ActiveWorker, PythonHotReload},
+    proxy::{reserve_loopback_port, serve_proxy, wait_until_ready},
+    watcher::{restart_kind, ChangeKind},
+};
+use super::{
+    config::{write_payload, LaunchConfig, RuntimeMode, ServerConfig},
     invalid,
     output::{finish_startup_spinner, link, start_startup_spinner, status, timing, Tone},
-    server::{reserve_loopback_port, serve_proxy, wait_until_ready},
-    watcher::{restart_kind, ChangeKind},
-    Error, Result,
+    CommonArgs, Error, Result,
 };
+use clap::Parser;
 use mountaineer_vite::{DevelopmentConfig as ViteConfig, DevelopmentServer as ViteDevServer};
 use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
 use std::{
+    ffi::OsString,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     process::ExitStatus,
     sync::Arc,
@@ -23,7 +31,39 @@ use tokio::{
     time::Instant,
 };
 
-pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
+#[derive(Parser, Debug)]
+#[command(
+    name = "mountaineer-dev",
+    version,
+    about = "Mountaineer development server"
+)]
+struct DevArgs {
+    #[command(flatten)]
+    common: CommonArgs,
+
+    /// Filesystem debounce
+    #[arg(long, default_value_t = 100, value_name = "MILLIS")]
+    debounce_ms: u64,
+
+    /// Windows warm pool size
+    #[arg(long, default_value_t = 2, value_name = "COUNT")]
+    warm_processes: usize,
+}
+
+fn parse(args: &[String]) -> std::result::Result<DevArgs, clap::Error> {
+    let args =
+        std::iter::once(OsString::from("mountaineer-dev")).chain(args.iter().map(OsString::from));
+    DevArgs::try_parse_from(args)
+}
+
+pub(super) async fn run(args: &[String]) -> Result<()> {
+    let DevArgs {
+        common,
+        debounce_ms,
+        warm_processes,
+    } = parse(args)?;
+    let config = LaunchConfig::resolve(common)?;
+
     start_startup_spinner();
     let listener = TcpListener::bind((config.host.as_str(), config.port)).await?;
     let public_address = listener.local_addr()?;
@@ -38,7 +78,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
     let mut generation = 1;
     let imports = discover_imports(&config).await?;
     let backend_started = Instant::now();
-    let mut hot_reload = PythonHotReload::new(&config, imports).await?;
+    let mut hot_reload = PythonHotReload::new(&config, imports, warm_processes).await?;
     let (active_worker, initial_target) = start_candidate(
         &config,
         &payload_dir,
@@ -53,7 +93,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
 
     let (event_tx, mut event_rx) = mpsc::unbounded_channel();
     let mut debouncer = new_debouncer(
-        Duration::from_millis(config.debounce_ms),
+        Duration::from_millis(debounce_ms),
         None,
         move |result: DebounceEventResult| {
             let _ = event_tx.send(result);
@@ -183,7 +223,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
                         }
                     } else {
                         let mut candidate_strategy =
-                            match PythonHotReload::new(&config, next_imports).await {
+                            match PythonHotReload::new(&config, next_imports, warm_processes).await {
                                 Ok(strategy) => strategy,
                                 Err(error) => {
                                     status(
@@ -279,7 +319,7 @@ pub(super) async fn run(config: CoordinatorConfig) -> Result<()> {
 }
 
 async fn start_candidate(
-    config: &CoordinatorConfig,
+    config: &LaunchConfig,
     payload_dir: &TempDir,
     hot_reload: &mut PythonHotReload,
     generation: u64,
@@ -289,6 +329,7 @@ async fn start_candidate(
     let internal_port = reserve_loopback_port()?;
     let target = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), internal_port);
     let payload = config.payload(
+        RuntimeMode::Development,
         generation,
         ServerConfig {
             host: Ipv4Addr::LOCALHOST.to_string(),
@@ -323,5 +364,41 @@ where
     match result {
         Ok(status) => invalid(format!("{name} exited unexpectedly with {status}")),
         Err(error) => error.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::error::ErrorKind;
+
+    #[test]
+    fn help_is_generated_from_arguments() {
+        let error = parse(&["--help".to_string()]).unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::DisplayHelp);
+        assert_eq!(error.exit_code(), 0);
+        let help = error.to_string();
+        assert!(help.contains("--debounce-ms <MILLIS>"));
+        assert!(help.contains("--warm-processes <COUNT>"));
+    }
+
+    #[test]
+    fn parser_rejects_unknown_and_duplicate_arguments() {
+        for (arguments, expected_kind) in [
+            (vec!["--porrt", "5006"], ErrorKind::UnknownArgument),
+            (
+                vec!["--port", "5006", "--port", "5007"],
+                ErrorKind::ArgumentConflict,
+            ),
+        ] {
+            let arguments = arguments
+                .into_iter()
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            let error = parse(&arguments).unwrap_err();
+
+            assert_eq!(error.kind(), expected_kind);
+        }
     }
 }

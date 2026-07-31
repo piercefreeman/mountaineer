@@ -1,25 +1,18 @@
+mod config;
 mod development;
+mod output;
 mod production;
 
 use clap::Args;
-use std::path::PathBuf;
+use std::{
+    io::{Error as IoError, ErrorKind},
+    path::PathBuf,
+};
 
-#[derive(Clone, Debug)]
-pub(crate) struct CoordinatorArgs {
-    pub(crate) host: String,
-    pub(crate) port: u16,
-    pub(crate) project_root: Option<PathBuf>,
-    pub(crate) package: Option<String>,
-    pub(crate) package_root: Option<PathBuf>,
-    pub(crate) webcontroller: Option<String>,
-    pub(crate) view_root: Option<PathBuf>,
-    pub(crate) frontend_root: Option<PathBuf>,
-    pub(crate) python: Option<String>,
-    pub(crate) debounce_ms: u64,
-    pub(crate) warm_processes: usize,
-}
+pub(crate) type Error = Box<dyn std::error::Error + Send + Sync>;
+pub(crate) type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Args, Clone, Debug)]
+#[derive(Args, Debug)]
 struct CommonArgs {
     /// Public host
     #[arg(long, default_value = "127.0.0.1", value_name = "HOST")]
@@ -58,30 +51,40 @@ struct CommonArgs {
     python: Option<String>,
 }
 
-impl CoordinatorArgs {
-    fn from_common(common: CommonArgs, debounce_ms: u64, warm_processes: usize) -> Self {
-        Self {
-            host: common.host,
-            port: common.port,
-            project_root: common.project_root,
-            package: common.package,
-            package_root: common.package_root,
-            webcontroller: common.webcontroller,
-            view_root: common.view_root,
-            frontend_root: common.frontend_root,
-            python: common.python,
-            debounce_ms,
-            warm_processes,
-        }
-    }
+pub(crate) async fn run_development(args: &[String]) -> Result<()> {
+    finish(development::run(args).await)
 }
 
-pub(crate) fn parse(
-    mode: crate::coordinator::RuntimeMode,
-    args: &[String],
-) -> Result<CoordinatorArgs, clap::Error> {
-    match mode {
-        crate::coordinator::RuntimeMode::Development => development::parse(args),
-        crate::coordinator::RuntimeMode::Production => production::parse(args),
+pub(crate) async fn run_production(args: &[String]) -> Result<()> {
+    finish(production::run(args).await)
+}
+
+pub(crate) fn report_error(program: &str, error: &dyn std::fmt::Display) {
+    output::report_error(program, error);
+}
+
+fn finish(result: Result<()>) -> Result<()> {
+    output::finish_startup_spinner();
+    result
+}
+
+fn invalid(message: impl Into<String>) -> Error {
+    IoError::new(ErrorKind::InvalidInput, message.into()).into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn public_entrypoint_rejects_unknown_options() {
+        let error = run_development(&["--porrt".to_string(), "5006".to_string()])
+            .await
+            .unwrap_err();
+
+        let error = error
+            .downcast_ref::<clap::Error>()
+            .expect("CLI errors should retain clap context");
+        assert_eq!(error.kind(), clap::error::ErrorKind::UnknownArgument);
     }
 }

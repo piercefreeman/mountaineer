@@ -138,7 +138,7 @@ fn format_duration(duration: Duration) -> String {
     }
 }
 
-pub fn report_error(program: &str, error: &dyn Display) {
+pub(super) fn report_error(program: &str, error: &dyn Display) {
     finish_startup_spinner();
     status(Tone::Error, "Error", format!("{program}: {error}"));
 }

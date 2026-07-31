@@ -89,7 +89,7 @@ def test_handle_build_preserves_dynamic_import_graph_for_client_only_modules(
 
 
 async def check_server_ready(port: int, timeout: int = 20):
-    # The coordinator returns 503 while frontend tooling and the backend start.
+    # The development proxy returns 503 while frontend tooling and the backend start.
     start_time = time()
     url = f"http://localhost:{port}"
     status_code = -1

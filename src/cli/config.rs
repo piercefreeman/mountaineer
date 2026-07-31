@@ -1,5 +1,4 @@
-use super::{invalid, Result};
-use crate::cli::CoordinatorArgs;
+use super::{invalid, CommonArgs, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     env, fs,
@@ -12,7 +11,7 @@ const PAYLOAD_SCHEMA_VERSION: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RuntimeMode {
+pub(super) enum RuntimeMode {
     Development,
     Production,
 }
@@ -45,41 +44,26 @@ struct PyProjectMetadata {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct CoordinatorConfig {
-    pub(super) mode: RuntimeMode,
+pub(super) struct LaunchConfig {
     pub(super) package: String,
     pub(super) webcontroller: String,
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) python: String,
-    pub(super) debounce_ms: u64,
-    #[cfg_attr(not(windows), allow(dead_code))]
-    pub(super) warm_processes: usize,
     pub(super) project_root: PathBuf,
     pub(super) python_package_root: PathBuf,
     pub(super) frontend_root: PathBuf,
 }
 
-impl CoordinatorConfig {
-    pub(super) fn parse(mode: RuntimeMode, args: &[String]) -> Result<Self> {
+impl LaunchConfig {
+    pub(super) fn resolve(options: CommonArgs) -> Result<Self> {
         let current_dir = env::current_dir()?;
         let current_exe = env::current_exe().ok();
-        Self::parse_from(mode, args, &current_dir, current_exe.as_deref())
+        Self::resolve_from(options, &current_dir, current_exe.as_deref())
     }
 
-    fn parse_from(
-        mode: RuntimeMode,
-        args: &[String],
-        current_dir: &Path,
-        current_exe: Option<&Path>,
-    ) -> Result<Self> {
-        let options = crate::cli::parse(mode, args)?;
-        Self::resolve(mode, options, current_dir, current_exe)
-    }
-
-    fn resolve(
-        mode: RuntimeMode,
-        options: CoordinatorArgs,
+    fn resolve_from(
+        options: CommonArgs,
         current_dir: &Path,
         current_exe: Option<&Path>,
     ) -> Result<Self> {
@@ -131,14 +115,11 @@ impl CoordinatorConfig {
             .unwrap_or_else(|| "python".to_string());
 
         Ok(Self {
-            mode,
             package,
             webcontroller,
             host: options.host,
             port: options.port,
             python,
-            debounce_ms: options.debounce_ms,
-            warm_processes: options.warm_processes,
             project_root,
             python_package_root,
             frontend_root,
@@ -147,6 +128,7 @@ impl CoordinatorConfig {
 
     pub(super) fn payload(
         &self,
+        mode: RuntimeMode,
         generation: u64,
         server: ServerConfig,
         dev_server_origin: Option<String>,
@@ -154,7 +136,7 @@ impl CoordinatorConfig {
     ) -> RuntimePayload {
         RuntimePayload {
             schema_version: PAYLOAD_SCHEMA_VERSION,
-            mode: self.mode,
+            mode,
             generation,
             rebuild_generated,
             webcontroller: self.webcontroller.clone(),
@@ -296,6 +278,20 @@ fn canonical_dir(path: PathBuf, label: &str) -> Result<PathBuf> {
 mod tests {
     use super::*;
 
+    fn common_args() -> CommonArgs {
+        CommonArgs {
+            host: "127.0.0.1".to_string(),
+            port: 5006,
+            project_root: None,
+            package: None,
+            package_root: None,
+            webcontroller: None,
+            view_root: None,
+            frontend_root: None,
+            python: None,
+        }
+    }
+
     #[test]
     fn zero_argument_config_discovers_a_uv_project() {
         let project = tempfile::tempdir().unwrap();
@@ -328,13 +324,8 @@ mod tests {
             "mountaineer-dev"
         });
 
-        let config = CoordinatorConfig::parse_from(
-            RuntimeMode::Development,
-            &[],
-            &nested_dir,
-            Some(&executable),
-        )
-        .unwrap();
+        let config =
+            LaunchConfig::resolve_from(common_args(), &nested_dir, Some(&executable)).unwrap();
 
         assert_eq!(config.project_root, project.path().canonicalize().unwrap());
         assert_eq!(config.package, "example_app");
@@ -352,20 +343,18 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let package_root = project.path().join("example");
         let view_root = package_root.join("views");
-        let config = CoordinatorConfig {
-            mode: RuntimeMode::Production,
+        let config = LaunchConfig {
             package: "example".to_string(),
             webcontroller: "example.app:controller".to_string(),
             host: "127.0.0.1".to_string(),
             port: 5006,
             python: "python".to_string(),
-            debounce_ms: 100,
-            warm_processes: 2,
             project_root: project.path().to_path_buf(),
             python_package_root: package_root,
             frontend_root: view_root,
         };
         let payload = config.payload(
+            RuntimeMode::Production,
             7,
             ServerConfig {
                 host: "127.0.0.1".to_string(),
