@@ -1,5 +1,6 @@
 mod config;
 mod development;
+mod migration;
 mod output;
 mod production;
 mod watch;
