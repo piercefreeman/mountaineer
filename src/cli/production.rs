@@ -25,8 +25,8 @@ fn parse(args: &[String]) -> std::result::Result<ProdArgs, clap::Error> {
     ProdArgs::try_parse_from(args)
 }
 
-pub(super) async fn run(args: &[String]) -> Result<()> {
-    let config = LaunchConfig::resolve(parse(args)?.common)?;
+pub(super) async fn run(args: &[String], python: String) -> Result<()> {
+    let config = LaunchConfig::resolve(parse(args)?.common, python)?;
     let payload_dir = tempfile::tempdir()?;
     let payload = config.payload(
         RuntimeMode::Production,
