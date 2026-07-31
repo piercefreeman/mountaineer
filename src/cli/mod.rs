@@ -53,16 +53,16 @@ struct CommonArgs {
     python: Option<String>,
 }
 
-pub(crate) async fn run_development(args: &[String]) -> Result<()> {
-    finish(development::run(args).await)
+pub(crate) async fn run_development(args: &[String], python: String) -> Result<()> {
+    finish(development::run(args, python).await)
 }
 
-pub(crate) async fn run_production(args: &[String]) -> Result<()> {
-    finish(production::run(args).await)
+pub(crate) async fn run_production(args: &[String], python: String) -> Result<()> {
+    finish(production::run(args, python).await)
 }
 
-pub(crate) async fn run_watch(args: &[String]) -> Result<()> {
-    finish(watch::run(args).await)
+pub(crate) async fn run_watch(args: &[String], python: String) -> Result<()> {
+    finish(watch::run(args, python).await)
 }
 
 pub(crate) fn report_error(program: &str, error: &dyn std::fmt::Display) {
@@ -84,9 +84,12 @@ mod tests {
 
     #[tokio::test]
     async fn public_entrypoint_rejects_unknown_options() {
-        let error = run_development(&["--porrt".to_string(), "5006".to_string()])
-            .await
-            .unwrap_err();
+        let error = run_development(
+            &["--porrt".to_string(), "5006".to_string()],
+            "python".to_string(),
+        )
+        .await
+        .unwrap_err();
 
         let error = error
             .downcast_ref::<clap::Error>()

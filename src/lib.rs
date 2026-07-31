@@ -42,18 +42,31 @@ fn run_cli(program: &str, command: impl Future<Output = cli::Result<()>>) -> PyR
 }
 
 #[pyfunction]
-fn run_dev(args: Vec<String>) -> PyResult<()> {
-    run_cli("mountaineer-dev", cli::run_development(&args))
+fn run_dev(py: Python<'_>, args: Vec<String>) -> PyResult<()> {
+    run_cli(
+        "mountaineer-dev",
+        cli::run_development(&args, python_executable(py)?),
+    )
 }
 
 #[pyfunction]
-fn run_prod(args: Vec<String>) -> PyResult<()> {
-    run_cli("mountaineer-prod", cli::run_production(&args))
+fn run_prod(py: Python<'_>, args: Vec<String>) -> PyResult<()> {
+    run_cli(
+        "mountaineer-prod",
+        cli::run_production(&args, python_executable(py)?),
+    )
 }
 
 #[pyfunction]
-fn run_watch(args: Vec<String>) -> PyResult<()> {
-    run_cli("mountaineer-watch", cli::run_watch(&args))
+fn run_watch(py: Python<'_>, args: Vec<String>) -> PyResult<()> {
+    run_cli(
+        "mountaineer-watch",
+        cli::run_watch(&args, python_executable(py)?),
+    )
+}
+
+fn python_executable(py: Python<'_>) -> PyResult<String> {
+    py.import("sys")?.getattr("executable")?.extract()
 }
 
 #[pyfunction]

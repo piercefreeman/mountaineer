@@ -139,10 +139,10 @@ jobs:
       - name: Trigger Mountaineer Web docs sync
         if: steps.docs.outputs.changed == 'true'
         env:
-          GH_TOKEN: ${{ secrets.MOUNTAINEER_WEB_WORKFLOW_TOKEN }}
+          GH_TOKEN: ${{ secrets.MOUNTAINEER_WEB_PUSH_TOKEN }}
         run: |
           if [ -z "${GH_TOKEN}" ]; then
-            echo "::error::MOUNTAINEER_WEB_WORKFLOW_TOKEN is required to dispatch the Mountaineer Web docs sync workflow."
+            echo "::error::MOUNTAINEER_WEB_PUSH_TOKEN is required to dispatch the Mountaineer Web docs sync workflow."
             exit 1
           fi
 

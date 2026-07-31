@@ -55,10 +55,9 @@ pub(super) struct LaunchConfig {
 }
 
 impl LaunchConfig {
-    pub(super) fn resolve(options: CommonArgs) -> Result<Self> {
+    pub(super) fn resolve(options: CommonArgs, python: String) -> Result<Self> {
         let current_dir = env::current_dir()?;
-        let current_exe = env::current_exe().ok();
-        let config = Self::resolve_from(options, &current_dir, current_exe.as_deref())?;
+        let config = Self::resolve_from(options, &current_dir, python)?;
         super::migration::run(&config.frontend_root)?;
         Ok(config)
     }
@@ -66,7 +65,7 @@ impl LaunchConfig {
     fn resolve_from(
         options: CommonArgs,
         current_dir: &Path,
-        current_exe: Option<&Path>,
+        active_python: String,
     ) -> Result<Self> {
         let project_root = match options.project_root.as_deref() {
             Some(path) => canonical_dir(resolve_path(current_dir, path), "project root")?,
@@ -108,12 +107,7 @@ impl LaunchConfig {
                 .unwrap_or_else(|| view_root.clone()),
             "frontend root",
         )?;
-        let python = options
-            .python
-            .or_else(virtualenv_python)
-            .or_else(|| current_exe.and_then(adjacent_python))
-            .or_else(|| env::var("PYTHON").ok())
-            .unwrap_or_else(|| "python".to_string());
+        let python = options.python.unwrap_or(active_python);
 
         Ok(Self {
             package,
@@ -242,29 +236,6 @@ fn discover_package_root(
     )))
 }
 
-fn adjacent_python(executable: &Path) -> Option<String> {
-    let candidate = executable.parent()?.join(if cfg!(windows) {
-        "python.exe"
-    } else {
-        "python"
-    });
-    candidate
-        .is_file()
-        .then(|| candidate.to_string_lossy().into_owned())
-}
-
-fn virtualenv_python() -> Option<String> {
-    let environment = PathBuf::from(env::var_os("VIRTUAL_ENV")?);
-    let candidate = if cfg!(windows) {
-        environment.join("Scripts").join("python.exe")
-    } else {
-        environment.join("bin").join("python")
-    };
-    candidate
-        .is_file()
-        .then(|| candidate.to_string_lossy().into_owned())
-}
-
 fn canonical_dir(path: PathBuf, label: &str) -> Result<PathBuf> {
     if !path.is_dir() {
         return Err(invalid(format!(
@@ -294,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn zero_argument_config_discovers_a_uv_project() {
+    fn zero_argument_config_uses_active_python() {
         let project = tempfile::tempdir().unwrap();
         fs::write(
             project.path().join("pyproject.toml"),
@@ -307,26 +278,13 @@ mod tests {
         fs::create_dir_all(&nested_dir).unwrap();
         fs::write(package_root.join("app.py"), "controller = object()\n").unwrap();
 
-        let scripts_dir =
-            project
-                .path()
-                .join(".venv")
-                .join(if cfg!(windows) { "Scripts" } else { "bin" });
-        fs::create_dir_all(&scripts_dir).unwrap();
-        let python = scripts_dir.join(if cfg!(windows) {
-            "python.exe"
-        } else {
-            "python"
-        });
-        fs::write(&python, "").unwrap();
-        let executable = scripts_dir.join(if cfg!(windows) {
-            "mountaineer-dev.exe"
-        } else {
-            "mountaineer-dev"
-        });
-
-        let config =
-            LaunchConfig::resolve_from(common_args(), &nested_dir, Some(&executable)).unwrap();
+        let python = project.path().join(".venv/bin/python");
+        let config = LaunchConfig::resolve_from(
+            common_args(),
+            &nested_dir,
+            python.to_string_lossy().into_owned(),
+        )
+        .unwrap();
 
         assert_eq!(config.project_root, project.path().canonicalize().unwrap());
         assert_eq!(config.package, "example_app");

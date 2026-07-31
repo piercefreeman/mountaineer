@@ -8,11 +8,16 @@ from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import RenderBase
 
 
-def test_build_creates_mountaineer_indexes(tmp_path: Path):
-    view_root = tmp_path / "views"
+def test_build_creates_mountaineer_indexes(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    view_root = Path("views")
     page = view_root / "app" / "home" / "page.tsx"
     page.parent.mkdir(parents=True)
     page.write_text("export default function Home() { return null; }")
+    plugin_view_root = tmp_path / "plugin_views"
+    plugin_page = plugin_view_root / "app" / "plugin" / "page.tsx"
+    plugin_page.parent.mkdir(parents=True)
+    plugin_page.write_text("export default function Plugin() { return null; }")
 
     class HomeRender(RenderBase):
         message: str
@@ -24,8 +29,22 @@ def test_build_creates_mountaineer_indexes(tmp_path: Path):
         def render(self) -> HomeRender:
             return HomeRender(message="hello")
 
+    class PluginController(ControllerBase):
+        url = "/plugin"
+        view_path = "/app/plugin/page.tsx"
+
+        def render(self) -> HomeRender:
+            return HomeRender(message="plugin")
+
     app = AppController(view_root=view_root)
     app.register(HomeController())
+    app.register(
+        MountaineerPlugin(
+            name="plugin-test",
+            controllers=[PluginController],
+            view_root=plugin_view_root,
+        )
+    )
     asyncio.run(APIBuilder(app).build_use_server())
 
     root_index = (view_root / ".mountaineer" / "index.ts").read_text()
@@ -35,6 +54,7 @@ def test_build_creates_mountaineer_indexes(tmp_path: Path):
     assert "export * from './links';" in root_index
     assert "export * from './models';" in local_index
     assert "export * from './useServer';" in local_index
+    assert (plugin_view_root / "app/plugin/.mountaineer/links.ts").exists()
 
 
 def test_build_all_cleanup_preserves_plugin_assets(tmp_path: Path):

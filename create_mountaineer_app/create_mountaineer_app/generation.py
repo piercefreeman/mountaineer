@@ -58,7 +58,7 @@ def format_template(
     template = Template(path.read_text())
     content = template.render(metadata_variables)
 
-    output_name = str(path.relative_to(base_path))
+    output_name = str(path.relative_to(base_path)).removesuffix(".jinja")
     for key, value in metadata_variables.items():
         output_name = output_name.replace(f"[{key}]", str(value))
 
