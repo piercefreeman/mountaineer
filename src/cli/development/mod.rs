@@ -1,11 +1,9 @@
 mod hot_reload;
 mod proxy;
-mod watcher;
 
 use self::{
     hot_reload::{discover_imports, ActiveWorker, PythonHotReload},
     proxy::{reserve_loopback_port, serve_proxy, wait_until_ready},
-    watcher::{restart_kind, ChangeKind},
 };
 use super::{
     config::{write_payload, LaunchConfig, RuntimeMode, ServerConfig},
@@ -14,8 +12,8 @@ use super::{
     CommonArgs, Error, Result,
 };
 use clap::Parser;
+use mountaineer_file_monitor::{ChangeKind, Config as FileMonitorConfig, Monitor as FileMonitor};
 use mountaineer_vite::{DevelopmentConfig as ViteConfig, DevelopmentServer as ViteDevServer};
-use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, DebounceEventResult};
 use std::{
     ffi::OsString,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -24,12 +22,7 @@ use std::{
     time::Duration,
 };
 use tempfile::TempDir;
-use tokio::{
-    net::TcpListener,
-    signal,
-    sync::{mpsc, RwLock},
-    time::Instant,
-};
+use tokio::{net::TcpListener, signal, sync::RwLock, time::Instant};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -91,21 +84,11 @@ pub(super) async fn run(args: &[String]) -> Result<()> {
     let mut active_worker = Some(active_worker);
     *active_target.write().await = Some(initial_target);
 
-    let (event_tx, mut event_rx) = mpsc::unbounded_channel();
-    let mut debouncer = new_debouncer(
-        Duration::from_millis(debounce_ms),
-        None,
-        move |result: DebounceEventResult| {
-            let _ = event_tx.send(result);
-        },
-    )?;
-    debouncer.watch(&config.python_package_root, RecursiveMode::Recursive)?;
-    if !config
-        .frontend_root
-        .starts_with(&config.python_package_root)
-    {
-        debouncer.watch(&config.frontend_root, RecursiveMode::Recursive)?;
-    }
+    let mut file_monitor = FileMonitor::start(FileMonitorConfig {
+        python_root: config.python_package_root.clone(),
+        frontend_root: config.frontend_root.clone(),
+        debounce: Duration::from_millis(debounce_ms),
+    })?;
 
     let mut proxy_task = tokio::spawn(serve_proxy(listener, active_target.clone()));
     finish_startup_spinner();
@@ -140,21 +123,16 @@ pub(super) async fn run(args: &[String]) -> Result<()> {
                 status = active_worker.as_mut().expect("active worker").wait() => {
                     break Err(unexpected_exit("Python backend", status));
                 }
-                result = event_rx.recv() => {
+                result = file_monitor.next() => {
                     let Some(result) = result else {
-                        break Err(invalid("filesystem watcher stopped unexpectedly"));
+                        break Err(invalid("file monitor stopped unexpectedly"));
                     };
-                    let events = match result {
-                        Ok(events) => events,
-                        Err(errors) => {
-                            for error in errors {
-                                status(Tone::Warning, "Warning", format!("watch error: {error}"));
-                            }
+                    let change_kind = match result {
+                        Ok(change_kind) => change_kind,
+                        Err(error) => {
+                            status(Tone::Warning, "Warning", error);
                             continue;
                         }
-                    };
-                    let Some(change_kind) = restart_kind(&events) else {
-                        continue;
                     };
                     if change_kind == ChangeKind::Style {
                         status(Tone::Accent, "Updated", "styles");

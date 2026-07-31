@@ -733,13 +733,13 @@ dependencies = [
  "indicatif",
  "lazy_static",
  "log",
+ "mountaineer-file-monitor",
  "mountaineer-hot-reload-discover",
  "mountaineer-hot-reload-fork",
  "mountaineer-hot-reload-pool",
  "mountaineer-ssr",
  "mountaineer-terminal",
  "mountaineer-vite",
- "notify-debouncer-full",
  "path-absolutize",
  "pyo3",
  "regex",
@@ -748,6 +748,15 @@ dependencies = [
  "tempfile",
  "tokio",
  "toml",
+]
+
+[[package]]
+name = "mountaineer-file-monitor"
+version = "0.1.0"
+dependencies = [
+ "notify-debouncer-full",
+ "tempfile",
+ "tokio",
 ]
 
 [[package]]

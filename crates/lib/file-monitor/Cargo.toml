@@ -1,0 +1,13 @@
+[package]
+name = "mountaineer-file-monitor"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+notify-debouncer-full = "0.7"
+tokio = { version = "1.43", features = ["sync"] }
+
+[dev-dependencies]
+tempfile = "3.16"
+tokio = { version = "1.43", features = ["macros", "rt", "time"] }
