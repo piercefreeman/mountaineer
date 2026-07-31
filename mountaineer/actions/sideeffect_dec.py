@@ -278,7 +278,7 @@ async def get_render_parameters(
         {
             "type": request.scope["type"],
             "path": parsed_path.path,
-            "query_string": parsed_path.query,
+            "query_string": parsed_path.query.encode(),
             "headers": request.headers.raw,
             "http_version": request.scope["http_version"],
             "method": "GET",
