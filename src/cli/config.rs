@@ -58,7 +58,9 @@ impl LaunchConfig {
     pub(super) fn resolve(options: CommonArgs) -> Result<Self> {
         let current_dir = env::current_dir()?;
         let current_exe = env::current_exe().ok();
-        Self::resolve_from(options, &current_dir, current_exe.as_deref())
+        let config = Self::resolve_from(options, &current_dir, current_exe.as_deref())?;
+        super::migration::run(&config.frontend_root)?;
+        Ok(config)
     }
 
     fn resolve_from(
