@@ -1,5 +1,5 @@
 use super::super::{
-    manifest::{Action, SchemaComponent, View},
+    manifest::{Action, ComponentKind, Envelope, SchemaComponent, View},
     Result,
 };
 use super::schema::{
@@ -9,6 +9,27 @@ use super::support::{destructured, import_path, shorthand_object, sorted};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
+pub(super) fn global_exceptions(envelope: &Envelope) -> Vec<String> {
+    let mut exceptions = envelope
+        .components
+        .iter()
+        .filter(|component| component.kind == ComponentKind::Exception)
+        .collect::<Vec<_>>();
+    exceptions.sort_by_key(|component| &component.global_name);
+    if exceptions.is_empty() {
+        return Vec::new();
+    }
+
+    let mut blocks = vec!["import { FetchErrorBase } from './api';".into()];
+    blocks.extend(exceptions.into_iter().map(|component| {
+        format!(
+            "export class {} extends FetchErrorBase<import('./controllers').{}> {{}}",
+            component.global_name, component.global_name
+        )
+    }));
+    blocks
+}
+
 pub(super) fn local_actions(
     view: &View,
     global_root: &Path,
@@ -16,6 +37,7 @@ pub(super) fn local_actions(
 ) -> Result<Vec<String>> {
     let current = view.managed_dir.join("actions.ts");
     let api = import_path(&current, &global_root.join("api.ts"))?;
+    let exceptions = import_path(&current, &global_root.join("exceptions.ts"))?;
     let controllers = import_path(&current, &global_root.join("controllers.ts"))?;
     let mut dependencies = HashSet::new();
     let mut exception_names = HashSet::new();
@@ -31,9 +53,7 @@ pub(super) fn local_actions(
         }
         exception_names.extend(action.exceptions.iter().map(String::as_str));
     }
-    let mut imports = vec![format!(
-        "import {{ __request, FetchErrorBase }} from '{api}';"
-    )];
+    let mut imports = vec![format!("import {{ __request }} from '{api}';")];
     if !dependencies.is_empty() {
         imports.push(format!(
             "import type {{ {} }} from '{controllers}';",
@@ -41,19 +61,24 @@ pub(super) fn local_actions(
         ));
     }
 
-    let mut definitions = Vec::new();
-    for name in sorted(exception_names) {
-        let component = components
-            .get(name)
-            .ok_or_else(|| format!("Unknown exception component {name}"))?;
-        let base = format!("{}Base", component.local_name);
+    let exception_names = sorted(exception_names);
+    let mut exception_exports = Vec::new();
+    if !exception_names.is_empty() {
+        let mut exception_imports = Vec::new();
+        for name in exception_names {
+            let component = components
+                .get(name)
+                .ok_or_else(|| format!("Unknown exception component {name}"))?;
+            exception_imports.push(if component.global_name == component.local_name {
+                component.global_name.clone()
+            } else {
+                format!("{} as {}", component.global_name, component.local_name)
+            });
+            exception_exports.push(component.local_name.clone());
+        }
         imports.push(format!(
-            "import type {{ {} as {base} }} from '{controllers}';",
-            component.global_name
-        ));
-        definitions.push(format!(
-            "export class {} extends FetchErrorBase<{base}> {{}}",
-            component.local_name
+            "import {{ {} }} from '{exceptions}';",
+            exception_imports.join(", ")
         ));
     }
 
@@ -61,7 +86,9 @@ pub(super) fn local_actions(
     for action in &view.actions {
         blocks.push(action_definition(action, view, components)?);
     }
-    blocks.extend(definitions);
+    if !exception_exports.is_empty() {
+        blocks.push(format!("export {{ {} }};", exception_exports.join(", ")));
+    }
     Ok(blocks)
 }
 
