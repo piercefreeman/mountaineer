@@ -1,5 +1,5 @@
 use super::{
-    config::{write_payload, LaunchConfig, RuntimeMode, ServerConfig, PAYLOAD_PATH_ENV},
+    config::{write_payload, LaunchConfig, RuntimeMode, ServerConfig},
     invalid,
     output::{link, status, Tone},
     CommonArgs, Result,
@@ -49,8 +49,8 @@ pub(super) async fn run(args: &[String]) -> Result<()> {
     );
 
     let mut child = Command::new(&config.python)
-        .args(["-c", "from mountaineer.runtime import main; main()"])
-        .env(PAYLOAD_PATH_ENV, payload_path)
+        .args(["-m", "mountaineer.runtime_cli", "serve"])
+        .arg(payload_path)
         .current_dir(&config.project_root)
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())

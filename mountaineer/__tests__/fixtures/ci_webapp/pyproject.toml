@@ -14,7 +14,6 @@ dependencies = [
 
 [project.scripts]
 runserver = "ci_webapp.cli:runserver"
-watch = "ci_webapp.cli:watch"
 build = "ci_webapp.cli:build"
 
 [tool.ruff.lint]

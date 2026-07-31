@@ -355,7 +355,6 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "rich" },
     { name = "uvicorn", extra = ["standard"] },
-    { name = "watchfiles" },
 ]
 
 [package.metadata]
@@ -370,7 +369,6 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.1.0,<3.0.0" },
     { name = "rich", specifier = ">=13.7.1,<14.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.40.0,<1.0.0" },
-    { name = "watchfiles", specifier = ">=1.0.0,<2.0.0" },
 ]
 
 [package.metadata.requires-dev]

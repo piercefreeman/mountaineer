@@ -6,7 +6,6 @@ use std::{
 };
 use tempfile::TempDir;
 
-pub(super) const PAYLOAD_PATH_ENV: &str = "MOUNTAINEER_RUNTIME_PAYLOAD";
 const PAYLOAD_SCHEMA_VERSION: u16 = 1;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -2,6 +2,7 @@ mod config;
 mod development;
 mod output;
 mod production;
+mod watch;
 
 use clap::Args;
 use std::{
@@ -57,6 +58,10 @@ pub(crate) async fn run_development(args: &[String]) -> Result<()> {
 
 pub(crate) async fn run_production(args: &[String]) -> Result<()> {
     finish(production::run(args).await)
+}
+
+pub(crate) async fn run_watch(args: &[String]) -> Result<()> {
+    finish(watch::run(args).await)
 }
 
 pub(crate) fn report_error(program: &str, error: &dyn std::fmt::Display) {

@@ -80,12 +80,11 @@ Navigate to http://127.0.0.1:5006 to see your new webapp running.
 Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
 
 ```bash
-$ uv run watch
+$ uv run mountaineer-watch
 ```
 
-`mountaineer-dev` is installed with Mountaineer and discovers the project
-automatically. The lower-level `watch` command remains in your project's
-`cli.py` file.
+Both native commands are installed with Mountaineer and discover the project
+automatically.
 
 ### Documentation
 

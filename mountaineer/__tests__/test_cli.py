@@ -14,7 +14,8 @@ import pytest
 import toml
 
 from mountaineer.__tests__.fixtures import get_fixture_path
-from mountaineer.cli import find_packages_with_prefix, handle_build
+from mountaineer.cli import handle_build
+from mountaineer.development.packages import find_packages_with_prefix
 from mountaineer.io import get_free_port
 from mountaineer.ssr import render_ssr
 

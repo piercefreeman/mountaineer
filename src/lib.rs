@@ -52,6 +52,11 @@ fn run_prod(args: Vec<String>) -> PyResult<()> {
 }
 
 #[pyfunction]
+fn run_watch(args: Vec<String>) -> PyResult<()> {
+    run_cli("mountaineer-watch", cli::run_watch(&args))
+}
+
+#[pyfunction]
 fn build_frontend(
     frontend_root: String,
     client_output_dir: String,
@@ -112,6 +117,7 @@ fn mountaineer(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MapMetadata>()?;
     m.add_function(wrap_pyfunction!(run_dev, m)?)?;
     m.add_function(wrap_pyfunction!(run_prod, m)?)?;
+    m.add_function(wrap_pyfunction!(run_watch, m)?)?;
     m.add_function(wrap_pyfunction!(build_frontend, m)?)?;
     m.add_function(wrap_pyfunction!(compile_frontend_ssr, m)?)?;
     m.add_function(wrap_pyfunction!(build_client, m)?)?;

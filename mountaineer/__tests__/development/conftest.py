@@ -9,8 +9,6 @@ import pytest
 
 from mountaineer.__tests__.fixtures import get_fixture_path
 
-# from mountaineer.development.manager import DevAppManager
-
 AppPackageType = tuple[str, Path, Path]
 
 

@@ -53,46 +53,17 @@ type (interface vs. enum for instance) so we can compartmentalize the string con
 **FileGenerators**: Write the full TypeScript files to disk, which often requires collecting
   multiple interfaces, tracking their imports, and assembling into a single file
 
-## App Isolation
+## Native Development Runtime
 
-When you run our development server via `runserver`, we spawn your app in a new process. This
-process is isolated from the main runserver process by a message broker. This allows us to send messages
-to the app to reload code, restart the server, or shutdown the app.
+`mountaineer-dev` owns the complete development lifecycle in Rust: file
+monitoring, Vite, warm Python workers, backend health checks, and traffic
+switching. A replacement backend must become ready before the proxy retires the
+previous generation.
 
-For small projects, performing a full process restart can be sufficient to update code files. But as projects
-grow larger, the bootup time for Python to read all your modules into memory can become meaningful. Mountaineer works
-around this limitation by implementing a hot-reloader. Our hot reloader waits for changes to files
-on disk and then reloads the changed modules in-memory without a full server restart. We do a best-effort
-approach to build up a DAG of dependencies between modules so we can reload them in the correct order.
+`mountaineer-watch` reuses the same Rust file monitor without starting a web
+server. It loads the Python controller only when needed to regenerate the
+managed TypeScript client files.
 
-There are some cases, however, where we can't naively reload a module. One common case is in SQLAlchemy where Table
-definitions can only be added once to the global registry. If we were to reload a module that added a table to the
-registry, it raises a runtime exception. In these cases our dev app manager will perform a full server restart by shutting down
-the old process and starting a new one.
-
-Regardless of the approach, the main process will wait for the new server to boot up and then send a notification
-to the frontend via our websocket server `WatcherWebservice`.
-
----
-
-::: mountaineer.development.manager.DevAppManager
-
----
-
-::: mountaineer.development.isolation.IsolatedAppContext
-
----
-
-::: mountaineer.development.hotreload.HotReloader
-
----
-
-::: mountaineer.development.watch.PackageWatchdog
-
----
-
-::: mountaineer.development.watch_server.WatcherWebservice
-
----
-
-::: mountaineer.development.messages.AsyncMessageBroker
+Python remains responsible for interpreting Python controller definitions.
+Rust owns process supervision, debounce behavior, change classification, and
+the command lifecycle.

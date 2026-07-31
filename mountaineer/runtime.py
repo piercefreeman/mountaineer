@@ -1,11 +1,7 @@
 import asyncio
-import os
-from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
-
-PAYLOAD_PATH_ENV = "MOUNTAINEER_RUNTIME_PAYLOAD"
 
 
 class ServerConfig(BaseModel):
@@ -32,12 +28,7 @@ def set_runtime_payload(payload: RuntimePayload | None) -> None:
 
 
 def get_runtime_payload() -> RuntimePayload | None:
-    if _runtime_payload is not None:
-        return _runtime_payload
-    payload_path = os.getenv(PAYLOAD_PATH_ENV)
-    if payload_path is None:
-        return None
-    return RuntimePayload.model_validate_json(Path(payload_path).read_text())
+    return _runtime_payload
 
 
 def serve_runtime(payload: RuntimePayload) -> None:
@@ -75,12 +66,6 @@ async def _prepare_controller(payload: RuntimePayload):
     return context.app_controller
 
 
-def main() -> None:
-    payload = RuntimePayload.model_validate_json(
-        Path(os.environ[PAYLOAD_PATH_ENV]).read_text()
-    )
-    serve_runtime(payload)
-
-
-if __name__ == "__main__":
-    main()
+def build_generated(payload: RuntimePayload) -> None:
+    set_runtime_payload(payload)
+    asyncio.run(_prepare_controller(payload))
