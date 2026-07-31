@@ -20,6 +20,7 @@ from mountaineer.development.messages import (
 from mountaineer.development.messages_broker import AsyncMessageBroker
 from mountaineer.development.uvicorn import UvicornThread
 from mountaineer.logging import log_time_duration, setup_internal_logger
+from mountaineer.plugin import MountaineerPlugin
 
 if TYPE_CHECKING:
     from mountaineer_exceptions.controllers.exception_controller import (
@@ -258,17 +259,23 @@ class IsolatedAppContext:
             from mountaineer_exceptions.controllers.exception_controller import (
                 ExceptionController,
             )
-            from mountaineer_exceptions.plugin import plugin  # type: ignore
+            from mountaineer_exceptions.views import get_core_view_path
+        except ImportError as error:
+            LOGGER.warning("mountaineer-exceptions is unavailable: %s", error)
+            return
 
-            app_controller.register(plugin)
-            self.exception_controller = [
-                controller
-                for controller in plugin.get_controllers()
-                if isinstance(controller, ExceptionController)
-            ][0]
-            app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
-        except ImportError:
-            LOGGER.warning("mountaineer-exceptions plugin not found, skipping...")
+        plugin = MountaineerPlugin(
+            name="mountaineer-exceptions",
+            controllers=[ExceptionController],
+            view_root=get_core_view_path(""),
+        )
+        app_controller.register(plugin)
+        self.exception_controller = [
+            controller
+            for controller in plugin.get_controllers()
+            if isinstance(controller, ExceptionController)
+        ][0]
+        app_controller.app.exception_handler(Exception)(self.handle_dev_exception)
 
     async def handle_dev_exception(self, request: Request, exc: Exception):
         """

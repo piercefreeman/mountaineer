@@ -16,9 +16,6 @@ const { defineConfig } = await import(
 const react = (
   await import(pathToFileURL(require.resolve("@vitejs/plugin-react")).href)
 ).default;
-const tsconfigPaths = (
-  await import(pathToFileURL(require.resolve("vite-tsconfig-paths")).href)
-).default;
 
 const development =
   mountaineer.mode === "development" ? mountaineer : undefined;
@@ -44,6 +41,9 @@ export default defineConfig({
   appType: "custom",
   base: "./",
   clearScreen: false,
+  resolve: {
+    tsconfigPaths: true,
+  },
   define: ssrBuild
     ? {
         "process.env.NODE_ENV": JSON.stringify(ssrBuild.environment),
@@ -61,7 +61,6 @@ export default defineConfig({
   plugins: [
     mountaineerEntrypoints(entrypoints, ssrBuild ? "ssr" : "client"),
     mountaineerUseClient(ssrBuild ? "ssr" : "client"),
-    tsconfigPaths(),
     react(),
     ...(development
       ? [
