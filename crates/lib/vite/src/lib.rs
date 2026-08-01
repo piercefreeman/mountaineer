@@ -59,8 +59,8 @@ pub struct DevelopmentConfig {
     /// Root directory containing the application's frontend source.
     pub frontend_root: PathBuf,
 
-    /// Host interface Vite should listen on.
-    pub host: String,
+    /// Browser-visible path prefix routed to Vite by the public development server.
+    pub base: String,
 }
 
 /// One named Mountaineer page and its ordered layout hierarchy.
@@ -145,7 +145,7 @@ pub struct StyleBuildConfig {
 pub struct DevelopmentServer {
     child: Child,
     _directory: TempDir,
-    origin: String,
+    address: SocketAddr,
     backend_signal: PathBuf,
 }
 
@@ -157,11 +157,7 @@ impl DevelopmentServer {
         let javascript_runtime = javascript_runtime().await?;
         let directory = tempfile::tempdir()?;
         let port = reserve_loopback_port()?;
-        let public_host = match config.host.as_str() {
-            "0.0.0.0" | "::" => "127.0.0.1",
-            host => host,
-        };
-        let origin = format!("http://{public_host}:{port}");
+        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
         let backend_signal = directory.path().join("backend-generation");
         fs::write(&backend_signal, b"1")?;
         write_config(
@@ -170,8 +166,7 @@ impl DevelopmentServer {
                 frontend_root: &frontend_root,
                 toolchain_package_json: toolchain_root.join("package.json"),
                 mode: Mode::Development {
-                    host: &config.host,
-                    public_host,
+                    base: &config.base,
                     port,
                     backend_signal: &backend_signal,
                 },
@@ -189,7 +184,6 @@ impl DevelopmentServer {
         .stderr(Stdio::inherit())
         .kill_on_drop(true)
         .spawn()?;
-        let address = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
         let ready = tokio::select! {
             result = wait_until_ready(address, Duration::from_secs(15)) => result,
             status = child.wait() => {
@@ -208,14 +202,14 @@ impl DevelopmentServer {
         Ok(Self {
             child,
             _directory: directory,
-            origin,
+            address,
             backend_signal,
         })
     }
 
-    /// Browser-visible origin of the running Vite server.
-    pub fn origin(&self) -> &str {
-        &self.origin
+    /// Loopback address of the running Vite server.
+    pub fn address(&self) -> SocketAddr {
+        self.address
     }
 
     /// Invalidates Vite's backend-dependent modules and reloads connected browsers.
@@ -381,8 +375,7 @@ struct Config<'a> {
 #[serde(tag = "mode", rename_all = "snake_case")]
 enum Mode<'a> {
     Development {
-        host: &'a str,
-        public_host: &'a str,
+        base: &'a str,
         port: u16,
         backend_signal: &'a Path,
     },

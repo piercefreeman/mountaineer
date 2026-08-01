@@ -29,6 +29,7 @@ const react = (
 
 const development =
   mountaineer.mode === "development" ? mountaineer : undefined;
+const developmentBase = development?.base;
 const clientBuild =
   mountaineer.mode === "build_client" ? mountaineer : undefined;
 const ssrBuild = mountaineer.mode === "build_ssr" ? mountaineer : undefined;
@@ -49,7 +50,7 @@ const styleEntries = Object.fromEntries(
 export default defineConfig({
   root: mountaineer.frontend_root,
   appType: "custom",
-  base: "./",
+  base: developmentBase ?? "./",
   clearScreen: false,
   resolve: {
     alias: [
@@ -89,7 +90,7 @@ export default defineConfig({
             name: "mountaineer:development",
             configureServer(server) {
               server.middlewares.use(
-                "/@mountaineer/client",
+                `${developmentBase}@mountaineer/client`,
                 (request, response) => {
                   const params = new URL(
                     request.url ?? "",
@@ -97,10 +98,16 @@ export default defineConfig({
                   ).searchParams;
                   const views = params
                     .getAll("view")
-                    .map((view) => `/@fs/${view.replaceAll("\\", "/")}`);
+                    .map(
+                      (view) =>
+                        `${developmentBase}@fs/${view.replaceAll("\\", "/")}`,
+                    );
                   const styles = params
                     .getAll("style")
-                    .map((style) => `/@fs/${style.replaceAll("\\", "/")}`);
+                    .map(
+                      (style) =>
+                        `${developmentBase}@fs/${style.replaceAll("\\", "/")}`,
+                    );
                   if (views.length === 0) {
                     response.statusCode = 400;
                     response.end("Missing Mountaineer view");
@@ -108,7 +115,9 @@ export default defineConfig({
                   }
 
                   response.setHeader("Content-Type", "text/javascript");
-                  response.end(developmentClientSource(views, styles));
+                  response.end(
+                    developmentClientSource(views, styles, developmentBase),
+                  );
                 },
               );
 
@@ -130,15 +139,9 @@ export default defineConfig({
   ],
   server: development
     ? {
-        host: development.host,
+        host: "127.0.0.1",
         port: development.port,
         strictPort: true,
-        cors: true,
-        origin: `http://${development.public_host}:${development.port}`,
-        hmr: {
-          host: development.public_host,
-          port: development.port,
-        },
         watch: {
           ignored: ["**/.mountaineer/**", "**/.mountaineer-vite/**"],
         },
