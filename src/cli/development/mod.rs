@@ -3,7 +3,7 @@ mod proxy;
 
 use self::{
     hot_reload::{discover_imports, ActiveWorker, PythonHotReload},
-    proxy::{reserve_loopback_port, serve_proxy, wait_until_ready},
+    proxy::{reserve_loopback_port, serve_proxy, wait_until_ready, VITE_PROXY_PREFIX},
 };
 use super::{
     config::{write_payload, LaunchConfig, RuntimeMode, ServerConfig},
@@ -65,7 +65,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
     let payload_dir = tempfile::tempdir()?;
     let mut vite = ViteDevServer::spawn(ViteConfig {
         frontend_root: config.frontend_root.clone(),
-        host: config.host.clone(),
+        base: VITE_PROXY_PREFIX.to_string(),
     })
     .await?;
     let mut generation = 1;
@@ -77,7 +77,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
         &payload_dir,
         &mut hot_reload,
         generation,
-        vite.origin(),
+        VITE_PROXY_PREFIX.trim_end_matches('/'),
         true,
     )
     .await?;
@@ -90,7 +90,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
         debounce: Duration::from_millis(debounce_ms),
     })?;
 
-    let mut proxy_task = tokio::spawn(serve_proxy(listener, active_target.clone()));
+    let mut proxy_task = tokio::spawn(serve_proxy(listener, active_target.clone(), vite.address()));
     finish_startup_spinner();
     status(
         Tone::Accent,
@@ -166,7 +166,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
                             &payload_dir,
                             &mut hot_reload,
                             generation,
-                            vite.origin(),
+                            VITE_PROXY_PREFIX.trim_end_matches('/'),
                             refresh_imports,
                         ).await {
                             Ok((candidate, target)) => {
@@ -219,7 +219,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
                             &payload_dir,
                             &mut candidate_strategy,
                             generation,
-                            vite.origin(),
+                            VITE_PROXY_PREFIX.trim_end_matches('/'),
                             true,
                         ).await {
                             Ok((candidate, target)) => {

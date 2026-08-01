@@ -35,18 +35,18 @@ export function mountaineerEntrypoints(entrypoints, target) {
   };
 }
 
-export function developmentClientSource(views, styles) {
+export function developmentClientSource(views, styles, base) {
   return `
-import "/@vite/client";
-import RefreshRuntime from "/@react-refresh";
+import "${base}@vite/client";
+import RefreshRuntime from "${base}@react-refresh";
 RefreshRuntime.injectIntoGlobalHook(window);
 window.$RefreshReg$ = () => {};
 window.$RefreshSig$ = () => (type) => type;
 window.__vite_plugin_react_preamble_installed__ = true;
 await Promise.all(${JSON.stringify(styles)}.map((source) => import(source)));
-const ReactModule = await import("/@id/react");
+const ReactModule = await import("${base}@id/react");
 const React = ReactModule.default ?? ReactModule;
-const ReactDOMModule = await import("/@id/react-dom/client");
+const ReactDOMModule = await import("${base}@id/react-dom/client");
 const { hydrateRoot } = ReactDOMModule.default ?? ReactDOMModule;
 const components = await Promise.all(
   ${JSON.stringify(views)}.map((source) => import(source)),

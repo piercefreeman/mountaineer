@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import signal
+from html import unescape
 from os import environ
 from pathlib import Path
 from random import uniform
@@ -107,6 +108,57 @@ async def check_server_ready(port: int, timeout: int = 20):
     return False, status_code
 
 
+async def check_development_frontend(port: int):
+    public_host = f"dev.mountaineer.test:{port}"
+    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
+        response = await client.get("/", headers={"Host": public_host})
+        assert response.status_code == 200
+
+        asset_paths = [
+            unescape(path)
+            for _, path in re.findall(r"(?:src|href)=(['\"])(.*?)\1", response.text)
+            if path.startswith("/__mountaineer__/")
+        ]
+        assert asset_paths
+
+        client_path = next(
+            path for path in asset_paths if "/@mountaineer/client?" in path
+        )
+        client_response = await client.get(client_path, headers={"Host": public_host})
+        assert client_response.status_code == 200
+
+        module_paths = set(
+            re.findall(r'"(/__mountaineer__/[^\"]+)"', client_response.text)
+        )
+        assert module_paths
+        for path in module_paths:
+            module_response = await client.get(path, headers={"Host": public_host})
+            assert module_response.status_code == 200, path
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    try:
+        writer.write(
+            (
+                "GET /__mountaineer__/ HTTP/1.1\r\n"
+                f"Host: {public_host}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+                "Sec-WebSocket-Version: 13\r\n"
+                "Sec-WebSocket-Protocol: vite-hmr\r\n"
+                "\r\n"
+            ).encode()
+        )
+        await writer.drain()
+        response_headers = await asyncio.wait_for(
+            reader.readuntil(b"\r\n\r\n"), timeout=5
+        )
+        assert response_headers.startswith(b"HTTP/1.1 101 Switching Protocols\r\n")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+
 @pytest.mark.integration_tests
 @pytest.mark.asyncio
 async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
@@ -129,7 +181,7 @@ async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
 
     # The project's runserver command delegates to the native development server.
     server_process = Popen(
-        ["uv", "run", "runserver", "--port", str(port)],
+        ["uv", "run", "runserver", "--host", "0.0.0.0", "--port", str(port)],
         cwd=tmp_ci_webapp,
         env=uv_env,
     )
@@ -138,6 +190,7 @@ async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
     try:
         is_ready, status_code = await check_server_ready(port)
         assert is_ready, f"Server did not become ready (last status: {status_code})"
+        await check_development_frontend(port)
 
         for _ in range(5):
             with open(test_file_path, "a") as f:
