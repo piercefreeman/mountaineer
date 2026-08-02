@@ -44,6 +44,8 @@ impl OutputPlan {
     pub(super) fn commit(self) -> Result<()> {
         let mut staged = Vec::with_capacity(self.writes.len());
         for generated in self.writes {
+            // Replacing byte-identical .mountaineer files emits source-change events that can
+            // loop regeneration and remount the frontend, losing UI state such as open modals.
             match fs::read(&generated.path) {
                 Ok(existing) if existing == generated.contents.as_bytes() => continue,
                 Ok(_) => {}
