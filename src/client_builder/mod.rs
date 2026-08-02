@@ -16,7 +16,7 @@ pub fn build(payload: &str) -> Result<()> {
 mod tests {
     use super::*;
     use serde_json::{json, Value};
-    use std::fs;
+    use std::{fs, thread, time::Duration};
 
     fn controller(name: &str) -> Value {
         json!({
@@ -70,6 +70,32 @@ mod tests {
         assert_eq!(
             fs::read_to_string(global_root.join("api.ts")).unwrap(),
             "existing"
+        );
+    }
+
+    #[test]
+    fn identical_build_does_not_rewrite_generated_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let global_root = directory.path().join(".mountaineer");
+        let payload = json!({
+            "schema_version": 1,
+            "mountaineer_version": "test",
+            "global_root": global_root,
+            "components": [],
+            "controllers": [],
+            "views": [],
+        });
+
+        build(&payload.to_string()).unwrap();
+        let generated = global_root.join("api.ts");
+        let first_modified = fs::metadata(&generated).unwrap().modified().unwrap();
+        thread::sleep(Duration::from_millis(20));
+
+        build(&payload.to_string()).unwrap();
+
+        assert_eq!(
+            fs::metadata(generated).unwrap().modified().unwrap(),
+            first_modified
         );
     }
 
