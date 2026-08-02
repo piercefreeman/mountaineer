@@ -44,6 +44,12 @@ impl OutputPlan {
     pub(super) fn commit(self) -> Result<()> {
         let mut staged = Vec::with_capacity(self.writes.len());
         for generated in self.writes {
+            match fs::read(&generated.path) {
+                Ok(existing) if existing == generated.contents.as_bytes() => continue,
+                Ok(_) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
             let parent = generated.path.parent().ok_or_else(|| {
                 format!("Generated path has no parent: {}", generated.path.display())
             })?;
