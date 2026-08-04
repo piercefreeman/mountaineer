@@ -183,3 +183,7 @@ website/site
 autospec
 
 mountaineer-*.data/
+
+# Generated fixture artifacts from running the ci_webapp test app
+mountaineer/__tests__/fixtures/ci_webapp/ci_webapp/views/**/_server/
+mountaineer/__tests__/fixtures/ci_webapp/ci_webapp/views/_static/

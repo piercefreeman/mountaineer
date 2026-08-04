@@ -2,7 +2,11 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 const WRAPPER_PREFIX = "\0mountaineer-client-wrapper:";
-const ACTUAL_PREFIX = "\0mountaineer-client-actual:";
+// The actual module keeps its real filesystem path with a query marker instead
+// of a \0-prefixed virtual id: rollup's createFilter unconditionally rejects
+// \0 ids, so vite's oxc/esbuild plugin would never run the TS/JSX transform on
+// the boundary's real source and import-analysis would choke on raw TSX.
+const ACTUAL_QUERY = "mountaineer-client-actual";
 const EXPORT_DEFAULT = /^\s*export\s+default\b/m;
 const EXPORT_ALL = /^\s*export\s+\*\s+from\b/m;
 const NAMED_EXPORTS = [
@@ -22,12 +26,12 @@ export function mountaineerUseClient(target) {
     name: "mountaineer:use-client",
     enforce: "pre",
     async resolveId(source, importer) {
-      if (source.startsWith(WRAPPER_PREFIX) || source.startsWith(ACTUAL_PREFIX)) {
+      if (source.startsWith(WRAPPER_PREFIX) || isActualId(source)) {
         return source;
       }
 
-      const actualImporter = importer?.startsWith(ACTUAL_PREFIX)
-        ? importer.slice(ACTUAL_PREFIX.length)
+      const actualImporter = isActualId(importer)
+        ? cleanId(importer)
         : importer;
       const resolved = await this.resolve(source, actualImporter, {
         skipSelf: true,
@@ -37,15 +41,15 @@ export function mountaineerUseClient(target) {
       }
 
       if (await isClientBoundary(resolved.id, boundaryCache)) {
-        return importer?.startsWith(ACTUAL_PREFIX)
-          ? `${ACTUAL_PREFIX}${cleanId(resolved.id)}`
+        return isActualId(importer)
+          ? actualId(cleanId(resolved.id))
           : `${WRAPPER_PREFIX}${cleanId(resolved.id)}`;
       }
-      return importer?.startsWith(ACTUAL_PREFIX) ? resolved : undefined;
+      return isActualId(importer) ? resolved : undefined;
     },
     async load(id) {
-      if (id.startsWith(ACTUAL_PREFIX)) {
-        return readFile(id.slice(ACTUAL_PREFIX.length), "utf8");
+      if (isActualId(id)) {
+        return readFile(cleanId(id), "utf8");
       }
       if (!id.startsWith(WRAPPER_PREFIX)) {
         return;
@@ -58,6 +62,18 @@ export function mountaineerUseClient(target) {
         : clientBoundarySource(filename, surface);
     },
   };
+}
+
+function actualId(filename) {
+  return `${filename}?${ACTUAL_QUERY}`;
+}
+
+function isActualId(id) {
+  if (!id) {
+    return false;
+  }
+  const query = id.split("?", 2)[1];
+  return query !== undefined && query.split("&").includes(ACTUAL_QUERY);
 }
 
 async function isClientBoundary(id, cache) {
@@ -156,7 +172,6 @@ ${exports}
 }
 
 function clientBoundarySource(filename, { hasDefault, named }) {
-  const actualId = `${ACTUAL_PREFIX}${filename}`;
   const exports = named
     .map(
       (name) =>
@@ -165,7 +180,7 @@ function clientBoundarySource(filename, { hasDefault, named }) {
     .join("\n");
   return `
 import React, { useEffect, useState } from "react";
-import * as actual from ${JSON.stringify(actualId)};
+import * as actual from ${JSON.stringify(actualId(filename))};
 const createClientBoundary = (Actual, exportName) => {
   const Boundary = (props) => {
     const [isMounted, setIsMounted] = useState(false);

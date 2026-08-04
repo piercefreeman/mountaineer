@@ -1,5 +1,11 @@
 const ENTRY_PREFIX = "virtual:mountaineer-entry:";
 const RESOLVED_ENTRY_PREFIX = `\0${ENTRY_PREFIX}`;
+// Dev hydration cannot `import("@id/react")` directly: react is aliased to an
+// absolute file, so bare-id URL requests bypass the dep optimizer and answer
+// 504 Outdated Optimize Dep. Routing the imports through a virtual module lets
+// import-analysis rewrite them to the optimized deps with the current hash.
+const DEV_RUNTIME_ID = "virtual:mountaineer-dev-runtime";
+const RESOLVED_DEV_RUNTIME_ID = `\0${DEV_RUNTIME_ID}`;
 
 export function entrypointInputs(entrypoints) {
   return Object.fromEntries(
@@ -15,11 +21,14 @@ export function mountaineerEntrypoints(entrypoints, target) {
     name: "mountaineer:entrypoints",
     enforce: "pre",
     resolveId(source) {
-      if (source.startsWith(ENTRY_PREFIX)) {
+      if (source.startsWith(ENTRY_PREFIX) || source === DEV_RUNTIME_ID) {
         return `\0${source}`;
       }
     },
     load(id) {
+      if (id === RESOLVED_DEV_RUNTIME_ID) {
+        return devRuntimeSource();
+      }
       if (!id.startsWith(RESOLVED_ENTRY_PREFIX)) {
         return;
       }
@@ -44,10 +53,7 @@ window.$RefreshReg$ = () => {};
 window.$RefreshSig$ = () => (type) => type;
 window.__vite_plugin_react_preamble_installed__ = true;
 await Promise.all(${JSON.stringify(styles)}.map((source) => import(source)));
-const ReactModule = await import("${base}@id/react");
-const React = ReactModule.default ?? ReactModule;
-const ReactDOMModule = await import("${base}@id/react-dom/client");
-const { hydrateRoot } = ReactDOMModule.default ?? ReactDOMModule;
+const { React, hydrateRoot } = await import("${base}@id/${DEV_RUNTIME_ID}");
 const components = await Promise.all(
   ${JSON.stringify(views)}.map((source) => import(source)),
 );
@@ -58,6 +64,17 @@ for (const module of components.reverse()) {
 const root = document.getElementById("root");
 if (!root) throw new Error("Mountaineer root element is missing");
 hydrateRoot(root, element);
+`;
+}
+
+function devRuntimeSource() {
+  return `
+import * as ReactModule from "react";
+import * as ReactDOMClient from "react-dom/client";
+export const React = ReactModule.default ?? ReactModule;
+export const hydrateRoot =
+  ReactDOMClient.hydrateRoot ??
+  (ReactDOMClient.default ?? ReactDOMClient).hydrateRoot;
 `;
 }
 
