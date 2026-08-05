@@ -107,7 +107,11 @@ impl Monitor {
 
 fn classify(events: &[DebouncedEvent]) -> Option<ChangeKind> {
     let mut change = None;
-    for path in events.iter().flat_map(|event| &event.event.paths) {
+    for path in events
+        .iter()
+        .filter(|event| !event.event.kind.is_access())
+        .flat_map(|event| &event.event.paths)
+    {
         if ignored_path(path) {
             continue;
         }
@@ -179,6 +183,18 @@ mod tests {
             classify(&[event("example/views/node_modules/react/index.js")]),
             None
         );
+    }
+
+    #[test]
+    fn ignores_source_file_reads() {
+        let mut read = event("example/controllers/home.py");
+        read.event.kind = notify_debouncer_full::notify::EventKind::Access(
+            notify_debouncer_full::notify::event::AccessKind::Open(
+                notify_debouncer_full::notify::event::AccessMode::Read,
+            ),
+        );
+
+        assert_eq!(classify(&[read]), None);
     }
 
     #[tokio::test]
