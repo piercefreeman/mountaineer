@@ -322,7 +322,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.7,<9.0.0" },
     { name = "fastapi", specifier = ">=0.114.1,<1.0.0" },
     { name = "inflection", specifier = ">=0.5.1,<1.0.0" },
-    { name = "mountaineer-di", specifier = ">=0.1.2,<1.0.0" },
+    { name = "mountaineer-di", specifier = ">=0.3.0,<1.0.0" },
     { name = "mountaineer-exceptions", specifier = ">=0.1.1" },
     { name = "packaging", specifier = ">=23.2" },
     { name = "pydantic", specifier = ">=2.5.3,<3.0.0" },
@@ -352,14 +352,14 @@ dev = [
 
 [[package]]
 name = "mountaineer-di"
-version = "0.1.2"
+version = "0.3.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c2/14/1990a29b4e945cb61ddee58d030dac0692a62c322d8d3facec3cb9932606/mountaineer_di-0.1.2.tar.gz", hash = "sha256:22e144e79d1aeefebd9989bcd7c63d2632396fdf5f7f6fa165343922a736260a", size = 30449, upload-time = "2026-03-30T03:36:20.36Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/9f/4220d35915f063ff284243cf33406a4f6b1f7f1c2e9edb8158edb890e113/mountaineer_di-0.3.0.tar.gz", hash = "sha256:b0e95cff4b9e3d0afd9063c7508b9a13aad447b6d158a740fc85afd99d159147", size = 46421, upload-time = "2026-08-31T22:35:40.831Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/3e/e3e7efb91a76a1cdfb5f2b2a827c9b0fe4e361b3fbaf8cfc1bf94679cf0b/mountaineer_di-0.1.2-py3-none-any.whl", hash = "sha256:8a87bd119db9c4b812fa7f992e1659b3c84e8819842393abd3dd63fba66c31cf", size = 10225, upload-time = "2026-03-30T03:36:19.033Z" },
+    { url = "https://files.pythonhosted.org/packages/f0/56/7ced07ef849899bd1c89e8bf2ed9cc269e04e877a988a934d0d73ec9fdf6/mountaineer_di-0.3.0-py3-none-any.whl", hash = "sha256:42481ab3a62dcd6082a983214b7ed7d957a17914ed2297d519a3369fa32ef2a4", size = 12624, upload-time = "2026-08-31T22:35:39.527Z" },
 ]
 
 [[package]]
