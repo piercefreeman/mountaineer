@@ -20,7 +20,7 @@ dependencies = [
     # for basic CLI functionality.
     "rich>=13.7.1,<14.0.0",
     "mountaineer-exceptions>=0.1.1",
-    "mountaineer-di>=0.1.2,<1.0.0",
+    "mountaineer-di>=0.3.0,<1.0.0",
 ]
 exclude = [
     "fixtures",
