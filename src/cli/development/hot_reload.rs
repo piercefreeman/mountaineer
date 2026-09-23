@@ -135,12 +135,7 @@ fn report_excluded_imports(excluded_imports: &[ExcludedImport]) {
     };
     let details = excluded_imports
         .iter()
-        .map(|excluded| match excluded.thread_count {
-            Some(threads) => {
-                format!("- {} ({threads} threads after import)", excluded.module)
-            }
-            None => format!("- {} ({})", excluded.module, excluded.reason),
-        })
+        .map(|excluded| format!("- {} ({})", excluded.module, excluded.reason))
         .collect::<Vec<_>>();
     status_with_details(
         Tone::Warning,

@@ -1,28 +1,24 @@
-"""Report which requested Python imports are safe to retain across ``fork``.
+"""Probe one Python import in a fresh interpreter before retaining it across fork.
 
 Invocation::
 
-    python -c "$SCRIPT" '["module.to.probe", "another.module"]'
+    python -c "$SCRIPT" module.to.probe
 
-The first positional argument is a JSON array of import names. Every import is
-tested in its own child process so failed or thread-starting imports do not
-contaminate the probe parent.
+The Rust caller starts a fresh interpreter per import. Probing in an already
+forked child can change native library initialization and miss thread creation.
 
 The script reads no stdin. It writes one JSON object to stdout::
 
     {
-      "safe": ["module.to.probe"],
-      "excluded": [
-        {
-          "module": "another.module",
-          "safe": false,
-          "thread_count": 2,
-          "reason": "import left 2 process threads running"
-        }
-      ]
+      "module": "module.to.probe",
+      "safe": false,
+      "thread_count": 2,
+      "reason": "import left 2 process threads running"
     }
 
-An import is safe only when it succeeds and leaves exactly one process thread.
+An import is accepted only when it succeeds and leaves exactly one process thread.
+On macOS, it must also never have started another native thread, even one that
+has already exited: the Objective-C runtime retains that history across fork.
 ``thread_count`` is ``null`` when the import fails or cannot report a result.
 """
 
@@ -31,6 +27,7 @@ import json
 import os
 import sys
 import threading
+from contextlib import redirect_stdout
 
 
 def thread_count() -> int:
@@ -72,54 +69,36 @@ def thread_count() -> int:
 
 
 def probe(module: str) -> dict[str, object]:
-    read_fd, write_fd = os.pipe()
-    pid = os.fork()
-    if pid == 0:
-        os.close(read_fd)
-        try:
-            importlib.import_module(module)
-            threads = thread_count()
-            result = {
-                "module": module,
-                "safe": threads == 1,
-                "thread_count": threads,
-                "reason": (
-                    ""
-                    if threads == 1
-                    else f"import left {threads} process threads running"
-                ),
-            }
-        except BaseException as error:
-            result = {
-                "module": module,
-                "safe": False,
-                "thread_count": None,
-                "reason": f"import failed: {error}",
-            }
-        with os.fdopen(write_fd, "w") as stream:
-            json.dump(result, stream)
-        os._exit(0)
+    try:
+        importlib.import_module(module)
+        threads = thread_count()
+        reason = (
+            "" if threads == 1 else f"import left {threads} process threads running"
+        )
+        if sys.platform == "darwin":
+            import ctypes
 
-    os.close(write_fd)
-    with os.fdopen(read_fd) as stream:
-        raw_result = stream.read()
-    os.waitpid(pid, 0)
-    if not raw_result:
+            # This native flag stays set after threads exit, unlike thread_count().
+            if ctypes.CDLL(None).pthread_is_threaded_np():
+                reason = "import started native threads; unsafe to fork on macOS"
+        return {
+            "module": module,
+            "safe": not reason,
+            "thread_count": threads,
+            "reason": reason,
+        }
+    except BaseException as error:
         return {
             "module": module,
             "safe": False,
             "thread_count": None,
-            "reason": "probe child exited before reporting",
+            "reason": f"import failed: {error}",
         }
-    return json.loads(raw_result)
 
 
-results = [probe(str(module)) for module in json.loads(sys.argv[1])]
-sys.stdout.write(
-    json.dumps(
-        {
-            "safe": [result["module"] for result in results if result["safe"]],
-            "excluded": [result for result in results if not result["safe"]],
-        }
-    )
-)
+with redirect_stdout(sys.stderr):
+    result = probe(sys.argv[1])
+sys.stdout.write(json.dumps(result))
+sys.stdout.flush()
+# Imports may leave non-daemon threads behind; do not wait for them at shutdown.
+os._exit(0)

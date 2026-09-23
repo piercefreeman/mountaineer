@@ -177,39 +177,253 @@ enum CommandMessage {
     Exit,
 }
 
-#[derive(Deserialize)]
 struct ImportProbe {
     safe: BTreeSet<String>,
     excluded: Vec<ExcludedImport>,
 }
 
+#[derive(Deserialize)]
+struct ImportProbeResult {
+    safe: bool,
+    #[serde(flatten)]
+    import: ExcludedImport,
+}
+
 async fn probe_imports(config: &Config) -> Result<ImportProbe> {
-    if config.imports.is_empty() {
-        return Ok(ImportProbe {
-            safe: BTreeSet::new(),
-            excluded: Vec::new(),
-        });
+    let mut probe = ImportProbe {
+        safe: BTreeSet::new(),
+        excluded: Vec::new(),
+    };
+    for module in &config.imports {
+        let output = Command::new(&config.python)
+            .args(["-c", IMPORT_SAFETY_PROBE, module])
+            .current_dir(&config.project_root)
+            .output()
+            .await?;
+        if !output.status.success() || output.stdout.is_empty() {
+            probe.excluded.push(ExcludedImport {
+                module: module.clone(),
+                thread_count: None,
+                reason: format!("probe exited before reporting ({})", output.status),
+            });
+            continue;
+        }
+        let result: ImportProbeResult = serde_json::from_slice(&output.stdout)?;
+        if result.safe {
+            probe.safe.insert(module.clone());
+        } else {
+            probe.excluded.push(result.import);
+        }
     }
-    let output = Command::new(&config.python)
-        .args(["-c", IMPORT_SAFETY_PROBE])
-        .arg(serde_json::to_string(&config.imports)?)
-        .current_dir(&config.project_root)
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(Error::Invalid(format!(
-            "fork-safety probe exited with {}:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    Ok(serde_json::from_slice(&output.stdout)?)
+    Ok(probe)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[cfg(target_os = "macos")]
+    fn write_completed_thread_imports(project: &std::path::Path) -> BTreeSet<String> {
+        let modules = [
+            (
+                "python_thread",
+                "import threading\n\
+                 thread = threading.Thread(target=lambda: None)\n\
+                 thread.start()\n\
+                 thread.join()\n",
+            ),
+            (
+                "executor_thread",
+                r#"
+from concurrent.futures import ThreadPoolExecutor
+
+with ThreadPoolExecutor() as executor:
+    executor.submit(lambda: None).result()
+"#,
+            ),
+            (
+                "native_thread",
+                r#"
+import ctypes
+
+lib = ctypes.CDLL(None)
+callback_type = ctypes.CFUNCTYPE(ctypes.c_void_p, ctypes.c_void_p)
+callback = callback_type(lambda _: None)
+lib.pthread_create.argtypes = [ctypes.POINTER(ctypes.c_void_p), ctypes.c_void_p,
+                              callback_type, ctypes.c_void_p]
+lib.pthread_create.restype = ctypes.c_int
+lib.pthread_join.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+lib.pthread_join.restype = ctypes.c_int
+thread = ctypes.c_void_p()
+assert lib.pthread_create(ctypes.byref(thread), None, callback, None) == 0
+assert lib.pthread_join(thread, None) == 0
+"#,
+            ),
+        ];
+        for (name, code) in modules {
+            fs::write(project.join(format!("{name}.py")), code).unwrap();
+        }
+        modules.iter().map(|(name, _)| name.to_string()).collect()
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn probe_excludes_imports_whose_threads_have_exited() {
+        let project = tempfile::tempdir().unwrap();
+        let threaded = write_completed_thread_imports(project.path());
+        // Sorting after the rejected imports also checks that probes stay isolated.
+        fs::write(project.path().join("safe_import.py"), "VALUE = 1\n").unwrap();
+        let mut imports = threaded.clone();
+        imports.insert("safe_import".to_string());
+        let Spawned {
+            mut strategy,
+            excluded_imports,
+        } = Strategy::spawn(Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports,
+        })
+        .await
+        .unwrap();
+        strategy.shutdown().await.unwrap();
+
+        assert_eq!(
+            excluded_imports
+                .iter()
+                .map(|item| item.module.clone())
+                .collect::<BTreeSet<_>>(),
+            threaded,
+        );
+        for excluded in excluded_imports {
+            assert_eq!(excluded.thread_count, Some(1));
+            assert!(!excluded.reason.is_empty());
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn forked_workers_defer_threaded_imports_and_use_system_proxies() {
+        let project = tempfile::tempdir().unwrap();
+        let threaded = write_completed_thread_imports(project.path());
+        fs::write(
+            project.path().join("safe_import.py"),
+            "import os\nPID = os.getpid()\n",
+        )
+        .unwrap();
+        let runtime = project.path().join("mountaineer");
+        fs::create_dir(&runtime).unwrap();
+        fs::write(runtime.join("__init__.py"), "").unwrap();
+        fs::write(
+            runtime.join("runtime.py"),
+            r#"
+import json
+import os
+import signal
+import sys
+from pathlib import Path
+from urllib.request import getproxies_macosx_sysconf
+
+class RuntimePayload:
+    model_validate_json = staticmethod(json.loads)
+
+def serve_runtime(payload):
+    assert "safe_import" in sys.modules
+    import safe_import
+    assert safe_import.PID == os.getppid()
+    assert not {"python_thread", "executor_thread", "native_thread"} & sys.modules.keys()
+    import python_thread, executor_thread, native_thread
+    getproxies_macosx_sysconf()
+    result = Path(payload["result"])
+    pending = result.with_suffix(".tmp")
+    pending.write_text(str(os.getpid()))
+    pending.replace(result)
+    signal.pause()
+"#,
+        )
+        .unwrap();
+        let mut imports = threaded;
+        imports.insert("safe_import".to_string());
+        let Spawned { mut strategy, .. } = Strategy::spawn(Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports,
+        })
+        .await
+        .unwrap();
+        let mut pids = BTreeSet::new();
+        for generation in 1..=2 {
+            let result = project.path().join(format!("result-{generation}"));
+            let payload = project.path().join(format!("payload-{generation}.json"));
+            fs::write(&payload, serde_json::json!({"result": result}).to_string()).unwrap();
+            let worker = strategy.start(generation, payload).await.unwrap();
+            let ready = timeout(Duration::from_secs(5), async {
+                while !result.exists() {
+                    if let Some(status) = strategy.child.try_wait().unwrap() {
+                        return Err(format!("fork parent exited with {status}"));
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                Ok(())
+            })
+            .await;
+            if !matches!(ready, Ok(Ok(()))) {
+                strategy.shutdown().await.unwrap();
+                panic!("worker failed to use macOS system proxies: {ready:?}");
+            }
+            pids.insert(fs::read_to_string(result).unwrap());
+            strategy.stop(worker).await.unwrap();
+        }
+        strategy.shutdown().await.unwrap();
+        assert_eq!(pids.len(), 2);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn parent_refuses_imports_that_start_threads_only_when_combined() {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(project.path().join("a_marker.py"), "").unwrap();
+        fs::write(
+            project.path().join("b_conditional.py"),
+            r#"
+import sys
+import threading
+
+if "a_marker" in sys.modules:
+    thread = threading.Thread(target=lambda: None)
+    thread.start()
+    thread.join()
+"#,
+        )
+        .unwrap();
+        let runtime = project.path().join("mountaineer");
+        fs::create_dir(&runtime).unwrap();
+        fs::write(runtime.join("__init__.py"), "").unwrap();
+        fs::write(
+            runtime.join("runtime.py"),
+            "from pathlib import Path\nPath('worker_started').touch()\n",
+        )
+        .unwrap();
+        let Spawned {
+            mut strategy,
+            excluded_imports,
+        } = Strategy::spawn(Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports: BTreeSet::from(["a_marker".to_string(), "b_conditional".to_string()]),
+        })
+        .await
+        .unwrap();
+        assert!(excluded_imports.is_empty(), "individual probes should pass");
+        strategy
+            .start(1, project.path().join("unused.json"))
+            .await
+            .unwrap();
+        let status = timeout(Duration::from_secs(5), strategy.wait()).await;
+        strategy.shutdown().await.unwrap();
+        assert!(!status.unwrap().unwrap().success());
+        assert!(!project.path().join("worker_started").exists());
+    }
 
     #[tokio::test]
     async fn probe_excludes_thread_starting_imports() {
@@ -218,18 +432,58 @@ mod tests {
         fs::write(
             project.path().join("threaded_import.py"),
             "import threading, time\n\
-             threading.Thread(target=lambda: time.sleep(5), daemon=True).start()\n",
+             threading.Thread(target=lambda: time.sleep(30)).start()\n",
+        )
+        .unwrap();
+        let config = Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports: BTreeSet::from(["safe_import".to_string(), "threaded_import".to_string()]),
+        };
+        let probe = timeout(Duration::from_secs(5), probe_imports(&config))
+            .await
+            .expect("probe waited for an import's non-daemon thread")
+            .unwrap();
+
+        assert_eq!(probe.safe, BTreeSet::from(["safe_import".to_string()]));
+    }
+
+    #[tokio::test]
+    async fn probe_isolates_failed_imports_and_import_output() {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(
+            project.path().join("broken_import.py"),
+            "raise RuntimeError('broken')\n",
+        )
+        .unwrap();
+        fs::write(
+            project.path().join("exiting_import.py"),
+            "import os\nos._exit(0)\n",
+        )
+        .unwrap();
+        fs::write(
+            project.path().join("noisy_import.py"),
+            "print('import message')\n",
         )
         .unwrap();
         let probe = probe_imports(&Config {
             python: "python".to_string(),
             project_root: project.path().to_path_buf(),
-            imports: BTreeSet::from(["safe_import".to_string(), "threaded_import".to_string()]),
+            imports: BTreeSet::from([
+                "broken_import".to_string(),
+                "exiting_import".to_string(),
+                "missing_import".to_string(),
+                "noisy_import".to_string(),
+            ]),
         })
         .await
         .unwrap();
-
-        assert_eq!(probe.safe, BTreeSet::from(["safe_import".to_string()]));
+        assert_eq!(probe.safe, BTreeSet::from(["noisy_import".to_string()]));
+        assert_eq!(probe.excluded.len(), 3);
+        assert!(probe
+            .excluded
+            .iter()
+            .all(|item| item.thread_count.is_none()));
     }
 
     #[tokio::test]
