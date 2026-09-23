@@ -653,6 +653,10 @@ class AppController:
         else:
             raise ValueError("Invalid client script import")
 
+        # HTML parses script end tags even inside JSON strings. Escaping "<"
+        # prevents tag/comment boundaries while preserving the JavaScript value.
+        escaped_server_data = json_dumps(server_data_json).replace("<", "\\u003c")
+
         page_contents = f"""
         <html>
         <head>
@@ -661,7 +665,7 @@ class AppController:
         <body>
         <div id="root">{ssr_html}</div>
         <script type="text/javascript">
-        var SERVER_DATA = {json_dumps(server_data_json)};
+        var SERVER_DATA = {escaped_server_data};
         </script>
         {client_import}
         </body>

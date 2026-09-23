@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
+from html.parser import HTMLParser
 from inspect import signature
+from json import dumps as json_dumps, loads as json_loads
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,6 +25,93 @@ from mountaineer.frontend import FrontendEntry
 from mountaineer.paths import ManagedViewPath
 from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import Metadata, RenderBase
+from mountaineer.ssr import render_ssr
+
+
+@pytest.mark.parametrize("inline_client", [True, False])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "</script><script>globalThis.__injected = true</script>",
+        "</ScRiPt><script>globalThis.__injected = true</script>",
+        "</script ><script>globalThis.__injected = true</script>",
+        "Quotes: \"'`\\; markup: <>&; unicode: café \u2028\u2029",
+    ],
+    ids=["closing-tag", "mixed-case-tag", "whitespace-tag", "round-trip"],
+)
+def test_compile_html_keeps_render_data_inert(
+    tmp_path: Path, payload: str, inline_client: bool
+):
+    class PayloadRender(RenderBase):
+        value: str
+        nested: dict[str, list[str]]
+
+    class InlineScripts(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.scripts: list[str] = []
+            self.in_script = False
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if (
+                tag == "script"
+                and attributes.get("type") != "module"
+                and "src" not in attributes
+            ):
+                self.in_script = True
+                self.scripts.append("")
+
+        def handle_data(self, data):
+            if self.in_script:
+                self.scripts[-1] += data
+
+        def handle_endtag(self, tag):
+            if tag == "script":
+                self.in_script = False
+
+    render = PayloadRender(value=payload, nested={payload: [payload]})
+    all_render: dict[str, RenderBase] = {
+        "PageController": render,
+        "LayoutController": render,
+    }
+    response = AppController(view_root=tmp_path).compile_html(
+        "var SSR = {render: () => ''};",
+        render,
+        all_render,
+        inline_client_script="void 0;" if inline_client else None,
+        external_client_imports=None if inline_client else ["/static/page.js"],
+    )
+    parser = InlineScripts()
+    parser.feed(bytes(response.body).decode())
+    parser.close()
+
+    # Parse HTML before executing scripts: a browser recognizes closing tags even
+    # inside JS strings, and continues to later scripts after a syntax error.
+    result = json_loads(
+        render_ssr(
+            f"""
+            var errors = [];
+            for (const script of {json_dumps(parser.scripts)}) {{
+                try {{ (0, eval)(script); }}
+                catch (error) {{ errors.push(error.message); }}
+            }}
+            var SSR = {{render: () => JSON.stringify({{
+                injected: globalThis.__injected === true,
+                data: SERVER_DATA,
+                errors
+            }})}};
+            """,
+            {},
+        )
+    )
+    assert result == {
+        "injected": False,
+        "data": {
+            key: value.model_dump(mode="json") for key, value in all_render.items()
+        },
+        "errors": [],
+    }
 
 
 def test_requires_render_return_value():
