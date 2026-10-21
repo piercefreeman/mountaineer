@@ -212,7 +212,23 @@ async fn live_native_thread_invisible_to_python_is_deferred() {
 async fn completed_native_thread_obeys_platform_policy() {
     let project = Project::new();
     project.native_threads();
-    exercise_import(project, "import ctypes, threading\nlib = ctypes.CDLL('./native_threads.so')\nassert lib.start_thread(0) == 0\nassert threading.active_count() == 1", cfg!(target_os = "macos")).await;
+    exercise_import(
+        project,
+        r#"
+import ctypes, sys, threading, time
+lib = ctypes.CDLL('./native_threads.so')
+assert lib.start_thread(0) == 0
+assert threading.active_count() == 1
+if sys.platform.startswith('linux'):
+    # pthread_join can return before the kernel removes the task from /proc.
+    deadline = time.monotonic() + 5
+    while len(os.listdir('/proc/self/task')) != 1:
+        assert time.monotonic() < deadline, 'joined native task did not disappear'
+        time.sleep(0.001)
+"#,
+        cfg!(target_os = "macos"),
+    )
+    .await;
 }
 
 #[tokio::test]
