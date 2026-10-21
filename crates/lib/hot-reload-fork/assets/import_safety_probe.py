@@ -27,7 +27,6 @@ import json
 import os
 import sys
 import threading
-from contextlib import redirect_stdout
 
 
 def thread_count() -> int:
@@ -96,9 +95,12 @@ def probe(module: str) -> dict[str, object]:
         }
 
 
-with redirect_stdout(sys.stderr):
-    result = probe(sys.argv[1])
-sys.stdout.write(json.dumps(result))
+# Redirect the descriptor too: native libraries and subprocesses bypass sys.stdout.
+result_fd = os.dup(sys.stdout.fileno())
+os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+result = probe(sys.argv[1])
+with os.fdopen(result_fd, "w") as stream:
+    json.dump(result, stream)
 sys.stdout.flush()
 # Imports may leave non-daemon threads behind; do not wait for them at shutdown.
 os._exit(0)

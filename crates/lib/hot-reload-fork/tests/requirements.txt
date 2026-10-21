@@ -1,0 +1,4 @@
+# Test-only native wheels; keep Python 3.10 on its last supported NumPy series.
+numpy==2.2.6; python_version < "3.11"
+numpy==2.3.5; python_version >= "3.11"
+opencv-python==4.13.0.92

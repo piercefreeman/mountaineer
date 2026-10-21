@@ -65,6 +65,37 @@ jobs:
       - name: Tests
         run: make test-lib
 
+  os-level:
+    name: OS-level fork tests - ${{ matrix.platform.runner }} - py${{ matrix.python-version }}
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        platform:
+          - { runner: ubuntu-latest, os: linux, target: x86_64, python-architecture: x64 }
+          - { runner: macos-15, os: macos, target: aarch64, python-architecture: arm64 }
+          - { runner: macos-15-intel, os: macos, target: x86_64, python-architecture: x64 }
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-python-rust
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache-prefix: os-level
+          os: ${{ matrix.platform.os }}
+          target: ${{ matrix.platform.target }}
+          python-architecture: ${{ matrix.platform.python-architecture }}
+
+      - name: Install native test dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r crates/lib/hot-reload-fork/tests/requirements.txt
+
+      - name: Run OS-level fork tests
+        run: make test-os-level
+
   lint:
     name: lint py${{ matrix.python-version }}
     runs-on: ubuntu-latest
@@ -97,7 +128,7 @@ jobs:
   # https://github.com/marketplace/actions/alls-green#why used for branch protection checks
   check:
     if: always()
-    needs: [test, lint]
+    needs: [test, lint, os-level]
     runs-on: ubuntu-latest
     steps:
       - name: Decide whether the needed jobs succeeded or failed
