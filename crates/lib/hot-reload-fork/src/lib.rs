@@ -177,100 +177,44 @@ enum CommandMessage {
     Exit,
 }
 
-#[derive(Deserialize)]
 struct ImportProbe {
     safe: BTreeSet<String>,
     excluded: Vec<ExcludedImport>,
 }
 
-async fn probe_imports(config: &Config) -> Result<ImportProbe> {
-    if config.imports.is_empty() {
-        return Ok(ImportProbe {
-            safe: BTreeSet::new(),
-            excluded: Vec::new(),
-        });
-    }
-    let output = Command::new(&config.python)
-        .args(["-c", IMPORT_SAFETY_PROBE])
-        .arg(serde_json::to_string(&config.imports)?)
-        .current_dir(&config.project_root)
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(Error::Invalid(format!(
-            "fork-safety probe exited with {}:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    Ok(serde_json::from_slice(&output.stdout)?)
+#[derive(Deserialize)]
+struct ImportProbeResult {
+    safe: bool,
+    #[serde(flatten)]
+    import: ExcludedImport,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    #[tokio::test]
-    async fn probe_excludes_thread_starting_imports() {
-        let project = tempfile::tempdir().unwrap();
-        fs::write(project.path().join("safe_import.py"), "VALUE = 1\n").unwrap();
-        fs::write(
-            project.path().join("threaded_import.py"),
-            "import threading, time\n\
-             threading.Thread(target=lambda: time.sleep(5), daemon=True).start()\n",
-        )
-        .unwrap();
-        let probe = probe_imports(&Config {
-            python: "python".to_string(),
-            project_root: project.path().to_path_buf(),
-            imports: BTreeSet::from(["safe_import".to_string(), "threaded_import".to_string()]),
-        })
-        .await
-        .unwrap();
-
-        assert_eq!(probe.safe, BTreeSet::from(["safe_import".to_string()]));
+async fn probe_imports(config: &Config) -> Result<ImportProbe> {
+    let mut probe = ImportProbe {
+        safe: BTreeSet::new(),
+        excluded: Vec::new(),
+    };
+    for module in &config.imports {
+        let output = Command::new(&config.python)
+            .args(["-c", IMPORT_SAFETY_PROBE, module])
+            .current_dir(&config.project_root)
+            .kill_on_drop(true)
+            .output()
+            .await?;
+        if !output.status.success() || output.stdout.is_empty() {
+            probe.excluded.push(ExcludedImport {
+                module: module.clone(),
+                thread_count: None,
+                reason: format!("probe exited before reporting ({})", output.status),
+            });
+            continue;
+        }
+        let result: ImportProbeResult = serde_json::from_slice(&output.stdout)?;
+        if result.safe {
+            probe.safe.insert(module.clone());
+        } else {
+            probe.excluded.push(result.import);
+        }
     }
-
-    #[tokio::test]
-    async fn parent_exits_when_an_active_backend_dies() {
-        let project = tempfile::tempdir().unwrap();
-        let Spawned { mut strategy, .. } = Strategy::spawn(Config {
-            python: "python".to_string(),
-            project_root: project.path().to_path_buf(),
-            imports: BTreeSet::new(),
-        })
-        .await
-        .unwrap();
-        strategy
-            .start(1, project.path().join("missing.json"))
-            .await
-            .unwrap();
-
-        let status = timeout(Duration::from_secs(3), strategy.wait())
-            .await
-            .expect("fork parent did not notice its failed backend")
-            .unwrap();
-
-        assert!(!status.success());
-    }
-
-    #[tokio::test]
-    async fn parent_processes_back_to_back_commands() {
-        let project = tempfile::tempdir().unwrap();
-        let Spawned { mut strategy, .. } = Strategy::spawn(Config {
-            python: "python".to_string(),
-            project_root: project.path().to_path_buf(),
-            imports: BTreeSet::new(),
-        })
-        .await
-        .unwrap();
-
-        timeout(Duration::from_secs(1), async {
-            strategy.stop(Worker { generation: 1 }).await.unwrap();
-            strategy.shutdown().await.unwrap();
-        })
-        .await
-        .expect("fork parent stalled with buffered commands");
-    }
+    Ok(probe)
 }

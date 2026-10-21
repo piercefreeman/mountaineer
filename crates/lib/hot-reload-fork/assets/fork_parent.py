@@ -70,6 +70,14 @@ try:
         command = json.loads(line)
         if command["command"] == "start":
             generation = command["generation"]
+            if sys.platform == "darwin":
+                import ctypes
+
+                # Imports can behave differently together than in isolated probes.
+                if ctypes.CDLL(None).pthread_is_threaded_np():
+                    raise RuntimeError(
+                        "Refusing to fork: warm imports started native threads on macOS"
+                    )
             pid = os.fork()
             if pid == 0:
                 signal.signal(signal.SIGTERM, signal.SIG_DFL)

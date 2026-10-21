@@ -24,7 +24,7 @@ DETERMYSTIC_LOCAL_PACKAGE ?= $(abspath ../deterministic)
 DETERMYSTIC_VALIDATE ?= $(if $(wildcard $(DETERMYSTIC_LOCAL_PACKAGE)/pyproject.toml),uv run --with-editable $(DETERMYSTIC_LOCAL_PACKAGE) determystic validate,uv run --with determystic determystic validate)
 
 # Ignore these directories in the local filesystem if they exist
-.PHONY: lint test
+.PHONY: lint test test-os-level
 
 # Main lint target
 lint: lint-lib lint-create-mountaineer-app lint-scripts
@@ -76,6 +76,9 @@ lint-validation-scripts:
 	$(call lint-validation-common,$(SCRIPTS_DIR),$(SCRIPTS_NAME))
 
 # Tests
+test-os-level:
+	cargo test --locked -p mountaineer-hot-reload-fork --test os_level -- --include-ignored --test-threads=4 $(test-args)
+
 test-lib:
 	@(cd $(LIB_DIR) && docker compose -f docker-compose.test.yml up -d)
 	@$(call wait-for-postgres,30,5438)
