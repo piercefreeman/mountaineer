@@ -95,4 +95,75 @@ mod tests {
             BTreeSet::from(["fastapi".to_string(), "pydantic.fields".to_string()])
         );
     }
+
+    #[tokio::test]
+    async fn discovers_only_module_level_imports() {
+        let project = tempfile::tempdir().unwrap();
+        let package_root = project.path().join("example");
+        fs::create_dir(&package_root).unwrap();
+        fs::write(
+            package_root.join("app.py"),
+            r#"import anthropic
+from fastapi import FastAPI
+from typing import TYPE_CHECKING
+
+def load_model():
+    import torch
+    from transformers import pipeline
+
+async def encode():
+    import crisper_cuda
+
+class Video:
+    def read(self):
+        import cv2
+
+if TYPE_CHECKING:
+    from numpy import ndarray
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            discover(Config {
+                python: "python".to_string(),
+                project_root: project.path().to_path_buf(),
+                package_root,
+                package: "example".to_string(),
+            })
+            .await
+            .unwrap(),
+            BTreeSet::from(["anthropic".to_string(), "fastapi".to_string()])
+        );
+    }
+
+    #[tokio::test]
+    async fn ignores_test_directories_within_the_package() {
+        let project = tempfile::tempdir().unwrap();
+        let package_root = project.path().join("tests/example");
+        fs::create_dir_all(package_root.join("controllers")).unwrap();
+        fs::write(
+            package_root.join("controllers/app.py"),
+            "from fastapi import FastAPI\n",
+        )
+        .unwrap();
+        for directory in ["test", "tests", "controllers/__tests__"] {
+            let test_root = package_root.join(directory);
+            fs::create_dir_all(&test_root).unwrap();
+            fs::write(test_root.join("test_app.py"), "import pytest\n").unwrap();
+            fs::write(test_root.join("helpers.py"), "import torch\n").unwrap();
+        }
+
+        assert_eq!(
+            discover(Config {
+                python: "python".to_string(),
+                project_root: project.path().to_path_buf(),
+                package_root,
+                package: "example".to_string(),
+            })
+            .await
+            .unwrap(),
+            BTreeSet::from(["fastapi".to_string()])
+        );
+    }
 }
