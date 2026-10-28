@@ -1,4 +1,4 @@
-"""Discover third-party imports referenced by a Python package.
+"""Discover module-level third-party imports referenced by a Python package.
 
 Invocation::
 
@@ -10,7 +10,9 @@ segment is excluded so local imports are not treated as dependencies.
 
 The script reads no stdin. It writes a sorted JSON array of absolute import
 names to stdout, excluding standard-library modules, the package itself, and
-files beneath ``.git``, ``.venv``, ``__pycache__``, or ``node_modules``.
+files beneath ``.git``, ``.venv``, ``__pycache__``, ``node_modules``, ``test``,
+``tests``, or ``__tests__`` within the package. Only imports directly in the
+module body are included, preserving lazy and conditional imports.
 Syntax or filesystem errors are intentionally fatal and reported by Python on
 stderr for the Rust caller to surface.
 """
@@ -22,14 +24,22 @@ from pathlib import Path
 
 package_root = Path(sys.argv[1])
 package_name = sys.argv[2].split(".", 1)[0]
-ignored_directories = {".git", ".venv", "__pycache__", "node_modules"}
+ignored_directories = {
+    ".git",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+    "test",
+    "tests",
+    "__tests__",
+}
 imports: set[str] = set()
 
 for path in package_root.rglob("*.py"):
-    if ignored_directories.intersection(path.parts):
+    if ignored_directories.intersection(path.relative_to(package_root).parts):
         continue
     tree = ast.parse(path.read_text(), filename=str(path))
-    for node in ast.walk(tree):
+    for node in tree.body:
         if isinstance(node, ast.Import):
             imports.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
