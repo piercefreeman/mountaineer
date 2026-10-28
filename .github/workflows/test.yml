@@ -28,9 +28,8 @@ on:
       - main
     tags:
       - "**"
-  pull_request: {}
-  pull_request_target:
-    types: [labeled]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 jobs:
   test:
