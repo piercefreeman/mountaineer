@@ -177,33 +177,46 @@ enum CommandMessage {
     Exit,
 }
 
-#[derive(Deserialize)]
 struct ImportProbe {
     safe: BTreeSet<String>,
     excluded: Vec<ExcludedImport>,
 }
 
+#[derive(Deserialize)]
+struct ImportProbeResult {
+    safe: bool,
+    #[serde(flatten)]
+    import: ExcludedImport,
+}
+
 async fn probe_imports(config: &Config) -> Result<ImportProbe> {
-    if config.imports.is_empty() {
-        return Ok(ImportProbe {
-            safe: BTreeSet::new(),
-            excluded: Vec::new(),
-        });
+    let mut probe = ImportProbe {
+        safe: BTreeSet::new(),
+        excluded: Vec::new(),
+    };
+    for module in &config.imports {
+        let output = Command::new(&config.python)
+            .args(["-c", IMPORT_SAFETY_PROBE, module])
+            .current_dir(&config.project_root)
+            .kill_on_drop(true)
+            .output()
+            .await?;
+        if !output.status.success() || output.stdout.is_empty() {
+            probe.excluded.push(ExcludedImport {
+                module: module.clone(),
+                thread_count: None,
+                reason: format!("probe exited before reporting ({})", output.status),
+            });
+            continue;
+        }
+        let result: ImportProbeResult = serde_json::from_slice(&output.stdout)?;
+        if result.safe {
+            probe.safe.insert(module.clone());
+        } else {
+            probe.excluded.push(result.import);
+        }
     }
-    let output = Command::new(&config.python)
-        .args(["-c", IMPORT_SAFETY_PROBE])
-        .arg(serde_json::to_string(&config.imports)?)
-        .current_dir(&config.project_root)
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(Error::Invalid(format!(
-            "fork-safety probe exited with {}:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stderr)
-        )));
-    }
-    Ok(serde_json::from_slice(&output.stdout)?)
+    Ok(probe)
 }
 
 #[cfg(test)]
@@ -230,6 +243,32 @@ mod tests {
         .unwrap();
 
         assert_eq!(probe.safe, BTreeSet::from(["safe_import".to_string()]));
+    }
+
+    // macOS remembers that a process once had threads, and a forked child then aborts
+    // when it first initializes an Objective-C class (grpc's import does this).
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn probe_excludes_imports_whose_threads_already_exited_on_macos() {
+        let project = tempfile::tempdir().unwrap();
+        fs::write(
+            project.path().join("joined_thread_import.py"),
+            "import threading\n\
+             thread = threading.Thread(target=lambda: None)\n\
+             thread.start()\n\
+             thread.join()\n",
+        )
+        .unwrap();
+        let probe = probe_imports(&Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports: BTreeSet::from(["joined_thread_import".to_string()]),
+        })
+        .await
+        .unwrap();
+
+        assert!(probe.safe.is_empty());
+        assert_eq!(probe.excluded[0].thread_count, Some(1));
     }
 
     #[tokio::test]
