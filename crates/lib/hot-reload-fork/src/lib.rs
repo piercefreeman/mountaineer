@@ -7,13 +7,14 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     io,
+    os::unix::process::ExitStatusExt,
     path::PathBuf,
     process::{ExitStatus, Stdio},
 };
 use tokio::{
     io::AsyncWriteExt,
     process::{Child, ChildStdin, Command},
-    time::{timeout, Duration},
+    time::{sleep, timeout, Duration},
 };
 
 const FORK_PARENT: &str = include_str!("../assets/fork_parent.py");
@@ -82,6 +83,7 @@ pub struct Strategy {
 /// Active backend generation owned by the fork parent.
 pub struct Worker {
     generation: u64,
+    exit_status_path: PathBuf,
 }
 
 impl Strategy {
@@ -110,12 +112,17 @@ impl Strategy {
 
     /// Starts a backend generation from a serialized runtime payload.
     pub async fn start(&mut self, generation: u64, payload_path: PathBuf) -> Result<Worker> {
+        let exit_status_path = payload_path.with_extension(format!("{generation}.exit"));
         self.send(&CommandMessage::Start {
             generation,
             payload_path,
+            exit_status_path: exit_status_path.clone(),
         })
         .await?;
-        Ok(Worker { generation })
+        Ok(Worker {
+            generation,
+            exit_status_path,
+        })
     }
 
     /// Stops one active backend generation.
@@ -158,9 +165,18 @@ impl Strategy {
 }
 
 impl Worker {
-    /// Fork workers are supervised by their parent, so this waits forever.
+    /// Waits for this backend's exit status, reported by the fork parent.
     pub async fn wait(&mut self) -> Result<ExitStatus> {
-        std::future::pending().await
+        loop {
+            match tokio::fs::read(&self.exit_status_path).await {
+                Ok(contents) => {
+                    return Ok(ExitStatus::from_raw(serde_json::from_slice(&contents)?));
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+            sleep(Duration::from_millis(50)).await;
+        }
     }
 }
 
@@ -170,6 +186,7 @@ enum CommandMessage {
     Start {
         generation: u64,
         payload_path: PathBuf,
+        exit_status_path: PathBuf,
     },
     Stop {
         generation: u64,
@@ -272,7 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn parent_exits_when_an_active_backend_dies() {
+    async fn worker_reports_failure_without_stopping_parent() {
         let project = tempfile::tempdir().unwrap();
         let Spawned { mut strategy, .. } = Strategy::spawn(Config {
             python: "python".to_string(),
@@ -281,17 +298,99 @@ mod tests {
         })
         .await
         .unwrap();
-        strategy
+        let mut worker = strategy
             .start(1, project.path().join("missing.json"))
             .await
             .unwrap();
 
-        let status = timeout(Duration::from_secs(3), strategy.wait())
+        let status = timeout(Duration::from_secs(3), worker.wait())
             .await
-            .expect("fork parent did not notice its failed backend")
+            .expect("worker did not report its exit")
             .unwrap();
 
-        assert!(!status.success());
+        assert_eq!(status.code(), Some(1));
+        assert_eq!(worker.wait().await.unwrap(), status);
+        assert!(timeout(Duration::from_millis(200), strategy.wait())
+            .await
+            .is_err());
+        strategy.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn import_error_preserves_running_backend_and_allows_recovery() {
+        let project = tempfile::tempdir().unwrap();
+        let package = project.path().join("mountaineer");
+        fs::create_dir(&package).unwrap();
+        fs::write(package.join("__init__.py"), "").unwrap();
+        fs::write(
+            package.join("runtime.py"),
+            r#"
+import json
+import signal
+from pathlib import Path
+
+class RuntimePayload:
+    model_validate_json = staticmethod(json.loads)
+
+def serve_runtime(payload):
+    from app import VALUE
+    Path(payload).write_text(VALUE)
+    signal.pause()
+"#,
+        )
+        .unwrap();
+        let app = project.path().join("app.py");
+        let dependency = project.path().join("dependency.py");
+        fs::write(&app, "from dependency import VALUE\n").unwrap();
+        fs::write(&dependency, "VALUE = 'original'\n").unwrap();
+        let ready = project.path().join("ready.txt");
+        let payload = project.path().join("payload.json");
+        fs::write(&payload, serde_json::to_vec(&ready).unwrap()).unwrap();
+
+        let Spawned { mut strategy, .. } = Strategy::spawn(Config {
+            python: "python".to_string(),
+            project_root: project.path().to_path_buf(),
+            imports: BTreeSet::new(),
+        })
+        .await
+        .unwrap();
+        let mut active = strategy.start(1, payload.clone()).await.unwrap();
+        wait_for_contents(&ready, "original").await;
+
+        fs::write(&app, "from dependency import RENAMED as VALUE\n").unwrap();
+        let mut failed = strategy.start(2, payload.clone()).await.unwrap();
+        let status = timeout(Duration::from_secs(3), failed.wait())
+            .await
+            .expect("failed import did not produce a worker exit")
+            .unwrap();
+        assert_eq!(status.code(), Some(1));
+        assert!(timeout(Duration::from_millis(200), strategy.wait())
+            .await
+            .is_err());
+        assert!(timeout(Duration::from_millis(200), active.wait())
+            .await
+            .is_err());
+        strategy.stop(failed).await.unwrap();
+
+        fs::write(&dependency, "RENAMED = 'recovered'\n").unwrap();
+        let mut recovered = strategy.start(3, payload).await.unwrap();
+        wait_for_contents(&ready, "recovered").await;
+        strategy.stop(active).await.unwrap();
+        assert!(timeout(Duration::from_millis(200), recovered.wait())
+            .await
+            .is_err());
+        strategy.stop(recovered).await.unwrap();
+        strategy.shutdown().await.unwrap();
+    }
+
+    async fn wait_for_contents(path: &std::path::Path, expected: &str) {
+        timeout(Duration::from_secs(3), async {
+            while fs::read_to_string(path).ok().as_deref() != Some(expected) {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("backend did not finish importing the application");
     }
 
     #[tokio::test]
@@ -306,7 +405,13 @@ mod tests {
         .unwrap();
 
         timeout(Duration::from_secs(1), async {
-            strategy.stop(Worker { generation: 1 }).await.unwrap();
+            strategy
+                .stop(Worker {
+                    generation: 1,
+                    exit_status_path: project.path().join("unused.exit"),
+                })
+                .await
+                .unwrap();
             strategy.shutdown().await.unwrap();
         })
         .await

@@ -10,14 +10,15 @@ stderr and skipped.
 
 After startup, read newline-delimited JSON commands from stdin:
 
-* ``{"command": "start", "generation": 1, "payload_path": "/abs/payload.json"}``
-  forks a backend that loads the Mountaineer runtime payload at ``payload_path``.
+* ``{"command": "start", "generation": 1, "payload_path": "/abs/payload.json",
+  "exit_status_path": "/abs/payload.1.exit"}`` forks a backend that loads the
+  runtime payload and reports its eventual wait status at ``exit_status_path``.
 * ``{"command": "stop", "generation": 1}`` terminates that generation.
 * ``{"command": "exit"}`` terminates every generation and exits the parent.
 
-The process writes diagnostics to stderr and intentionally produces no stdout
-protocol. It exits unsuccessfully if an active backend dies unexpectedly so
-the Rust owner can treat parent exit as a fatal lifecycle event.
+Backend failures are printed to stdout; it carries no machine protocol.
+Backend exits are reported individually so a failed replacement
+does not terminate the last working backend.
 """
 
 import importlib
@@ -27,6 +28,8 @@ import select
 import signal
 import sys
 import traceback
+from pathlib import Path
+from textwrap import indent
 
 for module in json.loads(sys.argv[1]):
     try:
@@ -35,14 +38,15 @@ for module in json.loads(sys.argv[1]):
         sys.stderr.write(f"Skipping optional warm import {module!r}: {error}\n")
 
 signal.signal(signal.SIGINT, signal.SIG_IGN)
-children: dict[int, int] = {}
+children: dict[int, tuple[int, Path]] = {}
 stdin = sys.stdin.buffer.raw
 
 
 def stop(generation: int) -> None:
-    pid = children.pop(generation, None)
-    if pid is None:
+    child = children.pop(generation, None)
+    if child is None:
         return
+    pid, _ = child
     try:
         os.kill(pid, signal.SIGTERM)
         os.waitpid(pid, 0)
@@ -52,14 +56,14 @@ def stop(generation: int) -> None:
 
 try:
     while True:
-        for generation, pid in list(children.items()):
+        for generation, (pid, exit_status_path) in list(children.items()):
             exited_pid, status = os.waitpid(pid, os.WNOHANG)
             if exited_pid:
                 children.pop(generation)
-                raise RuntimeError(
-                    f"backend generation {generation} exited unexpectedly "
-                    f"with status {status}"
-                )
+                # Publish atomically so the Rust waiter cannot read a partial status.
+                temporary_path = exit_status_path.with_suffix(".tmp")
+                temporary_path.write_text(json.dumps(status))
+                temporary_path.replace(exit_status_path)
 
         readable, _, _ = select.select([stdin], [], [], 0.1)
         if not readable:
@@ -82,10 +86,15 @@ try:
                     )
                     serve_runtime(payload)
                 except BaseException:
-                    traceback.print_exc()
+                    sys.stdout.write(
+                        "\nFailed Python backend\n"
+                        + indent(traceback.format_exc(), "  ")
+                        + "\n"
+                    )
+                    sys.stdout.flush()
                 finally:
                     os._exit(1)
-            children[generation] = pid
+            children[generation] = pid, Path(command["exit_status_path"])
         elif command["command"] == "stop":
             stop(command["generation"])
         elif command["command"] == "exit":

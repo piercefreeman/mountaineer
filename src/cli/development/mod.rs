@@ -8,7 +8,9 @@ use self::{
 use super::{
     config::{write_payload, LaunchConfig, RuntimeMode, ServerConfig},
     invalid,
-    output::{finish_startup_spinner, link, start_startup_spinner, status, timing, Tone},
+    output::{
+        finish_startup_spinner, link, reload_failed, start_startup_spinner, status, timing, Tone,
+    },
     CommonArgs, Error, Result,
 };
 use clap::Parser;
@@ -146,13 +148,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
                         match discover_imports(&config).await {
                             Ok(imports) => imports,
                             Err(error) => {
-                                status(
-                                    Tone::Error,
-                                    "Failed",
-                                    format!(
-                                        "import discovery; keeping the last working backend ({error})"
-                                    ),
-                                );
+                                reload_failed("import discovery", error);
                                 continue;
                             }
                         }
@@ -190,13 +186,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
                                 );
                             }
                             Err(error) => {
-                                status(
-                                    Tone::Error,
-                                    "Failed",
-                                    format!(
-                                        "backend reload; keeping the last working backend ({error})"
-                                    ),
-                                );
+                                reload_failed("backend reload", error);
                             }
                         }
                     } else {
@@ -204,13 +194,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
                             match PythonHotReload::new(&config, next_imports, warm_processes).await {
                                 Ok(strategy) => strategy,
                                 Err(error) => {
-                                    status(
-                                        Tone::Error,
-                                        "Failed",
-                                        format!(
-                                            "backend reload; keeping the last working backend ({error})"
-                                        ),
-                                    );
+                                    reload_failed("backend reload", error);
                                     continue;
                                 }
                             };
@@ -264,13 +248,7 @@ pub(super) async fn run(args: &[String], python: String) -> Result<()> {
                                         ),
                                     );
                                 }
-                                status(
-                                    Tone::Error,
-                                    "Failed",
-                                    format!(
-                                        "backend reload; keeping the last working backend ({error})"
-                                    ),
-                                );
+                                reload_failed("backend reload", error);
                             }
                         }
                     }
