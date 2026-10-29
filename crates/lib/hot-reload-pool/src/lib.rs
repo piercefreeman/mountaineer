@@ -179,6 +179,51 @@ async fn send_json_line(stdin: &mut ChildStdin, command: &CommandMessage) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs, time::Duration};
+    use tokio::time::timeout;
+
+    #[tokio::test]
+    async fn import_errors_are_reported_on_stdout() {
+        let project = tempfile::tempdir().unwrap();
+        let package = project.path().join("mountaineer");
+        fs::create_dir(&package).unwrap();
+        fs::write(package.join("__init__.py"), "").unwrap();
+        fs::write(
+            package.join("runtime.py"),
+            "from incomplete import MISSING\n",
+        )
+        .unwrap();
+        fs::write(project.path().join("incomplete.py"), "VALUE = 1\n").unwrap();
+        let mut child = Command::new("python")
+            .args(["-c", WARM_WORKER, "[]"])
+            .current_dir(project.path())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        send_json_line(
+            &mut child.stdin.take().unwrap(),
+            &CommandMessage::Start {
+                generation: 1,
+                payload_path: project.path().join("unused.json"),
+            },
+        )
+        .await
+        .unwrap();
+
+        let output = timeout(Duration::from_secs(3), child.wait_with_output())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        assert!(stdout.contains("Failed Python backend"));
+        assert!(stdout.contains("ImportError: cannot import name 'MISSING'"));
+        assert!(stdout.contains("runtime.py"));
+        assert!(output.stderr.is_empty());
+    }
 
     #[tokio::test]
     async fn idle_workers_shutdown_cleanly() {
