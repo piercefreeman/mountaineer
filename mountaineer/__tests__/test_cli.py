@@ -180,17 +180,69 @@ async def test_runserver_with_user_modifications(tmp_ci_webapp: Path):
     assert return_code == 0
 
     # The project's runserver command delegates to the native development server.
-    server_process = Popen(
-        ["uv", "run", "runserver", "--host", "0.0.0.0", "--port", str(port)],
-        cwd=tmp_ci_webapp,
-        env=uv_env,
-    )
+    stdout_path = tmp_ci_webapp.parent / "runserver.stdout"
+    with stdout_path.open("w") as stdout:
+        server_process = Popen(
+            ["uv", "run", "runserver", "--host", "0.0.0.0", "--port", str(port)],
+            cwd=tmp_ci_webapp,
+            env=uv_env,
+            stdout=stdout,
+        )
     test_file_path = tmp_ci_webapp / "ci_webapp" / "controllers" / "home.py"
 
     try:
         is_ready, status_code = await check_server_ready(port)
         assert is_ready, f"Server did not become ready (last status: {status_code})"
         await check_development_frontend(port)
+
+        original_source = test_file_path.read_text()
+        dependency = test_file_path.with_name("reload_title.py")
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}") as client:
+            for source, expected_error in [
+                (None, "ModuleNotFoundError"),
+                ("OTHER_TITLE = 'in progress'\n", "ImportError"),
+                ("TITLE = (\n", "SyntaxError"),
+                ("import missing_reload_dependency\n", "ModuleNotFoundError"),
+            ]:
+                previous_output = len(stdout_path.read_text())
+                if source is None:
+                    test_file_path.write_text(
+                        "from .reload_title import TITLE\n"
+                        + original_source.replace('title="Home"', "title=TITLE")
+                    )
+                else:
+                    dependency.write_text(source)
+
+                deadline = time() + 20
+                while time() < deadline:
+                    assert server_process.poll() is None, stdout_path.read_text()
+                    response = await client.get("/")
+                    assert response.status_code == 200
+                    assert "<title>Home</title>" in response.text
+                    diagnostic = stdout_path.read_text()[previous_output:]
+                    if "waiting for changes" in diagnostic:
+                        break
+                    await asyncio.sleep(0.1)
+                else:
+                    pytest.fail(
+                        f"Reload failure was not reported: {stdout_path.read_text()}"
+                    )
+
+                assert expected_error in diagnostic
+                assert "reload_title" in diagnostic
+                assert "Keeping the last working backend" in diagnostic
+
+            dependency.write_text("TITLE = 'Reload recovered'\n")
+            deadline = time() + 20
+            while time() < deadline:
+                assert server_process.poll() is None, stdout_path.read_text()
+                response = await client.get("/")
+                assert response.status_code == 200
+                if "<title>Reload recovered</title>" in response.text:
+                    break
+                await asyncio.sleep(0.1)
+            else:
+                pytest.fail(f"Backend did not recover: {stdout_path.read_text()}")
 
         for _ in range(5):
             with open(test_file_path, "a") as f:

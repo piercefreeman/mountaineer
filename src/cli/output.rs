@@ -1,4 +1,4 @@
-use console::{colors_enabled_stderr, Style};
+use console::{colors_enabled, colors_enabled_stderr, Style};
 use indicatif::{ProgressBar, ProgressStyle};
 use mountaineer_terminal as terminal;
 use std::{
@@ -73,6 +73,18 @@ fn render_status(label: &str, message: impl Display, tone: Tone, color: bool) ->
 
 pub(super) fn status(tone: Tone, label: &str, message: impl Display) {
     print_status_line(render_status(label, message, tone, colors_enabled_stderr()));
+}
+
+pub(super) fn reload_failed(stage: &str, error: impl Display) {
+    println!(
+        "{}",
+        render_status(
+            "Failed",
+            format!("{stage}\n{error}\nKeeping the last working backend; waiting for changes."),
+            Tone::Error,
+            colors_enabled(),
+        )
+    );
 }
 
 fn render_status_with_details(

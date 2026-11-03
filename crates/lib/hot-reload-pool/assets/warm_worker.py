@@ -23,6 +23,8 @@ import importlib
 import json
 import signal
 import sys
+import traceback
+from textwrap import indent
 
 for module in json.loads(sys.argv[1]):
     try:
@@ -34,8 +36,15 @@ signal.signal(signal.SIGINT, signal.SIG_IGN)
 command = json.loads(sys.stdin.readline())
 signal.signal(signal.SIGINT, signal.default_int_handler)
 
-runtime = importlib.import_module("mountaineer.runtime")
-payload = runtime.RuntimePayload.model_validate_json(
-    open(command["payload_path"]).read()
-)
-runtime.serve_runtime(payload)
+try:
+    runtime = importlib.import_module("mountaineer.runtime")
+    payload = runtime.RuntimePayload.model_validate_json(
+        open(command["payload_path"]).read()
+    )
+    runtime.serve_runtime(payload)
+except Exception:
+    sys.stdout.write(
+        "\nFailed Python backend\n" + indent(traceback.format_exc(), "  ") + "\n"
+    )
+    sys.stdout.flush()
+    sys.exit(1)
