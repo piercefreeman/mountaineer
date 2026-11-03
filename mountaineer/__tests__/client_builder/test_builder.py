@@ -1,11 +1,74 @@
 import asyncio
 from pathlib import Path
+from typing import NewType
 
+from fastapi import Header
+from pydantic import create_model
+
+from mountaineer.actions.passthrough_dec import passthrough
 from mountaineer.app import AppController
 from mountaineer.client_builder.builder import APIBuilder
 from mountaineer.controller import ControllerBase
 from mountaineer.plugin import MountaineerPlugin
 from mountaineer.render import RenderBase
+
+
+def test_newtype_generates_same_client_as_underlying_types(tmp_path: Path):
+    ProjectID = NewType("ProjectID", str)
+    NestedProjectID = NewType("NestedProjectID", ProjectID)
+    Count = NewType("Count", int)
+
+    def build_client(view_root: Path, id_type, count_type):
+        page = view_root / "app" / "project" / "page.tsx"
+        page.parent.mkdir(parents=True)
+        page.write_text("export default function Project() { return null; }")
+        project = create_model(
+            "Project",
+            project_id=(id_type, ...),
+            count=(count_type, ...),
+            related=(list[id_type], ...),
+            counts=(dict[id_type, count_type], ...),
+            optional_id=(id_type | None, None),
+        )
+        render_model = create_model(
+            "ProjectRender", __base__=RenderBase, project=(project, ...)
+        )
+
+        class ProjectController(ControllerBase):
+            url = "/projects/{project_id}/"
+            view_path = "/app/project/page.tsx"
+
+            def render(self, project_id, limit=1):
+                raise NotImplementedError
+
+            def update(self, payload, project_id, x_project_id=Header()):
+                return payload
+
+        ProjectController.render.__annotations__ = {
+            "project_id": id_type,
+            "limit": count_type,
+            "return": render_model,
+        }
+        ProjectController.update.__annotations__ = {
+            "payload": project,
+            "project_id": id_type,
+            "x_project_id": id_type,
+            "return": project,
+        }
+        setattr(ProjectController, "update", passthrough(ProjectController.update))
+
+        app = AppController(view_root=view_root)
+        app.register(ProjectController())
+        asyncio.run(APIBuilder(app).build_use_server())
+        return {
+            path.relative_to(view_root): path.read_text()
+            for path in view_root.rglob("*.ts")
+        }
+
+    expected = build_client(tmp_path / "plain", str, int)
+    actual = build_client(tmp_path / "newtype", NestedProjectID, Count)
+    assert expected
+    assert actual == expected
 
 
 def test_build_creates_mountaineer_indexes(tmp_path: Path, monkeypatch):
