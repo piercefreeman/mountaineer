@@ -1,4 +1,5 @@
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
+from typing import Annotated, Any, Dict, List, Literal, NewType, Optional, Union
+from uuid import UUID
 
 import pytest
 
@@ -117,6 +118,39 @@ def parser():
 @pytest.fixture
 def type_compare():
     return TypeComparisonHelpers()
+
+
+ProjectID = NewType("ProjectID", str)
+NestedProjectID = NewType("NestedProjectID", ProjectID)
+Count = NewType("Count", int)
+Score = NewType("Score", float)
+Enabled = NewType("Enabled", bool)
+UniqueID = NewType("UniqueID", UUID)
+ProjectIDs = NewType("ProjectIDs", list[ProjectID])
+
+
+@pytest.mark.parametrize(
+    "input_type,expected_type",
+    [
+        (ProjectID, str),
+        (NestedProjectID, str),
+        (Count, int),
+        (Score, float),
+        (Enabled, bool),
+        (UniqueID, UUID),
+        (ProjectID | None, Or(str, type(None))),
+        (list[ProjectID], ListOf(str)),
+        (dict[ProjectID, NestedProjectID], DictOf(str, str)),
+        (tuple[ProjectID, int], TupleOf(str, int)),
+        (set[ProjectID], SetOf(str)),
+        (Annotated[ProjectID, "metadata"], Or(str)),
+        (ProjectIDs, ListOf(str)),
+    ],
+)
+def test_newtype(parser, type_compare, input_type, expected_type):
+    assert type_compare.are_types_equivalent(
+        parser.parse_type(input_type), expected_type
+    )
 
 
 class TestUnionTypeDetection:

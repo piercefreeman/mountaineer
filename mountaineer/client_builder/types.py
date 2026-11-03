@@ -6,6 +6,7 @@ from typing import (
     Dict,
     List,
     Literal,
+    NewType,
     Set,
     Tuple,
     Union,
@@ -178,6 +179,9 @@ class TypeParser:
         Returns:
             TypeDefinition: Corresponding TypeDefinition instance
         """
+        if isinstance(field_type, NewType):
+            return self.parse_type(field_type.__supertype__)
+
         # Handle None type
         if is_none_type(field_type):
             return type(None)
