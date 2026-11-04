@@ -1,23 +1,23 @@
 # Plugins
 
 <Note>
-**Beta API Notice**: The plugin system is currently in beta. While functional and actively used, the API may change in future versions as we gather feedback and improve the developer experience.
+**Beta API Notice**: The plugin system is in beta, and its API may change between versions.
 </Note>
 
-Mountaineer plugins are essentially **reusable Mountaineer projects** that can be shared across different applications. They encapsulate controllers, views, models, and frontend components into a distributable package that can be easily integrated into any Mountaineer application.
+Package a feature as a plugin when you need it in more than one Mountaineer app. A plugin can include its own controllers, views, models, and assets.
 
-Think of plugins as mini-applications with their own:
+Plugins can package:
 - **Controllers** - Backend logic and API endpoints
 - **Views** - Frontend React components and pages  
 - **Models** - Data structures and database schemas
 - **Static assets** - CSS, images, and other resources
 - **Build configuration** - Custom bundlers and compilation steps
 
-The key benefit is **dependency encapsulation** and **consistency** - plugins are compiled ahead of time, ensuring they work reliably across different projects without version conflicts.
+Build a plugin's frontend assets before distributing it, so host applications can serve those assets when they register the plugin.
 
 ## First-Party Plugins
 
-We maintain open source plugins for the features every app rebuilds. Other ecosystems sell these as paid add-ons. Ours are free:
+We maintain three open source plugins:
 
 | Plugin | What you get |
 | --- | --- |
@@ -25,7 +25,7 @@ We maintain open source plugins for the features every app rebuilds. Other ecosy
 | [Billing](/guides/plugins/billing) | Stripe subscriptions, metered usage, webhooks, checkout |
 | [Cloud](/guides/plugins/cloud) | File storage and email across AWS, Cloudflare, DigitalOcean, and Resend |
 
-Each plugin follows the same Mountaineer conventions: config mixins you inherit in your `AppConfig`, model mixins you subclass into concrete tables, and dependency injection through `Depends`. They also compose. A common production setup uses all three, with one `User` table carrying both auth and billing state:
+These plugins use config mixins, model mixins, and `Depends` for dependency injection. You can combine them; for example, one `User` table can carry both auth and billing fields:
 
 ```python title="models/user.py"
 from iceaxe import TableBase
@@ -36,45 +36,28 @@ class User(UserBillingMixin, UserAuthMixin, TableBase):
     pass
 ```
 
-The rest of this guide covers how the plugin system itself works, and how to build and distribute your own.
-
 ## Motivating Examples
 
-Here are some compelling use cases for Mountaineer plugins:
+Plugins are useful when a feature needs both backend logic and a reusable interface. For example:
 
 ### 1. **Development Tools & Debugging**
-- **Exception handlers** with beautiful stack traces (like `mountaineer-exceptions`)
-- **Database admin panels** for inspecting and editing data
-- **API documentation generators** that auto-update with your schemas
-- **Performance monitoring dashboards** with real-time metrics
+An exception viewer can package stack-trace processing with a page for inspecting the result, as `mountaineer-exceptions` does.
 
 ### 2. **Authentication & Security**
-- **OAuth providers** (Google, GitHub, Discord login)
-- **RBAC systems** with user management interfaces
-- **2FA/MFA implementations** with QR code generation
-- **Audit logging** with searchable activity feeds
+A login plugin can share session handling, user models, and login views across apps.
 
 ### 3. **Content Management**
-- **Blog engines** with markdown editing and publishing workflows
-- **Media galleries** with upload, resize, and organization features
-- **Comment systems** with moderation and notifications
-- **CMS blocks** for non-technical content editing
+A blog plugin can combine post storage with editing and publishing pages.
 
 ### 4. **E-commerce & Payments**
-- **Shopping cart systems** with persistent sessions
-- **Payment processors** (Stripe, PayPal integrations)
-- **Inventory management** with stock tracking
-- **Order fulfillment** workflows with shipping integrations
+A checkout plugin can bundle payment routes, webhook handling, and purchase views.
 
 ### 5. **Communication & Notifications**
-- **Email template systems** with visual editors
-- **Chat widgets** with real-time messaging
-- **Push notification services** for mobile and web
-- **SMS/Webhook** delivery systems
+A messaging plugin can provide delivery logic alongside templates or an inbox UI.
 
 ## Plugin Structure
 
-Let's examine the structure of `mountaineer-exceptions` as a reference implementation:
+`mountaineer-exceptions` keeps its Python code and frontend assets in one package:
 
 ```
 mountaineer-exceptions/
@@ -151,7 +134,7 @@ def get_core_view_path(asset_name: str) -> Path:
         return Path(path)
 ```
 
-This ensures your plugin's views can be located regardless of how the plugin is installed.
+Resolve views relative to the installed package rather than the application's working directory.
 
 ### 3. **Controller Structure**
 
@@ -368,7 +351,7 @@ dependencies = [
 
 ### **Provide Clear Documentation**
 
-Include comprehensive README with:
+Include a README with:
 - Installation instructions
 - Configuration options
 - Usage examples
@@ -391,21 +374,13 @@ If your plugin depends on specific integration behavior, be explicit about that 
 - **[mountaineer-auth](/guides/plugins/auth)**: Login, signup, sessions, and password reset with pre-built views
 - **[mountaineer-billing](/guides/plugins/billing)**: Stripe subscriptions, metered usage, and webhook handling
 - **[mountaineer-cloud](/guides/plugins/cloud)**: File storage and email across AWS, Cloudflare, DigitalOcean, and Resend
-- **[mountaineer-exceptions](https://github.com/piercefreeman/mountaineer-exceptions)**: Beautiful exception handling and debugging
+- **[mountaineer-exceptions](https://github.com/piercefreeman/mountaineer-exceptions)**: Exception pages with stack traces
 
 ## Contributing a Plugin
 
-If you've built a useful plugin, consider sharing it with the community:
+To share your plugin:
 
 1. **Open source** your plugin on GitHub
 2. **Publish** to PyPI for easy installation  
-3. **Document** thoroughly with examples
+3. **Document** configuration and supported versions with examples
 4. **Submit** to our community plugins list
-
-The Mountaineer ecosystem thrives when developers can easily share and reuse common functionality. Your plugin could save hundreds of hours for someone out there!
-
----
-
-The plugin system opens up endless possibilities for extending Mountaineer applications. Whether you're building internal tools, commercial add-ons, or open-source utilities, plugins provide a clean, reusable way to package and distribute Mountaineer functionality.
-
-Ready to build your first plugin? Start with a simple example and gradually add more sophisticated features as you become familiar with the conventions.

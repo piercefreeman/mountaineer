@@ -1,6 +1,6 @@
 # Controllers
 
-Controllers are the heart of Mountaineer. They are the Python classes that define the logic for your views, layouts, and apps. They are responsible for rendering the view, handling side effects, and managing the state of your application.
+Controllers define the Python logic for views and layouts. Their `render()` methods supply page data, and their actions handle client requests. `AppController` registers these controllers with the application.
 
 ## View Controller
 
@@ -28,13 +28,10 @@ Controllers are the heart of Mountaineer. They are the Python classes that defin
 
 ## Metadata
 
-We provide support for all header tags that you'll find within an html `<head>`. These
-won't be rendered by your browser but are where you'll place style imports and page
-metadata for SEO.
-
-We have passthrough classes for all the common tags
-so they align to what's outputted in HTML. These are defined and referenced below as `ScriptAttribute`, `LinkAttribute`, `MetaAttribute`, etc.
-We also provide some convenient shortcuts for more complicated, common meta tags.
+`Metadata` defines elements in the page's HTML `<head>`, including stylesheets,
+scripts, and meta tags. `ScriptAttribute`, `LinkAttribute`, and `MetaAttribute`
+map to their corresponding HTML elements. Helpers such as `ViewportMeta` build
+common structured values.
 
 ::: mountaineer.render.Metadata
 
@@ -62,7 +59,7 @@ We also provide some convenient shortcuts for more complicated, common meta tags
 
 # SSR
 
-Every page on Mountaineer is server-side rendered by default. Most SSR logic is handled in our embedded Rust layer. In Rust we spin up a V8 isolate, handle logging, catch and process exceptions, etc. This page only covers the client functions that are exposed to Python.
+Mountaineer renders pages on the server by default. Its Rust layer runs the view in a V8 isolate, records logs, and passes rendering errors back to Python. The functions below expose that behavior to Python callers.
 
 ::: mountaineer.ssr.render_ssr
 

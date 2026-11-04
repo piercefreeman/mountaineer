@@ -1,6 +1,6 @@
 # Cloud
 
-[mountaineer-cloud](https://github.com/piercefreeman/mountaineer-cloud) gives you typed primitives for object storage and email that work across providers. Write against `CloudFile` and `EmailMessage`, and swap the backing provider by changing a type annotation.
+[mountaineer-cloud](https://github.com/piercefreeman/mountaineer-cloud) provides `CloudFile` for object storage and `EmailMessage` for email. Both use typed provider clients, supplied through dependency injection.
 
 It works with any Mountaineer app, and with plain FastAPI services too.
 
@@ -8,7 +8,7 @@ Key features:
 
 - **Storage**: AWS S3, Cloudflare R2, and DigitalOcean Spaces behind one interface
 - **Email**: AWS SES and Resend with the same message primitives
-- **Typed provider cores**: `CloudFile[AWSCore]` versus `CloudFile[CloudflareCore]` is the whole migration
+- **Typed provider cores**: `CloudFile[AWSCore]` and `CloudFile[CloudflareCore]` identify which provider a file uses
 - **Database-backed fields**: `CloudFileField` and `CloudEmailField` store references right on your Iceaxe models
 - **Async streaming**: efficient reads and writes for large files, with optional gzip compression
 - **Local mocks**: install the `[mocks]` extra to develop and test without real cloud credentials
@@ -44,11 +44,11 @@ async def upload_asset(
     return await asset.file_url.get_content(aws)
 ```
 
-The file reference lives on the row. The bytes live in your bucket. Large files stream instead of loading into memory.
+The database row stores the file reference; the bucket stores the bytes. The example reads the contents into a `bytes` value. Use the streaming APIs when you need to process a large file incrementally.
 
 ## Email
 
-Email follows the same shape. Build an `EmailMessage` and send it through the provider core:
+Build an `EmailMessage` and send it through the injected provider core:
 
 ```python
 from mountaineer_cloud import EmailBody, EmailMessage, EmailRecipient
@@ -80,7 +80,7 @@ Each provider ships three pieces: a `Config` mixin for your app config, a `Core`
 | DigitalOcean | Spaces | No |
 | Resend | No | Yes |
 
-Wiring one up is two steps. Inherit the config, then inject the core where you need it:
+Inherit the provider's config, then inject its core where you need it:
 
 ```python title="config.py"
 from mountaineer_cloud.providers.aws import AWSConfig
@@ -99,4 +99,4 @@ async def my_action(
     ...
 ```
 
-To move from S3 to R2, switch `AWSConfig` to `CloudflareConfig` and `CloudFile[AWSCore]` to `CloudFile[CloudflareCore]`. The call sites don't change.
+To use R2, configure `CloudflareConfig`, type files as `CloudFile[CloudflareCore]`, and inject the Cloudflare core. File operations use the same interface; changing the provider does not move existing objects between buckets.

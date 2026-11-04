@@ -1,9 +1,8 @@
 # Actions
 
-Render functions control the data that is pushed from the server to the client. Anything
-that is sent from a client to a server is considered an action. Actions are
-internally implemented as POST requests that are handled in Javascript, but once built
-on the frontend should be fully transparent to you.
+Render functions supply page data. Actions let the client call Python controller
+methods through generated JavaScript functions. Each action sends a POST request;
+the decorator determines whether its response also refreshes the page's render data.
 
 ---
 

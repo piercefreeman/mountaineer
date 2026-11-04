@@ -8,10 +8,8 @@ variable.
 MOUNTAINEER_LOG_LEVEL=WARN mountaineer runserver
 ```
 
-We also provide some helper functions to use our same logging convention in your
-own code. We optimize for structured logging, where your logs are outputted as a
-stream of JSON-line formatted logs so they can be quickly parsed by bash pipes or
-by logging aggregation tools.
+Use the helpers below to write logs in the same format from your own code.
+Each line is a JSON object that shell scripts and log aggregation tools can parse.
 
 ---
 

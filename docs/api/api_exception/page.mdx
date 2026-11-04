@@ -1,5 +1,5 @@
 # API Exception
 
-The `APIException` is the root exception that you should inherit for errors that are thrown within action functions. This syntax allows your frontend to pick up on the error parameters. APIExceptions are just Pydantic BaseModels with a few helpful defaults, and a metaclass that allows them to work natively with HTTPExceptions.
+Subclass `APIException` for application-specific errors raised by actions. Its fields define the error payload, which Mountaineer uses to generate a typed client exception. `APIException` combines Pydantic model validation with HTTP exception behavior.
 
 ::: mountaineer.exceptions.APIException

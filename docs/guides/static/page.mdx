@@ -1,11 +1,11 @@
 # Static Analysis
 
-A core design consideration in Mountaineer is allowing for full _static analysis_ of your webapps. This term just means that we can verify your code from its text alone without having to run it all. As your webapp grows in scope this becomes increasingly valuable, as it allows you to catch errors early before they become runtime issues. And the more complicated your logic becomes, the more switch conditions and edge cases you're necessarily going to have. Manually testing all that is... not going to be fun.
+Type checkers inspect code without running it. They can catch mistakes such as passing a string where a function expects an integer, or accessing a field that no longer exists.
 
-Since static analysis is a personal choice, we don't yet bundle a type checker within Mountaineer. This page covers some basic suggestions for adding it to your project.
+Mountaineer generates frontend types from your Python controllers but does not bundle a Python type checker. Configure checks for both languages to catch errors across that boundary.
 
 <Note>
-    Adding a type checker to your project might seem like overkill while the scope is still small. But we find that adding it to CI early helps prevent future headaches by taking small steps to correctly annotate your function signatures, resolve ambiguities, and catch bugs while you still have the context of implementation.
+    Add type checks to CI early. It is easier to fix a missing annotation or a mismatched function call while you are working on that code.
 </Note>
 
 ## Python
@@ -31,13 +31,13 @@ uv run ty check
 
 ## Typescript
 
-Typescript's main goal as a language extension to Javascript is to provide typechecking and static analysis. These features are built into the default compiler `tsc`. As such, most frontend issues in your Mountaineer project are typically caught when we compile your typescript code with `uv run build` or progressively with `runserver` or `watch`. However there are some cases where you don't want to perform a full build, like in CI where you just want to validate the current state of your project.
+Use TypeScript's compiler, `tsc`, to check frontend types without building the application. Install it in your `views` project:
 
 ```bash
 npm install typescript --save-dev
 ```
 
-The `tsconfig.json` specifies the level of strictness you want to enforce. These options set to the strictest level will catch the most errors:
+Set the checks in `tsconfig.json`. The `strict` family checks types, while the final two options also check return paths and switch fallthrough:
 
 ```json title="views/tsconfig.json"
 {
