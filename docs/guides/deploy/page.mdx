@@ -1,12 +1,10 @@
 # Deploy
 
-You can deploy your Mountaineer project using whatever container technology you'd like, on whatever hosting provider you'd like. Most hosts at this point mandate or highly encourage containerization of your dependencies with Docker - so we start there.
-
-This page contains a reasonable default configuration to get you started. We make heavy use of multi-stage builds to cache dependencies and minimize the size of your final image that your webservers will have to pull down.
+Package your Mountaineer app in a Docker image to deploy it to a container host. The stages below install dependencies, build the frontend, and copy the runtime files into the final image. Docker can cache the dependency stages when only application code changes.
 
 ## Docker
 
-First, add the following to your `.dockerignore` file. This will prevent Docker from trying to copy over heavy artifacts that aren't needed for the build.
+Exclude local dependencies and generated files from the build context with `.dockerignore`:
 
 ```
 **/node_modules
@@ -15,7 +13,7 @@ First, add the following to your `.dockerignore` file. This will prevent Docker 
 
 ### Image 1: Frontend Dependencies
 
-Our first stage uses `npm` to fetch your frontend dependencies. This is an isolated context since it's the only place we need node / npm in the build pipeline.
+The first stage uses `npm` to install frontend dependencies:
 
 ```docker
 FROM node:20-slim as node-dependencies
@@ -65,7 +63,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 ### Image 3: Final Layer
 
-Combines the raw Python files, virtual environment, and the built frontend.
+Copy the Python application, virtual environment, and built frontend into the runtime image. Run it as a non-root user:
 
 ```docker
 FROM --platform=linux/amd64 python:3.14-slim-bookworm AS final
@@ -92,8 +90,8 @@ inside Mountaineer's embedded V8 runtime.
 
 ## Local Testing
 
-Once your Docker image is built, the best way to test it is to run it locally with `docker run`.
-However you can also simulate what the production service is doing by running:
+Test the built image locally with `docker run`. To check production mode outside
+the container, run:
 
 ```bash
 uv run build

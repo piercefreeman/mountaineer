@@ -1,12 +1,12 @@
 # Quickstart
 
-Our quickstart guide walks you through creating a full Mountaineer project. The end application is simple but fully working and ready for deployment.
+Build a todo list with a Python controller, a Postgres table, and a React view. Adding a todo will update the page through Mountaineer's generated client code.
 
 If you want the higher-level reasoning for why Mountaineer is structured this way, see [Philosophy & Tradeoffs](../philosophy).
 
 ## Getting Started
 
-To get started as quickly as possible, we bundle a project generator that sets up a simple project after a quick Q&A. Make sure you have pipx [installed](https://pipx.pypa.io/stable/installation/).
+Install [pipx](https://pipx.pypa.io/stable/installation/), then run the project generator:
 
 ```bash
 $ pipx run create-mountaineer-app
@@ -19,22 +19,20 @@ $ pipx run create-mountaineer-app
 ? Add editor configuration? [vscode] vscode
 ```
 
-Mountaineer projects all follow a similar structure. For more on this, see our deep dive on the structure conventions.
+The generator creates the Python application and a React project inside its `views` directory.
 
 ## Development
 
-If you're starting a new application from scratch, you'll typically want to create your new database tables. Make sure you have postgres running. We bundle a docker compose file for convenience with `create-mountaineer-app`.
+Start Postgres with the generated Docker Compose file, then create your database tables:
 
 ```bash
 docker compose up -d
 uv run createdb
 ```
 
-Of course you can also use an existing database instance, simply configure it in the `.env` file in the project root.
+To use an existing database, configure its connection in the project root's `.env` file.
 
-Mountaineer relies on watching your project for changes and doing progressive compilation. We provide a few CLI commands to help with this.
-
-While doing development work, you'll usually want to preview the frontend and automatically build dependent files. You can do this with:
+Start the development server to preview the frontend and rebuild files as you edit:
 
 ```bash
 $ uv run runserver
@@ -47,7 +45,7 @@ INFO:     Uvicorn running on http://127.0.0.1:5006 (Press CTRL+C to quit)
 
 Navigate to http://127.0.0.1:5006 to see your new webapp running.
 
-Or, if you just want to watch the source tree for changes without hosting the server. Watching will allow your frontend to pick up API definitions from your backend controllers:
+To regenerate frontend API definitions as controllers change without running a server:
 
 ```bash
 $ uv run mountaineer-watch
@@ -58,11 +56,9 @@ automatically.
 
 ## Walkthrough
 
-Below we go through some of the unique aspects of Mountaineer. Let's create a simple Todo list where we can add new items.
+The walkthrough starts with a generated project without MVC stub files. If you accepted the generator's default and created stubs, replace them with the models, controller, and view below.
 
-For the purposes of this walkthrough we assume your project is generated with `create-mountaineer-app` and you've skipped MVC stub files. If not, you'll have to delete some of the pre-existing files.
-
-Let's get started by creating the data models that will persist app state to the database. These definitions are effectively Pydantic schemas that will be bridged to the database via [Iceaxe](https://github.com/piercefreeman/iceaxe).
+Each todo needs an ID, a description, and a completion flag. Define a table with [Iceaxe](https://github.com/piercefreeman/iceaxe), which uses Pydantic-style models for database rows:
 
 ```python title="my_webapp/models/todo.py"
 from iceaxe import TableBase, Field
@@ -75,13 +71,13 @@ class TodoItem(TableBase):
     completed: bool = False
 ```
 
-Update the index file as well:
+Import the model so the application can discover it:
 
 ```python title="my_webapp/models/__init__.py"
 from .todo import TodoItem # noqa: F401
 ```
 
-Make sure you have a Postgres database running. We bundle a docker compose file for convenience with `create-mountaineer-app`. Launch it in the background and create the new database tables from these code definitions:
+Create the new table and start the server. If you stopped Postgres after the previous step, start it again first:
 
 ```bash
 docker compose up -d
@@ -89,7 +85,7 @@ uv run createdb
 uv run runserver
 ```
 
-Great! At this point we have our database tables created and have a basic server running. We next move to creating a new controller, since this will define which data you can push and pull to your frontend.
+The homepage needs the todo rows. Its controller will query the database and return those rows along with the visitor's IP address:
 
 ```python title="my_webapp/controllers/home.py"
 from mountaineer import sideeffect, ControllerBase, RenderBase
@@ -125,24 +121,13 @@ class HomeController(ControllerBase):
         )
 ```
 
-The only three requirements of a controller are setting the:
-
-- URL
-- View path
-- Initial data payload
-
-This `render()` function is a core building block of Mountaineer. All Controllers need to have one. It defines all the data that your frontend will need to resolve its view. This particular controller retrieves all Todo items from the database, alongside the user's current IP.
+The controller connects a URL to a view file. Its `render()` method returns the view's initial data, with `HomeRender` defining the fields the frontend can access.
 
 <Note>
-    render() functions accepts all parameters that FastAPI endpoints do: paths, query parameters, and dependency injected functions. Right now we're just grabbing the `Request` object to get the client IP.
+    `render()` accepts the same parameters as FastAPI endpoints: path and query parameters, request objects, and injected dependencies. Here, `Request` supplies the client IP and the database dependency supplies a connection.
 </Note>
 
-Note that the database session is provided via dependency injection, which plug-and-plays with [FastAPI's](https://github.com/tiangolo/fastapi) Depends syntax. The standard library provides two main dependency providers:
-
-- mountaineer.CoreDependencies: helper functions for configurations and general dependency injection
-- mountaineer.database.DatabaseDependencies: helper functions for database lifecycle and management
-
-Now that we've newly created this controller, we wire it up to the application. This registers it for display when you load the homepage.
+The connection uses [FastAPI's](https://github.com/tiangolo/fastapi) `Depends` syntax. Register the controller with the application so requests to `/` reach it:
 
 ```python title="my_webapp/app.py"
 from mountaineer.app import AppController
@@ -161,7 +146,7 @@ controller = AppController(
 controller.register(HomeController())
 ```
 
-Let's move over to the frontend.
+The React view reads the controller's data through `useServer()`:
 
 ```typescript title="my_webapp/views/app/home/page.tsx"
 import React from "react";
@@ -206,21 +191,19 @@ const Home = () => {
 export default Home;
 ```
 
-We define a simple view to show the data coming from the backend. To accomplish this conventionally, we'd need to wire up an API layer, a Node server, or format the page with Jinja templates.
-
-Here instead we use our automatically generated `useServer()` hook. This hook payload will provide all the `HomeRender` fields as properties of serverState. And it's available instantly on page load without any roundtrip fetches. Also - if your IDE supports language servers (which most do these days), you should see the fields auto-suggesting for `serverState` as you type.
+Mountaineer generates `useServer()` from the controller. Every `HomeRender` field becomes a typed property of `serverState`, available on the initial page load without another fetch. Your editor can suggest those fields as you type:
 
 ![IDE Typehints](/mountaineer/media/ide_typehints.png)
 
-If you access this in your browser at `localhost:5006/` we can see our welcome message, but we can't really _do_ anything with the todos yet. Let's add some interactivity.
+Open `localhost:5006/` to see the welcome message and any existing todos. The form is visible, but its Create button has no action yet.
 
 <Note>
-    Try disabling Javascript in your browser. The page will still render as-is with all variables intact, thanks to our server-side rendering.
+    Try disabling JavaScript in your browser. Server-side rendering still displays the welcome message and todo list. Client interactions require JavaScript.
 </Note>
 
 ![Server side rendering](/mountaineer/media/server_side_rendering.png)
 
-What good is todo list that doesn't get longer? We define a `add_todo` function that accepts a pydantic model `NewTodoRequest`, which defines the required parameters for a new todo item. We then cast this to a database object and add it to the postgres table.
+To create a todo, the server needs a description. `NewTodoRequest` validates that input, and `add_todo` saves it as a database row:
 
 ```python title="my_webapp/controllers/home.py"
 
@@ -243,9 +226,9 @@ class HomeController(ControllerBase):
         await session.commit()
 ```
 
-The important part here is the `@sideeffect`. Once you create a new Todo item, the previous state on the frontend is outdated. It will only show the todos before you created a new one. That's not what we want in an interactive app. This decorator indicates that we want the frontend to refresh its data, since after we update the todo list on the server the client state will be newly outdated.
+`@sideeffect` tells Mountaineer to call `render()` again after the action finishes and send the updated data to the client. The new todo then appears without a page reload.
 
-Mountaineer detects the presence of this sideeffect function and analyzes its signature. It then exposes this to the frontend as a normal async function.
+Mountaineer also generates a typed async function for `add_todo`. Call it when the Create button is clicked:
 
 ```typescript title="my_webapp/views/app/home/page.tsx"
 import React, { useState } from "react";
@@ -288,22 +271,19 @@ const CreateTodo = ({ serverState }: { serverState: ServerState }) => {
 export default Home;
 ```
 
-`useServer()` exposes our `add_todo` function so we can call our backend directly from our frontend. Also notice that we don't have to read or parse the output value of this function to render the new todo item to the list. Since the function is marked as a sideeffect, the frontend will automatically refresh its data after the function is called.
+The component submits the description and clears the input. Mountaineer merges the sideeffect response into `serverState`, so the component doesn't need to append the new row itself.
 
-Go ahead and load it in your browser. If you open up your web tools, you can create a new Todo and see POST requests sending data to the backend and receiving the current server state. The actual data updates and merging happens internally by Mountaineer.
+Create a todo with your browser's network tools open. The POST request sends the description and receives the updated server state:
 
 ![Getting Started Final TODO App](/mountaineer/media/final_todo_list.png)
 
 ![Getting Started Final TODO App](/mountaineer/media/network_debug.png)
 
-You can use these serverState variables anywhere you'd use dynamic React state variables (useEffect, useCallback, etc). But unlike React state, these variables are automatically updated when a relevant sideeffect is triggered.
-
-And that's it. We've just built a fully interactive web application without having to worry about an explicit API. You specify the data model and actions on the server and the appropriate frontend hooks are generated and updated automatically. It gives you the power of server rendered html and the interactivity of a virtual DOM, without having to compromise on complicated data mutations to keep everything in sync.
+You can use `serverState` fields in components and hook dependencies just like other React state. The controller supplies the data, and sideeffects refresh it after mutations.
 
 ## What's next?
 
-Great, you're now set up with a new mountaineer project. Here are a few links to go
-deeper on Mountaineer:
+From here, you can:
 
 - [Configure your views and layouts](/guides/views)
 - [Add more actions](/guides/actions)

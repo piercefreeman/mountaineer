@@ -1,15 +1,12 @@
 # Auth
 
-[mountaineer-auth](https://github.com/piercefreeman/mountaineer-auth) is an opinionated authentication plugin. It ships login, signup, logout, password reset, and email verification flows. The React views are included and pre-built, so a working auth system is a few registrations away.
+[mountaineer-auth](https://github.com/piercefreeman/mountaineer-auth) runs authentication inside your app, with pre-built React views for login, signup, logout, password reset, and email verification.
 
-Other ecosystems sell auth as a hosted add-on. This one is open source, free, and runs inside your app.
+The plugin includes:
 
-Key features:
-
-- **Full auth flows**: login, signup, logout, password reset, and email verification with pre-built React views
 - **JWT sessions**: cookie-based bearer tokens with configurable expiration
 - **Authorization dependencies**: `require_valid_user`, `require_admin_user`, and `peek_user` for gating your own actions
-- **Admin users**: a first-class primitive for marking and requiring administrators
+- **Admin users**: mark users as administrators and restrict actions to them
 - **Self-hosted**: passwords hashed with bcrypt, sessions verified locally. No third-party auth service in your request path.
 
 ## Installation

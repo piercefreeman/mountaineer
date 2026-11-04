@@ -1,10 +1,10 @@
 # Conventions
 
-Mountaineer projects all follow a similar structure. This structure is provided by default through `create-mountaineer-app` but you can also construct it yourself.
+`create-mountaineer-app` generates the structure below. You can also create it by hand.
 
 If you want the rationale behind these conventions before adopting them, see [Philosophy & Tradeoffs](../philosophy).
 
-For a project called `my_webapp`, you should have something like the following:
+For a project called `my_webapp`:
 
 ```
 my_webapp/
@@ -34,22 +34,20 @@ my_webapp/
 └── pyproject.toml
 ```
 
-Every service file is nested under the `my_webapp` root package. This is just a regular python project - you add new code files wherever you like and import them as you're used to.
+Application code lives in the `my_webapp` Python package. Add modules and import them as you would in any Python project.
 
 ### Mandatory Conventions
 
-`views` - this disk based directory includes a nested npm project. Within it you write all your frontend logics and components, which are regular typescript/tsx files.
+`views` contains the React and TypeScript project, including `package.json` and `tsconfig.json`. Organize nested views in nested folders.
 
-Nested routes are in nested folders. This folder acts as your React project and is where you can define requirements and build parameters in `package.json` and `tsconfig.json`.
-
-Mountaineer supports advanced layout organization patterns, including the ability to isolate layouts to specific sections of your application using the `(root)` folder pattern. For more details, see the [Layout Organization](../views/layout-organization) guide.
+To give sections of your app separate layouts, use the `(root)` folder pattern described in [Layout Organization](../views/layout-organization).
 
 ### Suggested Conventions
 
-`controllers` - A controller is the python logic that backs your frontend view. You can define controllers however you like: a flat folder, nesting folders, or via no folders at all mixed in with other code. For simplicity we recommend starting with a single flat controllers folder and refactoring into sub-folders as distinct ownership areas of your code emerge.
+`controllers` - Python classes that supply data and actions to your views. Start with a flat folder; split it into subfolders when distinct areas of the application emerge.
 
 `app.py` - Instantiate your controllers and add them to an `AppController` to register them for client access.
 
-`config.py` - Specify the parameters that your application needs to run, to easily customize them: database host settings, secret keys, etc. Configurations can easily read from env variables and are globally accessible throughout your webapp.
+`config.py` - Define settings such as the database host and secret keys. Configuration can read environment variables and is accessible throughout the app.
 
 `main.py` - Expose your application to [uvicorn](https://www.uvicorn.org/) or another async compatible webserver that follows the ASGI specification (Asynchronous Server Gateway Interface).

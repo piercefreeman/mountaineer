@@ -1,10 +1,10 @@
 # Views & Layouts
 
-Your React app should be initialized in the `/views` folder of your Mountaineer project. This is the directory where we look for `package.json` and `tsconfig.json`, and where the frontend build pipeline looks for project-specific overrides. In other words, the views folder should look just like your frontend application if you were building a Single-Page-App (SPA). It's just embedded within your larger Mountaineer project and rendered separately.
+Put your React app in the Mountaineer project's `views` directory. It contains the frontend's `package.json`, `tsconfig.json`, and build configuration.
 
 If you want the architectural rationale for this Python + React split, see [Philosophy & Tradeoffs](../philosophy).
 
-We expect that all controller views will be labeled as a `page.tsx`, so they'll typically sit in a folder with themselves and other tightly connected React components. These views should have one default export, which is your page constructor:
+Name each controller's view `page.tsx` and export its React component as the default. Keep related components alongside it:
 
 ```typescript title="/views/app/home/page.tsx"
 import React from "react";
@@ -21,9 +21,9 @@ const Home = () => {
 export default Home;
 ```
 
-We don't support async functions for these page renders, instead expecting that your backend will provide all data required to serialize the view.
+Page components must be synchronous. Fetch their initial data in the Python controller's `render()` method.
 
-If you want actions performed on the client-side after the view has been hydrated with Javascript, you can use a `useEffect` hook with an empty dependency list:
+For work that runs in the browser after hydration, use `useEffect`:
 
 ```typescript title="/views/app/home/page.tsx"
 import React, { useEffect } from "react";
@@ -46,7 +46,7 @@ export default Home;
 
 ## Controllers
 
-A controller backs a view in a 1:1 relationship. It provides the backend plumbing to render the view, and can also provide sideeffects and passthroughs actions. The main entrypoint into this is the `render` function, which is called on your initial view to serialize all the data that your frontend will need when displaying the initial state of the page. All your data heavy lifting (database queries, manipulation, etc) should go here.
+A controller supplies one view with data and actions. Its `render()` method queries and prepares the data needed for the initial page. Sideeffect and passthrough actions handle later client requests.
 
 ```python title="/controllers/home.py"
 
@@ -77,14 +77,14 @@ class HomeController(ControllerBase):
 
 ### Path Parameters
 
-The `render` function signature is inspected to provide the full URL that can be called. To provide a URL parameter that extracts a given ID identifier and matches the following:
+Declare path parameters in both the controller's URL and its `render()` signature. For URLs such as:
 
 ```
 /details/a687566b-db3e-42e3-9053-4f679abe8277
 /details/4a4c26bc-554a-40dd-aecd-916abd3bc475
 ```
 
-You can do:
+Use an `item_id` parameter:
 
 ```python
 class DetailController(ControllerBase):
@@ -100,14 +100,14 @@ class DetailController(ControllerBase):
 
 ### Query Parameters
 
-Query parameters are also supported. We support both simple types (str, float, UUID, etc) alongside lists of simple types. To provide a query parameter that matches the following:
+Query parameters support simple types (`str`, `float`, `UUID`, and others) and lists of those types. For example, these URLs provide a name and an optional list of costs:
 
 ```
 /search?name=Apple&cost=30&cost=50
 /search?name=Banana
 ```
 
-You can do:
+Declare `cost` with `Query()` so repeated query values become a list:
 
 ```python
 from typing import Annotated
@@ -131,9 +131,9 @@ class SearchController(ControllerBase):
 
 ## Layouts
 
-We also support the Next.js `layout.tsx` convention, which is a special file that will be used to wrap all containing views in a common layout. This is useful for things like headers, footers, and other common elements.
+A `layout.tsx` wraps pages in its directory and subdirectories, following the Next.js convention. Use it for shared elements such as headers and footers.
 
-The children of the page will be passed as `{children}` to the layout component. Make sure to include this in your rendered view:
+The nested page arrives through the `children` prop. Include it in the layout's output:
 
 ```typescript title="/views/app/layout.tsx"
 import React from "react";
@@ -157,7 +157,7 @@ const Layout = ({ children } : { children: React.ReactNode }) => {
 export default Layout;
 ```
 
-This allows you to chain layouts before rendering the final, most specific page:
+Nested layouts wrap a page from the outside in:
 
 ```
 views/
@@ -171,11 +171,11 @@ views/
     └── layout.tsx
 ```
 
-When rendering `dashboard/home/page.tsx`, the view will be wrapped in the `app/dashboard/layout.tsx` layout alongside `app/layout.tsx`. These layout files will be automatically found by Mountaineer during the build process. They don't require any explicit declaration in your Python backend if you're just using them for styling.
+Here, `app/layout.tsx` wraps the dashboard layout, which wraps `dashboard/home/page.tsx`. Mountaineer discovers these files during the build. Layouts used only for presentation need no Python controller.
 
 For more advanced layout organization, including isolating layouts to specific sections of your application using the `(root)` folder pattern, see the [Layout Organization](./layout-organization) guide.
 
-If you need more server side power and want to define them in Python, you can add a LayoutController that backs the layout.
+Add a layout controller when the layout needs server data or actions.
 
 ### Layout Controllers
 
@@ -205,7 +205,7 @@ class RootLayoutController(LayoutControllerBase):
         self.layout_value += 1
 ```
 
-All these functions are now exposed to the frontend layout, including the link generator, state, and any actions specified.
+The layout's generated hook exposes its state, actions, and link generator:
 
 ```typescript title="/views/app/layout.tsx"
 import React, { ReactNode } from "react";
@@ -235,20 +235,20 @@ const Layout = ({ children }: { children: ReactNode }) => {
 export default Layout;
 ```
 
-Once your controller is declared, you'll need to mount your layout into the AppController like you do for regular pages.
+Register the layout controller with `AppController`, as you would a page controller:
 
 ```python title="/app.py"
 app_controller = AppController(...)
 app_controller.register(RootLayoutController())
 ```
 
-In general you can implement layout controllers just like you do for pages. But since they're shared across multiple child controllers, make sure the keyword arguments you use in your `render` signature don't have any conflicts. Mountaineer will merge these signatures at runtime and check for duplicate keyword names across the layout's child pages. Arguments are allowed to share the same name _and_ type, in which case they will be resolved to the same value. Arguments with conflicting types will raise a `TypeError`.
+Mountaineer merges the layout and page `render()` signatures. Parameters with the same name and type resolve to the same value; matching names with conflicting types raise a `TypeError`.
 
-It's also worth noting that layout controllers will resolve their dependencies in the same scope as the page controllers. So if you need database access within your layout, you'll receive the same underlying transaction as the page controller. This makes dependency injection a powerful way to save on resources, but be careful to not treat them as isolated objects.
+Layout and page dependencies also share a scope. If both use the same database dependency, they receive the same underlying transaction. Treat changes made through either controller as part of that shared transaction.
 
 ## Typescript Configuration
 
-If you want to customize how Mountaineer builds your view files into raw client-side javascript, add a `tsconfig.json` file. The Typescript website includes a [full list](https://www.typescriptlang.org/tsconfig) of the available options here. A good place to start is:
+Configure TypeScript in `tsconfig.json`. Start with the following settings, or consult TypeScript's [full list of options](https://www.typescriptlang.org/tsconfig):
 
 ```json
 {
@@ -272,7 +272,7 @@ If you want to customize how Mountaineer builds your view files into raw client-
 }
 ```
 
-A common convention is importing all your view paths with absolute paths (like `@/components/myfile`) instead of having to do relative imports (`../../components/myfile`). This can be easily achieved by adding a `paths` key to your `tsconfig.json`. Your import becomes relative to all paths in the root directory.
+To import `@/components/myfile` instead of `../../components/myfile`, add a `paths` alias:
 
 ```json
 {
@@ -295,8 +295,6 @@ If a component depends on browser-only APIs or third-party libraries that cannot
 'use client';
 ```
 
-Mountaineer will scan the import graph during bundling. If a page, layout, or imported local module contains `'use client'`, that module becomes a client boundary.
-
-Mountaineer treats these as client boundaries during bundling. The server bundle never executes the marked module. During SSR the boundary renders its `children` passthrough or `null`, and after hydration the browser swaps in the real client component. That preserves SSR for the surrounding tree without importing browser-only packages into the server bundle.
+During bundling, Mountaineer scans the import graph for `'use client'`. The server bundle does not execute a marked module. During SSR, it renders the component's `children` or `null`; after hydration, the browser renders the client component. The surrounding tree still renders on the server.
 
 The recommended pattern is to wrap browser-only libraries in a small local component marked with `'use client'`, then import that wrapper from your page or layout. Modules marked `'use client'` should export React components rather than shared utilities.

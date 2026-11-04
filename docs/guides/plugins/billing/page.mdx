@@ -1,8 +1,8 @@
 # Billing
 
-[mountaineer-billing](https://github.com/piercefreeman/mountaineer-billing) handles the full Stripe lifecycle: products, prices, checkout, subscriptions, webhooks, and metered usage. You define your product catalog in typed Python and sync it to Stripe with a CLI.
+[mountaineer-billing](https://github.com/piercefreeman/mountaineer-billing) connects your app to Stripe products, prices, checkout, subscriptions, webhooks, and metered usage. Define your product catalog in typed Python and sync it to Stripe with the CLI.
 
-Stripe objects are mirrored into your own Postgres tables. Your app reads fast local data instead of calling the Stripe API on every request.
+Stripe objects are mirrored into your Postgres tables, so your app can read subscription state without a Stripe API call on each request.
 
 Key features:
 
@@ -10,7 +10,7 @@ Key features:
 - **Subscriptions and one-time purchases**: licensed products with entitlements and billing intervals
 - **Metered usage**: countdown allocations with `verify_capacity` and `record_metered_usage` dependencies to gate consumption
 - **Webhook handling**: a mountable router that processes Stripe events automatically
-- **Local-first reads**: subscription state is materialized into projection tables for fast lookups
+- **Local reads**: subscription state is stored in projection tables for database queries
 
 ## Installation
 
@@ -150,7 +150,7 @@ If the user has no capacity left, `verify_capacity` rejects the request before y
 
 ## CLI
 
-Two commands keep your catalog and your local mirror in sync:
+Push your catalog to Stripe, pull Stripe data into local tables, or rebuild the local projections:
 
 ```bash
 # Push your local product catalog to Stripe
