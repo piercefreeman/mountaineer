@@ -305,43 +305,15 @@ async def get_render_parameters(
     # we already know which route should be resolved so we can shortcut having to
     # match non-relevant paths.
     # https://github.com/encode/starlette/blob/5c43dde0ec0917673bb280bcd7ab0c37b78061b7/starlette/routing.py#L544
-    render_url: str | None
-    if isinstance(controller, LayoutControllerBase):
-        # Layouts have no URL of their own. When rendered as part of a page, their render()
-        # is resolved against the URL of that page, so path parameters declared by the page
-        # route are available to the layout. Mirror that here by finding the page nested
-        # under this layout that matches the referring URL.
-        render_url = None
-        for page_definition in _iter_child_pages(controller._definition):
-            child_scope = _match_render_router(page_definition, view_request.scope)
-            if child_scope is not None:
-                render_url = page_definition.controller.url
-                view_request.scope = {
-                    "path_params": {},
-                    **view_request.scope,
-                    **child_scope,
-                }
-                break
-    else:
-        render_url = controller.url
-        for route in (
-            controller._definition.route.render_router.routes
-            if controller._definition.route
-            and controller._definition.route.render_router is not None
-            else []
-        ):
-            match, child_scope = route.matches(view_request.scope)
-            if match != Match.FULL:
-                raise RuntimeError(
-                    f"Route {route} did not match ({match}) {view_request.scope}"
-                )
-            view_request.scope = {
-                # Make sure we're populating the path params with some values
-                # even if they're not extracted in either the view or the child definition
-                "path_params": {},
-                **view_request.scope,
-                **child_scope,
-            }
+    render_url, child_scope = _resolve_render_route(controller, view_request.scope)
+    if child_scope is not None:
+        view_request.scope = {
+            # Make sure we're populating the path params with some values
+            # even if they're not extracted in either the view or the child definition
+            "path_params": {},
+            **view_request.scope,
+            **child_scope,
+        }
 
     try:
         async with get_function_dependencies(
@@ -354,6 +326,41 @@ async def get_render_parameters(
         raise RuntimeError(
             f"Error occurred while resolving dependencies for render(): {controller}: {e}"
         ) from e
+
+
+def _resolve_render_route(
+    controller: "ControllerBase",
+    scope: Scope,
+) -> tuple[str | None, Scope | None]:
+    """
+    Determine the URL template and matched route scope (including path_params) that
+    should be used to resolve the controller's render() for the given request scope.
+
+    """
+    definition = controller._definition
+    if definition is None:
+        raise RuntimeError(f"Controller definition is not set for {controller}")
+
+    if isinstance(controller, LayoutControllerBase):
+        # Layouts have no URL of their own. When rendered as part of a page, their render()
+        # is resolved against the URL of that page, so path parameters declared by the page
+        # route are available to the layout. Mirror that here by finding the page nested
+        # under this layout that matches the referring URL.
+        for page_definition in _iter_child_pages(definition):
+            child_scope = _match_render_router(page_definition, scope)
+            if child_scope is not None:
+                return page_definition.controller.url, child_scope
+        return None, None
+
+    if not definition.route or definition.route.render_router is None:
+        return controller.url, None
+
+    child_scope = _match_render_router(definition, scope)
+    if child_scope is None:
+        raise RuntimeError(
+            f"Render route {controller.url} did not match request path {scope.get('path')}"
+        )
+    return controller.url, child_scope
 
 
 def _iter_child_pages(
