@@ -672,3 +672,56 @@ async def test_layout_controller_session_handling():
 
     assert response_data["sideeffect"]["has_session"]
     assert response_data["sideeffect"]["session_value"] == "session_test_value"
+
+
+@pytest.mark.parametrize("nested_layout", [False, True])
+def test_layout_sideeffect_resolves_child_page_path_params(
+    tmp_path: Path, nested_layout: bool
+):
+    """
+    A layout has no URL of its own, so when one of its sideeffects re-renders it we
+    need to pull path parameters from the page in the referer that it wraps.
+
+    """
+    (tmp_path / "app" / "thing" / "detail").mkdir(parents=True)
+    (tmp_path / "app" / "layout.tsx").write_text("")
+    if nested_layout:
+        (tmp_path / "app" / "thing" / "layout.tsx").write_text("")
+    (tmp_path / "app" / "thing" / "detail" / "page.tsx").write_text("")
+
+    class LayoutRender(RenderBase):
+        thing_id: str
+        tab: str | None
+
+    class Layout(LayoutControllerBase):
+        view_path = "/app/layout.tsx"
+
+        async def render(self, thing_id: str, tab: str | None = None) -> LayoutRender:
+            return LayoutRender(thing_id=thing_id, tab=tab)
+
+        @sideeffect
+        async def poke(self) -> None:
+            pass
+
+    class PageRender(RenderBase):
+        thing_id: str
+
+    class Page(ControllerBase):
+        url = "/things/{thing_id}/detail"
+        view_path = "/app/thing/detail/page.tsx"
+
+        async def render(self, thing_id: str) -> PageRender:
+            return PageRender(thing_id=thing_id)
+
+    app = AppController(view_root=tmp_path)
+    app.register(Layout())
+    app.register(Page())
+
+    with TestClient(app.app) as client:
+        response = client.post(
+            "/internal/api/layout/poke",
+            headers={"referer": "http://testserver/things/abc/detail?tab=files"},
+        )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["sideeffect"] == {"thing_id": "abc", "tab": "files"}
